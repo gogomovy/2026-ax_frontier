@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PolicyDocument {
+  id               String          @id @default(uuid())
+  title            String
+  agency           String
+  policyOrAsOfDate DateTime
+  registeredAt     DateTime        @default(now())
+  sectors          String[]
+  tags             String[]
+  versions         PolicyVersion[]
+}
+
+model PolicyVersion {
+  id            String          @id @default(uuid())
+  documentId    String
+  document      PolicyDocument  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionNo     Int
+  fileRelPath   String
+  extractedText String
+  summary       String
+  createdAt     DateTime        @default(now())
+
+  @@unique([documentId, versionNo])
+}
+
+model DecisionDocument {
+  id              String            @id @default(uuid())
+  title           String
+  meetingOrSource String
+  decisionDate    DateTime
+  registeredAt    DateTime          @default(now())
+  sectors         String[]
+  tags            String[]
+  versions        DecisionVersion[]
+}
+
+model DecisionVersion {
+  id            String           @id @default(uuid())
+  documentId    String
+  document      DecisionDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  versionNo     Int
+  fileRelPath   String
+  extractedText String
+  summary       String
+  createdAt     DateTime         @default(now())
+
+  @@unique([documentId, versionNo])
+}
+
+model Article {
+  id          String    @id @default(uuid())
+  title       String
+  url         String?
+  fileRelPath String?
+  source      String
+  confirmed   Boolean   @default(false)
+  confirmedAt DateTime?
+  sectors     String[]
+  tags        String[]
+  summary     String?
+}
+
+model OfficialDomain {
+  id      String  @id @default(uuid())
+  host    String  @unique
+  enabled Boolean @default(true)
+}

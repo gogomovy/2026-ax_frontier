@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+*.p12
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Build and test
+dist/
+build/
+coverage/
+.nyc_output/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Local data
+*.log
+tmp/
+temp/
+data/
+postgres-data/
+
+aidlc-docs/audit.md
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
