@@ -27,7 +27,7 @@ DEFAULT_POLICY: dict[str, Any] = {
     "max_age_days": 1825,
     "min_keyword_coverage": 1,
     "max_cosine_distance": 0.65,
-    "category_of": {"gov_policy": "external_policy", "mgmt_decision": "internal_direction", "model_method": "internal_direction", "reference": "external_policy", "term": "internal_direction"},
+    "category_of": {"gov_policy": "external_policy", "mgmt_decision": "internal_direction", "model_method": "internal_direction", "branch_ref": "internal_direction", "reference": "external_policy", "term": "internal_direction"},
     "require_categories": ["external_policy", "internal_direction"],
 }
 STAGES = ("permission", "domain", "time", "doc_type", "semantic", "concept_path")

@@ -39,6 +39,7 @@ const knowledge = load("knowledge");
 const risk = load("risk");
 const terms = load("terms");
 const helpers = load("helpers");
+const branch = load("branch");
 
 const artifacts = {
   domains: dashboard.DOMAINS,
@@ -64,8 +65,12 @@ const artifacts = {
   terms: terms.TERMS,
   insights: [risk.MODEL_OPINION, risk.INCLUSIVE_OPINION, finance.DIVERGENCE_INSIGHT],
   meta: { asOf: helpers.AS_OF, generatedAt: helpers.GENERATED_AT, batchLabel: helpers.BATCH_LABEL },
+  // 영업점 (B.29) — 산출물 안의 office.code 로 열람 범위를 판정한다
+  branch_dashboard: branch.BRANCH_DASHBOARD,
+  branch_tabs: branch.BRANCH_TABS,
 };
 for (const [tabKey, report] of Object.entries(risk.REPORTS)) artifacts[`report.${tabKey}`] = report;
+for (const [tabKey, report] of Object.entries(branch.BRANCH_REPORTS)) artifacts[`report.branch-${tabKey}`] = report;
 
 fs.mkdirSync(outDir, { recursive: true });
 for (const f of fs.readdirSync(outDir)) if (f.endsWith(".json")) fs.unlinkSync(path.join(outDir, f));

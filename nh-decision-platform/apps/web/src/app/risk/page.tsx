@@ -1,10 +1,11 @@
 import { AnalysisAlertStrip } from "@/components/domain/AnalysisAlertStrip";
+import { ChangeFeedPanel } from "@/components/domain/ChangeFeedPanel";
 import { DefaultRatePanel } from "@/components/domain/DefaultRatePanel";
 import { ModelMonitoringPanel } from "@/components/domain/ModelMonitoringPanel";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge, NextStep, RowList, SectionHead } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
-import { getAnalysisTabs, getDefaultRateTrend, getRiskDashboard } from "@/lib/data";
+import { getAnalysisTabs, getChanges, getDefaultRateTrend, getRiskDashboard } from "@/lib/data";
 
 const QUALITY = {
   passed: { label: "정상", tone: "success" },
@@ -14,10 +15,11 @@ const QUALITY = {
 
 /** STEP 1 — 신용리스크관리부 현황 (요구사항 CRM-01 ~ CRM-04, MDL-13) */
 export default async function RiskDashboardPage() {
-  const [dashboard, trend, { current }] = await Promise.all([
+  const [dashboard, trend, { current }, changes] = await Promise.all([
     getRiskDashboard(),
     getDefaultRateTrend(),
     getAnalysisTabs(),
+    getChanges(),
   ]);
 
   return (
@@ -68,6 +70,7 @@ export default async function RiskDashboardPage() {
         </div>
 
         <ModelMonitoringPanel corp={dashboard.corpModels} retail={dashboard.retailModels} />
+        <ChangeFeedPanel feed={changes} />
 
         <NextStep
           step={2}

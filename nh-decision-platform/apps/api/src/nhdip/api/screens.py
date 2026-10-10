@@ -100,6 +100,73 @@ def report(tab_key: str, session: Session = Depends(get_session), _: AppUser = D
     return row.payload
 
 
+# ── 영업점 (B.29) — 산출물의 영업점(office.code)과 사용자 소속을 대조한다 (Q44) ──
+def _viewer_office(session: Session, user: AppUser) -> dict[str, Any] | None:
+    from nhdip.orgs import branch_of, office_code_of
+
+    br = branch_of(session, user.org_code)
+    return {"code": office_code_of(session, br.code), "name": br.name, "orgCode": br.code} if br else None
+
+
+def _branch_artifact(session: Session, user: AppUser, key: str) -> Any:
+    from nhdip.orgs import can_view_office
+
+    v = get_current(session, key)
+    if not isinstance(v, dict):
+        return None
+    code = (v.get("office") or {}).get("code")
+    return v if code and can_view_office(session, user, code) else None
+
+
+@router.get("/branch/dashboard")
+def branch_dashboard(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_dashboard"))):
+    """영업점 1화면 — 열람 범위 밖이거나 분석이 없는 영업점이면 available=false 와 사용자 영업점만 돌려준다."""
+    v = _branch_artifact(session, user, "branch_dashboard")
+    if v is None:
+        return {"available": False, "viewer": _viewer_office(session, user)}
+    return {**v, "available": True, "viewer": _viewer_office(session, user)}
+
+
+@router.get("/branch/tabs")
+def branch_tabs(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_tabs"))):
+    v = _branch_artifact(session, user, "branch_tabs")
+    return v if v is not None else {"current": [], "previous": []}
+
+
+@router.get("/branch/reports/{tab_key}")
+def branch_report(tab_key: str, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_reports"))):
+    v = _branch_artifact(session, user, f"report.branch-{tab_key}")
+    if v is None:
+        raise HTTPException(404, "보고서 없음")
+    return v
+
+
+@router.get("/changes")
+def changes(workflow: str | None = None, limit: int = 20, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("changes"))):
+    """변화 감지 에이전트의 최근 유의 변화 (B.30) — 사용자가 볼 수 있는 워크플로우 · 영업점 범위만."""
+    from nhdip.orgs import can_view_office
+
+    from .deps import user_resources
+
+    feed = get_current(session, "change_feed") or {}
+    allowed = user_resources(session, user)
+    wf_res_s = session.get(Setting, "assist.workflow_resources")
+    wf_res = wf_res_s.value if wf_res_s and isinstance(wf_res_s.value, dict) else {}
+    out = []
+    for it in feed.get("items") or []:
+        if workflow and it.get("workflow") != workflow:
+            continue
+        if allowed is not None and wf_res.get(it.get("workflow")) not in allowed:
+            continue
+        office = (it.get("scope") or {}).get("office")
+        if office and not can_view_office(session, user, office):
+            continue
+        out.append(it)
+        if len(out) >= min(max(limit, 1), 100):
+            break
+    return {"items": out, "updatedAt": feed.get("updatedAt")}
+
+
 @router.get("/insights/{insight_id}")
 def insight(insight_id: str, session: Session = Depends(get_session), _: AppUser = Depends(require_resource("insights"))):
     arts = {k: get_current(session, k) for k in ("insights", "attentions", "risk_dashboard", "hq_dashboard")}

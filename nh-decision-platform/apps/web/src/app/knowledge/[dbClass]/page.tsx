@@ -23,6 +23,11 @@ const META: Record<string, { title: string; description: string }> = {
     description:
       "모니터링 보고서와 통계방법론·용어 해설입니다. 용어집 온톨로지의 원천으로 사용되어 보고서 도움말과 연결됩니다.",
   },
+  branch_ref: {
+    title: "영업점 기준·공문",
+    description:
+      "업적평가 세부기준(반기)과 본부가 영업점에 배포한 공문입니다. 영업점 Agent 는 이 분류와 정부정책 DB 만 근거로 쓰고, 본부 내부 문서는 인용하지 않습니다.",
+  },
 };
 
 const ACCESS_LABEL = { public: "공개", internal: "행내", dept_only: "부서한정" } as const;

@@ -478,6 +478,179 @@ def f_attention_score(components):
     return {"value": total, "parts": parts}
 
 
+# ═════════════════════════ 영업점 업적평가 · 포트폴리오 (B.29) ═════════════════════════
+@formula("MEAN", expression="Σ 값 ÷ 개수", description="단순 평균(예: 차주 수 기준 평균 신용등급)", params={"values": "number[]"})
+def f_mean(values):
+    vals = [D(v) for v in (values or []) if v not in (None, "")]
+    if not vals:
+        raise FormulaError("평균할 값이 없습니다")
+    return sum(vals, Decimal(0)) / len(vals)
+
+
+@formula("WEIGHTED_AVG", expression="Σ(값 × 가중치) ÷ Σ 가중치", description="가중평균(예: 대출잔액 가중 평균 신용등급)", params={"values": "number[]", "weights": "number[]"})
+def f_weighted_avg(values, weights):
+    if not isinstance(values, (list, tuple)) or not isinstance(weights, (list, tuple)) or len(values) != len(weights):
+        raise FormulaError("값과 가중치 목록의 길이가 같아야 합니다")
+    num, den = Decimal(0), Decimal(0)
+    for v, w in zip(values, weights):
+        if v in (None, "") or w in (None, ""):
+            continue
+        num += D(v) * D(w)
+        den += D(w)
+    if den == 0:
+        raise FormulaError("가중치 합이 0 입니다")
+    return num / den
+
+
+@formula("BLEND_AVG", expression="(평균a × 가중a + 평균b × 가중b) ÷ (가중a + 가중b)", description="두 집단을 합친 가중평균(예: 신규 유치 후 포트폴리오 평균 등급)", params={"avg_a": "number", "w_a": "number", "avg_b": "number", "w_b": "number"})
+def f_blend_avg(avg_a, w_a, avg_b, w_b):
+    wa, wb = D(w_a), D(w_b)
+    if wa + wb == 0:
+        raise FormulaError("가중치 합이 0 입니다")
+    return (D(avg_a) * wa + D(avg_b) * wb) / (wa + wb)
+
+
+@formula("MIN_OF", expression="min(a, b, c)", description="여러 한도 중 가장 작은 값(예: 권고 유치 규모 = 비중 · 충당금 · 건수 한도 중 최소)", params={"a": "number", "b": "number", "c": "number(기본 없음)"}, returns="object")
+def f_min_of(a, b, c=None):
+    cands = [("a", D(a)), ("b", D(b))] + ([("c", D(c))] if c not in (None, "") else [])
+    key, val = min(cands, key=lambda x: x[1])
+    return {"value": val, "binding": key}
+
+
+@formula("CEIL_DIV", expression="⌈a ÷ b⌉", description="올림 나눗셈(예: 권고 금액 ÷ 평균 취급액 → 필요 건수)", params={"a": "number", "b": "number"})
+def f_ceil_div(a, b):
+    den = D(b)
+    if den == 0:
+        raise FormulaError("분모가 0 입니다")
+    return (D(a) / den).to_integral_value(rounding="ROUND_CEILING")
+
+
+@formula(
+    "SHARE_GAP_AMOUNT",
+    expression="x = max(0, (t·T − c) ÷ (1 − t)),  t = 목표 비중 × 배수 ÷ 100",
+    description="목표 비중에 도달하려면 추가로 늘려야 할 금액 — (c + x) ÷ (T + x) = t 의 해",
+    params={"current": "number", "total": "number", "target_share": "number(%)", "factor": "number(기본 1)"},
+)
+def f_share_gap_amount(current, total, target_share, factor=1):
+    t = D(target_share) * D(factor if factor not in (None, "") else 1) / 100
+    if t >= 1 or t < 0:
+        raise FormulaError("목표 비중은 0% 이상 100% 미만이어야 합니다")
+    x = (t * D(total) - D(current)) / (1 - t)
+    return max(Decimal(0), x)
+
+
+@formula(
+    "KPI_PROPORTIONAL_SCORE",
+    expression="min(배점, 배점 × (실적 + 추가 실적) ÷ 목표)",
+    description="업적평가 달성률 비례 득점 — 목표 · 배점은 배점표 · 규칙에서 관리",
+    params={"actual": "number", "target": "number", "points": "number", "add": "number(기본 0)"},
+)
+def f_kpi_proportional(actual, target, points, add=0):
+    tgt = D(target)
+    if tgt <= 0:
+        raise FormulaError("목표가 0 이하입니다")
+    pts = D(points)
+    return min(pts, pts * (D(actual) + D(add or 0)) / tgt)
+
+
+def _grade_seq(label: Any, scale: list[str]) -> int | None:
+    """등급 표기(1 · 2A · 3B …) 또는 순번(1~16) → 순번. 체계 밖 값은 None."""
+    s = str(label).strip().upper() if label is not None else ""
+    if s in [x.upper() for x in scale]:
+        return [x.upper() for x in scale].index(s) + 1
+    try:
+        n = int(float(s))
+    except ValueError:
+        return None
+    return n if 1 <= n <= len(scale) else None
+
+
+def grade_weight(seq: int, weights: list[dict[str, Any]], scale: list[str]) -> tuple[Decimal, str]:
+    """등급 순번 → (가중치, 구간 라벨). 구간은 max_grade(이 등급까지) 오름차순."""
+    for w in weights or []:
+        mx = _grade_seq(w.get("max_grade"), scale)
+        if mx is not None and seq <= mx:
+            return D(w.get("weight", 1)), str(w.get("label", ""))
+    return Decimal(1), ""
+
+
+@formula(
+    "PROSPECT_SELECT",
+    expression="지역 일치 → 예상재무등급 ≤ 기준 → 부채비율 ≤ 기준 → 지점 집중 업종 제외 → 업종당 1개 → 등급 · 자산 순 상위 N",
+    description="여신가망 재무우량 기업 중 영업점 마케팅 후보 선정 — 값 = 후보 수, 신규 여신 가정액 · 평균 등급 · 등급 가중 실적은 부가 결과",
+    params={"prospects": "object[]", "branch_rows": "object[]", "office": "object", "policy": "object", "weights": "object[]", "grade_scale": "string[]"},
+    returns="object",
+    tool_enabled=False,
+)
+def f_prospect_select(prospects, branch_rows, office, policy, weights, grade_scale):
+    if not isinstance(policy, dict) or not isinstance(office, dict):
+        raise FormulaError("선정 기준 · 영업점 정보가 필요합니다")
+    scale = list(grade_scale or [])
+    if not scale:
+        raise FormulaError("신용등급 체계가 필요합니다")
+    lvl = int(policy.get("industry_level", 3))
+    amt_col, ind_col = policy.get("branch_amount_col", "ln_bac"), policy.get("branch_industry_col", "STD_INDS_CFC")
+    # 지점 업종 집중도(금액 비중) — 기준 이상 업종은 포트폴리오 분산을 위해 제외
+    by_ind: dict[str, Decimal] = {}
+    tot = Decimal(0)
+    for r in branch_rows or []:
+        if r.get(amt_col) in (None, "") or not r.get(ind_col):
+            continue
+        a = D(r[amt_col])
+        by_ind[str(r[ind_col])[:lvl]] = by_ind.get(str(r[ind_col])[:lvl], Decimal(0)) + a
+        tot += a
+    thr = D(policy.get("overlap_share_pct", 5))
+    overlap = sorted(k for k, v in by_ind.items() if tot and v / tot * 100 >= thr)
+    max_seq = _grade_seq(policy.get("max_grade", "3B"), scale) or len(scale)
+    max_debt = D(policy.get("max_debt_ratio_pct", 200))
+    region, sigungu = str(office.get("region") or ""), str(office.get("sigungu") or "")
+    sig_list = [x.strip() for x in sigungu.split("|") if x.strip()]
+    loan_by_model = {str(k): D(v) for k, v in (policy.get("loan_mn_by_model") or {}).items()}
+    default_loan = D(policy.get("default_loan_mn", 1000))
+    excluded = {"region": 0, "grade": 0, "debt": 0, "overlap": 0, "duplicate": 0, "limit": 0}
+    pool = []
+    for p in prospects or []:
+        if str(p.get("region") or "") != region or not any(str(p.get("sigungu") or "").startswith(s) for s in sig_list):
+            excluded["region"] += 1
+            continue
+        seq = _grade_seq(p.get("exp_grade"), scale)
+        if seq is None or seq > max_seq:
+            excluded["grade"] += 1
+            continue
+        eq = D(p.get("tot_equity") or 0)
+        debt = D(p.get("tot_liab") or 0) / eq * 100 if eq > 0 else None
+        if debt is None or debt > max_debt:
+            excluded["debt"] += 1
+            continue
+        ind = str(p.get("ind_cd") or "")[:lvl]
+        if ind in overlap:
+            excluded["overlap"] += 1
+            continue
+        pool.append((seq, -D(p.get("tot_asset") or 0), p, debt, ind))
+    pool.sort(key=lambda x: (x[0], x[1], str(x[2].get("corp_nm"))))
+    seen: set[str] = set()
+    selected = []
+    for seq, _, p, debt, ind in pool:
+        if policy.get("one_per_industry", True) and ind in seen:
+            excluded["duplicate"] += 1
+            continue
+        if len(selected) >= int(policy.get("max_candidates", 5)):
+            excluded["limit"] += 1
+            continue
+        seen.add(ind)
+        loan = loan_by_model.get(str(p.get("nics_model")), default_loan)
+        w, band = grade_weight(seq, weights, scale)
+        selected.append({"corp_nm": p.get("corp_nm"), "biz_no": p.get("biz_no"), "ind_cd": p.get("ind_cd"), "ind_nm": p.get("ind_nm"), "nics_model": p.get("nics_model"), "corp_scale": p.get("corp_scale"),
+                         "sigungu": p.get("sigungu"), "exp_grade": scale[seq - 1], "grade_seq": seq, "tot_asset": D(p.get("tot_asset") or 0), "sales": D(p.get("sales") or 0), "op_income": D(p.get("op_income") or 0),
+                         "debt_ratio": debt, "loan_mn": loan, "weight": w, "weight_band": band, "weighted_mn": loan * w})
+    if not selected:
+        return {"value": Decimal(0), "selected": [], "excluded": excluded, "overlap_industries": overlap, "amount_won": Decimal(0), "weighted_mn": Decimal(0), "avg_grade": None}
+    amount = sum((s["loan_mn"] for s in selected), Decimal(0))
+    avg = sum((s["loan_mn"] * s["grade_seq"] for s in selected), Decimal(0)) / amount
+    return {"value": Decimal(len(selected)), "selected": selected, "excluded": excluded, "overlap_industries": overlap,
+            "amount_mn": amount, "amount_won": amount * 1_000_000, "weighted_mn": sum((s["weighted_mn"] for s in selected), Decimal(0)), "avg_grade": avg}
+
+
 def get(formula_id: str) -> FormulaSpec:
     spec = REGISTRY.get(formula_id)
     if not spec:

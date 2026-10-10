@@ -16,6 +16,7 @@ import { PERSONAS, isActive, personaOfPath, type NavItem } from "@/lib/nav";
 import type { Persona } from "@/lib/types";
 import { PROPOSALS } from "@/mock/goals";
 import { AS_OF, GENERATED_AT } from "@/mock/helpers";
+import { BRANCH_TABS } from "@/mock/branch";
 import { ANALYSIS_TABS } from "@/mock/risk";
 
 const PERSONA_KEY = "nhdip.persona";
@@ -272,10 +273,12 @@ function useNavCounts(): Record<NonNullable<NavItem["countKey"]>, number> {
   const { menu } = useSession();
   const proposals = API_MODE ? (menu?.counts.proposalsTotal ?? 0) : PROPOSALS.length;
   const analyses = API_MODE ? (menu?.counts.analysesTotal ?? 0) : ANALYSIS_TABS.length;
+  const branchAnalyses = API_MODE ? (menu?.counts.branchAnalysesTotal ?? 0) : BRANCH_TABS.current.length;
   return {
     goalProposals: Math.max(0, proposals - Object.keys(proposalActions).length),
     analyses,
     proposedPlans: proposedPlans.length,
+    branchAnalyses,
   };
 }
 

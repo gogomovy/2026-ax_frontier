@@ -8,7 +8,7 @@ import { DB_CLASS_LABEL, formatDate } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 /** 목록 화면이 있는 문서 분류 (`/knowledge/[dbClass]`) */
-const CLASS_PAGES = ["gov_policy", "mgmt_decision", "model_method"];
+const CLASS_PAGES = ["gov_policy", "mgmt_decision", "model_method", "branch_ref"];
 
 type Search = { id?: string; file?: string; title?: string; page?: string; q?: string };
 

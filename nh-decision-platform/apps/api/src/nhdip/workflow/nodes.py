@@ -177,6 +177,9 @@ def _embedder(ctx: RunContext):
 @node_impl("retrieve_evidence", "그래프 필터 → 하이브리드(pgvector+키워드) 검색으로 근거 구간 수집")
 def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     cfg = node.config or {}
+    plan = ctx.state.get("plan")
+    if plan is not None and cfg.get("respect_plan", True) and not plan.get("evidence"):
+        return NodeResult({"skipped": "플래너 — 서술 대상이 없거나 LLM 미연결이라 근거 검색 생략", "plan": {k: plan.get(k) for k in ("narrate", "llm")}})
     concepts = cfg.get("concepts") or []
     doc_filter = graph_documents(concepts)
     qvec = None
@@ -219,12 +222,21 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     cfg = node.config or {}
     arts = ctx.load_artifacts()
     results = []
+    targets = list(cfg.get("targets", []))
+    plan = ctx.state.get("plan")
+    if plan is not None and cfg.get("respect_plan", True):
+        # 플래너 계획 — 바뀐 것이 있는 인사이트만 서술 (나머지는 기존 서술 유지)
+        allowed = set(plan.get("candidates") or plan.get("narrate") or [])
+        results = [{"insight": t["insight_id"], "skipped": (plan.get("skip") or {}).get(t["insight_id"], "계획에서 제외")} for t in targets if t["insight_id"] not in allowed]
+        targets = [t for t in targets if t["insight_id"] in allowed]
+        if not targets:
+            return NodeResult({"plan": "서술 대상 없음 — 기존 서술 유지", "results": results})
     try:
         llm = resolve(ctx.session, node.agent_code)
     except LlmUnavailable as exc:
-        return NodeResult({"fallback": "template", "reason": str(exc), "targets": [t["insight_id"] for t in cfg.get("targets", [])]}, "degraded")
+        return NodeResult({"fallback": "template", "reason": str(exc), "targets": [t["insight_id"] for t in targets], "results": results}, "degraded")
     degraded = False
-    for target in cfg.get("targets", []):
+    for target in targets:
         ins = find_insight(arts, target["insight_id"])
         if not ins:
             results.append({"insight": target["insight_id"], "error": "인사이트 없음"})
@@ -255,6 +267,7 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                 raise ValueError("statement 비어 있음")
             ctx.state.setdefault("narratives", {})[target["insight_id"]] = {"statement": statement, "llm_call_id": res.call_id, "figures": list(figures.keys())}
             results.append({"insight": target["insight_id"], "llm_call_id": res.call_id, "statement": statement})
+            ctx.state["narratives"][target["insight_id"]] |= {"agent": node.agent_code, "why": ((plan or {}).get("why") or {}).get(target["insight_id"])}
         except (LlmError, ValueError, AttributeError) as exc:
             degraded = True
             results.append({"insight": target["insight_id"], "fallback": "template", "error": str(exc)[:300]})
@@ -284,6 +297,9 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             for key, payload in arts.items():
                 if patch_insight(payload, insight_id, {"statement": st}):
                     ctx.changed.add(key)
+            from .agent_nodes import record
+
+            record(ctx, nar.get("agent") or "narrator", "narrated", f"{insight_id} 서술 갱신(검증 통과)", {"insight": insight_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why")})
         else:
             degraded = True
         out.append({"insight": insight_id, "passed": passed, "checks": checks})
@@ -568,14 +584,15 @@ def n_sync_tabs(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     from zoneinfo import ZoneInfo
 
     arts = ctx.load_artifacts()
-    tabs = arts.get("analysis_tabs")
+    tab_key = (node.config or {}).get("artifact") or "analysis_tabs"  # 부서별 탭 산출물 (예: 영업점 branch_tabs)
+    tabs = arts.get(tab_key)
     if not isinstance(tabs, dict):
-        return NodeResult({"skipped": "탭 산출물 없음"}, "degraded")
+        return NodeResult({"skipped": f"탭 산출물 없음: {tab_key}"}, "degraded")
     tz = ZoneInfo(_setting(ctx.session, "ui.timezone", "Asia/Seoul"))
     now = datetime.now(tz).isoformat(timespec="seconds")
     sev: dict[str, str] = {}
     for key, payload in arts.items():
-        if key == "analysis_tabs":
+        if key == tab_key:
             continue
         for d in _walk_dicts(payload):
             if d.get("id", "").startswith("ins-") and d.get("severity") and "statement" in d:
@@ -587,13 +604,14 @@ def n_sync_tabs(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         upd = {}
         if s and s != tab.get("severity"):
             upd["severity"] = s
-        if tab.get("reportKind") in own and (f"report.{tab.get('tabKey')}" in ctx.changed):
+        report_key = tab.get("reportKey") or f"report.{tab.get('tabKey')}"
+        if tab.get("reportKind") in own and (report_key in ctx.changed):
             upd["generatedAt"] = now
         if upd:
             tab.update(upd)
             out.append({"tab": tab["tabKey"], **upd})
     if out:
-        ctx.changed.add("analysis_tabs")
+        ctx.changed.add(tab_key)
     return NodeResult({"updated": out})
 
 
@@ -649,3 +667,7 @@ def n_select_guides(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             ctx.changed.add("action_plans")
         out.append({"plan": p["id"], "selected": code})
     return NodeResult({"rule": rule_code, "plans": out})
+
+
+# 판단 에이전트 노드(변화 감지 · 플래너) 등록 — B.30
+from . import agent_nodes as _agent_nodes  # noqa: E402,F401

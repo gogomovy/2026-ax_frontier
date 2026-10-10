@@ -1,85 +1,46 @@
-import { FigureText } from "@/components/data/FigureText";
-import { BranchGuides } from "@/components/domain/BranchGuides";
+import { BranchKpiBoard } from "@/components/domain/BranchKpiBoard";
+import { BranchSegments } from "@/components/domain/BranchSegments";
+import { BranchUnavailable } from "@/components/domain/BranchUnavailable";
+import { ChangeFeedPanel } from "@/components/domain/ChangeFeedPanel";
+import { EvidenceChips } from "@/components/evidence/EvidenceChips";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Button, ProgressBar, RowEmpty, SectionHead } from "@/components/ui/primitives";
-import { getBranchTargets } from "@/lib/data";
+import { NextStep, SectionHead } from "@/components/ui/primitives";
+import { getBranchDashboard, getChanges } from "@/lib/data";
 
-/** 영업점 — 전파된 목표와 사업부서 가이드 (요구사항 BR-01 / BR-02) */
-export default async function BranchPage() {
-  const targets = await getBranchTargets();
+// 영업점 산출물은 사용자 소속에 따라 달라지고 일 단위로 갱신되므로 요청 시 렌더링한다
+export const dynamic = "force-dynamic";
+
+/** 영업점 STEP 1 — 업적평가 득점 · 기준 변경 알림 · 사업부문 현황 (시나리오 첫 번째 화면) */
+export default async function BranchHomePage() {
+  const [dashboard, changes] = await Promise.all([getBranchDashboard(), getChanges("wf_branch_kpi")]);
+  if (!dashboard.available) {
+    return (
+      <>
+        <PageHeader eyebrow="1단계 · 현황" title={`${dashboard.viewer?.name ?? "영업점"} 현황`} />
+        <BranchUnavailable officeName={dashboard.viewer?.name} />
+      </>
+    );
+  }
 
   return (
     <>
       <PageHeader
-        title="내 목표·가이드"
-        description="경영목표에서 내려온 영업점 목표와, 사업부서가 영업점 참고를 허용한 가이드입니다. 각 항목은 출처 목표와 수행방안까지 추적됩니다."
+        eyebrow="1단계 · 현황"
+        title={`${dashboard.office.name} 현황`}
+        description={`${dashboard.periodLabel} 업적평가 득점과 사업부문 현황입니다. 상반기 대비 바뀐 평가기준은 Agent 가 분석해 영업 가이드로 정리했습니다.`}
       />
 
       <div className="shell flex flex-col gap-xxl">
         <section>
-          <SectionHead title="전파된 목표" hint={`${targets.length}건 · 수도권1지역본부`} />
-          <div className="grid grid-cols-1 gap-md lg:grid-cols-3">
-            {targets.map((target) => (
-              <article key={target.id} className="flex flex-col gap-3 rounded-2xl border border-hairline-soft p-lg">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[12px] font-bold text-steel">{target.periodLabel}</span>
-                  <span className="text-[11.5px] text-stone">{target.metricLabel}</span>
-                </div>
-                <h3 className="text-[15px] font-bold leading-snug text-ink-deep">{target.title}</h3>
-
-                <div className="flex items-end justify-between gap-2">
-                  <div>
-                    <p className="text-[11.5px] text-steel">목표</p>
-                    <p className="mt-0.5 text-[20px] font-bold leading-none text-ink-deep">
-                      <FigureText figure={target.target} strong />
-                    </p>
-                  </div>
-                  {target.actual ? (
-                    <div className="text-right">
-                      <p className="text-[11.5px] text-steel">실적</p>
-                      <p className="mt-0.5 text-[20px] font-bold leading-none">
-                        <FigureText figure={target.actual} />
-                      </p>
-                    </div>
-                  ) : null}
-                </div>
-
-                {target.progress !== undefined ? (
-                  <ProgressBar
-                    value={target.progress}
-                    tone={target.progress > 90 ? "attention" : "primary"}
-                    label={`진행률 ${target.progress}%`}
-                  />
-                ) : null}
-
-                <p className="rounded-xl bg-surface-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-charcoal">
-                  {target.guideline}
-                </p>
-
-                <p className="text-[11.5px] leading-snug text-stone">
-                  {target.sourceGoalTitle}
-                  <br />
-                  {target.sourcePlanTitle}
-                </p>
-              </article>
-            ))}
-          </div>
+          <SectionHead title="업적평가 득점 현황" hint={`리테일 배점표 · ${dashboard.asOfLabel}`} right={<EvidenceChips items={dashboard.evidence} title="업적평가 기준 근거" />} />
+          <BranchKpiBoard dashboard={dashboard} />
         </section>
 
-        <BranchGuides />
+        <BranchSegments dashboard={dashboard} />
 
-        <section>
-          <SectionHead title="확인·보고 요청" hint="현장에서 확인이 필요한 사항을 본부로 올립니다" />
-          <RowEmpty
-            title="요청 등록은 준비 중입니다"
-            description="등록된 요청은 종합기획부 경영목표 설정 화면의 확인·보고 요청으로 전달됩니다."
-            action={
-              <Button variant="ghost" size="sm" disabled>
-                요청 등록
-              </Button>
-            }
-          />
-        </section>
+        <ChangeFeedPanel feed={changes} />
+
+        <NextStep step={2} title="분석 결과" description="기준 변경 항목별 포트폴리오 분석과 Agent 영업 가이드를 보고서로 확인합니다." href="/branch/analysis" />
       </div>
     </>
   );

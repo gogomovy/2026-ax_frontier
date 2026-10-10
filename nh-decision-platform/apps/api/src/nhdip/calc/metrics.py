@@ -255,6 +255,8 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
 def _display_input(v: Any) -> str:
     if isinstance(v, list):
         return f"{len(v)}개 값"
+    if isinstance(v, dict):
+        return f"항목 {len(v)}개"
     if isinstance(v, Decimal):
         if v == v.to_integral_value() and abs(v) >= 1000:
             return f"{int(v):,}"

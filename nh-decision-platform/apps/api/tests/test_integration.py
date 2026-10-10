@@ -854,3 +854,144 @@ def test_guide_catalog_and_goal_impact(db):
     assert {"corp_goal", "corp_gap", "corp_growth_rec"} <= codes and "wf_hq_goal_review" in imp["workflows"]
     assert "loan_overview" in imp["artifacts"] and imp["cascade"]["nodes"] >= 1
     assert imp["consistency"]["passed"] is False and imp["current"] is not None
+
+
+def test_branch_kpi_scenario_scope_and_export(db):
+    """B.29 — 영업점 업적평가 시나리오: 커널 계산 · 의견 탭 · 영업점 열람 범위(Q44) · 보고서 내려받기 권한."""
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    admin.post("/admin/workflows/wf_branch_kpi/run")
+    _drain(db)
+    dash = admin.get("/screens/branch/dashboard").json()
+    assert dash["available"] and dash["office"]["code"] == "001068"
+    f = {k: dash["loan"][k]["value"] for k in ("corp", "avgGrade", "bankAvgGrade")}
+    assert f["avgGrade"] > f["bankAvgGrade"]  # 지점 평균 등급이 전행보다 위험 쪽 (시나리오 ③)
+    groups = {g["code"]: g for g in dash["scorecard"]["groups"]}
+    assert set(groups) == {"CUST", "BIZ", "FIN", "ADJ"} and groups["BIZ"]["max"] == 500
+    core = next(i for i in groups["BIZ"]["items"] if i["code"] == "BIZ_CORE")
+    assert next(d for d in core["details"] if d["code"] == "CORE_PRIME")["changeType"] == "신설"
+    rep = admin.get("/screens/branch/reports/prime-corp").json()
+    figs = rep["figures"]
+    assert figs["br_prospect_cnt"]["value"] == 5 and figs["br_prospect_cnt"]["calc"]["formulaId"] == "PROSPECT_SELECT"
+    assert figs["br_micro_amt_share"]["value"] > figs["bank_micro_amt_share"]["value"]
+    assert figs["br_prime_uplift"]["value"] == 14.0
+    assert len(next(b for s in rep["sections"] for b in s["blocks"] if b.get("table", {}).get("caption", "").startswith("마케팅 후보"))["table"]["rows"]) == 5
+    seo = admin.get("/screens/branch/reports/seomin").json()["figures"]
+    assert seo["br_seomin_rec_cnt"]["value"] == 19 and seo["br_seomin_rec_amt"]["calc"]["formulaId"] == "MIN_OF"
+    tabs = admin.get("/screens/branch/tabs").json()
+    assert [t["tabKey"] for t in tabs["current"]] == ["prime-corp", "seomin"]
+
+    def user(emp: str, org: str):
+        c = _client()
+        c.post("/auth/signup", json={"emp_no": emp, "name": "영업점", "password": "abcd1234", "org_code": org})
+        admin.post(f"/admin/users/{emp}/approve")
+        assert _login(c, emp, "abcd1234").status_code == 200
+        return c
+
+    own = user("20259040", "001068")  # 수원영통지점
+    other = user("20259041", "BR301")  # 강남금융센터 — 분석 없음
+    risk = user("20259042", "T211")  # 신용리스크관리부 — 영업점 화면 권한 없음
+    region = user("20259043", "T311")  # 수도권1지역본부 영업지원팀 — 소속 지역본부의 영업점 열람
+    assert own.get("/screens/branch/dashboard").json()["available"] is True
+    assert own.get("/me/menu").json()["counts"]["branchAnalyses"] == 2
+    o = other.get("/screens/branch/dashboard").json()
+    assert o["available"] is False and o["viewer"]["code"] == "BR301"
+    assert other.get("/screens/branch/reports/prime-corp").status_code == 404
+    assert other.get("/screens/branch/tabs").json()["current"] == []
+    assert other.get("/reports/branch-prime-corp/export", params={"format": "html"}).status_code == 404
+    assert other.get("/me/menu").json()["counts"]["branchAnalyses"] == 0
+    assert region.get("/screens/branch/dashboard").json()["available"] is True
+    assert risk.get("/screens/branch/dashboard").status_code == 403
+    assert risk.get("/reports/branch-prime-corp/export", params={"format": "html"}).status_code == 403
+    r = own.get("/reports/branch-prime-corp/export", params={"format": "html"})
+    assert r.status_code == 200 and "마케팅 후보" in r.text
+    # 영업점 사용자는 부서 보고서(report.*) 를 내려받을 수 없다
+    assert own.get("/reports/model-monitoring/export", params={"format": "html"}).status_code == 403
+
+
+def test_agents_orchestrate_detect_plan(db):
+    """B.30 — 오케스트레이터(상위 대기 → 상위 완료 즉시 실행) · 변화 감지(유의 변화 · 데이터 변경 · 범위) · 플래너(변화 없는 서술 유지)."""
+    from nhdip.data.datasets import ingest_rows, quality_check
+    from nhdip.models import AgentDecision, Dataset, Job, utcnow
+    from nhdip.workflow.dispatcher import claim_job
+    from nhdip.workflow.orchestrator import dependency_graph, release_downstream
+
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    with db() as s:
+        g = dependency_graph(s)
+        assert "wf_graph_projection" in g["wf_branch_kpi"] and "wf_graph_projection" not in g.get("wf_graph_projection", {})
+        # 하위(영업점)가 먼저 대기열에 있어도 상위(그래프 투영)를 먼저 실행하고 하위는 미룬다
+        now = utcnow()
+        down = Job(kind="workflow", workflow_code="wf_branch_kpi", causes=[{"type": "manual"}], status="queued", run_after=now, created_at=now)
+        s.add(down)
+        s.flush()
+        up = Job(kind="workflow", workflow_code="wf_graph_projection", causes=[{"type": "manual"}], status="queued", run_after=now, created_at=now)
+        s.add(up)
+        s.commit()
+        down_id, up_id = down.id, up.id
+    with db() as s:
+        got = claim_job(s, "test")
+        assert got.id == up_id
+        d = s.execute(select(AgentDecision).where(AgentDecision.job_id == down_id).order_by(AgentDecision.id.desc())).scalars().first()
+        assert d.agent_code == "orchestrator" and d.decision == "hold" and "wf_graph_projection" in d.detail["upstream"]
+        got.status, got.finished_at = "done", utcnow()
+        s.commit()
+        assert down_id in release_downstream(s, "wf_graph_projection")
+        s.get(Job, down_id).status = "cancelled"
+        s.commit()
+
+    admin.post("/admin/workflows/wf_branch_kpi/run")
+    _drain(db)
+    admin.post("/admin/workflows/wf_branch_kpi/run")
+    _drain(db)
+    # 같은 데이터로 다시 실행 → 유의 변화 없음
+    r = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "change_detector", "limit": 1}).json()
+    assert r["items"][0]["summary"] == "유의 변화 없음"
+    # 수신 평잔 +10% 정정본 → 주요 변화 + 데이터 변경, 영업점 범위로 변화 피드
+    with db() as s:
+        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
+        rows = [{"office_cd": "001068", "ym": "202608", "segment_cd": c, "segment_nm": n, "amount": a * (1.1 if c == "deposit" else 1), "measure": m} for c, n, a, m in (("deposit", "수신", 142_060_000_000, "평잔"), ("fx", "외환", 3_840_000_000, "누적 실적"), ("pension", "퇴직연금", 21_030_000_000, "적립금"), ("card", "카드", 5_210_000_000, "누적 이용실적"))]
+        ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="영업점 사업부문별 잔액(202608)_정정.xlsx", data_origin="simulated", actor="test", note="정정", force=True)
+        s.commit()
+    _drain(db)
+    det = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "change_detector", "limit": 1}).json()["items"][0]
+    items = {i["code"]: i for i in det["detail"]["items"]}
+    assert items["br_seg_deposit"]["level"] == "major" and items["br_seg_deposit"]["direction"] == "up"
+    assert items["BRANCH_BIZ_BALANCE"]["kind"] == "data" and det["detail"]["scope"] == {"office": "001068"}
+    plan = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "planner", "limit": 1}).json()["items"][0]["detail"]
+    # 서술 이력이 없으면 최초 1회 대상(LLM 미연결이라 기존 문장 유지), 수신 변화는 의견 수치가 아니라 서술 사유가 아님
+    assert plan["llm"] is False and plan["why"]["ins-br-prime-corp"].startswith("LLM 서술 이력 없음")
+    assert "br_seg_deposit" in plan["changedFigures"]
+    # 서술 이력이 있고 의견 수치가 그대로면 → 서술 · 근거 검색 생략, 실행은 정상(축소 아님)
+    with db() as s:
+        for ins in ("ins-br-prime-corp", "ins-br-seomin"):
+            s.add(AgentDecision(agent_code="narrator_branch", workflow_code="wf_branch_kpi", decision="narrated", summary="test", detail={"insight": ins}))
+        s.commit()
+    admin.post("/admin/workflows/wf_branch_kpi/run")
+    _drain(db)
+    plan = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "planner", "limit": 1}).json()["items"][0]["detail"]
+    assert plan["why"]["ins-br-seomin"].startswith("전체 갱신")  # 수동 실행 = 전체 갱신
+    with db() as s:
+        from nhdip.workflow.engine import run_workflow
+
+        r = run_workflow(s, "wf_branch_kpi", [{"type": "schedule", "payload": {"workflow": "wf_branch_kpi"}}])
+        assert r.status == "succeeded", r.summary
+    plan = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "planner", "limit": 1}).json()["items"][0]
+    assert plan["detail"]["candidates"] == [] and plan["summary"].startswith("변화 없음")
+
+    def user(emp: str, org: str):
+        c = _client()
+        c.post("/auth/signup", json={"emp_no": emp, "name": "변화", "password": "abcd1234", "org_code": org})
+        admin.post(f"/admin/users/{emp}/approve")
+        _login(c, emp, "abcd1234")
+        return c
+
+    own, other, hq = user("20259050", "001068"), user("20259051", "BR302"), user("20259052", "T111")
+    codes = [i["code"] for i in own.get("/screens/changes").json()["items"]]
+    assert "br_seg_deposit" in codes
+    assert other.get("/screens/changes").json()["items"] == []  # 다른 영업점 범위
+    assert all(i["workflow"] != "wf_branch_kpi" for i in hq.get("/screens/changes").json()["items"])  # 영업점 화면 권한 없음
+    topo = admin.get("/admin/agents/topology").json()
+    nodes = [n["impl"] for n in next(w for w in topo["workflows"] if w["code"] == "wf_branch_kpi")["nodes"]]
+    assert nodes.index("detect_changes") < nodes.index("plan_run") < nodes.index("narrate")

@@ -10,17 +10,20 @@ export function DynamicTabBar({
   tabs,
   previous,
   activeKey,
+  basePath = "/risk/analysis",
 }: {
   tabs: AnalysisTab[];
   previous: AnalysisTab[];
   activeKey: string;
+  /** 탭 링크 경로 (영업점: /branch/analysis) */
+  basePath?: string;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-md no-print">
       <PillTabLinks
         label="분석 탭"
-        activeHref={`/risk/analysis/${activeKey}`}
-        items={tabs.map((tab) => ({ href: `/risk/analysis/${tab.tabKey}`, label: tab.label, dot: tab.severity }))}
+        activeHref={`${basePath}/${activeKey}`}
+        items={tabs.map((tab) => ({ href: `${basePath}/${tab.tabKey}`, label: tab.label, dot: tab.severity }))}
       />
 
       <div className="flex items-center gap-md text-[12px] text-stone">

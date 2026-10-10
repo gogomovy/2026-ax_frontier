@@ -90,7 +90,7 @@ def run(session: Session, golden: dict[str, Any] | None = None) -> dict[str, Any
         name = f"{c['key']}:{c.get('figure') or c.get('path')}" + (f"[{list(c['find'].values())[0]}]" if c.get("find") else "")
         cats["artifacts"].append(_case(name, actual is not None and _close(actual, c["expected"], c.get("tol", 0)), actual=actual, expected=c["expected"]))
     # 서술 — 확정 수치는 마커로만, 마커는 같은 인사이트의 수치로 해결돼야 한다 (PRIN-05 · CALC-08)
-    for key in ("insights", "attentions", "risk_dashboard", "hq_dashboard", "proposals"):
+    for key in ("insights", "attentions", "risk_dashboard", "hq_dashboard", "proposals", "report.branch-prime-corp", "report.branch-seomin"):
         for d in _walk(get_current(session, key)):
             st = d.get("statement")
             if not isinstance(st, str) or "figures" not in d:

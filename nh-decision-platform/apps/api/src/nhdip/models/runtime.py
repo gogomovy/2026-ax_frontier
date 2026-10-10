@@ -260,3 +260,24 @@ class Alert(Base):
     channels: Mapped[Any] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(String(20), default="logged")  # logged · sent · failed · no_channel · below_threshold
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, default=_trace)
+
+
+class AgentDecision(Base):
+    """에이전트 결정 기록 (B.30) — 오케스트레이터(실행 순서 · 대기) · 변화 감지(유의 변화) · 플래너(서술 대상) · 서술(갱신 완료).
+
+    결정 근거(detail)를 남겨 관리자 화면 [에이전트 결정]에서 왜 그렇게 실행했는지 추적한다.
+    """
+
+    __tablename__ = "agent_decision"
+    __table_args__ = (Index("ix_ops_agent_decision_agent_at", "agent_code", "at"), {"schema": "ops"})
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
+    agent_code: Mapped[str] = mapped_column(String(60))
+    workflow_code: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
+    job_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    decision: Mapped[str] = mapped_column(String(30))  # hold · release · detect · plan · narrated
+    summary: Mapped[str] = mapped_column(String(500), default="")
+    detail: Mapped[Any] = mapped_column(JSONB, default=dict)
+    trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, default=_trace)

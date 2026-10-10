@@ -380,8 +380,11 @@ def _std_nodes(narrator: str, targets: list[dict[str, Any]], evidence_cfg: dict[
     if judge:
         nodes.append(("judge", "규칙 판정", "judge", None, {"items": judge}))
     nodes += [
+        # 판단 에이전트 (B.30) — 변화 감지 → (화면 갱신) → 실행 계획 → 근거 · 서술은 계획을 따른다
+        ("detect", "변화 감지(에이전트)", "detect_changes", "change_detector", {"rule": "CHANGE_SIGNIFICANCE", "optional": True}),
         ("views", "화면 수치·표 갱신", "build_views", None, {}),
         *(after_views or []),
+        ("plan", "실행 계획(플래너)", "plan_run", "planner", {"rule": "PLANNER_POLICY", "optional": True}),
         ("evidence", "근거 검색(그래프→하이브리드)", "retrieve_evidence", None, {**evidence_cfg, "optional": True}),
         ("narrate", "의견 서술(LLM)", "narrate", narrator, {"targets": targets, "optional": True}),
         ("critic", "서술 검증", "critic", "critic", {"rule": "CRITIC_RULES"}),
@@ -485,6 +488,8 @@ LIVE_TEXT_FIXES = [
     ("χ² = 18.42 < 임계값 21.03", "χ² = [[fig:chi_stat]] < 임계값 [[fig:chi_critical]]"),
     # Q22: 판정 근거 문구의 PSI · AR 하락률도 계산 수치 마커로 (ModelMonitoringPanel → renderRich)
     ("PSI 0.082(관찰 상단) · AR 하락률 23.8%(하락 주의)", "PSI [[fig:psi_micro]](관찰 상단) · AR 하락률 [[fig:ard_micro]](하락 주의)"),
+    # B.29: 영업점 기준일 표기 (8월 말 = 하반기 2개월 경과)
+    ("2026.08.31 (하반기 3개월차)", "2026.08.31 (하반기 2개월 경과)"),
 ]
 
 

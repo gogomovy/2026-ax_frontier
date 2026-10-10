@@ -16,7 +16,15 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
     acted = get_ns(session, NS_PROPOSAL_ACTION)
     tabs = (get_current(session, "analysis_tabs") or {}).get("current", [])
     plans = merged_plans(session)
+    # 영업점 분석 탭 — 사용자 영업점 산출물일 때만 센다 (Q44)
+    from nhdip.orgs import can_view_office
+
+    btabs = get_current(session, "branch_tabs") or {}
+    code = (btabs.get("office") or {}).get("code")
+    branch_n = len(btabs.get("current") or []) if code and can_view_office(session, user, code) else 0
     return {
+        "branchAnalyses": branch_n,
+        "branchAnalysesTotal": branch_n,
         "goalProposals": sum(1 for p in proposals if p["id"] not in acted),
         "analyses": len(tabs),
         "proposedPlans": sum(1 for p in plans if p.get("status") == "proposed"),

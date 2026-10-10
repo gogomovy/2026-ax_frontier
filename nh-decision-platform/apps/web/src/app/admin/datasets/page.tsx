@@ -265,7 +265,7 @@ function Documents() {
       <Card title="문서 등록">
         <div className="grid grid-cols-1 gap-md md:grid-cols-6">
           <Select label="출처" value={f.origin} onChange={(v) => setF({ ...f, origin: v })} options={[{ value: "ext", label: "외부 문서" }, { value: "bank", label: "당행 문서" }]} />
-          <Select label="문서 분류 DB" value={f.doc_class} onChange={(v) => setF({ ...f, doc_class: v })} options={[{ value: "gov_policy", label: "정부정책" }, { value: "mgmt_decision", label: "경영 의사결정" }, { value: "model_method", label: "모형·방법론" }, { value: "reference", label: "참고" }]} />
+          <Select label="문서 분류 DB" value={f.doc_class} onChange={(v) => setF({ ...f, doc_class: v })} options={[{ value: "gov_policy", label: "정부정책" }, { value: "mgmt_decision", label: "경영 의사결정" }, { value: "model_method", label: "모형·방법론" }, { value: "branch_ref", label: "영업점 기준·공문" }, { value: "reference", label: "참고" }]} />
           <TextInput label="제목" value={f.title} onChange={(v) => setF({ ...f, title: v })} className="md:col-span-2" />
           <TextInput label="발행 기관" value={f.issuer} onChange={(v) => setF({ ...f, issuer: v })} />
           <TextInput label="시행일" value={f.published_at} onChange={(v) => setF({ ...f, published_at: v })} placeholder="YYYY-MM-DD" />

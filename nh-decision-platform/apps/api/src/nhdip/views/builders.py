@@ -263,3 +263,7 @@ def b_template(ctx: EvalContext, p: dict[str, Any]):
 class _SafeDict(dict):
     def __missing__(self, key):
         return "{" + key + "}"
+
+
+# 영업점 시나리오 빌더 등록 (B.29) — 모듈 끝에서 가져와 순환 참조를 피한다
+from nhdip.views import branch as _branch  # noqa: E402,F401

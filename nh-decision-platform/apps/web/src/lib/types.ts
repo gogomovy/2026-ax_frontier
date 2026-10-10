@@ -50,7 +50,7 @@ export interface EvidenceDoc {
   effectiveDate?: string;
   page?: number;
   sectionPath?: string;
-  dbClass: "gov_policy" | "mgmt_decision" | "model_method" | "external_web";
+  dbClass: "gov_policy" | "mgmt_decision" | "model_method" | "branch_ref" | "external_web";
   isOfficial?: boolean;
   fileName?: string;
 }
@@ -378,7 +378,7 @@ export interface InclusiveAnalysis {
 }
 
 /* ── 보고서 ───────────────────────────────────────────────── */
-export type ReportKind = "model_monitoring" | "inclusive_risk" | "goal_review";
+export type ReportKind = "model_monitoring" | "inclusive_risk" | "goal_review" | "branch_prime_corp" | "branch_seomin";
 
 export interface ReportTableBlock {
   caption?: string;
@@ -426,6 +426,8 @@ export interface ReportDoc {
   opinions: Insight[];
   evidence: Evidence[];
   limitations: string[];
+  /** 영업점 보고서 — 대상 영업점 (B.29) */
+  office?: BranchOffice;
 }
 
 export interface AnalysisTab {
@@ -437,6 +439,83 @@ export interface AnalysisTab {
   generation: "current" | "previous";
   asOf: string;
   generatedAt: string;
+  /** 보고서 산출물 키 (기본 report.{tabKey}) */
+  reportKey?: string;
+}
+
+/* ── 영업점 (B.29) — 업적평가 기반 영업 가이드 ─────────────── */
+export interface BranchOffice {
+  code: string;
+  name: string;
+  region?: string;
+  sigungu?: string;
+  regionHq?: string;
+  orgCode?: string;
+}
+
+/** 업적평가 평가항목 — 배점표(데이터셋) × 득점 현황 */
+export interface KpiItem {
+  code: string;
+  label: string;
+  score: number | null;
+  max: number | null;
+  prevMax?: number | null;
+  changeType?: string | null;
+  changeSummary?: string | null;
+  docPage?: string | null;
+  actual?: number;
+  target?: number | null;
+  actualUnit?: string;
+  note?: string;
+  details?: KpiItem[];
+}
+
+export interface KpiGroup {
+  code: string;
+  label: string;
+  kind: "kpi" | "adjustment";
+  score: number;
+  max: number | null;
+  prevMax?: number | null;
+  items: KpiItem[];
+}
+
+/** 기준 변경 알림 — 의견 탭으로 이어진다 */
+export interface BranchKpiAlert {
+  id: string;
+  path: string;
+  changeType: string;
+  title: string;
+  /** 인라인 마커 포함 */
+  summary: string;
+  tabKey: string;
+  insightId: string;
+  severity: Severity;
+  uplift: Figure;
+}
+
+export interface BranchDashboard {
+  available: boolean;
+  /** 로그인 사용자의 영업점 (영업점 소속이 아니면 null) */
+  viewer?: { code: string; name: string; orgCode: string } | null;
+  office: BranchOffice;
+  asOf: string;
+  generatedAt: string;
+  dataOrigin: DataOrigin;
+  periodLabel: string;
+  asOfLabel: string;
+  scorecard: { total: Figure; max: Figure; adjustments: Figure; uplift: Figure; totalAfter: Figure; groups: KpiGroup[] };
+  alerts: BranchKpiAlert[];
+  figures: Record<string, Figure>;
+  segments: DomainCardInfo[];
+  loan: { total: Figure; corp: Figure; corpCount: Figure; retail: Figure; retailCount: Figure; avgGrade: Figure; bankAvgGrade: Figure; avgGradeGap: Figure };
+  evidence: Evidence[];
+}
+
+export interface BranchTabs {
+  office?: BranchOffice;
+  current: AnalysisTab[];
+  previous: AnalysisTab[];
 }
 
 /* ── 부도율 추이 (신용리스크관리부 1화면) ───────────────────── */
@@ -621,4 +700,32 @@ export interface RiskDashboard {
   appliedGoals: { title: string; value: string; source: string; updatedAt: string }[];
   opinions: Insight[];
   dataQuality: { label: string; status: "passed" | "warning" | "failed"; note: string }[];
+}
+
+/* ── 변화 감지 에이전트 (B.30) ─────────────────────────────── */
+export interface ChangeItem {
+  id: string;
+  at: string;
+  workflow: string;
+  workflowName: string;
+  runId?: string;
+  kind: "metric" | "data";
+  code: string;
+  label: string;
+  unit: Figure["unit"];
+  decimals?: number | null;
+  before: number;
+  after: number;
+  delta: number;
+  deltaPct: number | null;
+  /** major = 주요(기준의 N배 이상) · minor = 일반 */
+  level: "major" | "minor";
+  direction: "up" | "down" | "same";
+  files?: string[];
+  scope?: { office?: string };
+}
+
+export interface ChangeFeed {
+  items: ChangeItem[];
+  updatedAt: string | null;
 }

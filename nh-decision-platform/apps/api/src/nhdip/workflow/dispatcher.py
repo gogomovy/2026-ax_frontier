@@ -118,11 +118,18 @@ def claim_job(session: Session, worker_id: str) -> Job | None:
         )
         .order_by(Job.run_after, Job.id)
         .with_for_update(skip_locked=True, of=Job)
-        .limit(1)
+        .limit(10)
     )
-    job = session.execute(q).scalar()
+    from .orchestrator import gate
+
+    job = None
+    for cand in session.execute(q).scalars().all():
+        # 오케스트레이터 — 상위 워크플로우 작업이 남아 있으면 미루고 다음 후보 (B.30)
+        if gate(session, cand):
+            job = cand
+            break
     if not job:
-        session.rollback()
+        session.commit()  # 미룬 작업의 run_after · 결정 기록 저장
         return None
     job.status = "running"
     job.locked_by = worker_id

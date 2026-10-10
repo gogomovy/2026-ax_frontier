@@ -105,3 +105,38 @@ def test_proposal_impact_formulas():
     net = execute("PCT_AMOUNT", {"base": sup.value - 2_950_000, "rate": 100, "divisor": 1_000_000}).value
     assert round_display(execute("PROPOSED_USAGE", {"used": 2.86, "increment": net, "factor": 0.49, "limit": 3.1}).value, 1) == Decimal("96.2")
     assert round_display(execute("LINEAR", {"a": 7.4, "b": 0.75, "c": 0.3}).value, 1) == Decimal("7.6")
+
+
+# ── 영업점 시나리오 수식 (B.29) ──────────────────────────────
+def test_branch_portfolio_formulas():
+    assert disp("MEAN", {"values": [1, 2, 6]}, 2) == Decimal("3.00")
+    assert disp("WEIGHTED_AVG", {"values": [2, 10], "weights": [300, 100]}, 2) == Decimal("4.00")
+    assert disp("BLEND_AVG", {"avg_a": 8, "w_a": 900, "avg_b": 3, "w_b": 100}, 2) == Decimal("7.50")
+    r = execute("MIN_OF", {"a": 490, "b": 427, "c": 687})
+    assert r.value == Decimal(427) and r.extra["binding"] == "b"
+    assert disp("CEIL_DIV", {"a": 427, "b": 22.9}, 0) == Decimal(19)
+    # (c + x) / (T + x) = t → x = (t·T − c)/(1 − t): T=1000, c=5, t=2% → 15.306…
+    assert disp("SHARE_GAP_AMOUNT", {"current": 5, "total": 1000, "target_share": 2}, 3) == Decimal("15.306")
+    assert disp("SHARE_GAP_AMOUNT", {"current": 50, "total": 1000, "target_share": 2}, 0) == Decimal(0)  # 이미 목표 이상
+    assert disp("KPI_PROPORTIONAL_SCORE", {"actual": 6000, "target": 60000, "points": 40}, 1) == Decimal("4.0")
+    assert disp("KPI_PROPORTIONAL_SCORE", {"actual": 6000, "target": 60000, "points": 40, "add": 99000}, 1) == Decimal("40.0")  # 배점 상한
+
+
+def test_prospect_select_filters_and_weights():
+    from nhdip.seed.defs_branch import GRADE_LABELS, RULES
+
+    pol = {r[0]: r[4] for r in RULES}
+    office = {"region": "경기", "sigungu": "수원시"}
+    branch_rows = [{"ln_bac": 90, "STD_INDS_CFC": "G46510"}, {"ln_bac": 10, "STD_INDS_CFC": "C29199"}]
+
+    def p(nm, grade, ind, sig="수원시 영통구", liab=50, eq=100, model="12", asset=1000):
+        return {"corp_nm": nm, "exp_grade": grade, "ind_cd": ind, "region": "경기", "sigungu": sig, "tot_liab": liab, "tot_equity": eq, "nics_model": model, "tot_asset": asset}
+
+    rows = [p("A", "2B", "C21210"), p("B", "4A", "C26299"), p("C", "2A", "G46520"), p("D", "3A", "C21999"), p("E", "3B", "J58222", liab=300), p("F", "1", "C27199", sig="화성시"), p("G", "3B", "C29199", model="13")]
+    r = execute("PROSPECT_SELECT", {"prospects": rows, "branch_rows": branch_rows, "office": office, "policy": pol["BRANCH_PROSPECT_POLICY"], "weights": pol["BRANCH_PRIME_CORP_POLICY"]["weights"], "grade_scale": GRADE_LABELS})
+    names = [s["corp_nm"] for s in r.extra["selected"]]
+    # B 등급 초과 · C 지점 집중 업종(G46) · D 업종 중복(C21) · E 부채비율 · F 지역 외 → A, G (C29 는 10% → 집중 업종이라 제외)
+    assert "G46" in r.extra["overlap_industries"] and "C29" in r.extra["overlap_industries"]
+    assert names == ["A"] and r.value == Decimal(1)
+    assert r.extra["excluded"] == {"region": 1, "grade": 1, "debt": 1, "overlap": 2, "duplicate": 1, "limit": 0}
+    assert r.extra["weighted_mn"] == Decimal(3000) * Decimal("1.5")

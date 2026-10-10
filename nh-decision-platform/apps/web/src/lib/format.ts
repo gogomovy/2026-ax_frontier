@@ -109,6 +109,7 @@ export const DB_CLASS_LABEL = {
   gov_policy: "정부정책 DB",
   mgmt_decision: "경영 의사결정 DB",
   model_method: "모형·방법론",
+  branch_ref: "영업점 기준·공문",
   external_web: "외부 수집",
 } as const;
 

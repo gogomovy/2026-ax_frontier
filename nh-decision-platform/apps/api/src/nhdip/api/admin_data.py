@@ -296,6 +296,9 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True) -> dict[s
     out["usedByMetrics"] = metrics
     if with_versions:
         vs = session.execute(select(t.version).where(t.version.dataset_code == d.code).order_by(t.version.version.desc()).limit(30)).scalars().all()
+        # 최근 30개 밖으로 밀린 현재 버전도 항상 포함 (되돌리기 · 정정이 쌓여도 기준일별 현재 버전이 보이도록)
+        have = {v.id for v in vs}
+        vs = [*vs, *[v for v in session.execute(select(t.version).where(t.version.dataset_code == d.code, t.version.is_current)).scalars() if v.id not in have]]
         out["versions"] = [{"id": v.id, "version": v.version, "asOf": _iso(v.as_of), "status": v.status, "isCurrent": v.is_current, "dataOrigin": v.data_origin, "fileName": v.file_name, "sha256": v.file_sha256, "rows": v.row_count, "quality": v.quality, "uploadedBy": v.uploaded_by, "createdAt": _iso(v.created_at), "committedAt": _iso(v.committed_at), "note": v.note} for v in vs]
     return out
 
@@ -966,6 +969,40 @@ def evals_latest(session: Session = Depends(get_session)):
     if rep is None:
         raise HTTPException(404, "평가 결과 없음 — 먼저 실행하세요")
     return rep
+
+
+# ═════════════════════════ 에이전트 결정 · 구성 (B.30) ═════════════════════════
+@router.get("/agents/decisions")
+def agent_decisions(agent: str | None = None, workflow: str | None = None, run: str | None = None, limit: int = 100, session: Session = Depends(get_session)):
+    """오케스트레이터 · 변화 감지 · 플래너 · 서술 에이전트의 결정과 근거."""
+    from nhdip.models import AgentDecision
+
+    q = select(AgentDecision).order_by(AgentDecision.id.desc()).limit(min(max(limit, 1), 500))
+    if agent:
+        q = q.where(AgentDecision.agent_code == agent)
+    if workflow:
+        q = q.where(AgentDecision.workflow_code == workflow)
+    if run:
+        q = q.where(AgentDecision.workflow_run_id == run)
+    counts = dict(session.execute(select(AgentDecision.agent_code, func.count()).group_by(AgentDecision.agent_code)).all())
+    return {
+        "counts": counts,
+        "items": [{"id": d.id, "at": _iso(d.at), "agent": d.agent_code, "workflow": d.workflow_code, "jobId": d.job_id, "runId": d.workflow_run_id, "decision": d.decision, "summary": d.summary, "detail": d.detail, "traceId": d.trace_id} for d in session.execute(q).scalars()],
+    }
+
+
+@router.get("/agents/topology")
+def agent_topology(session: Session = Depends(get_session)):
+    """워크플로우별 에이전트 배치(노드 순서) + 오케스트레이터 의존 그래프."""
+    from nhdip.models import Agent
+    from nhdip.workflow.orchestrator import dependency_graph, policy as orch_policy
+
+    agents = {a.code: {"code": a.code, "name": a.name, "role": a.role, "kind": a.kind, "enabled": a.enabled} for a in session.execute(select(Agent)).scalars()}
+    flows = []
+    for w in session.execute(select(Workflow).order_by(Workflow.sort)).scalars():
+        nodes = session.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == w.code).order_by(WorkflowNode.seq)).scalars().all()
+        flows.append({"code": w.code, "name": w.name, "enabled": w.enabled, "nodes": [{"key": n.key, "name": n.name, "impl": n.impl, "agent": n.agent_code, "enabled": n.enabled} for n in nodes]})
+    return {"agents": list(agents.values()), "workflows": flows, "orchestrator": {"policy": orch_policy(session), "depends_on": dependency_graph(session)}}
 
 
 # ═════════════════════════ 운영 알림 · LLM 비용 (작업 8.5 · 4.7) ═════════════════════════

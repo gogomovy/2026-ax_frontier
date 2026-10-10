@@ -2312,6 +2312,25 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 가이드 | 규칙 `GUIDE_CATALOG{guides, plans}` → 노드 `select_guides` 가 방안의 `guideRuleId` · `guide{title, text, basis}` 갱신(제안 산출물만, 사용자 수정은 별도 상태로 보존) |
 | 영향 분석 | `views/goal_impact.py` — 목표 규칙 경로 → 지표 정의 의존 그래프(전이) → 수치 id → 현재 산출물, 연결 방안 · 전파 노드 · 정합성 |
 | 계층 규칙 | `apps/api/.importlinter` — 핵심 계층 → api 금지, 계산 커널 → LLM · 그래프 · 화면 · 워크플로우 금지, 모델 → 상위 금지, LLM → 워크플로우 · 화면 금지. 사용자 상태는 `views/user_state.py`, 조직 경로는 `orgs.org_chain` |
+### 19.15 영업점 업적평가 영업 가이드 (B.29)
+| 영역 | 구성 |
+|---|---|
+| 정의 | `seed/defs_branch.py` — 데이터셋 8종 · 결정적 시뮬레이션 버전 · 지표 약 90개(`br_*` 지점 · `bank_*` 전행, 사무소는 규칙 `BRANCH_SCOPE` 참조) · 바인딩 17 · 규칙 5(`BRANCH_SCOPE` · `CORP_GRADE_SCALE` · `BRANCH_PRIME_CORP_POLICY` · `BRANCH_PROSPECT_POLICY` · `BRANCH_SEOMIN_POLICY`) · 워크플로우 `wf_branch_kpi` |
+| 커널 수식 | `MEAN` · `WEIGHTED_AVG`(잔액 가중 평균 등급) · `BLEND_AVG`(유치 후 평균 등급) · `MIN_OF`(적용 한도 표시) · `CEIL_DIV` · `SHARE_GAP_AMOUNT`((c+x)/(T+x)=t) · `KPI_PROPORTIONAL_SCORE` · `PROSPECT_SELECT`(후보 선정 + 제외 사유 · 가중 실적) |
+| 빌더 | `views/branch.py` — 영업점 정보 · 업적평가 득점표(배점표 × 득점 · 상반기 대비 변경) · 규모별 · 등급별 · 규모×등급(건수/금액) · 등급 구간 차트 · 상위 차주 · 가중치표 · 후보표/제외 사유 · Pool표/차트 · 서민금융 한도 비교 |
+| 화면 API | `GET /screens/branch/dashboard`(available · viewer) · `/screens/branch/tabs` · `/screens/branch/reports/{tab}` — 산출물 `office.code` vs `orgs.can_view_office`. 내려받기 `GET /reports/branch-{tab}/export` 는 `branch_reports` 권한 + 같은 범위. 메뉴 건수 `branchAnalyses` |
+| 화면 | `/branch` 1화면(업적평가 총득점 · KPI 3그룹 · 가/감점 · 기준 변경 알림 → 탭, 사업부문 5종: 여신 = 기업 + 소매 익스포저) · `/branch/analysis/[tab]` 2 · 3화면(의견 → 보고서, 동적 탭) · `/branch/targets` 본부 전파 목표·가이드 |
+| 운영 DB 보강 | `branch_upgrade`(1회 `branch-v1`): 화면 리소스 · 질의 리소스 · 문서 분류 병합, 영업점 홈 라벨, 바인딩 · 산출물 · 문서(없는 것만), 계산 이벤트 |
+
+### 19.16 판단 에이전트 계층 (B.30)
+| 에이전트 | 위치 | 동작 |
+|---|---|---|
+| 오케스트레이터 `orchestrator` | `workflow/orchestrator.py` — `claim_job` 의 `gate` · 작업 종료 후 `release_downstream` | 의존 그래프(지표 교차 참조 · 근거 검색 → `wf_graph_projection` · 설정) → 상위 대기/실행 중이면 hold(run_after +hold_sec), 최대 대기 후 release, 상위 종료 시 즉시 release |
+| 변화 감지 `change_detector` | 노드 `detect_changes`(지표 계산 직후) | 지표 직전값 대비 DIFF · GROWTH_RATE → 기준 배수 판정, 데이터셋 버전 변화 → `change_feed` · `change.detected` |
+| 플래너 `planner` | 노드 `plan_run`(근거 검색 직전) | 원인 × 변화 × 서술 이력 → `ctx.state.plan{narrate, candidates, why, skip, evidence, llm}` → `retrieve_evidence` · `narrate` 가 따름 |
+| 서술 `narrator_*` · 검증 `critic` | 기존 노드 | 계획 대상만 서술, 검증 통과 시 `narrated` 결정 기록 |
+| 결정 기록 | `ops.agent_decision`(0009) | `GET /admin/agents/decisions` · `GET /admin/agents/topology` · 화면 `/admin/monitor/agents`, 업무 화면 `GET /screens/changes`(리소스 `changes`) |
+
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).

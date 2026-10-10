@@ -20,6 +20,11 @@ const CARDS = [
     title: "모형·방법론 문서",
     description: "모니터링 보고서와 통계 용어 해설. 용어집 온톨로지의 원천입니다.",
   },
+  {
+    dbClass: "branch_ref",
+    title: "영업점 기준·공문",
+    description: "업적평가 세부기준과 본부가 영업점에 배포한 공문. 영업점 영업 가이드의 근거로 사용됩니다.",
+  },
 ];
 
 const QUALITY_TONE = { passed: "success", warning: "attention", failed: "critical" } as const;
@@ -39,7 +44,7 @@ export default async function KnowledgePage() {
       <div className="shell flex flex-col gap-xxl">
         <section>
           <SectionHead title="지식 원천" hint="카드를 선택하면 문서 목록과 메타데이터가 열립니다" />
-          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2 xl:grid-cols-4">
             {CARDS.map((card) => {
               const list = docs.filter((d) => d.dbClass === card.dbClass);
               const latest = list.slice().sort((a, b) => b.registeredAt.localeCompare(a.registeredAt))[0];

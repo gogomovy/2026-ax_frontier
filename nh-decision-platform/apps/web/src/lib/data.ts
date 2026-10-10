@@ -8,6 +8,8 @@ import { CAPITAL_VIEW, COMPARISON_VIEW, LOAN_OVERVIEW, PROFITABILITY } from "@/m
 import { CASCADE, GOALS, PROPOSALS, REVIEW_QUEUE } from "@/mock/goals";
 import { DATASETS, DOCUMENTS } from "@/mock/knowledge";
 import { TERMS } from "@/mock/terms";
+import { CHANGE_FEED } from "@/mock/changes";
+import { BRANCH_DASHBOARD, BRANCH_REPORTS, BRANCH_TABS, PRIME_OPINION, SEOMIN_OPINION } from "@/mock/branch";
 import { ATTENTIONS, DOMAIN_MAP, DOMAINS, HQ_DASHBOARD, REPORT_REQUESTS } from "@/mock/dashboard";
 import {
   ACTION_PLANS,
@@ -26,9 +28,12 @@ import { API_MODE } from "./config";
 import type {
   ActionPlan,
   AnalysisTab,
+  BranchDashboard,
+  BranchTabs,
   BranchTarget,
   CapitalView,
   CascadeNode,
+  ChangeFeed,
   ComparisonView,
   DatasetMeta,
   DefaultRateTrend,
@@ -122,6 +127,17 @@ export async function getBranchTargets(): Promise<BranchTarget[]> {
   return API_MODE ? api("/screens/branch-targets") : BRANCH_TARGETS;
 }
 
+/* ── 영업점 (B.29) — 서버가 사용자 영업점과 산출물 영업점을 대조한다 ─────────── */
+export async function getBranchDashboard(): Promise<BranchDashboard> {
+  return API_MODE ? api("/screens/branch/dashboard") : { ...BRANCH_DASHBOARD, available: true, viewer: null };
+}
+export async function getBranchTabs(): Promise<BranchTabs> {
+  return API_MODE ? api("/screens/branch/tabs") : BRANCH_TABS;
+}
+export async function getBranchReport(tabKey: string): Promise<ReportDoc | null> {
+  return API_MODE ? api(`/screens/branch/reports/${encodeURIComponent(tabKey)}`) : (BRANCH_REPORTS[tabKey] ?? null);
+}
+
 /* ── 지식 ───────────────────────────────────────────────── */
 export async function getDocuments(dbClass?: string): Promise<DocumentMeta[]> {
   if (API_MODE) return api(`/screens/documents${dbClass ? `?dbClass=${encodeURIComponent(dbClass)}` : ""}`);
@@ -141,8 +157,15 @@ export async function getTerms(): Promise<Term[]> {
   return API_MODE ? api("/screens/terms") : TERMS;
 }
 
+/* ── 변화 감지 에이전트 (B.30) — 서버가 화면 권한 · 영업점 범위로 거른다 ── */
+export async function getChanges(workflow?: string, limit = 8): Promise<ChangeFeed> {
+  if (API_MODE) return api(`/screens/changes?limit=${limit}${workflow ? `&workflow=${encodeURIComponent(workflow)}` : ""}`);
+  const items = CHANGE_FEED.items.filter((i) => !workflow || i.workflow === workflow).slice(0, limit);
+  return { ...CHANGE_FEED, items };
+}
+
 /* ── 인사이트 조회 ──────────────────────────────────────── */
-const ALL_INSIGHTS: Insight[] = [...ATTENTIONS, MODEL_OPINION, INCLUSIVE_OPINION];
+const ALL_INSIGHTS: Insight[] = [...ATTENTIONS, MODEL_OPINION, INCLUSIVE_OPINION, PRIME_OPINION, SEOMIN_OPINION];
 export async function getInsight(id: string): Promise<Insight | null> {
   return API_MODE ? api(`/screens/insights/${encodeURIComponent(id)}`) : (ALL_INSIGHTS.find((i) => i.id === id) ?? null);
 }

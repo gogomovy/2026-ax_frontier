@@ -12,7 +12,7 @@ export interface NavItem {
   /** 업무 흐름 단계 번호 */
   step?: number;
   /** 사이드바에 건수를 표시할 대상 */
-  countKey?: "goalProposals" | "analyses" | "proposedPlans";
+  countKey?: "goalProposals" | "analyses" | "proposedPlans" | "branchAnalyses";
   /** 경로가 정확히 같을 때만 활성 (하위 경로와 겹치는 상위 화면) */
   exact?: boolean;
 }
@@ -68,12 +68,15 @@ export const PERSONAS: Record<Persona, PersonaConfig> = {
   },
   P3: {
     code: "P3",
-    org: "수도권1지역본부",
+    org: "수원영통지점",
     user: "최지훈",
     role: "대리",
     home: "/branch",
-    flow: [{ label: "내 목표·가이드", href: "/branch", match: ["/branch"] }],
-    reference: [KNOWLEDGE],
+    flow: [
+      { step: 1, label: "현황", href: "/branch", match: ["/branch"], exact: true },
+      { step: 2, label: "분석 결과", href: "/branch/analysis", match: ["/branch/analysis"], countKey: "branchAnalyses" },
+    ],
+    reference: [{ label: "본부 전파 목표·가이드", href: "/branch/targets", match: ["/branch/targets"] }, KNOWLEDGE],
   },
 };
 

@@ -1,0 +1,660 @@
+{
+ "office": {
+  "code": "001068",
+  "name": "수원영통지점",
+  "region": "경기",
+  "sigungu": "수원시",
+  "regionHq": "수도권1지역본부",
+  "orgCode": "001068"
+ },
+ "asOf": "2026-08-31",
+ "generatedAt": "2026-08-31T06:22:00+09:00",
+ "dataOrigin": "simulated",
+ "periodLabel": "2026년 하반기",
+ "asOfLabel": "2026.08.31 (하반기 2개월 경과)",
+ "scorecard": {
+  "total": {
+   "id": "br_kpi_total",
+   "label": "업적평가 총득점(가 · 감점 포함)",
+   "value": 593.7,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "max": {
+   "id": "br_kpi_max",
+   "label": "업적평가 총배점",
+   "value": 1000,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 0
+  },
+  "adjustments": {
+   "id": "br_kpi_adj",
+   "label": "가 · 감점 합계",
+   "value": 2,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "uplift": {
+   "id": "br_kpi_uplift",
+   "label": "예상 업적 점수 상향 합계",
+   "value": 26.7,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "totalAfter": {
+   "id": "br_kpi_total_after",
+   "label": "의견 반영 시 예상 총득점",
+   "value": 620.3,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "groups": [
+   {
+    "max": 200,
+    "code": "CUST",
+    "kind": "kpi",
+    "items": [
+     {
+      "max": 90,
+      "code": "CUST_BASE",
+      "label": "고객기반 확대",
+      "score": 58,
+      "details": [],
+      "docPage": null,
+      "prevMax": 90,
+      "changeType": null,
+      "changeSummary": null
+     },
+     {
+      "max": 60,
+      "code": "CUST_DIGITAL",
+      "label": "디지털 고객",
+      "score": 41,
+      "details": [],
+      "docPage": null,
+      "prevMax": 60,
+      "changeType": null,
+      "changeSummary": null
+     },
+     {
+      "max": 50,
+      "code": "CUST_CS",
+      "label": "고객만족 · 소비자보호",
+      "score": 38,
+      "details": [],
+      "docPage": null,
+      "prevMax": 50,
+      "changeType": null,
+      "changeSummary": null
+     }
+    ],
+    "label": "고객KPI",
+    "score": 137,
+    "prevMax": 200
+   },
+   {
+    "max": 500,
+    "code": "BIZ",
+    "kind": "kpi",
+    "items": [
+     {
+      "max": 220,
+      "code": "BIZ_CORE",
+      "label": "핵심사업",
+      "score": 107,
+      "details": [
+       {
+        "max": 60,
+        "code": "CORE_CORP_LOAN",
+        "label": "기업여신 증대",
+        "score": 31,
+        "actual": 4820,
+        "target": 9300,
+        "docPage": "84",
+        "prevMax": 100,
+        "actualUnit": "백만원",
+        "changeType": "변경",
+        "changeSummary": "배점 100 → 60 (40점을 우량기업여신으로 이관)"
+       },
+       {
+        "max": 40,
+        "code": "CORE_PRIME",
+        "label": "우량기업여신",
+        "score": 4,
+        "actual": 6000,
+        "target": 60000,
+        "docPage": "84~91",
+        "prevMax": null,
+        "actualUnit": "백만원(가중)",
+        "changeType": "신설",
+        "changeSummary": "신규 · 증액 유치한 기업여신을 차주 신용등급 구간별 가중치(1~3B 150% … 7A 이하 50%)로 환산해 실적 인정 — 우량기업여신 유치 우대"
+       },
+       {
+        "max": 120,
+        "code": "CORE_DEPOSIT",
+        "label": "저원가성 예금",
+        "score": 72,
+        "docPage": null,
+        "prevMax": 120,
+        "changeType": null,
+        "changeSummary": null
+       }
+      ],
+      "docPage": null,
+      "prevMax": 220,
+      "changeType": null,
+      "changeSummary": null
+     },
+     {
+      "max": 160,
+      "code": "BIZ_STRAT",
+      "label": "전략사업",
+      "score": 88,
+      "details": [],
+      "docPage": "15",
+      "prevMax": 180,
+      "changeType": "변경",
+      "changeSummary": "배점 180 → 160 (20점을 생산적·포용금융으로 이관)"
+     },
+     {
+      "max": 120,
+      "code": "BIZ_INCL",
+      "label": "생산적·포용금융",
+      "score": 59.67,
+      "details": [
+       {
+        "max": 60,
+        "code": "INCL_PROD",
+        "label": "생산적금융",
+        "score": 33,
+        "docPage": null,
+        "prevMax": 60,
+        "changeType": null,
+        "changeSummary": null
+       },
+       {
+        "max": 40,
+        "code": "INCL_INCL",
+        "label": "포용금융",
+        "score": 24,
+        "docPage": null,
+        "prevMax": 40,
+        "changeType": null,
+        "changeSummary": null
+       },
+       {
+        "max": 20,
+        "code": "INCL_SEOMIN",
+        "label": "서민금융",
+        "score": 2.67,
+        "actual": 4,
+        "target": 30,
+        "docPage": "126",
+        "prevMax": null,
+        "actualUnit": "건",
+        "changeType": "신설",
+        "changeSummary": "NH새희망홀씨대출(용도코드 1031 · 1032) 신규 유치 건수에 배점 부여, 해당 차주는 건전성평가 중 연체평가에서 제외"
+       }
+      ],
+      "docPage": "15",
+      "prevMax": 100,
+      "changeType": "변경",
+      "changeSummary": "배점 100 → 120 (서민금융 20점 신설)"
+     }
+    ],
+    "label": "사업KPI",
+    "score": 254.7,
+    "prevMax": 500
+   },
+   {
+    "max": 300,
+    "code": "FIN",
+    "kind": "kpi",
+    "items": [
+     {
+      "max": 180,
+      "code": "FIN_PROFIT",
+      "label": "수익성(총이익)",
+      "score": 118,
+      "details": [],
+      "docPage": null,
+      "prevMax": 180,
+      "changeType": null,
+      "changeSummary": null
+     },
+     {
+      "max": 120,
+      "code": "FIN_SOUND",
+      "label": "건전성",
+      "score": 82,
+      "details": [],
+      "docPage": null,
+      "prevMax": 120,
+      "changeType": null,
+      "changeSummary": null
+     }
+    ],
+    "label": "재무KPI",
+    "score": 200,
+    "prevMax": 300
+   },
+   {
+    "max": null,
+    "code": "ADJ",
+    "kind": "adjustment",
+    "items": [
+     {
+      "max": null,
+      "code": "ADJ_BONUS",
+      "note": "지역사회 공헌",
+      "label": "가점",
+      "score": 5,
+      "details": [],
+      "docPage": null,
+      "prevMax": null,
+      "changeType": null,
+      "changeSummary": null
+     },
+     {
+      "max": null,
+      "code": "ADJ_PENALTY",
+      "note": "민원 발생",
+      "label": "감점",
+      "score": -3,
+      "details": [],
+      "docPage": null,
+      "prevMax": null,
+      "changeType": null,
+      "changeSummary": null
+     }
+    ],
+    "label": "가 · 감점",
+    "score": 2,
+    "prevMax": null
+   }
+  ]
+ },
+ "alerts": [
+  {
+   "id": "alert-prime-corp",
+   "path": "사업KPI > 핵심사업 > 우량기업여신",
+   "changeType": "신설",
+   "title": "본부 추천 우량기업 중심 신규 유치로 우량기업여신 가점 확보",
+   "summary": "신용등급 가중 실적으로 평가 — 지점 평균 등급 [[fig:br_avg_grade]]단계(전행 [[fig:bank_avg_grade]]단계). 본부 추천 우량기업 [[fig:br_prospect_cnt]]개 유치 시 +[[fig:br_prime_uplift]]점",
+   "tabKey": "prime-corp",
+   "insightId": "ins-br-prime-corp",
+   "severity": "watch",
+   "uplift": {
+    "id": "br_prime_uplift",
+    "label": "예상 업적 점수 상향(우량기업여신)",
+    "value": 14,
+    "unit": "NONE",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  },
+  {
+   "id": "alert-seomin",
+   "path": "사업KPI > 생산적·포용금융 > 서민금융",
+   "changeType": "신설",
+   "title": "건전성 범위 안에서 NH새희망홀씨 신규 유치로 서민금융 가점 확보",
+   "summary": "NH새희망홀씨 신규 유치 건수로 평가 · 연체평가 예외 — 지점 비중 [[fig:br_seomin_share]](전행 [[fig:bank_seomin_share]]). [[fig:br_seomin_rec_cnt]] 유치 시 +[[fig:br_seomin_uplift]]점",
+   "tabKey": "seomin",
+   "insightId": "ins-br-seomin",
+   "severity": "watch",
+   "uplift": {
+    "id": "br_seomin_uplift",
+    "label": "예상 업적 점수 상향(서민금융)",
+    "value": 12.7,
+    "unit": "NONE",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  }
+ ],
+ "figures": {
+  "br_avg_grade": {
+   "id": "br_avg_grade",
+   "label": "지점 평균 신용등급(대출잔액 가중, 1~16)",
+   "value": 8.39,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "bank_avg_grade": {
+   "id": "bank_avg_grade",
+   "label": "전행 평균 신용등급(대출잔액 가중, 1~16)",
+   "value": 6.16,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "br_prospect_cnt": {
+   "id": "br_prospect_cnt",
+   "label": "우량기업 마케팅 후보 수",
+   "value": 5,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 0
+  },
+  "br_prime_uplift": {
+   "id": "br_prime_uplift",
+   "label": "예상 업적 점수 상향(우량기업여신)",
+   "value": 14,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "br_seomin_share": {
+   "id": "br_seomin_share",
+   "label": "지점 서민금융 비중(금액)",
+   "value": 0.45,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "bank_seomin_share": {
+   "id": "bank_seomin_share",
+   "label": "전행 서민금융 비중(금액)",
+   "value": 2.14,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "br_seomin_rec_cnt": {
+   "id": "br_seomin_rec_cnt",
+   "label": "권고 신규 유치 건수",
+   "value": 19,
+   "unit": "CNT",
+   "dataOrigin": "simulated",
+   "decimals": 0
+  },
+  "br_seomin_uplift": {
+   "id": "br_seomin_uplift",
+   "label": "예상 업적 점수 상향(서민금융)",
+   "value": 12.7,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "br_kpi_cust": {
+   "id": "br_kpi_cust",
+   "label": "고객KPI 득점",
+   "value": 137,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "br_kpi_biz": {
+   "id": "br_kpi_biz",
+   "label": "사업KPI 득점",
+   "value": 254.7,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "br_kpi_fin": {
+   "id": "br_kpi_fin",
+   "label": "재무KPI 득점",
+   "value": 200,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  }
+ },
+ "segments": [
+  {
+   "domainCode": "loan",
+   "name": "여신",
+   "status": "active",
+   "headline": {
+    "id": "br_loan_total",
+    "label": "여신 잔액(기업 + 소매)",
+    "value": 1615.8,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "sub": [
+    {
+     "label": "기업여신",
+     "figure": {
+      "id": "br_corp_amt",
+      "label": "지점 기업여신 대출잔액",
+      "value": 1331.9,
+      "unit": "KRW_BN",
+      "dataOrigin": "simulated",
+      "decimals": 1
+     }
+    },
+    {
+     "label": "소매여신",
+     "figure": {
+      "id": "br_retail_amt",
+      "label": "지점 소매여신 익스포저",
+      "value": 283.9,
+      "unit": "KRW_BN",
+      "dataOrigin": "simulated",
+      "decimals": 1
+     }
+    }
+   ]
+  },
+  {
+   "domainCode": "deposit",
+   "name": "수신",
+   "status": "placeholder",
+   "headline": {
+    "id": "br_seg_deposit",
+    "label": "수신 평잔",
+    "value": 1420.6,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "note": "평잔 기준"
+  },
+  {
+   "domainCode": "fx",
+   "name": "외환",
+   "status": "placeholder",
+   "headline": {
+    "id": "br_seg_fx",
+    "label": "외환 누적 실적",
+    "value": 38.4,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "note": "누적 실적"
+  },
+  {
+   "domainCode": "pension",
+   "name": "퇴직연금",
+   "status": "placeholder",
+   "headline": {
+    "id": "br_seg_pension",
+    "label": "퇴직연금 적립금",
+    "value": 210.3,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "note": "적립금"
+  },
+  {
+   "domainCode": "card",
+   "name": "카드",
+   "status": "placeholder",
+   "headline": {
+    "id": "br_seg_card",
+    "label": "카드 누적 이용실적",
+    "value": 52.1,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "note": "누적 이용실적"
+  }
+ ],
+ "loan": {
+  "total": {
+   "id": "br_loan_total",
+   "label": "여신 잔액(기업 + 소매)",
+   "value": 1615.8,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "corp": {
+   "id": "br_corp_amt",
+   "label": "지점 기업여신 대출잔액",
+   "value": 1331.9,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "corpCount": {
+   "id": "br_corp_cnt",
+   "label": "지점 기업여신 차주 수",
+   "value": 180,
+   "unit": "CNT",
+   "dataOrigin": "simulated",
+   "decimals": 0
+  },
+  "retail": {
+   "id": "br_retail_amt",
+   "label": "지점 소매여신 익스포저",
+   "value": 283.9,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "retailCount": {
+   "id": "br_retail_cnt",
+   "label": "지점 소매여신 차주 수",
+   "value": 260,
+   "unit": "CNT",
+   "dataOrigin": "simulated",
+   "decimals": 0
+  },
+  "avgGrade": {
+   "id": "br_avg_grade",
+   "label": "지점 평균 신용등급(대출잔액 가중, 1~16)",
+   "value": 8.39,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "bankAvgGrade": {
+   "id": "bank_avg_grade",
+   "label": "전행 평균 신용등급(대출잔액 가중, 1~16)",
+   "value": 6.16,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "avgGradeGap": {
+   "id": "br_avg_grade_gap",
+   "label": "평균 신용등급 차이(지점 − 전행)",
+   "value": 2.22,
+   "unit": "NONE",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  }
+ },
+ "evidence": [
+  {
+   "id": "ev-br-h2-scheme",
+   "category": "internal_direction",
+   "label": "26년(하) 업적평가 세부기준 — 영업점 배점표(리테일) (13p)",
+   "sourceKind": "doc_chunk",
+   "snippet": "리테일 영업점 배점표: 고객KPI 200 · 사업KPI 500(핵심사업 220 · 전략사업 160 · 생산적·포용금융 120) · 재무KPI 300. 상반기 대비 우량기업여신 · 서민금융 항목 신설.",
+   "relevance": 0.9,
+   "doc": {
+    "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
+    "issuer": "종합기획부 성과관리팀",
+    "effectiveDate": "2026-07-01",
+    "page": 13,
+    "sectionPath": "2. 영업본부/영업점 평가기준 > 가. 배점표 > 리테일",
+    "dbClass": "branch_ref",
+    "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf"
+   }
+  },
+  {
+   "id": "ev-br-h2-prime",
+   "category": "internal_direction",
+   "label": "26년(하) 업적평가 세부기준 — 핵심사업 > 우량기업여신 (84~91p)",
+   "sourceKind": "doc_chunk",
+   "snippet": "신규 · 증액 유치한 기업여신은 차주 신용등급 구간별 가중치(1~3B 150% · 4A~4B 120% · 5A~5C 100% · 6A~6C 70% · 7A 이하 50%)를 적용한 금액을 실적으로 인정한다.",
+   "relevance": 0.95,
+   "doc": {
+    "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
+    "issuer": "종합기획부 성과관리팀",
+    "effectiveDate": "2026-07-01",
+    "page": 84,
+    "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 우량기업여신",
+    "dbClass": "branch_ref",
+    "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf"
+   }
+  },
+  {
+   "id": "ev-br-h2-seomin",
+   "category": "internal_direction",
+   "label": "26년(하) 업적평가 세부기준 — 생산적·포용금융 > ① 서민금융 (126p)",
+   "sourceKind": "doc_chunk",
+   "snippet": "NH새희망홀씨대출(용도코드 1031 · 1032)을 신규 유치한 경우 유치 건수에 따라 배점을 부여하며, 해당 차주는 건전성평가 중 연체평가에서 제외한다. 동일차주 연간 최고 대출한도는 35백만원.",
+   "relevance": 0.96,
+   "doc": {
+    "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
+    "issuer": "종합기획부 성과관리팀",
+    "effectiveDate": "2026-07-01",
+    "page": 126,
+    "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 생산적·포용금융 > ① 서민금융",
+    "dbClass": "branch_ref",
+    "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf"
+   }
+  },
+  {
+   "id": "ev-br-gov-corp",
+   "category": "external_policy",
+   "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안 (금융위원회)",
+   "sourceKind": "doc_chunk",
+   "snippet": "기업여신 공급 확대 기조를 유지하고 생산적 부문에 대한 자금공급을 확대한다는 정책 방향이 제시됨.",
+   "relevance": 0.86,
+   "doc": {
+    "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
+    "issuer": "금융위원회",
+    "effectiveDate": "2026-02-20",
+    "page": 5,
+    "sectionPath": "Ⅲ. 기업여신 공급 확대",
+    "dbClass": "gov_policy",
+    "isOfficial": true,
+    "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf"
+   }
+  },
+  {
+   "id": "ev-br-gov-inclusive",
+   "category": "external_policy",
+   "label": "포용금융 확대방안 (금융위원회)",
+   "sourceKind": "doc_chunk",
+   "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
+   "relevance": 0.9,
+   "doc": {
+    "title": "포용금융 확대방안",
+    "issuer": "금융위원회",
+    "effectiveDate": "2026-01-15",
+    "page": 3,
+    "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
+    "dbClass": "gov_policy",
+    "isOfficial": true,
+    "fileName": "금융위원회_포용금융 확대방안.pdf"
+   }
+  }
+ ]
+}

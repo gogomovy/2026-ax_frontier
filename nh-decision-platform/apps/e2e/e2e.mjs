@@ -143,6 +143,24 @@ try {
   await login(b, BR_EMP, PW);
   ok("영업점 사용자 → /branch (지역본부 권한 상속)", b.url().endsWith("/branch"), b.url());
   ok("영업점 사용자 카드: 지역본부 > 영업점", (await b.evaluate(() => document.querySelector("aside")?.innerText ?? "")).includes("수도권1지역본부 > 강남금융센터"));
+  ok("다른 영업점 분석은 보이지 않음(자기 영업점만)", (await text(b)).includes("업적평가 분석은 아직 준비 중"));
+  await b.goto(`${BASE}/branch/targets`, { waitUntil: "networkidle0" });
+  ok("영업점 참고: 본부 전파 목표·가이드", (await text(b)).includes("전파된 목표"));
+
+  // 6-2) 영업점 시나리오 (B.29) — 수원영통지점 업적평가 대시보드 → 의견 탭(보고서)
+  await a.goto(`${BASE}/branch`, { waitUntil: "networkidle0" });
+  const bt = await text(a);
+  ok("영업점 1화면: 업적평가 득점 · 기준 변경 알림 · 사업부문", bt.includes("업적평가 득점 현황") && bt.includes("우량기업여신") && bt.includes("서민금융") && bt.includes("사업부문") && bt.includes("수원영통지점"));
+  await shot(a, "05a-branch-dashboard");
+  await Promise.all([a.waitForNavigation({ waitUntil: "networkidle0" }).catch(() => undefined), a.evaluate(() => [...document.querySelectorAll('a[href="/branch/analysis/prime-corp"]')][0]?.click())]);
+  await a.waitForFunction(() => location.pathname === "/branch/analysis/prime-corp", { timeout: 15000 }).catch(() => undefined);
+  const bp = await text(a);
+  ok("영업점 2화면: 알림 → 우량기업여신 보고서(마케팅 후보)", a.url().endsWith("/branch/analysis/prime-corp") && bp.includes("마케팅 후보") && bp.includes("신동에너지(주)"), a.url());
+  await shot(a, "05b-branch-prime-corp");
+  await a.goto(`${BASE}/branch/analysis/seomin`, { waitUntil: "networkidle0" });
+  const bs = await text(a);
+  ok("영업점 3화면: 서민금융 신규 유치 적정 규모", bs.includes("신규 유치 규모 산정") && bs.includes("19건") && bs.includes("35백만원"));
+  await shot(a, "05c-branch-seomin");
 
   // 7) 업로드 → 관련 워크플로우만
   const debounce = (await api("/admin/settings")).body.find((s) => s.key === "workflow.debounce_default_sec")?.value ?? 60;
@@ -185,6 +203,16 @@ try {
   await shot(a, "05-admin-flow");
   await a.goto(`${BASE}/risk/analysis/inclusive-risk`, { waitUntil: "networkidle0" });
   ok("업무 화면 재계산 반영 9.45%", (await text(a)).includes("9.45"));
+  // 판단 에이전트 (B.30) — 변화 감지 피드 · 에이전트 결정 화면
+  await a.goto(`${BASE}/risk`, { waitUntil: "networkidle0" });
+  const feedText = await a.evaluate(() => document.querySelector("[data-change-feed]")?.innerText ?? "");
+  ok("변화 감지: 정정본 업로드 → 최근 감지된 변화", feedText.includes("포용금융 충당금 비중"), feedText.slice(0, 120).replace(/\n/g, " | "));
+  await a.goto(`${BASE}/admin/monitor/agents`, { waitUntil: "networkidle0" });
+  await a.waitForSelector("[data-agent-topology]", { timeout: 15000 }).catch(() => undefined);
+  await a.waitForFunction(() => document.body.innerText.includes("변화 판정"), { timeout: 15000 }).catch(() => undefined);
+  const agt = await text(a);
+  ok("에이전트 결정: 배치 · 의존 · 결정 기록", agt.includes("변화 감지(에이전트)") && agt.includes("실행 계획(플래너)") && agt.includes("wf_graph_projection") && agt.includes("변화 판정"));
+  await shot(a, "06b-admin-agents");
   await a.goto(`${BASE}/admin/monitor/runs`, { waitUntil: "networkidle0" });
   await a.waitForFunction(() => [...document.querySelectorAll("button.row-button")].some((x) => x.innerText.includes("wf_inclusive_risk")), { timeout: 15000 });
   await a.evaluate(() => [...document.querySelectorAll("button.row-button")].find((x) => x.innerText.includes("wf_inclusive_risk")).click());

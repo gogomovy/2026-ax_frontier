@@ -94,3 +94,40 @@ def org_chain(session: Session, org_code: str) -> list[OrgUnit]:
         seen.add(cur.code)
         cur = session.get(OrgUnit, cur.parent_code) if cur.parent_code else None
     return chain
+
+
+# ── 영업점 범위 (B.29 · Q43/Q44) ─────────────────────────────
+def office_code_of(session: Session, org_code: str) -> str:
+    """조직 코드 → 사무소 코드. 기본은 조직 코드 그대로, 다르면 설정 branch.office_codes 로 매핑."""
+    s = session.get(Setting, "branch.office_codes")
+    mapping = s.value if s and isinstance(s.value, dict) else {}
+    return str(mapping.get(org_code, org_code))
+
+
+def org_of_office(session: Session, office_code: str) -> OrgUnit | None:
+    s = session.get(Setting, "branch.office_codes")
+    mapping = s.value if s and isinstance(s.value, dict) else {}
+    for org, off in mapping.items():
+        if str(off) == str(office_code):
+            return session.get(OrgUnit, org)
+    return session.get(OrgUnit, office_code)
+
+
+def branch_of(session: Session, org_code: str) -> OrgUnit | None:
+    """사용자 조직 경로에서 영업점(BRANCH) 단위 — 없으면 None(지역본부 · 본부 · 관리자)."""
+    return next((o for o in org_chain(session, org_code) if o.unit_type == "BRANCH"), None)
+
+
+def can_view_office(session: Session, user: Any, office_code: str) -> bool:
+    """영업점 산출물 열람 범위 — 관리자 전체, 영업점 직원은 자기 영업점만, 그 외(지역본부 등)는 상위 조직이 겹치는 영업점."""
+    if getattr(user, "role", None) == "admin":
+        return True
+    chain = org_chain(session, user.org_code)
+    br = next((o for o in chain if o.unit_type == "BRANCH"), None)
+    if br is not None:
+        return office_code_of(session, br.code) == str(office_code)
+    target = org_of_office(session, office_code)
+    if target is None:
+        return False
+    mine = {o.code for o in chain}
+    return any(o.code in mine for o in org_chain(session, target.code)[1:])

@@ -1,63 +1,399 @@
 {
-  "version": 1,
-  "note": "골든셋 (작업 8.1 · QA-02) — 시나리오 정의서 · 목업 기준값과 추천안 결정(Q9 · Q10 · Q13 · Q15 ~ Q34)으로 확정한 값. 실데이터 전환 시 같은 형식으로 교체",
-  "thresholds": {"metrics": 1.0, "verdicts": 1.0, "artifacts": 1.0, "narration": 1.0, "retrieval": 0.75, "assist": 0.75},
-  "metrics": [
-    {"code": "dr_6b", "expected": 7.929, "source": "시나리오 B — 소기업 6B 실제부도율"},
-    {"code": "pd_mid_6b", "expected": 7.733},
-    {"code": "breach_gap_6b", "expected": 0.196},
-    {"code": "exposure_6b", "expected": 4.82},
-    {"code": "total_obs", "expected": 44067},
-    {"code": "total_dr", "expected": 2.753},
-    {"code": "psi_micro", "expected": 0.082},
-    {"code": "chi_stat", "expected": 20.47, "source": "Q13 커널 계산값"},
-    {"code": "chi_critical", "expected": 21.03},
-    {"code": "auroc_micro", "expected": 0.762, "source": "Q10 등급 집계 기준"},
-    {"code": "ar_micro", "expected": 52.49},
-    {"code": "ks_micro", "expected": 39.4},
-    {"code": "ard_micro", "expected": 19.4, "source": "Q22"},
-    {"code": "share_base", "expected": 7.97},
-    {"code": "share_now", "expected": 9.16, "source": "Q9 사사오입 9.1575 → 9.16"},
-    {"code": "share_delta_pp", "expected": 1.19},
-    {"code": "corp_growth", "expected": 4.04},
-    {"code": "hh_growth", "expected": 6.5},
-    {"code": "corp_gap", "expected": -2.96},
-    {"code": "hh_gap", "expected": 2.5},
-    {"code": "nim_share_2026", "expected": 45.44, "source": "Q16"},
-    {"code": "rwa_corp_usage", "expected": 69.8},
-    {"code": "bank_asset_headroom", "expected": 0.8},
-    {"code": "corp_cagr", "expected": 4.19},
-    {"code": "corp_rec_ceiling", "expected": 8.0, "source": "Q28 지주 한도 8.2 − 안전 마진 0.2"},
-    {"code": "corp_growth_rec", "expected": 7.75},
-    {"code": "hh_growth_rec", "expected": 3.25}
-  ],
-  "verdicts": [
-    {"metric": "psi_micro", "rule": "MDL_PSI_BANDS", "expected": "관찰"},
-    {"metric": "ard_micro", "rule": "MDL_AR_DECLINE_BANDS", "expected": "하락 주의"},
-    {"metric": "share_delta_pp", "rule": "INC_PROVISION_SHARE_TREND", "expected": "증가(임계 초과)"},
-    {"compare": ["chi_stat", "<=", "chi_critical"], "expected": true, "label": "카이제곱 검정 귀무가설 채택"},
-    {"compare": ["dr_6b", ">", "pd_mid_6b"], "expected": true, "label": "6B 실제부도율이 대표값 초과"}
-  ],
-  "artifacts": [
-    {"key": "risk_dashboard", "find": {"modelCode": "CORP_MICRO"}, "path": "arDecline.value", "expected": 19.4},
-    {"key": "report.inclusive-risk", "figure": "share_now", "expected": 9.16},
-    {"key": "report.model-monitoring", "figure": "dr_6b", "expected": 7.929},
-    {"key": "proposals", "find": {"id": "prop-corp-growth"}, "path": "recommendation.low", "expected": 7.5},
-    {"key": "proposals", "find": {"id": "prop-corp-growth"}, "path": "recommendation.high", "expected": 8.0},
-    {"key": "proposals", "find": {"id": "prop-hh-control"}, "path": "recommendation.high", "expected": 3.5},
-    {"key": "attentions", "find": {"id": "att-corp-gap"}, "path": "rankScore", "expected": 92.4}
-  ],
-  "retrieval": [
-    {"query": "포용금융 확대 서민 취약계층 금융 공급", "expect": "doc-gov-inclusive", "k": 4},
-    {"query": "RWA 한도 총자산 최대 성장률", "expect": "doc-mgmt-rwalimit", "k": 4},
-    {"query": "가계부채 증가율 관리 방안", "expect": "doc-gov-household", "k": 4},
-    {"query": "등급계량화 카이제곱 검정 귀무가설", "expect_any": ["doc-model-stat", "doc-model-corp"], "k": 4},
-    {"query": "포용금융 대상 상품 운영기준 햇살론", "expect_any": ["doc-mgmt-inclusive-products", "doc-mgmt-perfeval"], "k": 4}
-  ],
-  "assist": [
-    {"question": "포용금융 충당금 비중은 얼마인가요?", "expect_metric": "share_now"},
-    {"question": "기업여신 증가율과 목표 대비 이탈은?", "expect_metric": "corp_gap"},
-    {"question": "소기업 6B 등급 실제부도율은?", "expect_metric": "dr_6b"},
-    {"question": "PSI 안정성 지수는?", "expect_metric": "psi_micro"}
-  ]
+ "version": 1,
+ "note": "골든셋 (작업 8.1 · QA-02) — 시나리오 정의서 · 목업 기준값과 추천안 결정(Q9 · Q10 · Q13 · Q15 ~ Q34)으로 확정한 값. 실데이터 전환 시 같은 형식으로 교체",
+ "thresholds": {
+  "metrics": 1.0,
+  "verdicts": 1.0,
+  "artifacts": 1.0,
+  "narration": 1.0,
+  "retrieval": 0.75,
+  "assist": 0.75
+ },
+ "metrics": [
+  {
+   "code": "dr_6b",
+   "expected": 7.929,
+   "source": "시나리오 B — 소기업 6B 실제부도율"
+  },
+  {
+   "code": "pd_mid_6b",
+   "expected": 7.733
+  },
+  {
+   "code": "breach_gap_6b",
+   "expected": 0.196
+  },
+  {
+   "code": "exposure_6b",
+   "expected": 4.82
+  },
+  {
+   "code": "total_obs",
+   "expected": 44067
+  },
+  {
+   "code": "total_dr",
+   "expected": 2.753
+  },
+  {
+   "code": "psi_micro",
+   "expected": 0.082
+  },
+  {
+   "code": "chi_stat",
+   "expected": 20.47,
+   "source": "Q13 커널 계산값"
+  },
+  {
+   "code": "chi_critical",
+   "expected": 21.03
+  },
+  {
+   "code": "auroc_micro",
+   "expected": 0.762,
+   "source": "Q10 등급 집계 기준"
+  },
+  {
+   "code": "ar_micro",
+   "expected": 52.49
+  },
+  {
+   "code": "ks_micro",
+   "expected": 39.4
+  },
+  {
+   "code": "ard_micro",
+   "expected": 19.4,
+   "source": "Q22"
+  },
+  {
+   "code": "share_base",
+   "expected": 7.97
+  },
+  {
+   "code": "share_now",
+   "expected": 9.16,
+   "source": "Q9 사사오입 9.1575 → 9.16"
+  },
+  {
+   "code": "share_delta_pp",
+   "expected": 1.19
+  },
+  {
+   "code": "corp_growth",
+   "expected": 4.04
+  },
+  {
+   "code": "hh_growth",
+   "expected": 6.5
+  },
+  {
+   "code": "corp_gap",
+   "expected": -2.96
+  },
+  {
+   "code": "hh_gap",
+   "expected": 2.5
+  },
+  {
+   "code": "nim_share_2026",
+   "expected": 45.44,
+   "source": "Q16"
+  },
+  {
+   "code": "rwa_corp_usage",
+   "expected": 69.8
+  },
+  {
+   "code": "bank_asset_headroom",
+   "expected": 0.8
+  },
+  {
+   "code": "corp_cagr",
+   "expected": 4.19
+  },
+  {
+   "code": "corp_rec_ceiling",
+   "expected": 8.0,
+   "source": "Q28 지주 한도 8.2 − 안전 마진 0.2"
+  },
+  {
+   "code": "corp_growth_rec",
+   "expected": 7.75
+  },
+  {
+   "code": "hh_growth_rec",
+   "expected": 3.25
+  },
+  {
+   "code": "br_avg_grade",
+   "expected": 8.39,
+   "source": "B.29 영업점 시나리오 — 지점 평균 신용등급(잔액 가중)"
+  },
+  {
+   "code": "bank_avg_grade",
+   "expected": 6.16,
+   "source": "B.29 영업점 시나리오 — 전행 평균 신용등급"
+  },
+  {
+   "code": "br_micro_amt_share",
+   "expected": 12.7,
+   "source": "B.29 영업점 시나리오 — 지점 소기업 비중(금액)"
+  },
+  {
+   "code": "bank_micro_amt_share",
+   "expected": 4.4,
+   "source": "B.29 영업점 시나리오 — 전행 소기업 비중(금액)"
+  },
+  {
+   "code": "br_prospect_pick",
+   "expected": 5,
+   "source": "B.29 영업점 시나리오 — 마케팅 후보 수(PROSPECT_SELECT)"
+  },
+  {
+   "code": "br_avg_grade_after",
+   "expected": 7.87,
+   "source": "B.29 영업점 시나리오 — 후보 유치 후 평균 등급"
+  },
+  {
+   "code": "br_prime_uplift",
+   "expected": 14.0,
+   "source": "B.29 영업점 시나리오 — 우량기업여신 예상 점수 상향"
+  },
+  {
+   "code": "br_seomin_share",
+   "expected": 0.45,
+   "source": "B.29 영업점 시나리오 — 지점 서민금융 비중"
+  },
+  {
+   "code": "bank_seomin_share",
+   "expected": 2.14,
+   "source": "B.29 영업점 시나리오 — 전행 서민금융 비중"
+  },
+  {
+   "code": "br_seomin_rec_cnt",
+   "expected": 19,
+   "source": "B.29 영업점 시나리오 — 서민금융 권고 건수"
+  },
+  {
+   "code": "br_seomin_uplift",
+   "expected": 12.7,
+   "source": "B.29 영업점 시나리오 — 서민금융 예상 점수 상향"
+  },
+  {
+   "code": "br_kpi_total",
+   "expected": 593.7,
+   "source": "B.29 영업점 시나리오 — 업적평가 총득점"
+  }
+ ],
+ "verdicts": [
+  {
+   "metric": "psi_micro",
+   "rule": "MDL_PSI_BANDS",
+   "expected": "관찰"
+  },
+  {
+   "metric": "ard_micro",
+   "rule": "MDL_AR_DECLINE_BANDS",
+   "expected": "하락 주의"
+  },
+  {
+   "metric": "share_delta_pp",
+   "rule": "INC_PROVISION_SHARE_TREND",
+   "expected": "증가(임계 초과)"
+  },
+  {
+   "compare": [
+    "chi_stat",
+    "<=",
+    "chi_critical"
+   ],
+   "expected": true,
+   "label": "카이제곱 검정 귀무가설 채택"
+  },
+  {
+   "compare": [
+    "dr_6b",
+    ">",
+    "pd_mid_6b"
+   ],
+   "expected": true,
+   "label": "6B 실제부도율이 대표값 초과"
+  },
+  {
+   "compare": [
+    "br_avg_grade",
+    ">",
+    "bank_avg_grade"
+   ],
+   "expected": true,
+   "label": "B.29 영업점 시나리오 — 지점 평균 등급이 전행보다 위험 쪽"
+  },
+  {
+   "compare": [
+    "br_micro_amt_share",
+    ">",
+    "bank_micro_amt_share"
+   ],
+   "expected": true,
+   "label": "B.29 영업점 시나리오 — 지점 소기업 비중이 전행보다 높음"
+  },
+  {
+   "compare": [
+    "bank_micro_avg_grade",
+    ">",
+    "bank_upper_avg_grade"
+   ],
+   "expected": true,
+   "label": "B.29 영업점 시나리오 — 소기업 평균 등급이 상위규모보다 낮음"
+  },
+  {
+   "compare": [
+    "br_seomin_rec_amt",
+    "<=",
+    "br_seomin_gap_amt"
+   ],
+   "expected": true,
+   "label": "B.29 영업점 시나리오 — 권고 규모 ≤ 전행 비중 도달 필요액"
+  }
+ ],
+ "artifacts": [
+  {
+   "key": "risk_dashboard",
+   "find": {
+    "modelCode": "CORP_MICRO"
+   },
+   "path": "arDecline.value",
+   "expected": 19.4
+  },
+  {
+   "key": "report.inclusive-risk",
+   "figure": "share_now",
+   "expected": 9.16
+  },
+  {
+   "key": "report.model-monitoring",
+   "figure": "dr_6b",
+   "expected": 7.929
+  },
+  {
+   "key": "proposals",
+   "find": {
+    "id": "prop-corp-growth"
+   },
+   "path": "recommendation.low",
+   "expected": 7.5
+  },
+  {
+   "key": "proposals",
+   "find": {
+    "id": "prop-corp-growth"
+   },
+   "path": "recommendation.high",
+   "expected": 8.0
+  },
+  {
+   "key": "proposals",
+   "find": {
+    "id": "prop-hh-control"
+   },
+   "path": "recommendation.high",
+   "expected": 3.5
+  },
+  {
+   "key": "attentions",
+   "find": {
+    "id": "att-corp-gap"
+   },
+   "path": "rankScore",
+   "expected": 92.4
+  },
+  {
+   "key": "report.branch-prime-corp",
+   "figure": "br_prospect_cnt",
+   "expected": 5
+  },
+  {
+   "key": "report.branch-seomin",
+   "figure": "br_seomin_rec_cnt",
+   "expected": 19
+  },
+  {
+   "key": "branch_dashboard",
+   "find": {
+    "code": "CORE_PRIME"
+   },
+   "path": "changeType",
+   "expected": "신설"
+  },
+  {
+   "key": "branch_dashboard",
+   "find": {
+    "code": "INCL_SEOMIN"
+   },
+   "path": "max",
+   "expected": 20
+  }
+ ],
+ "retrieval": [
+  {
+   "query": "포용금융 확대 서민 취약계층 금융 공급",
+   "expect": "doc-gov-inclusive",
+   "k": 4
+  },
+  {
+   "query": "RWA 한도 총자산 최대 성장률",
+   "expect": "doc-mgmt-rwalimit",
+   "k": 4
+  },
+  {
+   "query": "가계부채 증가율 관리 방안",
+   "expect": "doc-gov-household",
+   "k": 4
+  },
+  {
+   "query": "등급계량화 카이제곱 검정 귀무가설",
+   "expect_any": [
+    "doc-model-stat",
+    "doc-model-corp"
+   ],
+   "k": 4
+  },
+  {
+   "query": "포용금융 대상 상품 운영기준 햇살론",
+   "expect_any": [
+    "doc-mgmt-inclusive-products",
+    "doc-mgmt-perfeval"
+   ],
+   "k": 4
+  },
+  {
+   "query": "우량기업여신 신용등급 가중치 업적평가",
+   "expect": "doc-perf-2026h2",
+   "k": 4
+  },
+  {
+   "query": "여신가망 재무우량 기업명세 외감기업 활성화",
+   "expect": "doc-risk-prospect-notice",
+   "k": 4
+  }
+ ],
+ "assist": [
+  {
+   "question": "포용금융 충당금 비중은 얼마인가요?",
+   "expect_metric": "share_now"
+  },
+  {
+   "question": "기업여신 증가율과 목표 대비 이탈은?",
+   "expect_metric": "corp_gap"
+  },
+  {
+   "question": "소기업 6B 등급 실제부도율은?",
+   "expect_metric": "dr_6b"
+  },
+  {
+   "question": "PSI 안정성 지수는?",
+   "expect_metric": "psi_micro"
+  }
+ ]
 }

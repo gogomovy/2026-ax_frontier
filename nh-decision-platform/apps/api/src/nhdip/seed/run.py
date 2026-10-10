@@ -40,6 +40,7 @@ from nhdip.models import (
 from nhdip.security import encrypt_secret, hash_password
 from nhdip.views.store import publish
 
+from . import defs_branch as B
 from . import defs_contracts as DC
 from . import defs_core as C
 from . import defs_data as D
@@ -96,7 +97,7 @@ def seed_iam(s: Session, out: dict[str, Any]) -> None:
         out["admin"] = st.bootstrap_admin_emp_no
     demo_pw = os.environ.get("DEMO_USER_PASSWORD", "")
     if demo_pw:
-        for emp, name, org, pos in (("20250001", "이수정", "T111", "과장"), ("20250002", "박현우", "T211", "차장"), ("20250003", "최지훈", "T311", "대리")):
+        for emp, name, org, pos in (("20250001", "이수정", "T111", "과장"), ("20250002", "박현우", "T211", "차장"), ("20250003", "최지훈", "001068", "대리")):
             if not s.get(AppUser, emp):
                 s.add(AppUser(emp_no=emp, name=name, password_hash=hash_password(demo_pw), org_code=org, position=pos, role="user", status="active", approved_by="seed"))
         out["demo_users"] = 3
@@ -107,7 +108,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
     for key, (value, desc) in C.SETTINGS.items():
         if not s.get(Setting, key):
             s.add(Setting(key=key, value=value, description=desc))
-    for code, name, kind, desc, body in [*C.RULES, DC.RULE, DC.RULE_IMPACT]:
+    for code, name, kind, desc, body in [*C.RULES, DC.RULE, DC.RULE_IMPACT, *B.RULES]:
         if not s.get(Rule, code):
             s.add(Rule(code=code, name=name, kind=kind, description=desc, active_version=1))
             s.flush()
@@ -137,7 +138,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
                 s.add(Prompt(agent_code=code, version=1, system=system, user_template="", note="초기 프롬프트 (빈 user_template = 노드 기본 템플릿 사용)", created_by="seed"))
     s.flush()
     # 데이터셋 정의
-    for d in [*D.DATASETS, DC.DATASET]:
+    for d in [*D.DATASETS, DC.DATASET, *B.DATASETS]:
         if not s.get(Dataset, d["code"]):
             s.add(Dataset(**d))
     s.flush()
@@ -162,7 +163,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
         s.add(Setting(key="seed.applied_upgrades", value=done, description="한 번만 적용하는 시드 보강 이름 (관리자가 이후 바꾼 값은 다시 덮지 않음)"))
     s.flush()
     # 워크플로우 · 노드 · 트리거
-    for w in D.WORKFLOWS:
+    for w in [*D.WORKFLOWS, *B.WORKFLOWS]:
         if s.get(Workflow, w["code"]):
             _upgrade_workflow(s, w)
             continue
@@ -173,7 +174,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
         for kind, target in w["triggers"]:
             s.add(WorkflowTrigger(workflow_code=w["code"], kind=kind, target=target, debounce_sec=w.get("debounce"), enabled=True))
     s.flush()
-    for m in [*D.metrics(), *DC.metrics()]:
+    for m in [*D.metrics(), *DC.metrics(), *B.metrics()]:
         cur = s.get(Metric, m["code"])
         if not cur:
             s.add(Metric(**m))
@@ -189,7 +190,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
             if ds is not None:
                 ds.parser = {**cfg, **(ds.parser or {})}
     if not s.execute(select(ViewBinding)).first():
-        for b in D.bindings():
+        for b in [*D.bindings(), *B.bindings()]:
             s.add(ViewBinding(**b, enabled=True))
     out["cfg"] = "ok"
 
@@ -480,7 +481,7 @@ def seed_documents(s: Session, out: dict[str, Any]) -> None:
 
 def seed_datasets(s: Session, out: dict[str, Any]) -> None:
     n = 0
-    for spec in [*D.dataset_versions(), DC.dataset_version()]:
+    for spec in [*D.dataset_versions(), DC.dataset_version(), *B.dataset_versions()]:
         ds = s.get(Dataset, spec["dataset"])
         t = source(ds.origin)
         exists = s.execute(select(t.version.id).where(t.version.dataset_code == ds.code, t.version.file_name == spec["file_name"]).limit(1)).first()
@@ -494,6 +495,86 @@ def seed_datasets(s: Session, out: dict[str, Any]) -> None:
         ingest_rows(s, ds, rows, quality=quality, file_name=spec["file_name"], data_origin="simulated", actor="seed", note="목데이터 시뮬레이션 버전", force=True)
         n += 1
     out["dataset_versions"] = n
+
+
+def branch_upgrade(s: Session, out: dict[str, Any], first: bool) -> None:
+    """영업점 시나리오(B.29) 운영 DB 보강 — 1회. 새 DB 는 각 시드 단계가 이미 채우므로 비어 있는 것만 넣는다(관리자 편집 보존)."""
+    if _applied(s, "branch-v1"):
+        return
+    done: dict[str, Any] = {}
+    # 화면: 영업점 홈은 현황(대시보드)으로 — 이전 기본값 그대로일 때만
+    home = s.get(Screen, "BRANCH_HOME")
+    if home and home.label == "내 목표·가이드":
+        spec = next(x for x in C.SCREENS if x["code"] == "BRANCH_HOME")
+        home.label, home.match, home.step = spec["label"], spec.get("match"), spec.get("step")
+        done["screen_home"] = True
+    # 화면 리소스 · 질의 리소스 · 문서 분류 — 없는 키만 합친다
+    res = s.get(Setting, "screen.resources")
+    if res is not None:
+        cur = dict(res.value or {})
+        for sc in C.SCREENS:
+            if sc["code"].startswith("BRANCH_"):
+                have = list(cur.get(sc["code"]) or [])
+                cur[sc["code"]] = have + [r for r in sc.get("resources", []) if r not in have]
+        res.value = cur
+    for key in ("assist.workflow_resources", "doc_class.labels", "doc_class.default_origin"):
+        st = s.get(Setting, key)
+        if st is not None and isinstance(st.value, dict):
+            st.value = {**C.SETTINGS[key][0], **st.value}
+    bl = s.get(Setting, "ui.batch_label")
+    if bl is not None and "wf_branch_kpi" not in str(bl.value) and str(bl.value).startswith("변경 기반 실행 ("):
+        bl.value = C.SETTINGS["ui.batch_label"][0]
+    # 표 · 차트 바인딩 (바인딩 시드는 빈 테이블에서만 돌므로)
+    if not s.execute(select(ViewBinding).where(ViewBinding.workflow_code == B.WF)).first():
+        for b in B.bindings():
+            s.add(ViewBinding(**b, enabled=True))
+        done["bindings"] = len(B.bindings())
+    # 화면 산출물 — 없는 키만 게시
+    n = 0
+    for key in B.ARTIFACT_KEYS:
+        path = os.path.join(_screens_dir(), f"{key}.json")
+        if os.path.exists(path) and not s.execute(select(ViewArtifact.id).where(ViewArtifact.key == key).limit(1)).first():
+            with open(path, encoding="utf-8") as fh:
+                publish(s, key, json.load(fh), produced_by="seed")
+            n += 1
+    done["artifacts"] = n
+    # 문서 — 영업점 기준 · 공문 (없는 문서만)
+    with open(os.path.join(_screens_dir(), "documents.json"), encoding="utf-8") as fh:
+        docs = {d["docId"]: d for d in json.load(fh)}
+    have_docs = {c for o in ("bank", "ext") for c in s.execute(select(source(o).document.doc_code)).scalars()}
+    snippets = _collect_snippets()
+    nd = 0
+    for doc_id in B.DOC_IDS:
+        d = docs.get(doc_id)
+        if not d or doc_id in have_docs:
+            continue
+        pages = _doc_pages(d, snippets.get(d["title"], []))
+        ingest_document(s, origin="ext" if d["dbClass"] == "gov_policy" else "bank", doc_code=doc_id, title=d["title"], doc_class=d["dbClass"], text=_doc_text(d, snippets.get(d["title"], [])),
+                        pages=[(p["page"], ("\n".join(_doc_head(d)) + "\n\n" + p["text"]) if i == 0 else p["text"]) for i, p in enumerate(pages)] or None,
+                        issuer=d.get("issuer"), published_at=d.get("effectiveDate"), meta={**d, "pages": pages} if pages else d, actor="seed", emit_event=False)
+        nd += 1
+    done["documents"] = nd
+    s.flush()
+    if not first:
+        for wf in ("wf_graph_projection", B.WF):
+            emit(s, "manual", {"workflow": wf, "reason": "영업점 시나리오 보강 후 계산"}, "seed")
+    out["branch_upgrade"] = done
+
+
+def agents_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """판단 에이전트(B.30) 운영 DB 보강 — 1회. 업무 화면에 변화 피드 리소스(changes)를 더한다(관리자 편집 보존)."""
+    if _applied(s, "agents-v1"):
+        return
+    res = s.get(Setting, "screen.resources")
+    if res is not None:
+        cur = dict(res.value or {})
+        for sc in C.SCREENS:
+            if "changes" in sc.get("resources", []):
+                have = list(cur.get(sc["code"]) or [])
+                if "changes" not in have:
+                    cur[sc["code"]] = have + ["changes"]
+        res.value = cur
+    out["agents_upgrade"] = True
 
 
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
@@ -512,13 +593,16 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     seed_datasets(s, out)
     seed_contracts(s, out)
     s.flush()
+    branch_upgrade(s, out, first)
+    agents_upgrade(s, out)
+    s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.
     if first and with_precompute:
         from nhdip.models import OutboxEvent
 
         s.query(OutboxEvent).filter(OutboxEvent.dispatched_at.is_(None)).update({"dispatched_at": func.now(), "matched": [{"note": "seed — 수동 실행 이벤트로 대체"}]}, synchronize_session=False)
-        for wf in ("wf_graph_projection", "wf_model_monitoring", "wf_inclusive_risk", "wf_hq_goal_review"):
+        for wf in ("wf_graph_projection", "wf_model_monitoring", "wf_inclusive_risk", "wf_hq_goal_review", B.WF):
             emit(s, "manual", {"workflow": wf, "reason": "최초 시드 후 계산"}, "seed")
         out["precompute"] = "queued"
     s.commit()

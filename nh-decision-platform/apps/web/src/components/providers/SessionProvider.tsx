@@ -12,7 +12,7 @@ export interface MenuItem {
   href: string;
   match: string[];
   step?: number | null;
-  countKey?: "goalProposals" | "analyses" | "proposedPlans" | null;
+  countKey?: "goalProposals" | "analyses" | "proposedPlans" | "branchAnalyses" | null;
 }
 export interface MenuSection {
   section: string;

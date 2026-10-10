@@ -94,6 +94,10 @@ def process_one(worker_id: str) -> bool:
             j.error = error
             j.locked_by = None
             s.commit()
+            if j.status in ("done", "failed"):
+                from nhdip.workflow.orchestrator import release_downstream
+
+                release_downstream(s, wf)
         log.info("job %s %s (db %d queries · %.0f ms)", job_id, status, db_stats["queries"], db_stats["ms"])
     return True
 

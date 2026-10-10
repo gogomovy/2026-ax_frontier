@@ -321,5 +321,87 @@
   "ingestStatus": "ready",
   "usedByCount": 12,
   "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
+ },
+ {
+  "docId": "doc-perf-2026h1",
+  "title": "(붙임1) 26년(상) 업적평가 세부기준_최종",
+  "dbClass": "branch_ref",
+  "dbClassLabel": "영업점 기준·공문",
+  "docType": "업적평가 세부기준 (원본 수령 전 시뮬레이션 발췌)",
+  "issuer": "종합기획부 성과관리팀",
+  "effectiveDate": "2026-01-02",
+  "registeredAt": "2026-01-05",
+  "domainLabels": [
+   "여신",
+   "수신",
+   "전행"
+  ],
+  "tags": [
+   "업적평가",
+   "배점표",
+   "리테일",
+   "핵심사업",
+   "생산적·포용금융"
+  ],
+  "accessClass": "internal",
+  "pageCount": 132,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 1,
+  "fileName": "(붙임1)26년(상) 업적평가 세부기준_최종.pdf"
+ },
+ {
+  "docId": "doc-perf-2026h2",
+  "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
+  "dbClass": "branch_ref",
+  "dbClassLabel": "영업점 기준·공문",
+  "docType": "업적평가 세부기준 (원본 수령 전 시뮬레이션 발췌)",
+  "issuer": "종합기획부 성과관리팀",
+  "effectiveDate": "2026-07-01",
+  "registeredAt": "2026-07-02",
+  "domainLabels": [
+   "여신",
+   "수신",
+   "전행"
+  ],
+  "tags": [
+   "업적평가",
+   "배점표",
+   "우량기업여신",
+   "서민금융",
+   "새희망홀씨",
+   "연체평가 예외"
+  ],
+  "accessClass": "internal",
+  "pageCount": 136,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 2,
+  "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf"
+ },
+ {
+  "docId": "doc-risk-prospect-notice",
+  "title": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내",
+  "dbClass": "branch_ref",
+  "dbClassLabel": "영업점 기준·공문",
+  "docType": "본부 공문 (영업점 배포)",
+  "issuer": "신용리스크관리부",
+  "effectiveDate": "2026-07-15",
+  "registeredAt": "2026-07-15",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "외감기업 활성화",
+   "여신가망",
+   "재무우량",
+   "기업명세"
+  ],
+  "accessClass": "internal",
+  "pageCount": 3,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 1,
+  "fileName": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내.pdf"
  }
 ]

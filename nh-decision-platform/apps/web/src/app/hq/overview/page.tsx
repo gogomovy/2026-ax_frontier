@@ -1,7 +1,9 @@
+import { ChangeFeedPanel } from "@/components/domain/ChangeFeedPanel";
 import { OverviewWorkspace } from "@/components/domain/OverviewWorkspace";
 import { PageHeader } from "@/components/layout/PageHeader";
 import {
   getAttentions,
+  getChanges,
   getCapitalView,
   getDomains,
   getGoals,
@@ -12,7 +14,7 @@ import {
 
 /** STEP 1 — 사업부문 현황과 경영목표, 은행 종합목표 (요구사항 DASH-01/02/06, GOAL-04) */
 export default async function OverviewPage() {
-  const [domains, goals, loan, capital, attentions, requests, proposals] = await Promise.all([
+  const [domains, goals, loan, capital, attentions, requests, proposals, changes] = await Promise.all([
     getDomains(),
     getGoals(),
     getLoanOverview(),
@@ -20,6 +22,7 @@ export default async function OverviewPage() {
     getAttentions(),
     getReportRequests(),
     getProposals(),
+    getChanges(),
   ]);
 
   return (
@@ -40,6 +43,9 @@ export default async function OverviewPage() {
           proposals: proposals.length,
         }}
       />
+      <div className="shell mt-xxl">
+        <ChangeFeedPanel feed={changes} />
+      </div>
     </>
   );
 }

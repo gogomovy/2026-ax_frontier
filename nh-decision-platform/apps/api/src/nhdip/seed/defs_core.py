@@ -45,6 +45,8 @@ ORGS = [
     ("BR301", "강남금융센터", "BRANCH", "D300", 103),
     ("BR302", "서초지점", "BRANCH", "D300", 104),
     ("BR303", "역삼역지점", "BRANCH", "D300", 105),
+    # 영업점 시나리오(B.29 · Q43) — 조직 코드 = 사무소 코드
+    ("001068", "수원영통지점", "BRANCH", "D300", 106),
     ("D400", "중부지역본부", "REGION", None, 110),
     ("BR401", "대전지점", "BRANCH", "D400", 111),
     ("BR402", "청주지점", "BRANCH", "D400", 112),
@@ -55,16 +57,18 @@ ORGS = [
 # ═════════════════════════ 화면 ═════════════════════════
 # resources: 이 화면이 호출하는 화면 API 리소스 키 — API 권한 판정 기준(AUTH-08)
 SCREENS = [
-    dict(code="HQ_OVERVIEW", path="/hq/overview", label="현황·목표", section="종합기획부", kind="flow", step=1, sort=10, resources=["hq_dashboard", "attentions", "report_requests", "goals", "proposals", "domains", "loan_overview", "cascade", "insights", "goal_state", "plan_state", "action_plans"]),
+    dict(code="HQ_OVERVIEW", path="/hq/overview", label="현황·목표", section="종합기획부", kind="flow", step=1, sort=10, resources=["changes", "hq_dashboard", "attentions", "report_requests", "goals", "proposals", "domains", "loan_overview", "cascade", "insights", "goal_state", "plan_state", "action_plans"]),
     dict(code="HQ_ANALYSIS", path="/hq/analysis", label="데이터 분석", section="종합기획부", kind="flow", step=2, sort=11, resources=["loan_overview", "comparison_view", "insights"]),
     dict(code="HQ_GOALS", path="/hq/goals", label="경영목표 설정", section="종합기획부", kind="flow", step=3, count_key="goalProposals", sort=12, resources=["attentions", "goals", "proposals", "review_queue", "report_requests", "cascade", "insights", "goal_state", "goal_actions", "plan_state", "action_plans"]),
     dict(code="HQ_INITIATIVES", path="/hq/initiatives", label="사업부서 진행 사업", section="종합기획부", kind="reference", sort=13, resources=["action_plans", "plan_state", "analysis_tabs"]),
     dict(code="HQ_CAPITAL", path="/hq/capital", label="총자산·수익성 기준", section="종합기획부", kind="reference", sort=14, resources=["capital_view", "profitability"]),
     dict(code="DOMAINS", path="/domains", label="사업부문 상세", section="종합기획부", kind="hidden", sort=15, resources=["domains"]),
-    dict(code="RISK_HOME", path="/risk", label="현황", section="신용리스크관리부", kind="flow", step=1, match="=/risk", sort=20, resources=["risk_dashboard", "analysis_tabs", "default_rate_trend", "insights", "action_plans", "plan_state"]),
+    dict(code="RISK_HOME", path="/risk", label="현황", section="신용리스크관리부", kind="flow", step=1, match="=/risk", sort=20, resources=["changes", "risk_dashboard", "analysis_tabs", "default_rate_trend", "insights", "action_plans", "plan_state"]),
     dict(code="RISK_ANALYSIS", path="/risk/analysis/model-monitoring", label="분석 결과", section="신용리스크관리부", kind="flow", step=2, count_key="analyses", match="/risk/analysis", sort=21, resources=["analysis_tabs", "reports", "inclusive", "insights", "action_plans", "plan_state", "plan_actions"]),
     dict(code="RISK_GUIDES", path="/risk/guides", label="수행방안", section="신용리스크관리부", kind="flow", step=3, count_key="proposedPlans", sort=22, resources=["analysis_tabs", "action_plans", "plan_state", "plan_actions", "reports"]),
-    dict(code="BRANCH_HOME", path="/branch", label="내 목표·가이드", section="영업점", kind="flow", sort=30, resources=["branch_targets", "action_plans", "plan_state", "cascade", "goals"]),
+    dict(code="BRANCH_HOME", path="/branch", label="현황", section="영업점", kind="flow", step=1, match="=/branch", sort=30, resources=["branch_dashboard", "branch_tabs", "changes"]),
+    dict(code="BRANCH_ANALYSIS", path="/branch/analysis", label="분석 결과", section="영업점", kind="flow", step=2, count_key="branchAnalyses", match="/branch/analysis", sort=31, resources=["branch_dashboard", "branch_tabs", "branch_reports"]),
+    dict(code="BRANCH_TARGETS", path="/branch/targets", label="본부 전파 목표·가이드", section="영업점", kind="reference", sort=32, resources=["branch_targets", "action_plans", "plan_state", "cascade", "goals"]),
     dict(code="KNOWLEDGE", path="/knowledge", label="데이터베이스", section="공통", kind="reference", sort=80, resources=["documents", "datasets", "terms", "search"]),
     # 관리자
     dict(code="ADMIN_HOME", path="/admin", label="시스템 상태", section="관리자", kind="admin", sort=100, admin_only=True, match="=/admin"),
@@ -85,6 +89,7 @@ SCREENS = [
     dict(code="ADMIN_AUDIT", path="/admin/audit", label="감사 로그", section="관리자 · 모니터링", kind="admin", sort=123, admin_only=True),
     dict(code="ADMIN_TRACE", path="/admin/monitor/trace", label="요청 추적", section="관리자 · 모니터링", kind="admin", sort=124, admin_only=True),
     dict(code="ADMIN_EVALS", path="/admin/monitor/evals", label="골든셋 평가", section="관리자 · 모니터링", kind="admin", sort=125, admin_only=True),
+    dict(code="ADMIN_AGENT_DECISIONS", path="/admin/monitor/agents", label="에이전트 결정", section="관리자 · 모니터링", kind="admin", sort=127, admin_only=True),
     dict(code="ADMIN_ALERTS", path="/admin/monitor/alerts", label="운영 알림 · 비용", section="관리자 · 모니터링", kind="admin", sort=126, admin_only=True),
 ]
 
@@ -92,9 +97,9 @@ SCREENS = [
 GRANTS = {
     "D100": ["HQ_OVERVIEW", "HQ_ANALYSIS", "HQ_GOALS", "HQ_INITIATIVES", "HQ_CAPITAL", "DOMAINS", "KNOWLEDGE"],
     "D200": ["RISK_HOME", "RISK_ANALYSIS", "RISK_GUIDES", "KNOWLEDGE"],
-    "D300": ["BRANCH_HOME", "KNOWLEDGE"],
-    "D400": ["BRANCH_HOME", "KNOWLEDGE"],
-    "D500": ["BRANCH_HOME", "KNOWLEDGE"],
+    "D300": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
+    "D400": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
+    "D500": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
     "D900": ["KNOWLEDGE"],
 }
 
@@ -109,7 +114,7 @@ SETTINGS = {
     "embedding.agent": ("embedder", "문서 임베딩에 사용할 에이전트 코드"),
     "search.top_k": (5, "근거 검색 결과 수"),
     "contracts.dept_prefix": ({"종기부": "hq", "리스크": "risk", "영업점": "branch"}, "컬럼 정의서 부서 → mart 테이블 접두어 (예: 종기부 T01 → mart.hq_t01)"),
-    "assist.workflow_resources": ({"wf_model_monitoring": "risk_dashboard", "wf_inclusive_risk": "risk_dashboard", "wf_hq_goal_review": "hq_dashboard"}, "질의 패널 — 워크플로우 지표를 볼 수 있는 화면 리소스 (권한 없는 지표는 답변에서 제외)"),
+    "assist.workflow_resources": ({"wf_model_monitoring": "risk_dashboard", "wf_inclusive_risk": "risk_dashboard", "wf_hq_goal_review": "hq_dashboard", "wf_branch_kpi": "branch_dashboard"}, "질의 패널 — 워크플로우 지표를 볼 수 있는 화면 리소스 (권한 없는 지표는 답변에서 제외)"),
     "format.unit_labels": ({"KRW_MN": "백만원", "KRW_BN": "억원", "KRW_TN": "조원", "PCT": "%", "PP": "%p", "CNT": "건", "RATIO": "", "NONE": ""}, "단위 코드 → 표시 문자 (전파 경로 목표 라벨 갱신 · 보고서 내보내기)"),
     "report.export_formats": (["pdf", "hwpx", "hwp", "html"], "보고서 내려받기 형식과 메뉴 순서 (pdf · hwpx · hwp · html) — 빼면 화면 메뉴에서도 사라짐"),
     "report.pdf_fonts": ({"regular": "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "bold": "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"}, "PDF 한글 글꼴 경로 (없으면 내장 CID 글꼴 HYGothic-Medium)"),
@@ -124,12 +129,14 @@ SETTINGS = {
     "alerts.policy": ({"enabled": False, "channels": ["webhook", "email"], "min_severity": "warning", "lookback_min": 30, "rules": {"workflow_failed": {"enabled": True, "severity": "critical"}, "quality_failed": {"enabled": True, "severity": "warning"}, "auth_failures": {"enabled": True, "severity": "warning", "threshold": 10, "window_min": 10}, "llm_budget": {"enabled": True, "severity": "warning", "levels": [80, 100]}, "golden_failed": {"enabled": True, "severity": "warning"}}}, "운영 알림 — 켜기 · 채널 · 최소 심각도 · 조건별 기준. 채널 주소 · 계정은 배포 환경변수(ALERT_WEBHOOK_URL · ALERT_SMTP_*)"),
     "llm.pricing": ({}, "LLM 단가(1천 토큰당, 원) — {\"모델명\" 또는 \"*\": {\"prompt_per_1k\": 0, \"completion_per_1k\": 0}}. 비우면 금액 0(사내 게이트웨이)"),
     "llm.budget": ({"monthly_tokens": 0, "monthly_cost": 0, "per_agent_tokens": {}, "on_exceed": "warn", "warn_pct": 80}, "LLM 월 예산 — 0 = 한도 없음. on_exceed: warn(알림만) · block(초과 후 호출 차단, 서술은 기존 문장 유지)"),
+    "orchestrator.policy": ({"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300}, "오케스트레이터 — 켜기 · 명시 의존({\"워크플로우\": [\"상위\"]}, \"*\" = 전체) · 정의 도출(지표 참조 · 근거 검색 전 그래프 투영) · 대기 간격 · 최대 대기(초)"),
     "ui.as_of": ("2026-08-31", "화면 기준일 표시"),
     "ui.timezone": ("Asia/Seoul", "화면 산출물 생성 시각의 시간대"),
-    "doc_class.labels": ({"gov_policy": "정부정책 DB", "mgmt_decision": "경영 의사결정 DB", "model_method": "모형·방법론", "reference": "참고 자료"}, "문서 분류 코드 → 화면 표시명"),
-    "doc_class.default_origin": ({"gov_policy": "ext", "mgmt_decision": "bank", "model_method": "bank", "reference": "ext"}, "문서 분류별 기본 출처(업로드 화면 기본값)"),
+    "doc_class.labels": ({"gov_policy": "정부정책 DB", "mgmt_decision": "경영 의사결정 DB", "model_method": "모형·방법론", "branch_ref": "영업점 기준·공문", "reference": "참고 자료"}, "문서 분류 코드 → 화면 표시명"),
+    "doc_class.default_origin": ({"gov_policy": "ext", "mgmt_decision": "bank", "model_method": "bank", "branch_ref": "bank", "reference": "ext"}, "문서 분류별 기본 출처(업로드 화면 기본값)"),
     "goal.rule_links": ({"goal-corp-growth": {"rule": "GOAL_TARGETS", "path": "corp_loan_growth"}, "goal-hh-control": {"rule": "GOAL_TARGETS", "path": "hh_loan_growth"}}, "경영목표 확정 시 갱신할 규칙 값 (목표 → 규칙 경로)"),
-    "ui.batch_label": ("변경 기반 실행 (wf_model_monitoring · wf_inclusive_risk · wf_hq_goal_review)", "화면 상단 실행 라벨"),
+    "ui.batch_label": ("변경 기반 실행 (wf_model_monitoring · wf_inclusive_risk · wf_hq_goal_review · wf_branch_kpi)", "화면 상단 실행 라벨"),
+    "branch.office_codes": ({}, "영업점 조직 코드 → 사무소 코드 (비우면 조직 코드 = 사무소 코드). 영업점 데이터(조사자사무소코드 · 사무소코드)와 사용자 소속을 잇는 기준 (Q43)"),
 }
 
 # ═════════════════════════ 판정 규칙 (버전 관리) ═════════════════════════
@@ -190,6 +197,15 @@ RULES = [
     ("INC_PROVISION_SHARE_TREND", "포용금융 충당금 비중 추이", "threshold", "기준시점 · 비중 증감 임계(%p)", {"base_ym": "202601", "bands": [{"max": 0, "label": "감소", "severity": "info"}, {"max": 0.5, "label": "증가", "severity": "watch"}, {"max": None, "label": "증가(임계 초과)", "severity": "caution"}]}),
     ("GOAL_TARGETS", "확정 경영목표 수준", "threshold", "경영목표 확정 시 갱신 — 이탈 계산 기준", {"corp_loan_growth": 7.0, "hh_loan_growth": 4.0}),
     ("CRITIC_RULES", "서술 검증 규칙", "guide", "LLM 서술 차단 규칙", {"literal_number_regex": r"\d+(?:[.,]\d+)+\s*(?:%p?|bp|배)?|\d+\s*(?:%p?|bp|억|조|만|천|원|건|배)", "causal_phrases": ["때문에", "로 인해", "로 인하여", "원인은", "탓에", "초래했"]}),
+    ("CHANGE_SIGNIFICANCE", "변화 감지 유의 기준 (B.30 · 시뮬레이션 가정 · Q51 추천안)", "threshold",
+     "직전 확정값 대비 변화 — 단위별 절대 변화(abs) · 변화율(pct, %) 중 큰 비율이 1 이상이면 일반, major_multiplier 배 이상이면 주요. 지표별(metrics) 우선 · 제외(ignore) · 데이터 행 수 변화율 · 범위(scope, 영업점 산출물)",
+     {"units": {"PCT": {"abs": 0.1}, "PP": {"abs": 0.1}, "RATIO": {"abs": 0.005}, "NONE": {"abs": 0.05, "pct": 1.0}, "CNT": {"pct": 1.0}, "KRW_*": {"pct": 0.5}},
+      "major_multiplier": 5, "metrics": {"psi_micro": {"abs": 0.01}, "chi_stat": {"abs": 0.5}}, "ignore": [], "max_feed": 200, "data": {"row_change_pct": 1.0},
+      "scope": {"wf_branch_kpi": {"office": {"rule": "BRANCH_SCOPE", "path": "office_code"}}},
+      "note": "기준값은 시뮬레이션 가정 — 행내 유의 변화 기준(보고 기준) 확정 시 교체"}),
+    ("PLANNER_POLICY", "실행 계획 기준 (B.30 · Q52 추천안)", "guide",
+     "전체 서술 갱신 원인(full_refresh_on) · 정기 실행 시 무조건 갱신 여부 · 데이터 변경 시 수치 없는 인사이트 갱신 · 한 번에 서술할 최대 건수(0 = 제한 없음)",
+     {"full_refresh_on": ["manual", "rule.changed", "config.changed"], "refresh_on_schedule": False, "narrate_on_data_change": True, "max_targets": 0}),
     ("ROUNDING", "반올림 정책", "rounding", "지표별 반올림은 지표 정의에서, 기본값은 설정 calc.rounding_default", {"default": "HALF_UP", "note": "요구사항 Q9 확정 — 사사오입(HALF_UP): 9.1575% → 9.16%"}),
 ]
 
@@ -300,7 +316,11 @@ QUERY_SYSTEM = (
 AGENTS = [
     ("narrator_model", "모형 모니터링 서술", "신용평가모형 모니터링 결과(6B 등급 특이사항 등) 의견 서술", "llm", "default", NARRATOR_SYSTEM),
     ("narrator_inclusive", "포용금융 리스크 서술", "포용금융 충당금 비중 분석 의견 서술", "llm", "default", NARRATOR_SYSTEM),
+    ("narrator_branch", "영업점 영업 가이드 서술", "업적평가 기준 변경에 따른 영업 가이드 의견 서술 — 본부 내부 문서는 인용하지 않음", "llm", "default", NARRATOR_SYSTEM),
     ("narrator_hq", "경영목표 검토 서술", "여신 현황·목표 이탈·제안 근거 서술", "llm", "default", NARRATOR_SYSTEM),
+    ("change_detector", "변화 감지", "지표 값 · 데이터 버전 변화를 커널로 비교해 유의 변화(주요 · 일반)를 판정하고 변화 피드 · change.detected 이벤트로 알림 (규칙 CHANGE_SIGNIFICANCE)", "rule", None, ""),
+    ("planner", "실행 계획", "원인 · 변화 · 서술 이력으로 이번 실행의 서술(LLM) 대상과 근거 검색 여부를 결정 — 바뀐 것이 없으면 LLM 미호출 (규칙 PLANNER_POLICY)", "rule", None, ""),
+    ("orchestrator", "오케스트레이터", "워크플로우 간 의존(지표 참조 · 근거 검색 전 그래프 투영 · 설정)을 보고 하위 작업을 미루거나 상위 완료 즉시 실행 (설정 orchestrator.policy)", "rule", None, ""),
     ("critic", "서술 검증", "리터럴 숫자 · 미등록 마커 · 인과 단정 차단 (규칙 기반)", "rule", None, ""),
     ("ontology_extractor", "온톨로지 구조화", "문서 → 엔티티·관계 추출 (스키마 검증 후 그래프 반영)", "llm", "default", EXTRACTOR_SYSTEM),
     ("embedder", "문서 임베딩", "청크 임베딩(pgvector) — 임베딩 모델 지정 필요", "llm", "embedding", ""),
