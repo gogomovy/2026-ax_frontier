@@ -35,6 +35,8 @@ x-api-env: &api-env
   COOKIE_SECURE: ${COOKIE_SECURE:-0}
   # 변경 요청 Origin 허용 목록(쉼표, 예: https://nhdip.example) — 비우면 같은 출처만 (B.32)
   TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+  # 사용자 IP 판정 — X-Forwarded-For 를 믿을 바로 앞 프록시 대역(기본: 이 컴퓨터 + Docker 내부망)
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32,::1/128,172.16.0.0/12}
   # API 문서(/docs) — 운영(prod) 기본 꺼짐. true 로 켠다
   API_DOCS: ${API_DOCS:-}
   # 트랜잭션 유휴 제한(ms) — 잠금을 쥔 채 멈춘 연결을 DB 가 끊는다. 0 = 끄기
@@ -144,6 +146,9 @@ services:
       <<: *api-env
       RUN_MIGRATIONS: "1"
       SEED_ON_START: "1"
+      # API 전용 DB 계정 (B.33) — 데이터 조작만 가능, 감사 로그는 조회 · 추가만. 비우면 소유자 계정으로 접속
+      APP_DB_USER: ${APP_DB_USER:-nhdip_app}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
     volumes:
       - filestore:/data/files
     ports:

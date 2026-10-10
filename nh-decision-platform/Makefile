@@ -54,10 +54,10 @@ reset:
 	$(COMPOSE) down -v
 
 seed:
-	$(COMPOSE) exec api python -m nhdip.cli seed
+	$(COMPOSE) exec -e NHDIP_USE_APP_ROLE=0 api python -m nhdip.cli seed
 
 test:
-	$(COMPOSE) exec api python -m pytest -q tests
+	$(COMPOSE) exec -e NHDIP_USE_APP_ROLE=0 api python -m pytest -q tests
 e2e:
 	cd apps/e2e && npm install --no-audit --no-fund >/dev/null && \
 	set -a && . ../../.env && set +a && \

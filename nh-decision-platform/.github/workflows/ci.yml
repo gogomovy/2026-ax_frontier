@@ -59,6 +59,8 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm run lint
+      - name: unit tests (vitest)
+        run: npm test
       - name: build (mock)
         run: npx next build
       - name: build (api)

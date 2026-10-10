@@ -2354,6 +2354,16 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 마이그레이션 | `0010_hardening_indexes` | `agent_decision(agent_code, workflow_code, decision, id)` · `dataset_version(dataset_code, version)` 유일(겹침 있으면 일반) · `workflow_run(status, started_at)` |
 | 배포 | `docker-compose.yml`(digest 고정 · `ADMIN_BIND` · 로그 회전 · TZ · 워커 상태 검사 · 비밀번호 필수 · `DB_IDLE_TX_TIMEOUT_MS`), `infra/scripts/backup.sh` · `restore.sh`, `cli wait-idle`, `apps/web/src/app/error.tsx` · `loading.tsx`, `api-server.ts`(`AbortSignal.timeout`) | `make backup` · `make restore FROM=… CONFIRM=yes` · `make wait-idle` |
 | 시드 보강 | `seed/run.hardening_upgrade` — 사전형 설정에 없는 키만 채움(매 기동 멱등) | `agents.llm_judge` · `orchestrator.policy` · `auth.rate_limits` · `retention.policy` · `privacy.policy` · `calc.unit_check` |
+### 19.18 점검 후속 (B.33)
+| 영역 | 위치 | 동작 |
+|---|---|---|
+| API 전용 DB 계정 | `nhdip/dbrole.ensure_app_role` · `cli db-app-role` · `config.runtime_database_url` · `docker-entrypoint.sh` | api 기동: 마이그레이션(소유자) → 앱 계정 준비(소유자, 멱등: 역할 · 스키마 USAGE · 표 DML · 감사 SELECT/INSERT · 기본 권한) → 시드(소유자) → uvicorn(앱 계정). 워커 · `make seed` · `make test` 는 `NHDIP_USE_APP_ROLE=0` |
+| 공유 속도 제한 | `nhdip/ratelimit._db`(독립 트랜잭션 upsert, 고정 창) · `ops.rate_limit`(0011, UNLOGGED) · 보관 정리 | 설정 `auth.rate_limit_backend` |
+| 사용자 IP | `api/deps.client_ip` — 바로 앞 주소가 `TRUSTED_PROXIES` 안이면 X-Forwarded-For 를 오른쪽부터 첫 비신뢰 주소 | 속도 제한 · 감사 · 요청 기록 |
+| 경로 판단 선점 | `dispatcher.dispatch_once` 1단계 — `UPDATE … SET routing_at = now() … RETURNING id`(0011) | 선점한 이벤트만 판단 · 디스패치 |
+| CSP nonce | `apps/web/src/proxy.ts`(요청마다 nonce → 요청 · 응답 `Content-Security-Policy`) · `src/lib/csp.ts` · `next.config.mjs`(목데이터 모드만 정적 CSP) | Next 가 렌더링 때 프레임워크 스크립트에 nonce 부착 |
+| 포커스 | `src/lib/a11y.ts useFocusTrap` — `Sheet`(드로어가 없을 때만) · `SourceDrawer`(자동 포커스 · 복귀) | Tab · Shift+Tab 순환 |
+| 프론트 테스트 | `vitest.config.mts` · `src/lib/units.test.ts` · `npm test`(CI web 잡) | |
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).

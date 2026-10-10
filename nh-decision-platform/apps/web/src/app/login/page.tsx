@@ -6,6 +6,7 @@ import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { AuthFrame, Field, FormError } from "@/components/auth/AuthFrame";
 import { Button } from "@/components/ui/primitives";
 import { api, apiPost } from "@/lib/api-client";
+import { safeNext } from "@/lib/safe-next";
 
 /** SSO 실패 사유 (서버 → /login?sso_error=) */
 const SSO_ERROR: Record<string, string> = {
@@ -15,11 +16,6 @@ const SSO_ERROR: Record<string, string> = {
   account: "SSO 계정과 연결된 사용 가능한 사번이 없습니다. 가입 신청 또는 관리자 승인을 확인해 주세요.",
   disabled: "SSO 로그인이 설정되어 있지 않습니다.",
 };
-
-/** 같은 사이트의 상대 경로만 허용 — 열린 리디렉션 차단(`//`, `/\`, 제어 문자 · 공백 거부). 서버 oidc._safe_next 와 같은 규칙 */
-function safeNext(n: string | null): string | null {
-  return n && n.startsWith("/") && !n.startsWith("//") && !n.includes("\\") && /^[\x21-\x7e]{1,300}$/.test(n) ? n : null;
-}
 
 /** 로그인 — 사번 8자리 + 비밀번호 (요구사항 AUTH-06) */
 export default function LoginPage() {

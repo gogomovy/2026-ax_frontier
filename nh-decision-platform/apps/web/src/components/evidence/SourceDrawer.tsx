@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
 import { Badge, IconCalc, IconDoc, IconWarn } from "@/components/ui/primitives";
 import { EVIDENCE_CATEGORY_LABEL, DB_CLASS_LABEL, formatDate, formatFigure } from "@/lib/format";
 import { API_MODE } from "@/lib/config";
 import type { Evidence } from "@/lib/types";
+import { useFocusTrap } from "@/lib/a11y";
 
 /** 원본 문서 뷰어 주소 — 파일명 · 제목으로 문서를 찾고, 인용문 위치를 하이라이트한다 (F.12) */
 function docViewerHref(item: Evidence): string {
@@ -32,6 +33,9 @@ export function SourceDrawer() {
   const selected =
     drawer?.kind === "evidence" ? (pick.for === drawer ? pick.id : (drawer.selectedId ?? drawer.items[0]?.id ?? null)) : null;
   const setSelected = (id: string | null) => setPick({ for: drawer, id });
+  const panelRef = useRef<HTMLElement>(null);
+  // 열리면 패널로 포커스, Tab 은 패널 안에서만, 닫히면 연 요소(수치 · 근거 버튼)로 복귀 (B.33)
+  useFocusTrap(panelRef, Boolean(drawer));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -48,14 +52,17 @@ export function SourceDrawer() {
       <button
         type="button"
         aria-label="닫기"
+        tabIndex={-1}
         onClick={closeDrawer}
         className="flex-1 bg-[rgba(10,19,23,0.32)]"
       />
       <aside
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={drawer.title}
-        className="flex h-full w-full max-w-[520px] flex-col bg-canvas shadow-pop"
+        className="flex h-full w-full max-w-[520px] flex-col bg-canvas shadow-pop outline-none"
       >
         <header className="flex items-start justify-between gap-base border-b border-hairline-soft px-xl py-lg">
           <div>

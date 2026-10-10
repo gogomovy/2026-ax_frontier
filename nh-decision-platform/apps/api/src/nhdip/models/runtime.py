@@ -98,6 +98,7 @@ class OutboxEvent(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     dispatched_at: Mapped[datetime | None] = mapped_column(nullable=True, index=True)
     matched: Mapped[list[Any]] = mapped_column(JSONB, default=list)  # 매칭된 워크플로우와 사유
+    routing_at: Mapped[datetime | None] = mapped_column(nullable=True)  # LLM 경로 판단 선점 시각 (B.33 · 워커 중복 판단 방지)
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True, default=_trace_or_new)
 
 

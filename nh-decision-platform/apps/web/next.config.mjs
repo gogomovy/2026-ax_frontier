@@ -3,7 +3,8 @@ const API_MODE = (process.env.NEXT_PUBLIC_DATA_SOURCE ?? "mock") === "api";
 const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 
 // 보안 헤더 (B.32) — 외부 출처는 글꼴 CDN(jsdelivr · Pretendard) 하나뿐이다.
-// Next 의 하이드레이션 인라인 스크립트 때문에 script-src 에 'unsafe-inline' 을 둔다(nonce 전환은 후속 과제).
+// CSP: API 모드는 proxy.ts 가 요청마다 nonce 정책을 붙인다(B.33 · src/lib/csp.ts).
+//      목데이터 모드는 정적 페이지라 nonce 를 쓸 수 없어 아래 정적 정책('unsafe-inline')을 쓴다.
 const DEV = process.env.NODE_ENV !== "production";
 const CSP = [
   "default-src 'self'",
@@ -18,7 +19,7 @@ const CSP = [
   "object-src 'none'",
 ].join("; ");
 const SECURITY_HEADERS = [
-  { key: "Content-Security-Policy", value: CSP },
+  ...(API_MODE ? [] : [{ key: "Content-Security-Policy", value: CSP }]),
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

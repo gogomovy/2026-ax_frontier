@@ -114,6 +114,7 @@ SETTINGS = {
         {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "stream_user": [10, 60], "request_user": [20, 86400]},
         "요청 속도 제한 {이름: [허용 횟수, 초]} — 0 이면 끄기. 로그인(IP · 사번) · 가입(IP) · 질의(사용자) · 분석 스트림(사용자) · 확인 요청(사용자) (B.32)",
     ),
+    "auth.rate_limit_backend": ("db", "속도 제한 저장 위치 — db(여러 API 프로세스가 함께 셈 · 기본) · memory(프로세스별) (B.33)"),
     # ── 점검 보완 (B.32) ──
     "retention.policy": (
         {"enabled": True, "artifact_generations": 50, "llm_call_days": 180, "node_run_days": 180, "agent_decision_days": 180, "outbox_days": 90, "job_days": 90},

@@ -347,3 +347,120 @@ def test_branch_report_request_reaches_hq(db):
     assert [x["id"] for x in br.get("/state/report-requests/mine").json()] == [r.json()["id"]]
     hq = admin.get("/screens/report-requests").json()
     assert hq[0]["id"] == r.json()["id"] and "createdBy" not in hq[0]
+
+
+# ═════════════════════════ B.33 ═════════════════════════
+def test_app_role_is_dml_only_and_audit_append_only(db):
+    import secrets as _s
+
+    import pytest
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.exc import DBAPIError
+
+    from nhdip.config import get_settings
+    from nhdip.dbrole import ensure_app_role
+
+    owner = create_engine(get_settings().database_url, future=True)
+    user, pw = "nhdip_app_test", "T" + _s.token_hex(8) + "'x"
+    try:
+        assert ensure_app_role(owner, user, pw)
+        assert ensure_app_role(owner, user, pw)  # 멱등
+        app = create_engine(make_url(get_settings().database_url).set(username=user, password=pw), future=True)
+        try:
+            with app.begin() as c:
+                assert c.execute(text("SELECT count(*) FROM cfg.setting")).scalar() > 0
+                c.execute(text("INSERT INTO audit.audit_log (at, actor, action) VALUES (now(), 't', 'test.app_role')"))
+                c.execute(text("UPDATE cfg.setting SET description = description WHERE key = 'ui.as_of'"))
+            for stmt in (
+                "UPDATE audit.audit_log SET actor = 'x' WHERE action = 'test.app_role'",
+                "DELETE FROM audit.audit_log WHERE action = 'test.app_role'",
+                "TRUNCATE audit.audit_log",
+                "ALTER TABLE audit.audit_log DISABLE TRIGGER ALL",
+                "CREATE TABLE mart.x_test (id int)",
+                "DROP TABLE cfg.setting",
+            ):
+                with pytest.raises(DBAPIError) as ei:
+                    with app.begin() as c:
+                        c.execute(text(stmt))
+                assert "permission denied" in str(ei.value).lower() or "must be owner" in str(ei.value).lower(), stmt
+        finally:
+            app.dispose()
+    finally:
+        with owner.begin() as c:
+            c.execute(text(f"DROP OWNED BY {user}"))
+            c.execute(text(f"DROP ROLE IF EXISTS {user}"))
+        owner.dispose()
+
+
+def test_runtime_url_uses_app_role():
+    from nhdip.config import Settings, runtime_database_url
+
+    st = Settings(database_url="postgresql+psycopg://own:ownpw@pg:5432/nhdip", app_db_password="apw", nhdip_use_app_role=True)
+    assert runtime_database_url(st) == "postgresql+psycopg://nhdip_app:apw@pg:5432/nhdip"
+    assert runtime_database_url(Settings(database_url="postgresql+psycopg://own:ownpw@pg:5432/nhdip", app_db_password="")).startswith("postgresql+psycopg://own:")
+    assert runtime_database_url(Settings(database_url="postgresql+psycopg://own:ownpw@pg:5432/nhdip", app_db_password="apw", nhdip_use_app_role=False)).startswith("postgresql+psycopg://own:")
+
+
+def test_route_claim_prevents_duplicate_judgement(db, monkeypatch):
+    from nhdip.events import emit
+    from nhdip.models import OutboxEvent, utcnow
+    from nhdip.workflow import orchestrator
+    from nhdip.workflow.dispatcher import dispatch_once
+
+    calls = []
+    monkeypatch.setattr(orchestrator, "route", lambda session, ev, matched: calls.append(ev.id) or matched)
+    with db() as s:
+        dispatch_once(s)
+        emit(s, "change.detected", {"workflow": "wf_branch_kpi", "chain": ["wf_branch_kpi"], "major": 0}, "test")
+        s.commit()
+        ev = s.query(OutboxEvent).order_by(OutboxEvent.id.desc()).first()
+        ev.routing_at = utcnow()  # 다른 워커가 판단 중
+        s.commit()
+        dispatch_once(s)
+        s.expire_all()
+        assert s.get(OutboxEvent, ev.id).dispatched_at is None and ev.id not in calls
+        from datetime import timedelta
+
+        s.get(OutboxEvent, ev.id).routing_at = utcnow() - timedelta(minutes=10)  # 선점 만료
+        s.commit()
+        dispatch_once(s)
+        s.expire_all()
+        assert s.get(OutboxEvent, ev.id).dispatched_at is not None and calls == [ev.id]
+
+
+def test_rate_limit_db_backend_shared(db):
+    from fastapi import HTTPException
+
+    from nhdip import ratelimit
+    from nhdip.models import Setting
+
+    with db() as s:
+        st = s.get(Setting, "auth.rate_limits")
+        st.value = {**st.value, "t_shared": [2, 60]}
+        s.commit()
+        ratelimit.check(s, "t_shared", "k1")
+        ratelimit._hits.clear()  # 다른 프로세스를 흉내 — 메모리 기록 없이도 DB 카운터로 이어서 센다
+        ratelimit.check(s, "t_shared", "k1")
+        ratelimit._hits.clear()
+        import pytest
+
+        with pytest.raises(HTTPException) as ei:
+            ratelimit.check(s, "t_shared", "k1")
+        assert ei.value.status_code == 429 and int(ei.value.headers["Retry-After"]) >= 1
+        ratelimit.check(s, "t_shared", "k2")  # 키별로 따로
+
+
+def test_client_ip_behind_trusted_proxy():
+    from starlette.requests import Request
+
+    from nhdip.api.deps import client_ip
+
+    def req(peer: str, xff: str | None):
+        headers = [(b"x-forwarded-for", xff.encode())] if xff else []
+        return Request({"type": "http", "method": "GET", "path": "/", "headers": headers, "client": (peer, 1234), "query_string": b""})
+
+    assert client_ip(req("172.19.0.7", "203.0.113.9")) == "203.0.113.9"  # web 컨테이너 경유
+    assert client_ip(req("172.19.0.7", "6.6.6.6, 203.0.113.9")) == "203.0.113.9"  # 사용자가 넣은 가짜 앞부분은 무시
+    assert client_ip(req("203.0.113.50", "1.2.3.4")) == "203.0.113.50"  # 신뢰하지 않는 곳에서 직접 온 헤더는 무시
+    assert client_ip(req("172.19.0.7", None)) == "172.19.0.7"

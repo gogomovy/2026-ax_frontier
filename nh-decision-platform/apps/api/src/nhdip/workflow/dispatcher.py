@@ -128,6 +128,9 @@ def _chain_block(session: Session, ev: OutboxEvent, wf: str) -> str | None:
     return None
 
 
+ROUTE_CLAIM_MIN = 5
+
+
 def _needs_route(session: Session, ev: OutboxEvent) -> bool:
     from .orchestrator import policy
 
@@ -150,6 +153,17 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
     plain, routed = [], []
     for ev in events:
         (routed if _needs_route(session, ev) else plain).append(ev.id)
+    if routed:
+        # 경로 판단 선점 (B.33) — 잠금을 쥔 동안 routing_at 을 찍은 이벤트만 이 워커가 판단한다.
+        # 다른 워커가 판단 중(5분 이내 선점)이면 건너뛰고, 그 워커가 디스패치한다. 선점 후 워커가 죽으면 5분 뒤 다시 선점 가능.
+        claimed = session.execute(
+            text(
+                "UPDATE ops.outbox_event SET routing_at = now() WHERE id = ANY(:ids) AND dispatched_at IS NULL "
+                "AND (routing_at IS NULL OR routing_at < now() - make_interval(mins => :m)) RETURNING id"
+            ),
+            {"ids": routed, "m": ROUTE_CLAIM_MIN},
+        ).scalars().all()
+        routed = [i for i in routed if i in set(claimed)]
     session.commit()  # 잠금 해제 — 경로 지정 대상은 LLM 호출 동안 잠그지 않는다
     n = 0
     for eid in plain + routed:

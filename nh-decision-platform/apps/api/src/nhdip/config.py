@@ -11,6 +11,10 @@ class Settings(BaseSettings):
 
     nhdip_env: str = "dev"
     database_url: str = "postgresql+psycopg://nhdip:nhdip@localhost:5432/nhdip"
+    # API 전용 DB 계정 (B.33) — 비밀번호가 있으면 이 계정(DML 만)으로 접속. 마이그레이션 · 시드 · 워커는 NHDIP_USE_APP_ROLE=0 으로 소유자 계정
+    app_db_user: str = "nhdip_app"
+    app_db_password: str = ""
+    nhdip_use_app_role: bool = True
     db_idle_tx_timeout_ms: int = 0  # 트랜잭션 유휴 제한(ms) — 0 이면 끄기. compose 기본 600000 (B.32)
 
     neo4j_uri: str = "bolt://localhost:7687"
@@ -26,6 +30,8 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 12
     # 변경 요청(POST 등)의 Origin 허용 목록(쉼표 구분, 예: https://nhdip.example). 비우면 요청 Host 와 같은 출처만 허용 (B.32)
     trusted_origins: str = ""
+    # X-Forwarded-For 를 믿을 바로 앞 프록시 대역(쉼표, CIDR) — 기본: 이 컴퓨터 + Docker 내부망. 사용자 IP(속도 제한 · 감사) 판정에 씀 (B.33)
+    trusted_proxies: str = "127.0.0.1/32,::1/128,172.16.0.0/12"
     # API 문서(/docs · /openapi.json) — 비우면 dev 에서만 켠다. true/false 로 강제
     api_docs: str = ""
     # SSO(OIDC · Authorization Code + PKCE) — issuer 를 비우면 꺼짐 (F.13 · AUTH-01)
@@ -50,6 +56,15 @@ class Settings(BaseSettings):
 
     worker_poll_sec: float = 1.0
     embedding_dim: int = 1024
+
+
+def runtime_database_url(st: "Settings") -> str:
+    """실행 시 접속 주소 — 앱 계정 비밀번호가 있고 쓰기로 했으면 같은 DB 에 앱 계정으로 (B.33)."""
+    if not (st.nhdip_use_app_role and st.app_db_password):
+        return st.database_url
+    from sqlalchemy.engine import make_url
+
+    return make_url(st.database_url).set(username=st.app_db_user, password=st.app_db_password).render_as_string(hide_password=False)
 
 
 DEFAULT_SESSION_SECRET = Settings.model_fields["session_secret"].default

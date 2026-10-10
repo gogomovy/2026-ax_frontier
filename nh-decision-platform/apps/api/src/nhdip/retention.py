@@ -56,6 +56,13 @@ def purge(session: Session) -> dict[str, int]:
         res = session.execute(text(f"DELETE FROM {table} WHERE {col} < :cut {extra}"), {"cut": utcnow() - timedelta(days=days)})  # noqa: S608 — 고정 목록
         out[table] = res.rowcount or 0
     session.commit()
+    from nhdip import ratelimit
+
+    try:
+        out["ops.rate_limit"] = ratelimit.purge(session)
+    except Exception:  # noqa: BLE001 — 표가 없는 이전 DB
+        session.rollback()
+    session.commit()
     if any(out.values()):
         log.info("보관 기간 정리 %s", out)
     return out

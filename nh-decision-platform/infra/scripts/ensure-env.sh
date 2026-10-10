@@ -40,6 +40,7 @@ fill() {
 
 fill POSTGRES_PASSWORD "$(rand_hex 16)"
 fill NEO4J_PASSWORD "$(rand_hex 16)"
+fill APP_DB_PASSWORD "$(rand_hex 16)"
 fill SESSION_SECRET "$(rand_hex 32)"
 fill CONFIG_ENC_KEY "$(rand_b64)"
 fill LITELLM_MASTER_KEY "sk-$(rand_hex 24)"

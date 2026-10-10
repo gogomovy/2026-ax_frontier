@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode } from "react";
 import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
 import { IconClose } from "@/components/ui/primitives";
+import { useFocusTrap } from "@/lib/a11y";
 
 /**
  * 우측 상세 시트.
@@ -11,6 +12,7 @@ import { IconClose } from "@/components/ui/primitives";
  *  - Esc 로 닫힘(근거 드로어가 위에 열려 있으면 드로어가 먼저 닫힘)
  *  - 열릴 때 시트로 포커스 이동, 닫히면 이전 포커스로 복귀
  *  - 배경 스크롤 잠금
+ *  - Tab 이 시트 밖으로 나가지 않음(근거 드로어가 위에 열리면 드로어가 포커스를 가둔다)
  */
 export function Sheet({
   open,
@@ -34,6 +36,8 @@ export function Sheet({
   const { drawer } = useUi();
   const panelRef = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const titleId = useId();
+  useFocusTrap(panelRef, open && !drawer, { autoFocus: false, restore: false });
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +76,7 @@ export function Sheet({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         tabIndex={-1}
         className={clsx(
           "flex h-full w-full flex-col bg-canvas shadow-pop outline-none",
@@ -81,7 +86,9 @@ export function Sheet({
         <header className="flex items-start gap-base border-b border-hairline-soft px-xl py-lg">
           <div className="min-w-0 flex-1">
             {eyebrow ? <div className="mb-1.5 flex flex-wrap items-center gap-1.5">{eyebrow}</div> : null}
-            <h2 className="text-[18px] font-bold leading-snug text-ink-deep">{title}</h2>
+            <h2 id={titleId} className="text-[18px] font-bold leading-snug text-ink-deep">
+              {title}
+            </h2>
             {meta ? <p className="mt-1 text-[12px] text-steel">{meta}</p> : null}
           </div>
           <button

@@ -1,24 +1,38 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { buildCsp, newNonce } from "@/lib/csp";
 
 /**
  * API 모드 인증 게이트 (Next.js 16 proxy — 구 middleware) — 세션 쿠키가 없으면 로그인 화면으로 보낸다.
  * 쿠키의 유효성·화면 권한은 백엔드가 최종 판정한다(401 → 로그인, 403 → 권한 없음).
+ * 요청마다 CSP nonce 를 만들어 요청 · 응답 헤더에 싣는다 — Next 가 렌더링 때 프레임워크 스크립트에 nonce 를 붙인다 (B.33).
  */
 const PUBLIC = ["/login", "/signup", "/forbidden", "/api/health", "/backend", "/_next", "/favicon", "/icon", "/robots.txt"];
 
+function withCsp(res: NextResponse, csp: string): NextResponse {
+  res.headers.set("Content-Security-Policy", csp);
+  return res;
+}
+
 export function proxy(req: NextRequest) {
   if ((process.env.NEXT_PUBLIC_DATA_SOURCE ?? "mock") !== "api") return NextResponse.next();
+  const nonce = newNonce();
+  const csp = buildCsp(nonce);
+  const headers = new Headers(req.headers);
+  headers.set("x-nonce", nonce);
+  headers.set("Content-Security-Policy", csp);
+  const pass = () => withCsp(NextResponse.next({ request: { headers } }), csp);
+
   const { pathname, search } = req.nextUrl;
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(p + "."))) {
-    return NextResponse.next();
+    return pass();
   }
   if (!req.cookies.get("nhdip_session")?.value) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.search = pathname === "/" ? "" : `?next=${encodeURIComponent(pathname + search)}`;
-    return NextResponse.redirect(url);
+    return withCsp(NextResponse.redirect(url), csp);
   }
-  return NextResponse.next();
+  return pass();
 }
 
 export const config = {

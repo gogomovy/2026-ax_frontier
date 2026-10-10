@@ -22,8 +22,43 @@ from nhdip.security import session_hash, unsign_session
 COMMON_RESOURCES = {"terms", "meta", "menu", "assist"}  # assist 는 답변 안의 지표를 사용자 권한으로 다시 거른다
 
 
+def _trusted_nets():
+    import ipaddress
+
+    from nhdip.config import get_settings
+
+    out = []
+    for x in get_settings().trusted_proxies.split(","):
+        x = x.strip()
+        if x:
+            try:
+                out.append(ipaddress.ip_network(x, strict=False))
+            except ValueError:
+                pass
+    return out
+
+
 def client_ip(request: Request) -> str | None:
-    return request.client.host if request.client else None
+    """요청한 사용자 IP (B.33) — 바로 앞이 신뢰 프록시(web 컨테이너 등, 설정 TRUSTED_PROXIES)면
+    X-Forwarded-For 를 오른쪽부터 따라가 처음 나오는 신뢰하지 않는 주소를 쓴다. 속도 제한 · 감사 기록 기준."""
+    import ipaddress
+
+    peer = request.client.host if request.client else None
+    nets = _trusted_nets()
+
+    def trusted(ip: str | None) -> bool:
+        try:
+            return ip is not None and any(ipaddress.ip_address(ip) in n for n in nets)
+        except ValueError:
+            return False
+
+    if not trusted(peer):
+        return peer
+    chain = [h.strip() for h in (request.headers.get("x-forwarded-for") or "").split(",") if h.strip()]
+    for ip in reversed(chain):
+        if not trusted(ip):
+            return ip[:64]
+    return chain[0][:64] if chain else peer
 
 
 from nhdip.orgs import org_chain  # noqa: E402,F401 — 조직 경로는 핵심 계층(orgs)에서 제공(계층 규칙)

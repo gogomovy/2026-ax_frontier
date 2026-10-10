@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from nhdip.config import get_settings
+from nhdip.config import get_settings, runtime_database_url
 
 # 설계 §19.4 — iam(사용자·조직·권한) · cfg(관리자 설정) · bank/ext(출처별 원천) · calc(계산 이력)
 #              app(화면 산출물·사용자 상태) · ops(큐·실행 기록) · audit(감사) · mart(컬럼 정의서 기반 화면 테이블)
@@ -16,7 +16,8 @@ SCHEMAS = ("iam", "cfg", "bank", "ext", "calc", "app", "ops", "audit", "mart")
 _settings = get_settings()
 # 트랜잭션을 연 채 멈춘 연결(잠금 보유)을 DB 가 끊도록 — 0 이면 끄기 (B.32 · 환경변수 DB_IDLE_TX_TIMEOUT_MS)
 _connect_args = {"options": f"-c idle_in_transaction_session_timeout={int(_settings.db_idle_tx_timeout_ms)}"} if _settings.db_idle_tx_timeout_ms and _settings.database_url.startswith("postgresql") else {}
-engine = create_engine(_settings.database_url, pool_pre_ping=True, pool_size=10, max_overflow=20, future=True, connect_args=_connect_args)
+DB_URL = runtime_database_url(_settings)
+engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=10, max_overflow=20, future=True, connect_args=_connect_args)
 # 관측성 — 범위(요청 · 작업)별 질의 수 · 소요 합산 (작업 0.5)
 from nhdip.obs import instrument_engine  # noqa: E402
 

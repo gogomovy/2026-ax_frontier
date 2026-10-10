@@ -112,6 +112,8 @@ infra/  postgres init · litellm config · scripts(ensure-env, export-mock)
 - 비밀번호 bcrypt · 세션은 서명된 HttpOnly 쿠키 + DB 세션(즉시 폐기) · 5회 실패 시 잠금 · 가입은 승인제
 - LLM 키는 AES-GCM 암호화 저장(`CONFIG_ENC_KEY`), 화면에는 마스킹. `.env` 는 커밋하지 않습니다.
 - api(8000) · neo4j(7474/7687) · litellm(4000) 포트는 기본으로 이 컴퓨터(127.0.0.1)에서만 열립니다(`ADMIN_BIND`). web 은 `WEB_BIND`(기본 0.0.0.0). HTTPS 환경이면 `COOKIE_SECURE=1`(HSTS 포함).
+- api 는 데이터 조작만 가능한 DB 계정(`nhdip_app`, 비밀번호 `APP_DB_PASSWORD`)으로 접속해 감사 로그를 고치거나 지울 수 없습니다. 마이그레이션 · 시드 · 워커는 소유자 계정. 비우면 이전 방식.
+- 속도 제한은 DB 에서 함께 셉니다(API 여러 개 가능). 사용자 IP 는 앞단 프록시(`TRUSTED_PROXIES`)가 넘긴 X-Forwarded-For 로 판정합니다. API 모드 화면은 요청마다 nonce 를 쓰는 CSP 로 스크립트를 제한합니다.
 - 변경 요청(POST 등)은 같은 출처만 받습니다. 다른 주소(리버스 프록시 · 도메인)로 서비스하면 `TRUSTED_ORIGINS=https://<웹 주소>` 를 넣으세요. 운영(`NHDIP_ENV=prod`)에서는 기본 · 짧은 `SESSION_SECRET` 으로 기동하지 않습니다.
 - 로그인 · 가입 · 질의 속도 제한(설정 `auth.rate_limits`), 잠금은 30분 뒤 자동 해제(`auth.lockout_minutes`, 0 = 관리자만). 보안 헤더(CSP · X-Frame-Options 등)는 web · api 모두 붙습니다.
 - 개인정보: 적재할 데이터에 주민등록번호 · 휴대전화 · 이메일 · 카드번호 형식 값이 있으면 품질 검증에서 거부하고, 차주명은 화면에서 가립니다(설정 `privacy.policy`). LLM 호출 기록에도 같은 형식 값을 가려 저장합니다.

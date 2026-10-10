@@ -23,13 +23,21 @@ PY
 case "$ROLE" in
   api)
     wait_for_db
+    # 마이그레이션 · 시드 · 앱 계정 준비는 소유자 계정으로 (B.33 — NHDIP_USE_APP_ROLE=0)
     if [[ "${RUN_MIGRATIONS:-1}" == "1" ]]; then
       echo "[entrypoint] alembic upgrade head"
-      alembic upgrade head
+      NHDIP_USE_APP_ROLE=0 alembic upgrade head
+    fi
+    if [[ -n "${APP_DB_PASSWORD:-}" ]]; then
+      echo "[entrypoint] API 전용 DB 계정 준비 (${APP_DB_USER:-nhdip_app})"
+      NHDIP_USE_APP_ROLE=0 python -m nhdip.cli db-app-role || {
+        echo "[entrypoint] 경고: 앱 계정 준비 실패 — 이번 기동은 소유자 계정으로 접속합니다" >&2
+        export NHDIP_USE_APP_ROLE=0
+      }
     fi
     if [[ "${SEED_ON_START:-0}" == "1" ]]; then
       echo "[entrypoint] seeding master + simulated data"
-      python -m nhdip.cli seed --with-precompute || echo "[entrypoint] seed skipped/failed (계속 진행)"
+      NHDIP_USE_APP_ROLE=0 python -m nhdip.cli seed --with-precompute || echo "[entrypoint] seed skipped/failed (계속 진행)"
     fi
     exec uvicorn nhdip.main:app --host 0.0.0.0 --port 8000 --proxy-headers
     ;;
