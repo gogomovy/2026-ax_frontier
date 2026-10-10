@@ -5,7 +5,7 @@ import secrets
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,24 +16,42 @@ from nhdip.views.goal_check import check_goal
 from nhdip.views.store import get_current
 
 from . import state_service as S
-from .deps import client_ip, require_resource
+from .deps import client_ip, current_user, require_resource, user_resources
 
 router = APIRouter(prefix="/state", tags=["state"])
 
 
 # ═════════════════════════ 경영목표 ═════════════════════════
+def _finite(v: float | None) -> float | None:
+    import math
+
+    if v is not None and not math.isfinite(v):
+        raise ValueError("유한한 숫자여야 합니다")
+    return v
+
+
 class ApplyIn(BaseModel):
-    proposalId: str
+    proposalId: str = Field(max_length=120)
     mode: Literal["adopt", "manual_edit"]
     value: float | None = None
-    reason: str | None = None
+    reason: str | None = Field(None, max_length=1000)
     force: bool = False  # 정합성 경고(warn)를 확인하고 사유와 함께 확정
+
+    @field_validator("value")
+    @classmethod
+    def _fin(cls, v):
+        return _finite(v)
 
 
 class CheckIn(BaseModel):
-    proposalId: str
+    proposalId: str = Field(max_length=120)
     mode: Literal["adopt", "manual_edit"] = "adopt"
     value: float | None = None
+
+    @field_validator("value")
+    @classmethod
+    def _fin(cls, v):
+        return _finite(v)
 
 
 class ProposalIn(BaseModel):
@@ -46,15 +64,31 @@ class AddNewIn(BaseModel):
 
 
 class ManualGoalIn(BaseModel):
-    title: str
-    targetLabel: str
-    periodLabel: str
-    metricLabel: str | None = None
-    ownerOrg: str | None = None
+    title: str = Field(max_length=200)
+    targetLabel: str = Field(max_length=200)
+    periodLabel: str = Field(max_length=60)
+    metricLabel: str | None = Field(None, max_length=200)
+    ownerOrg: str | None = Field(None, max_length=60)
 
 
 class ReviewItemIn(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=200)
+
+
+def _require_admin_reset(user: AppUser) -> None:
+    """전체 초기화는 모든 사용자의 처리 이력을 지우므로 관리자만 (B.32)."""
+    if user.role != "admin":
+        raise HTTPException(403, "전체 초기화는 관리자만 할 수 있습니다")
+
+
+def _user_dept(session: Session, user: AppUser) -> str | None:
+    """사용자 소속 부서명(부 · 지역본부 · 영업점 중 가장 가까운 단위) — 등록 부서는 화면 입력값이 아니라 소속으로 정한다."""
+    from nhdip.orgs import org_chain
+
+    for o in org_chain(session, user.org_code):
+        if o.unit_type in ("DEPT", "REGION", "BRANCH"):
+            return o.name
+    return None
 
 
 def _proposal(session: Session, pid: str) -> dict[str, Any]:
@@ -78,6 +112,9 @@ def _update_goal_rule(session: Session, goal_id: str, value: float, actor: str) 
     if body.get(link["path"]) == value:
         return None
     body[link["path"]] = value
+    from nhdip.locks import lock
+
+    lock(session, f"rule:{rule.code}")  # 같은 규칙에 동시에 새 버전을 만들면 버전 번호가 겹친다
     last = session.execute(select(RuleVersion.version).where(RuleVersion.rule_code == rule.code).order_by(RuleVersion.version.desc()).limit(1)).scalar() or 0
     session.add(RuleVersion(rule_code=rule.code, version=last + 1, body=body, note=f"경영목표 확정({goal_id})", created_by=actor))
     rule.active_version = last + 1
@@ -189,7 +226,7 @@ def add_new_goal(body: AddNewIn, request: Request, session: Session = Depends(ge
 @router.post("/goals/manual")
 def add_manual_goal(body: ManualGoalIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
     gid = f"goal-manual-{secrets.token_hex(4)}"
-    S.put(session, S.NS_GOAL_ADDED, gid, {"id": gid, "title": body.title, "targetLabel": body.targetLabel, "creationMode": "user_manual", "status": "active", "periodLabel": body.periodLabel, "metricLabel": body.metricLabel, "ownerOrg": body.ownerOrg or "종합기획부", "addedAt": S.today()}, user.emp_no)
+    S.put(session, S.NS_GOAL_ADDED, gid, {"id": gid, "title": body.title, "targetLabel": body.targetLabel, "creationMode": "user_manual", "status": "active", "periodLabel": body.periodLabel, "metricLabel": body.metricLabel, "ownerOrg": (body.ownerOrg if user.role == "admin" and body.ownerOrg else None) or _user_dept(session, user) or "종합기획부", "addedAt": S.today()}, user.emp_no)
     emit(session, "goal.confirmed", {"goal": gid, "mode": "manual"}, user.emp_no)
     audit(session, user.emp_no, "goal.add_manual", "goal", gid, body.model_dump(), client_ip(request))
     session.commit()
@@ -197,14 +234,16 @@ def add_manual_goal(body: ManualGoalIn, request: Request, session: Session = Dep
 
 
 @router.post("/goals/review-items")
-def register_review_item(body: ReviewItemIn, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
+def register_review_item(body: ReviewItemIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
     S.put(session, S.NS_REVIEW_ITEM, body.title[:120], {"title": body.title}, user.emp_no)
+    audit(session, user.emp_no, "goal.review_item", "goal", None, {"title": body.title}, client_ip(request))
     session.commit()
     return S.goal_state(session)
 
 
 @router.post("/goals/reset")
 def reset_goals(request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
+    _require_admin_reset(user)
     S.clear(session, "goal")
     audit(session, user.emp_no, "goal.reset", "goal", None, None, client_ip(request))
     session.commit()
@@ -213,25 +252,35 @@ def reset_goals(request: Request, session: Session = Depends(get_session), user:
 
 # ═════════════════════════ 진행사업 ═════════════════════════
 class PlanPatchIn(BaseModel):
-    title: str | None = None
-    body: str | None = None
-    monitoringMetrics: list[str] | None = None
-    evidenceNote: str | None = None
-    reviewCycle: str | None = None
-    linkedTabKey: str | None = None
-    linkedAnalysisLabel: str | None = None
+    title: str | None = Field(None, max_length=200)
+    body: str | None = Field(None, max_length=4000)
+    monitoringMetrics: list[str] | None = Field(None, max_length=20)
+    evidenceNote: str | None = Field(None, max_length=2000)
+    reviewCycle: str | None = Field(None, max_length=40)
+    linkedTabKey: str | None = Field(None, max_length=80)
+    linkedAnalysisLabel: str | None = Field(None, max_length=200)
 
 
 class NewPlanIn(BaseModel):
-    id: str | None = None  # 클라이언트가 미리 만든 ID (plan-user-*) — 화면이 바로 시트를 열 수 있도록
-    title: str
-    body: str
-    evidenceNote: str | None = None
-    monitoringMetrics: list[str] = []
-    reviewCycle: str | None = None
-    ownerOrg: str | None = None
-    linkedTabKey: str | None = None
-    linkedAnalysisLabel: str | None = None
+    id: str | None = Field(None, max_length=40)  # 클라이언트가 미리 만든 ID (plan-user-*) — 화면이 바로 시트를 열 수 있도록
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(max_length=4000)
+    evidenceNote: str | None = Field(None, max_length=2000)
+    monitoringMetrics: list[str] = Field(default_factory=list, max_length=20)
+    reviewCycle: str | None = Field(None, max_length=40)
+    ownerOrg: str | None = Field(None, max_length=60)
+    linkedTabKey: str | None = Field(None, max_length=80)
+    linkedAnalysisLabel: str | None = Field(None, max_length=200)
+
+
+def _check_owner(session: Session, pid: str, user: AppUser) -> None:
+    """직접 등록한 진행사업은 등록자 · 같은 부서 · 관리자만 고치거나 지울 수 있다 (Agent 제안 사업은 담당 부서 권한으로) — B.32."""
+    p = S.get_ns(session, S.NS_PLAN_USER).get(pid)
+    if not p or user.role == "admin" or p.get("createdBy") == user.emp_no:
+        return
+    if p.get("ownerOrg") and p.get("ownerOrg") == _user_dept(session, user):
+        return
+    raise HTTPException(403, "다른 부서가 등록한 진행사업은 수정할 수 없습니다")
 
 
 def _user_evidence(note: str | None) -> list[dict[str, Any]]:
@@ -248,6 +297,7 @@ def _plan_exists(session: Session, pid: str) -> bool:
 def _runtime(session: Session, pid: str, user: AppUser, **values: Any) -> None:
     if not _plan_exists(session, pid):
         raise HTTPException(404, "수행방안 없음")
+    S.lock_item(session, S.NS_PLAN_RUNTIME, pid)
     rt = dict(S.get_ns(session, S.NS_PLAN_RUNTIME).get(pid) or {})
     for k, v in values.items():
         if v is None:
@@ -258,7 +308,10 @@ def _runtime(session: Session, pid: str, user: AppUser, **values: Any) -> None:
 
 
 @router.get("/plans")
-def get_plan_state(session: Session = Depends(get_session), _: AppUser = Depends(require_resource("plan_state"))):
+def get_plan_state(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_state"))):
+    allowed = user_resources(session, user)
+    if allowed is not None and "plan_actions" not in allowed:
+        return S.shared_plan_state(session)  # 영업점 등 — 영업점 참고가 켜진 진행사업만
     return S.plan_state(session)
 
 
@@ -283,6 +336,8 @@ def toggle_share(pid: str, request: Request, session: Session = Depends(get_sess
     base = next((p for p in (get_current(session, "action_plans") or []) if p["id"] == pid), None) or S.get_ns(session, S.NS_PLAN_USER).get(pid)
     if not base:
         raise HTTPException(404, "수행방안 없음")
+    _check_owner(session, pid, user)
+    S.lock_item(session, S.NS_PLAN_RUNTIME, pid)
     cur = (S.get_ns(session, S.NS_PLAN_RUNTIME).get(pid) or {}).get("branchShared", base.get("branchShared", False))
     _runtime(session, pid, user, branchShared=not cur)
     audit(session, user.emp_no, "plan.toggle_share", "plan", pid, {"branchShared": not cur}, client_ip(request))
@@ -293,6 +348,8 @@ def toggle_share(pid: str, request: Request, session: Session = Depends(get_sess
 @router.patch("/plans/{pid}")
 def update_plan(pid: str, body: PlanPatchIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
     patch = body.model_dump(exclude_none=True)
+    _check_owner(session, pid, user)
+    S.lock_item(session, S.NS_PLAN_USER, pid)
     users = S.get_ns(session, S.NS_PLAN_USER)
     if pid in users:
         p = {**users[pid], **patch, "updatedAt": S.today()}
@@ -311,6 +368,7 @@ def update_plan(pid: str, body: PlanPatchIn, request: Request, session: Session 
 def delete_plan(pid: str, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
     if not _plan_exists(session, pid):
         raise HTTPException(404, "수행방안 없음")
+    _check_owner(session, pid, user)
     S.put(session, S.NS_PLAN_DELETED, pid, {}, user.emp_no)
     S.remove(session, S.NS_PLAN_USER, pid)
     audit(session, user.emp_no, "plan.delete", "plan", pid, None, client_ip(request))
@@ -327,7 +385,7 @@ def add_plan(body: NewPlanIn, request: Request, session: Session = Depends(get_s
         "id": pid,
         "title": body.title,
         "body": body.body,
-        "ownerOrg": body.ownerOrg or "신용리스크관리부",
+        "ownerOrg": (body.ownerOrg if user.role == "admin" and body.ownerOrg else None) or _user_dept(session, user) or "신용리스크관리부",
         "monitoringMetrics": body.monitoringMetrics,
         "reviewCycle": body.reviewCycle or "월",
         "alignment": {"verdict": "unknown", "matched": [], "conflicts": []},
@@ -350,7 +408,69 @@ def add_plan(body: NewPlanIn, request: Request, session: Session = Depends(get_s
 
 @router.post("/plans/reset")
 def reset_plans(request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
+    _require_admin_reset(user)
     S.clear(session, "plan")
     audit(session, user.emp_no, "plan.reset", "plan", None, None, client_ip(request))
     session.commit()
     return S.plan_state(session)
+
+
+# ═════════════════════════ 확인 · 보고 요청 (영업점 · 사업부서 → 본부) ═════════════════════════
+REQUEST_TYPES_DEFAULT = {"direction_check": "경영방향 확인 요청", "perf_report": "사업 성과보고", "new_biz_check": "신규사업 확인 요청", "guide_check": "영업 가이드 확인 요청"}
+
+
+class ReportRequestIn(BaseModel):
+    reqType: str = Field(max_length=40)
+    title: str = Field(min_length=2, max_length=200)
+    body: str = Field(min_length=2, max_length=4000)
+    dueDate: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    relatedGoalId: str | None = Field(None, max_length=120)
+
+
+def _request_types(session: Session) -> dict[str, str]:
+    st = session.get(Setting, "request.types")
+    return {**REQUEST_TYPES_DEFAULT, **(st.value if st and isinstance(st.value, dict) else {})}
+
+
+@router.get("/report-requests/types")
+def report_request_types(session: Session = Depends(get_session), _: AppUser = Depends(current_user)):
+    return [{"value": k, "label": v} for k, v in _request_types(session).items()]
+
+
+@router.get("/report-requests/mine")
+def my_report_requests(session: Session = Depends(get_session), user: AppUser = Depends(current_user)):
+    rows = [r for r in S.get_ns(session, S.NS_REPORT_REQUEST).values() if r.get("createdBy") == user.emp_no]
+    return sorted(rows, key=lambda r: r.get("createdAt", ""), reverse=True)
+
+
+@router.post("/report-requests", status_code=201)
+def create_report_request(body: ReportRequestIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(current_user)):
+    """확인 · 보고 요청 등록 (B.32) — 요청 부서는 소속에서 정하고, 받는 부서는 설정 request.to_org(기본 종합기획부)."""
+    from nhdip import ratelimit
+
+    ratelimit.check(session, "request_user", user.emp_no)
+    types = _request_types(session)
+    if body.reqType not in types:
+        raise HTTPException(422, "알 수 없는 요청 유형입니다")
+    to_s = session.get(Setting, "request.to_org")
+    rid = f"req-user-{secrets.token_hex(4)}"
+    item = {
+        "id": rid,
+        "fromOrg": _user_dept(session, user) or user.org_code,
+        "toOrg": (to_s.value if to_s and to_s.value else "종합기획부"),
+        "reqType": body.reqType,
+        "reqTypeLabel": types[body.reqType],
+        "title": body.title.strip(),
+        "body": body.body.strip(),
+        "dueDate": body.dueDate,
+        "createdAt": S.today(),
+        "status": "open",
+        "relatedGoalId": body.relatedGoalId,
+        "createdBy": user.emp_no,
+        "origin": "user",
+    }
+    S.put(session, S.NS_REPORT_REQUEST, rid, item, user.emp_no)
+    emit(session, "request.created", {"id": rid, "reqType": body.reqType, "fromOrg": item["fromOrg"]}, user.emp_no)
+    audit(session, user.emp_no, "request.create", "report_request", rid, {"title": item["title"], "reqType": body.reqType}, client_ip(request))
+    session.commit()
+    return item

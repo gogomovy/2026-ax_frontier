@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from nhdip.calc import run_and_record
 from nhdip.calc.metrics import ResolveError, evaluate
-from nhdip.events import emit
 from nhdip.graph.extraction import extract_document
 from nhdip.graph.neo4j_client import GraphUnavailable
 from nhdip.graph.projection import project_all
@@ -122,13 +121,18 @@ def _resolve_target(payload: Any, path: str) -> list[tuple[str, str]]:
 def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     arts = ctx.load_artifacts()
     figs: dict[str, dict[str, Any]] = {}
+    # 지표 단위가 화면 단위 코드일 때만 수치 단위도 갱신 (관리자가 지표 단위 · 배율을 바꾼 경우) — B.32
+    fig_units = {"KRW_MN", "KRW_BN", "KRW_TN", "PCT", "PP", "CNT", "RATIO", "NONE"}
     for oc in ctx.eval.outcomes.values():
         if oc.error or oc.display is None:
+            # 계산 실패 — 이전 값은 두되 '갱신 실패' 로 표시해 최신 값으로 오인하지 않게 한다 (B.32)
+            for fid in oc.figure_ids:
+                figs[fid] = {"stale": True, "staleReason": (oc.error or "값 없음")[:200]}
             continue
         val = float(oc.display)
         if oc.decimals == 0:
             val = int(oc.display)
-        payload = {"value": val, "dataOrigin": oc.data_origin, "decimals": oc.decimals}
+        payload = {"value": val, "dataOrigin": oc.data_origin, "decimals": oc.decimals, **({"unit": oc.unit} if oc.unit in fig_units else {})}
         if oc.formula != "VALUE":
             payload["calc"] = oc.trace
         else:
@@ -257,14 +261,21 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             "다음 확정 수치와 근거로 '{title}' 의견 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다. 인과를 단정하지 않는다. 2~4문장.\n\n"
             "수치:\n{figures}\n\n판정:\n{verdicts}\n\n근거:\n{evidence}\n\n기존 서술(참고):\n{current}\n\n{instruction}\n출력: {{\"statement\": \"...\"}}"
         )
-        user = tmpl.format(
-            title=ins.get("title", ""),
-            figures="\n".join(fig_lines),
-            verdicts=json.dumps(verdicts, ensure_ascii=False, default=str),
-            evidence=fence("\n".join(ev_lines) or "(없음)"),
-            current=ins.get("statement", ""),
-            instruction=target.get("instruction", ""),
-        )
+        # 산출물 문장(제목 · 기존 서술)도 자료로 구분자 안에 넣는다 — 편집 가능한 값이 지시문으로 읽히지 않도록 (B.32)
+        try:
+            user = tmpl.format(
+                title=ins.get("title", ""),
+                figures="\n".join(fig_lines),
+                verdicts=json.dumps(verdicts, ensure_ascii=False, default=str),
+                evidence=fence("\n".join(ev_lines) or "(없음)"),
+                current=fence(str(ins.get("statement", "") or "(없음)")),
+                instruction=target.get("instruction", ""),
+            )
+        except (KeyError, IndexError, ValueError) as exc:
+            # 관리자가 편집한 프롬프트 자리표시자 오류 — 이 인사이트만 기존 서술 유지
+            degraded = True
+            results.append({"insight": target["insight_id"], "fallback": "template", "error": f"프롬프트 자리표시자 오류: {exc}"})
+            continue
         messages = [{"role": "system", "content": (llm.system_prompt or "너는 은행 경영 분석 보고서를 쓰는 분석가다. JSON 으로만 답한다.") + "\n\n" + GUARD}, {"role": "user", "content": user}]
         try:
             res = chat(ctx.session, llm, messages, json_mode=True, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id)
@@ -322,12 +333,22 @@ def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     arts = ctx.load_artifacts()
     # 화면 표시 시각은 업무 시간대(기본 Asia/Seoul) 기준
     now = datetime.now(ZoneInfo(_setting(ctx.session, "ui.timezone", "Asia/Seoul"))).isoformat(timespec="seconds")
-    published = []
+    from nhdip.locks import lock
+    from nhdip.views.store import merge3
+
+    published, merged = [], []
     for key in sorted(ctx.changed):
         payload = arts[key]
         if isinstance(payload, dict) and "generatedAt" in payload:
             payload["generatedAt"] = now
+        # 같은 산출물을 여러 워크플로우가 동시에 게시할 수 있다 — 키별 잠금 후, 읽은 뒤 바뀌었으면 3방향 병합 (B.32)
+        lock(ctx.session, f"artifact:{key}")
         current = get_current(ctx.session, key)
+        base = ctx.base.get(key)
+        if current is not None and base is not None and json.dumps(current, sort_keys=True, default=str) != json.dumps(base, sort_keys=True, default=str):
+            payload = merge3(base, payload, current)
+            arts[key] = payload
+            merged.append(key)
         if json.dumps(current, sort_keys=True, default=str) == json.dumps(payload, sort_keys=True, default=str):
             continue
         row = publish(ctx.session, key, copy.deepcopy(payload), produced_by=ctx.workflow.code, workflow_run_id=ctx.run.id, changes=[c for c in ctx.changes if c["artifact"] == key][:200])
@@ -337,9 +358,9 @@ def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     # 플래너가 정한 후속 워크플로우 — 게시가 끝난 뒤 실행되도록 이벤트로 넘긴다(오케스트레이터가 연쇄 · 순서 관리)
     followups = []
     for f in ctx.state.get("followups") or []:
-        emit(ctx.session, "agent.followup", {"workflow": f["workflow"], "reason": f.get("reason"), "by": "planner", "from": ctx.workflow.code, "run": ctx.run.id, "chain": f.get("chain") or [ctx.workflow.code]}, "planner")
+        ctx.emit_after_success("agent.followup", {"workflow": f["workflow"], "reason": f.get("reason"), "by": "planner", "from": ctx.workflow.code, "run": ctx.run.id, "chain": f.get("chain") or [ctx.workflow.code]}, "planner")
         followups.append(f["workflow"])
-    return NodeResult({"published": published, **({"followups": followups} if followups else {})})
+    return NodeResult({"published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {})})
 
 
 # ═════════════════════════ 문서 · 그래프 ═════════════════════════

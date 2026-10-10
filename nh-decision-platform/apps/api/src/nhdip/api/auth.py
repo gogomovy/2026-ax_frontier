@@ -62,6 +62,9 @@ def signup_orgs(session: Session = Depends(get_session)):
 
 @router.post("/auth/signup", status_code=201)
 def signup(body: SignupIn, request: Request, session: Session = Depends(get_session)):
+    from nhdip.ratelimit import check as rate_check
+
+    rate_check(session, "signup_ip", client_ip(request))
     if not EMP_RE.match(body.emp_no):
         raise HTTPException(422, "사번은 숫자 8자리입니다")
     err = password_policy_error(body.password)
@@ -82,10 +85,14 @@ def signup(body: SignupIn, request: Request, session: Session = Depends(get_sess
 
 @router.post("/auth/login")
 def login(body: LoginIn, request: Request, response: Response, session: Session = Depends(get_session)):
+    from nhdip.ratelimit import check as rate_check
+
     st = get_settings()
     ip = client_ip(request)
+    rate_check(session, "login_ip", ip)
     if not EMP_RE.match(body.emp_no or ""):
         raise HTTPException(401, GENERIC_FAIL)
+    rate_check(session, "login_emp", body.emp_no)
     user = session.get(AppUser, body.emp_no)
     if not user:
         verify_password(body.password, "$2b$12$" + "x" * 53)  # 타이밍 균일화
@@ -93,7 +100,14 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         session.commit()
         raise HTTPException(401, GENERIC_FAIL)
     if user.status == "locked":
-        raise HTTPException(423, "로그인 실패 횟수 초과로 잠긴 계정입니다. 관리자에게 잠금 해제를 요청하세요.")
+        # 시간 경과 잠금 해제 (설정 auth.lockout_minutes, 0 = 관리자만 해제) — 잠금 악용(대상 계정 차단) 완화 (B.32)
+        mins = int(_setting(session, "auth.lockout_minutes", 30) or 0)
+        if mins and user.updated_at and user.updated_at + timedelta(minutes=mins) <= utcnow():
+            user.status, user.failed_count = "active", 0
+            audit(session, user.emp_no, "auth.unlock_timeout", "user", user.emp_no, {"minutes": mins}, ip)
+            session.commit()
+        else:
+            raise HTTPException(423, "로그인 실패 횟수 초과로 잠긴 계정입니다. 잠시 후 다시 시도하거나 관리자에게 잠금 해제를 요청하세요.")
     if user.status == "disabled":
         raise HTTPException(403, "사용 중지된 계정입니다")
     if not verify_password(body.password, user.password_hash):
@@ -105,7 +119,7 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         session.commit()
         if user.status == "locked":
             raise HTTPException(423, "로그인 실패 횟수 초과로 계정이 잠겼습니다. 관리자에게 잠금 해제를 요청하세요.")
-        raise HTTPException(401, f"{GENERIC_FAIL} ({user.failed_count}/{limit})")
+        raise HTTPException(401, GENERIC_FAIL)  # 실패 횟수는 알려 주지 않는다(계정 존재 여부 추정 방지)
     if user.status == "pending":
         raise HTTPException(403, "관리자 승인 대기 중입니다")
     if not local_login_allowed(session, user):

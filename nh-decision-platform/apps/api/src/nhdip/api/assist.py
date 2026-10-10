@@ -28,6 +28,7 @@ from nhdip.llm import LlmError, LlmUnavailable, resolve
 from nhdip.llm.guard import GUARD, fence
 from nhdip.llm.tools import chat_with_tools
 from nhdip.models import AppUser, Metric, MetricValue, Setting
+from nhdip import ratelimit
 
 from .deps import client_ip, require_resource, user_resources
 
@@ -167,6 +168,7 @@ def verify_numbers(answer: str, allowed_texts: list[str], user_texts: list[str] 
 
 @router.post("/assist")
 def ask(body: AskIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("assist"))):
+    ratelimit.check(session, "assist_user", user.emp_no)  # LLM 비용 · 남용 방지 (B.32)
     q = body.question.strip()
     concepts = concepts_of(session, q)
     metrics = metrics_for(session, user, q, concepts)

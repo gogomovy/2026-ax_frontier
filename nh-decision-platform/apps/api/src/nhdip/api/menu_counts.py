@@ -22,7 +22,12 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
     btabs = get_current(session, "branch_tabs") or {}
     code = (btabs.get("office") or {}).get("code")
     branch_n = len(btabs.get("current") or []) if code and can_view_office(session, user, code) else 0
-    return {
+    # 볼 수 있는 화면의 건수만 (B.32 — 다른 부서 업무량 비노출)
+    from .deps import user_resources
+
+    allowed = user_resources(session, user)
+    can = (lambda r: allowed is None or r in allowed)
+    out = {
         "branchAnalyses": branch_n,
         "branchAnalysesTotal": branch_n,
         "goalProposals": sum(1 for p in proposals if p["id"] not in acted),
@@ -32,3 +37,8 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
         "proposalsTotal": len(proposals),
         "analysesTotal": len(tabs),
     }
+    for keys, res in ((("goalProposals", "proposalsTotal"), "proposals"), (("analyses", "analysesTotal"), "analysis_tabs"), (("proposedPlans",), "plan_actions")):
+        if not can(res):
+            for k in keys:
+                out[k] = 0
+    return out

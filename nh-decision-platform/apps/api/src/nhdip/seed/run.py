@@ -635,6 +635,20 @@ def agents_llm_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["agents_llm_upgrade"] = done
 
 
+def hardening_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """B.32 점검 보완 — 기존 DB 의 사전형 설정에 새 키만 채운다(관리자가 바꾼 값은 보존, 매 기동 멱등)."""
+    added = {}
+    for key in ("agents.llm_judge", "orchestrator.policy", "auth.rate_limits", "retention.policy", "privacy.policy", "calc.unit_check"):
+        st = s.get(Setting, key)
+        if st is None or not isinstance(st.value, dict) or key not in C.SETTINGS:
+            continue
+        missing = {k: v for k, v in C.SETTINGS[key][0].items() if k not in st.value}
+        if missing:
+            st.value = {**st.value, **missing}
+            added[key] = sorted(missing)
+    out["hardening_upgrade"] = added
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -654,6 +668,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     branch_upgrade(s, out, first)
     agents_upgrade(s, out)
     agents_llm_upgrade(s, out)
+    hardening_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

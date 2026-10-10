@@ -100,7 +100,7 @@ make admin-pass
 | 서비스 | 주소 | 용도 |
 |---|---|---|
 | web | http://localhost:3000 | 로그인 · 업무 화면 · 관리자(`/admin`) |
-| api | http://localhost:8000/docs | API 문서(Swagger) |
+| api | http://localhost:8000/health | API 상태 확인 (API 문서 `/docs` 는 `.env` 에 `API_DOCS=true` 일 때) |
 | neo4j | http://localhost:7474 | 온톨로지 그래프 브라우저 (사용자 `neo4j` / `.env` 의 `NEO4J_PASSWORD`) |
 | litellm | http://localhost:4000/ui | LLM 게이트웨이 관리 (사용자 `admin` / `.env` 의 `LITELLM_UI_PASSWORD`) |
 
@@ -132,6 +132,9 @@ make admin-pass
 | HTTPS 뒤에서 운영 | `COOKIE_SECURE=1` |
 | SSO(OIDC) | `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` · `OIDC_REDIRECT_URI` |
 | 운영 알림 채널 | `ALERT_WEBHOOK_URL` 또는 `ALERT_SMTP_*` |
+| 다른 PC 에서 api · litellm · neo4j 접속 | `ADMIN_BIND=0.0.0.0` (기본은 이 PC 에서만) |
+| 다른 주소(도메인 · 프록시)로 서비스 | `TRUSTED_ORIGINS=https://<웹 주소>` (변경 요청은 같은 출처만 허용) |
+| API 문서 보기 | `API_DOCS=true` |
 
 각 키의 설명은 `.env.example` 주석에 있습니다.
 
@@ -154,7 +157,10 @@ make up            # 다시 기동 (코드가 바뀌었으면 다시 빌드)
 make restart s=api # 특정 서비스만 재시작
 make reset         # 중지 + 볼륨 삭제 → 다음 make up 에서 처음 상태로 재시드
 make seed          # 기본 설정 · 목데이터 시드만 다시 실행 (멱등)
+make backup        # DB(업무 · litellm) + 업로드 파일 → nh-decision-platform/backups/<시각>/
+make restore FROM=backups/<시각> CONFIRM=yes   # 백업에서 복구 (현재 데이터를 덮어씀)
 ```
+복구 후에는 관리자 [온톨로지]에서 재투영하면 그래프가 다시 만들어집니다.
 
 `make reset` 은 업로드한 데이터 · 승인한 사용자 · 관리자 화면에서 바꾼 설정을 모두 지웁니다. `.env` 는 남으므로 관리자 비밀번호는 그대로입니다.
 
@@ -186,6 +192,7 @@ make up
 | `make e2e` | 브라우저 E2E — 기동 중인 스택 대상, 로그인 → 업무 화면 → 관리자 화면 점검 (Node 20+) |
 | `make eval` | 골든셋 평가 — 기준값 · 판정 · 서술 출처 · 검색 · 질의 결과를 관리자 [골든셋 평가]에 게시 |
 | `make perf` | 주요 API p50 · p95 측정 후 기준치(`perf_budgets.json`)와 대조 |
+| `make wait-idle` | 이벤트 · 작업 처리가 끝날 때까지 대기 (기동 직후 선계산 확인) |
 
 ---
 
@@ -207,7 +214,9 @@ http://localhost:3000 — 백엔드 없이 내장 목데이터로 화면만 띄�
 | `SESSION_SECRET 가 .env 에 필요합니다` | `.env` 가 없거나 비밀값이 비어 있음 → `make env` 후 `make up` |
 | api 가 계속 `unhealthy` | `make logs s=api` — DB 대기 · 마이그레이션 오류 확인. 볼륨이 예전 버전이면 `make reset` 후 `make up` |
 | 빌드 중 메모리 부족으로 종료(exit 137) | Docker 메모리 할당을 6GB 이상으로 늘린 뒤 재시도 |
-| 로그인이 안 됨 | `make admin-pass` 값 확인. 5회 실패 시 잠깁니다. 다른 관리자가 `/admin/users` 에서 [잠금 해제]하거나, 관리자가 하나뿐이면 아래 명령으로 해제 |
+| 로그인이 안 됨 | `make admin-pass` 값 확인. 5회 실패 시 잠기고 30분 뒤 자동 해제됩니다. 바로 풀려면 다른 관리자가 `/admin/users` 에서 [잠금 해제]하거나, 관리자가 하나뿐이면 아래 명령으로 해제 |
+| `요청이 너무 많습니다` (429) | 로그인 · 질의 속도 제한 — 안내된 초만큼 기다린 뒤 다시 시도 (기준은 관리자 설정 `auth.rate_limits`) |
+| `허용되지 않은 출처의 요청입니다` (403) | 웹 주소가 다르게 보이는 프록시 환경 → `.env` 에 `TRUSTED_ORIGINS=<웹 주소>` 후 `make up` |
 | `.env` 의 관리자 비밀번호를 바꿨는데 반영 안 됨 | 최초 관리자는 처음 시드 때만 만들어짐 → `/admin/users` 의 비밀번호 재설정을 쓰거나 `make reset` |
 | 화면 숫자가 비어 있음 | worker 가 최초 계산 중일 수 있음 → `make logs s=worker`, 관리자 `/admin/monitor/flow` 에서 진행 확인 |
 | 서술 문장이 기본 문장으로 나옴 | LLM 미연결 상태(정상 동작) → 5장 1번 |
@@ -227,7 +236,9 @@ docker compose exec postgres psql -U nhdip -d nhdip \
 ## 11. 보안 메모
 
 - 기본 비밀번호는 없습니다. 모든 비밀값은 PC 마다 `.env` 에 무작위로 생성되며 `.env` 는 커밋하지 않습니다.
-- 개발 편의를 위해 api(8000) · neo4j(7474/7687) · litellm(4000) 포트가 호스트에 열려 있습니다. 공유 서버나 운영에 올릴 때는 web(3000)만 노출하고 나머지는 내부망으로 제한하세요.
+- api(8000) · neo4j(7474/7687) · litellm(4000) 포트는 기본으로 이 PC(127.0.0.1)에서만 열립니다. web(3000)만 외부에 노출됩니다.
+- 운영 모드에서는 기본 · 짧은 세션 키로 기동하지 않고, API 문서는 꺼져 있습니다. 보안 헤더(CSP 등) · CSRF 출처 검사 · 로그인 속도 제한이 기본으로 켜져 있습니다.
+- 적재 데이터에 주민등록번호 · 휴대전화 · 이메일 · 카드번호 형식 값이 있으면 적재를 거부하고, 차주명은 화면에서 가립니다(관리자 설정 `privacy.policy`).
 - 로그인 후 `/admin/users` 에서 관리자 비밀번호를 재설정하고, 공유 환경에서는 `DEMO_USER_PASSWORD` 를 비워 두세요.
 
 플랫폼의 데이터 흐름 · 화면 구성 · 코드 구조 · 목데이터 기준값은 [`nh-decision-platform/README.md`](nh-decision-platform/README.md), 요구사항 · 설계는 [`nh-decision-platform/.kiro/specs/nh-decision-ai-platform/`](nh-decision-platform/.kiro/specs/nh-decision-ai-platform/) 에 있습니다.

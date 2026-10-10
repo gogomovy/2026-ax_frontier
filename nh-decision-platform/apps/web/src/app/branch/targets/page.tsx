@@ -1,7 +1,8 @@
 import { FigureText } from "@/components/data/FigureText";
 import { BranchGuides } from "@/components/domain/BranchGuides";
+import { ReportRequestForm } from "@/components/domain/ReportRequestForm";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Button, ProgressBar, RowEmpty, SectionHead } from "@/components/ui/primitives";
+import { ProgressBar, SectionHead } from "@/components/ui/primitives";
 import { getBranchTargets } from "@/lib/data";
 
 /** 영업점 참고 — 본부에서 전파된 목표와 사업부서 가이드 (요구사항 BR-01 / BR-02) */
@@ -66,15 +67,7 @@ export default async function BranchTargetsPage() {
 
         <section>
           <SectionHead title="확인·보고 요청" hint="현장에서 확인이 필요한 사항을 본부로 올립니다" />
-          <RowEmpty
-            title="요청 등록은 준비 중입니다"
-            description="등록된 요청은 종합기획부 경영목표 설정 화면의 확인·보고 요청으로 전달됩니다."
-            action={
-              <Button variant="ghost" size="sm" disabled>
-                요청 등록
-              </Button>
-            }
-          />
+          <ReportRequestForm />
         </section>
       </div>
     </>

@@ -5,6 +5,7 @@
   ALERT_SMTP_HOST · ALERT_SMTP_PORT · ALERT_SMTP_USER · ALERT_SMTP_PASSWORD · ALERT_SMTP_FROM · ALERT_SMTP_TO(쉼표) · ALERT_SMTP_STARTTLS
 조건(설정 alerts.policy.rules — 관리자 편집)
   workflow_failed · quality_failed · auth_failures(창 안 실패 횟수) · llm_budget(경고 %) · golden_failed
+  worker_stale(워커 심장박동 끊김) · queue_backlog(대기열 적체) · stuck_runs(오래 실행 중) — B.32
 같은 알림은 dedupe 키로 한 번만 보낸다.
 """
 from __future__ import annotations
@@ -37,6 +38,10 @@ DEFAULT_POLICY: dict[str, Any] = {
         "auth_failures": {"enabled": True, "severity": "warning", "threshold": 10, "window_min": 10},
         "llm_budget": {"enabled": True, "severity": "warning", "levels": [80, 100]},
         "golden_failed": {"enabled": True, "severity": "warning"},
+        # 운영 상태 (B.32) — 워커 심장박동 끊김 · 대기열 적체 · 오래 실행 중인 실행
+        "worker_stale": {"enabled": True, "severity": "critical", "stale_sec": 120},
+        "queue_backlog": {"enabled": True, "severity": "warning", "threshold": 50, "overdue_min": 10},
+        "stuck_runs": {"enabled": True, "severity": "warning", "running_min": 60},
     },
 }
 
@@ -147,6 +152,27 @@ def scan(session: Session) -> int:
                 if st["maxPct"] >= level:
                     sev = "critical" if level >= 100 else lr["severity"]
                     add("llm_budget", sev, f"LLM 예산 {level}% 도달 — 이번 달 {st['maxPct']}%", {"maxPct": st["maxPct"], "tokens": st["usage"]["tokens"], "cost": st["usage"]["cost"]}, f"llm_budget:{st['usage']['since'][:7]}:{level}")
+    from nhdip.models import Job, WorkerHeartbeat
+
+    wr = rules["worker_stale"]
+    if wr.get("enabled"):
+        cut = utcnow() - timedelta(seconds=int(wr.get("stale_sec", 120)))
+        beats = session.execute(select(WorkerHeartbeat)).scalars().all()
+        live = [b for b in beats if b.seen_at >= cut]
+        # 최근 하루 안에 본 적 있는 워커가 모두 끊겼을 때만 (오래전에 내린 워커 기록은 무시)
+        recent = [b for b in beats if b.seen_at >= utcnow() - timedelta(days=1)]
+        if recent and not live:
+            last = max(b.seen_at for b in recent)
+            add("worker_stale", wr["severity"], "워커 응답 없음 — 이벤트 · 워크플로우가 처리되지 않습니다", {"lastSeen": last.isoformat(), "workers": [b.worker_id for b in recent][:10]}, f"worker_stale:{last.isoformat()}")
+    qr = rules["queue_backlog"]
+    if qr.get("enabled"):
+        overdue = session.execute(select(func.count()).select_from(Job).where(Job.status == "queued", Job.run_after < utcnow() - timedelta(minutes=int(qr.get("overdue_min", 10))))).scalar() or 0
+        if overdue >= int(qr.get("threshold", 50)):
+            add("queue_backlog", qr["severity"], f"작업 대기열 적체 — 실행 시각이 지난 작업 {overdue}건", {"overdue": overdue}, f"queue_backlog:{utcnow().strftime('%Y%m%d%H')}")
+    sr = rules["stuck_runs"]
+    if sr.get("enabled"):
+        for r in session.execute(select(WorkflowRun).where(WorkflowRun.status == "running", WorkflowRun.started_at < utcnow() - timedelta(minutes=int(sr.get("running_min", 60))))).scalars():
+            add("stuck_runs", sr["severity"], f"오래 실행 중인 워크플로우 — {r.workflow_code}", {"run": r.id, "startedAt": r.started_at.isoformat()}, f"stuck_runs:{r.id}")
     if rules["golden_failed"].get("enabled"):
         from nhdip.views.store import get_current
 

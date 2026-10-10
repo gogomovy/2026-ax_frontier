@@ -21,7 +21,9 @@ from nhdip.models import AgentDecision, Job, Metric, Setting, WorkflowNode, utcn
 AGENT = "orchestrator"
 DEFAULT_POLICY: dict[str, Any] = {"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300,
                                   # LLM 경로 지정 (B.31) — 이 이벤트가 오면 LLM 이 영향받는 다른 워크플로우를 판단해 추가 실행
-                                  "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": []}
+                                  "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": [],
+                                  # 사람 승인 (B.32) — 이 워크플로우는 자동 이벤트로 생긴 작업을 관리자 승인 후 실행 ("*" = 전체, 빈 목록 = 끔)
+                                  "require_approval": []}
 
 
 def policy(session: Session) -> dict[str, Any]:

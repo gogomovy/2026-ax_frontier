@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -14,7 +15,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nhdip.models import Agent, LlmCall, LlmConnection, LlmProfile, Prompt
+from nhdip.models import Agent, LlmCall, LlmConnection, LlmProfile, Prompt, new_id
 from nhdip.security import decrypt_secret
 
 PARAM_KEYS = ("temperature", "top_p", "max_tokens")
@@ -133,6 +134,28 @@ class ChatResult:
     message: dict[str, Any]
 
 
+def _log_messages(session: Session, messages: Any) -> Any:
+    """호출 기록에 남길 메시지 — 설정 privacy.policy.mask_llm_log 이면 개인정보 형식 값을 가린다 (B.32)."""
+    from nhdip.privacy import mask_obj, policy
+
+    try:
+        return mask_obj(messages) if policy(session).get("mask_llm_log", True) else messages
+    except Exception:  # noqa: BLE001
+        return mask_obj(messages)
+
+
+def _save_call(call: LlmCall) -> None:
+    """호출 기록은 업무 트랜잭션과 따로 저장한다 — 노드가 실패해 롤백돼도 비용 · 오류 기록이 남는다 (B.32)."""
+    from nhdip.db import SessionLocal
+
+    try:
+        with SessionLocal() as s2:
+            s2.merge(call)
+            s2.commit()
+    except Exception:  # noqa: BLE001 — 기록 실패가 업무를 막지 않는다
+        logging.getLogger("nhdip.llm").warning("llm_call 기록 실패", exc_info=True)
+
+
 def chat(
     session: Session,
     cfg: ResolvedLlm,
@@ -162,10 +185,9 @@ def chat(
         base_url=cfg.base_url,
         model=cfg.model,
         params=cfg.snapshot(),
-        messages=messages,
+        messages=_log_messages(session, messages),
     )
-    session.add(call)
-    session.flush()
+    call.id = new_id()
     t0 = time.monotonic()
     last_err = ""
     attempts = 0
@@ -194,7 +216,9 @@ def chat(
             call.latency_ms = int((time.monotonic() - t0) * 1000)
             call.status = "ok"
             call.params = {**call.params, "attempts": attempts}
-            return ChatResult(call.output_text, msg.get("tool_calls") or [], data, call.id, msg)
+            out = ChatResult(call.output_text, msg.get("tool_calls") or [], data, call.id, msg)
+            _save_call(call)
+            return out
         except (httpx.HTTPError, ValueError) as exc:
             last_err = f"{type(exc).__name__}: {exc}"
             time.sleep(min(2**attempt, 8))
@@ -202,6 +226,7 @@ def chat(
     call.error = last_err
     call.latency_ms = int((time.monotonic() - t0) * 1000)
     call.params = {**call.params, "attempts": attempts}
+    _save_call(call)
     raise LlmError(last_err)
 
 
@@ -218,9 +243,9 @@ def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_
         base_url=cfg.base_url,
         model=cfg.model,
         params=cfg.snapshot(),
-        messages={"inputs": len(texts), "sample": texts[0][:200] if texts else ""},
+        messages=_log_messages(session, {"inputs": len(texts), "sample": texts[0][:200] if texts else ""}),
     )
-    session.add(call)
+    call.id = new_id()
     t0 = time.monotonic()
     try:
         resp = httpx.post(_url(cfg.base_url, "/embeddings"), headers=_headers(cfg.api_key), json={"model": cfg.model, "input": texts}, timeout=cfg.timeout)
@@ -237,6 +262,7 @@ def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_
         raise LlmError(str(exc)) from exc
     finally:
         call.latency_ms = int((time.monotonic() - t0) * 1000)
+        _save_call(call)
 
 
 def test_connection(base_url: str, api_key: str, model: str | None = None, timeout: float = 15.0) -> dict[str, Any]:

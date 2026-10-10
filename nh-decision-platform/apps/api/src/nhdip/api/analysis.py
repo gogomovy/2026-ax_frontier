@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from nhdip import ratelimit
 from nhdip.db import SessionLocal, get_session
 from nhdip.events import audit, emit
 from nhdip.models import AppUser, Job, NodeRun, OutboxEvent, Setting, Workflow, WorkflowNode, WorkflowRun, utcnow
@@ -106,6 +107,7 @@ def _snapshot(event_id: int) -> dict[str, Any]:
 
 @router.get("/stream")
 async def stream(event: int = Query(..., ge=1), timeout: int = Query(180, ge=5, le=600), session: Session = Depends(get_session), user: AppUser = Depends(current_user)):
+    ratelimit.check(session, "stream_user", user.emp_no)  # 장시간 연결 남용 방지 (B.32)
     ev = session.get(OutboxEvent, event)
     if ev is None or ev.type != "manual":
         raise HTTPException(404, "실행 요청 없음")

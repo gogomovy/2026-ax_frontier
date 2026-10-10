@@ -14,12 +14,22 @@ from sqlalchemy import text
 
 from nhdip.api import admin_core, admin_data, analysis, assist, auth, cascade, documents, oidc, reports, screens, state
 from nhdip import obs
+from nhdip.config import check_runtime, docs_enabled, get_settings
 from nhdip.db import SessionLocal, engine
 
 obs.setup_logging()
 access_log = logging.getLogger("nhdip.http")
+_st = get_settings()
+check_runtime(_st)  # 운영에서 기본 비밀값이면 기동 거부 (B.32)
+_DOCS = docs_enabled(_st)
 
-app = FastAPI(title="NHDIP API", version="0.3.0", docs_url="/docs", redoc_url=None)
+app = FastAPI(
+    title="NHDIP API",
+    version="0.3.0",
+    docs_url="/docs" if _DOCS else None,
+    openapi_url="/openapi.json" if _DOCS else None,
+    redoc_url=None,
+)
 app.include_router(auth.router)
 app.include_router(oidc.router)
 app.include_router(screens.router)
@@ -62,6 +72,28 @@ def _record_request(row: dict) -> None:
         logging.getLogger("nhdip.obs").warning("request_log 기록 실패", exc_info=True)
 
 
+_SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _origin_ok(request: Request) -> bool:
+    """CSRF 방어 (B.32) — 변경 요청의 Origin 이 같은 출처(Host · X-Forwarded-Host)거나 허용 목록에 있어야 한다.
+
+    Origin 이 없으면(서버 간 호출 · 내부 도구) 통과 — 세션 쿠키가 SameSite=Lax 라 교차 사이트 폼 전송은 쿠키가 실리지 않는다.
+    """
+    origin = request.headers.get("origin")
+    if not origin or request.method in _SAFE_METHODS:
+        return True
+    if origin == "null":
+        return False
+    trusted = {o.strip().rstrip("/") for o in _st.trusted_origins.split(",") if o.strip()}
+    if origin.rstrip("/") in trusted:
+        return True
+    host = origin.split("://", 1)[-1].split("/", 1)[0].lower()
+    hosts = {h.strip().lower() for h in (request.headers.get("x-forwarded-host") or "").split(",") if h.strip()}
+    hosts.add((request.headers.get("host") or "").lower())
+    return host in hosts
+
+
 @app.middleware("http")
 async def trace_and_security(request: Request, call_next):
     """추적 ID(작업 0.5): traceparent/X-Trace-Id 이어받기 → 응답 헤더 · 로그 · DB 기록(변경 · 오류 · 느린 요청)."""
@@ -73,7 +105,11 @@ async def trace_and_security(request: Request, call_next):
         t0 = time.perf_counter()
         status = 500
         try:
-            resp = await call_next(request)
+            if _origin_ok(request):
+                resp = await call_next(request)
+            else:
+                access_log.warning("교차 출처 변경 요청 차단 %s %s origin=%s", request.method, request.url.path, request.headers.get("origin"))
+                resp = JSONResponse({"detail": "허용되지 않은 출처의 요청입니다"}, status_code=403)
             status = resp.status_code
         except Exception:
             logging.getLogger("nhdip.http").exception("처리되지 않은 오류 %s %s", request.method, request.url.path)
@@ -89,6 +125,10 @@ async def trace_and_security(request: Request, call_next):
     resp.headers["traceparent"] = obs.traceparent(trace_id)
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("Cache-Control", "no-store")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    if _st.cookie_secure:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return resp
 
 
@@ -98,5 +138,6 @@ def health():
         with engine.connect() as c:
             c.execute(text("SELECT 1"))
         return {"ok": True}
-    except Exception as exc:  # noqa: BLE001
-        return JSONResponse({"ok": False, "error": str(exc)[:200]}, status_code=503)
+    except Exception:  # noqa: BLE001 — 내부 오류 문구는 로그에만 (B.32)
+        logging.getLogger("nhdip.http").warning("health: DB 연결 실패", exc_info=True)
+        return JSONResponse({"ok": False, "error": "db unavailable"}, status_code=503)

@@ -154,12 +154,18 @@ def b_grade_band_series(ctx: EvalContext, p: dict[str, Any]):
 @builder("branch_top_borrowers", "지점 기업여신 상위 차주 (대출잔액 순)")
 def b_top_borrowers(ctx: EvalContext, p: dict[str, Any]):
     br, _, sc = _portfolio(ctx, p)
+    from nhdip.privacy import mask_name, policy as privacy_policy
+
+    masked = set(privacy_policy(ctx.session).get("display_mask_columns") or [])
     labels = sc.get("labels") or []
     tot = _sum([r["ln_bac"] for r in br])
     rows = []
     for i, r in enumerate(sorted(br, key=lambda x: -float(x["ln_bac"]))[: int(p.get("limit", 10))], start=1):
         seq = int(r["Ls_nics_GRDC"])
-        rows.append({"rank": i, "name": r.get("brwr_nm") or r.get("brwr_no"), "size": sc.get("size_labels", {}).get(str(r.get("crdevl_pttp_dsc_f")), "-"), "grade": labels[seq - 1] if 0 < seq <= len(labels) else "-",
+        name = r.get("brwr_nm") or r.get("brwr_no")
+        if r.get("brwr_nm") and "brwr_nm" in masked:
+            name = mask_name(r["brwr_nm"])  # 차주명 화면 가림 (설정 privacy.policy.display_mask_columns) — B.32
+        rows.append({"rank": i, "name": name, "size": sc.get("size_labels", {}).get(str(r.get("crdevl_pttp_dsc_f")), "-"), "grade": labels[seq - 1] if 0 < seq <= len(labels) else "-",
                      "industry": r.get("STD_INDS_CFC") or "-", "amount": _fmt(Decimal(str(r["ln_bac"])) / Decimal(1e8), 1), "share": _fmt(_share(r["ln_bac"], tot), 1)})
     return rows
 

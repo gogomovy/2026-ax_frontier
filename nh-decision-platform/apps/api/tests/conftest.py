@@ -50,3 +50,12 @@ def db():
     with SessionLocal() as s:
         run_seed(s, with_precompute=True)
     yield SessionLocal
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """테스트마다 속도 제한 창을 비운다 — 같은 IP(testclient)로 여러 번 로그인하므로."""
+    from nhdip import ratelimit
+
+    ratelimit.reset()
+    yield

@@ -27,6 +27,8 @@ export interface CalcTrace {
   inputs: CalcInputRef[];
   executedAt: string;
   note?: string;
+  /** 계산은 됐지만 확인이 필요한 사항 (기준 시점 불일치 · 단위 경고) */
+  warnings?: string[];
 }
 
 /** 참조 가능한 수치. LLM 이 만든 리터럴이 아니라 계산 결과를 가리킨다 (PRIN-05) */
@@ -42,6 +44,9 @@ export interface Figure {
   calc?: CalcTrace;
   /** 원천 데이터 직접 참조인 경우 */
   sourceRef?: string;
+  /** 최근 계산이 실패해 이전 값을 보여 주는 중 (B.32) */
+  stale?: boolean;
+  staleReason?: string;
 }
 
 export interface EvidenceDoc {

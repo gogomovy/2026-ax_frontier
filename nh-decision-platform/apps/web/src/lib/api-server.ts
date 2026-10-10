@@ -22,11 +22,15 @@ export async function hasSession(): Promise<boolean> {
   return Boolean((await cookies()).get(SESSION_COOKIE)?.value);
 }
 
+/** 백엔드 응답 대기 상한(ms) — 멈춘 요청이 화면 렌더를 무한정 붙잡지 않도록 (B.32 · 환경변수 API_TIMEOUT_MS) */
+const TIMEOUT_MS = Number(process.env.API_TIMEOUT_MS ?? 20000);
+
 async function raw(path: string): Promise<Response> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   return fetch(`${BASE}${path}`, {
     cache: "no-store",
     headers: token ? { cookie: `${SESSION_COOKIE}=${token}` } : {},
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
 }
 

@@ -7,6 +7,7 @@ LLM 호출은 ops.llm_call 로 연결된다. 비활성 노드는 skipped.
 """
 from __future__ import annotations
 
+import copy
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -32,11 +33,18 @@ class RunContext:
     changes: list[dict[str, Any]] = field(default_factory=list)
     state: dict[str, Any] = field(default_factory=dict)
     node_run_id: str | None = None
+    base: dict[str, Any] = field(default_factory=dict)  # 읽은 시점 사본 — 게시 때 3방향 병합 기준 (B.32)
+    deferred: list[tuple[str, dict[str, Any], str | None]] = field(default_factory=list)  # 실행 성공 후 낼 이벤트
 
     def load_artifacts(self) -> dict[str, Any]:
         if not self.artifacts:
             self.artifacts = all_current(self.session)
+            self.base = copy.deepcopy(self.artifacts)
         return self.artifacts
+
+    def emit_after_success(self, type_: str, payload: dict[str, Any], actor: str | None = None) -> None:
+        """실행이 성공(게시 완료)한 뒤에만 낼 이벤트 — 실패한 실행의 변화가 다른 워크플로우를 깨우지 않도록 (B.32)."""
+        self.deferred.append((type_, payload, actor))
 
 
 class NodeResult:
@@ -115,6 +123,12 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
                 degraded = True
             session.commit()
         run.status = "degraded" if degraded else "succeeded"
+        if ctx.deferred:
+            from nhdip.events import emit
+
+            for type_, payload, actor in ctx.deferred:
+                emit(session, type_, payload, actor)
+            session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         run = session.get(WorkflowRun, run.id)

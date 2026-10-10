@@ -16,6 +16,11 @@ const SSO_ERROR: Record<string, string> = {
   disabled: "SSO 로그인이 설정되어 있지 않습니다.",
 };
 
+/** 같은 사이트의 상대 경로만 허용 — 열린 리디렉션 차단(`//`, `/\`, 제어 문자 · 공백 거부). 서버 oidc._safe_next 와 같은 규칙 */
+function safeNext(n: string | null): string | null {
+  return n && n.startsWith("/") && !n.startsWith("//") && !n.includes("\\") && /^[\x21-\x7e]{1,300}$/.test(n) ? n : null;
+}
+
 /** 로그인 — 사번 8자리 + 비밀번호 (요구사항 AUTH-06) */
 export default function LoginPage() {
   return (
@@ -38,8 +43,8 @@ function LoginForm() {
       .catch(() => setSso(null));
   }, []);
   const ssoError = params.get("sso_error");
-  const nextParam = params.get("next");
-  const ssoHref = `/backend/auth/oidc/login${nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") ? `?next=${encodeURIComponent(nextParam)}` : ""}`;
+  const nextParam = safeNext(params.get("next"));
+  const ssoHref = `/backend/auth/oidc/login${nextParam ? `?next=${encodeURIComponent(nextParam)}` : ""}`;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -48,9 +53,8 @@ function LoginForm() {
     setBusy(true);
     try {
       const res = await apiPost<{ home: string }>("/auth/login", { emp_no: empNo, password });
-      const next = params.get("next");
       // 외부 주소로의 이동을 막는다. 레이아웃 세션 데이터를 새로 받기 위해 전체 새로고침
-      window.location.href = next && next.startsWith("/") && !next.startsWith("//") ? next : res.home;
+      window.location.href = nextParam ?? res.home;
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);

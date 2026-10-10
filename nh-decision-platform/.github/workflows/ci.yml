@@ -79,8 +79,8 @@ jobs:
         run: bash infra/scripts/ensure-env.sh
       - name: compose up
         run: docker compose up -d --build --wait --wait-timeout 600
-      - name: wait for precompute
-        run: sleep 30
+      - name: wait for precompute (이벤트 · 작업 처리 완료까지)
+        run: docker compose exec -T api python -m nhdip.cli wait-idle --timeout 300 --settle 10
       - name: e2e
         run: make e2e
         env:

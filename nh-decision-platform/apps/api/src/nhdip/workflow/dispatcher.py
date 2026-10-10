@@ -80,46 +80,121 @@ def _debounce(session: Session, wf: str, ev: OutboxEvent) -> int:
     return int(s.value) if s is not None else 60
 
 
+def needs_approval(session: Session, wf: str, cause: dict[str, Any]) -> bool:
+    """사람 승인 (B.32 · HITL) — 설정 orchestrator.policy.require_approval 에 든 워크플로우는
+    자동 이벤트(데이터 · 규칙 · 에이전트 판단)로 생긴 작업을 관리자가 승인해야 실행한다. 수동 실행은 바로 실행."""
+    from .orchestrator import policy
+
+    req = policy(session).get("require_approval") or []
+    if cause.get("type") in ("manual",) or not req:
+        return False
+    return "*" in req or wf in req
+
+
 def enqueue(session: Session, wf: str, cause: dict[str, Any], delay_sec: int) -> Job:
     now = utcnow()
+    approval = needs_approval(session, wf, cause)
+    status = "approval" if approval else "queued"
     job = session.execute(
-        select(Job).where(Job.kind == "workflow", Job.workflow_code == wf, Job.status == "queued").with_for_update(skip_locked=True).limit(1)
+        select(Job).where(Job.kind == "workflow", Job.workflow_code == wf, Job.status == status).with_for_update(skip_locked=True).limit(1)
     ).scalar()
+    if job and approval:
+        job.causes = [*job.causes, cause][-200:]  # 승인 대기 작업에 원인만 누적
+        return job
     if job:
         job.causes = [*job.causes, cause][-200:]
         # 디바운스 연장(최초 대기 생성 후 최대 5배까지만)
         cap = job.created_at + timedelta(seconds=max(delay_sec, 1) * 5)
         job.run_after = min(max(job.run_after, now + timedelta(seconds=delay_sec)), cap) if delay_sec else now
         return job
-    job = Job(kind="workflow", workflow_code=wf, causes=[cause], status="queued", run_after=now + timedelta(seconds=delay_sec))
+    job = Job(kind="workflow", workflow_code=wf, causes=[cause], status=status, run_after=now + timedelta(seconds=delay_sec))
     session.add(job)
     return job
 
 
+def _chain_block(session: Session, ev: OutboxEvent, wf: str) -> str | None:
+    """연쇄 안전장치 (B.32) — 이미 연쇄에 있는 워크플로우(순환)와 최대 연쇄 깊이를 넘는 후속 실행을 막는다."""
+    if ev.type in ("manual", "schedule"):
+        return None
+    p = ev.payload or {}
+    chain = list(p.get("chain") or [])
+    if wf in chain:
+        return f"순환 방지 — {wf} 는 이미 연쇄({' → '.join(chain)})에 있음"
+    if chain:
+        from .orchestrator import policy
+
+        if len(chain) >= int(policy(session).get("max_chain", 3)):
+            return f"최대 연쇄 깊이 {len(chain)} 도달 (orchestrator.policy.max_chain)"
+    return None
+
+
+def _needs_route(session: Session, ev: OutboxEvent) -> bool:
+    from .orchestrator import policy
+
+    pol = policy(session)
+    return bool(pol.get("enabled", True)) and ev.type in set(pol.get("route_on") or [])
+
+
 def dispatch_once(session: Session, limit: int = 50) -> int:
+    """이벤트 → 작업. 두 단계 (B.32):
+    1) 이벤트 잠금 → 명시 매칭(빠름) — LLM 경로 지정이 필요한 이벤트는 잠금을 풀고 따로 처리
+    2) 경로 지정(LLM 호출)은 잠금 밖에서 → 다시 잠가 아직 미처리면 작업 생성
+    이벤트 하나의 오류는 롤백 후 다음 이벤트로 넘어간다(전체 디스패치가 멈추지 않음).
+    """
+    import logging
+
+    log = logging.getLogger("nhdip.dispatcher")
     events = session.execute(
         select(OutboxEvent).where(OutboxEvent.dispatched_at.is_(None)).order_by(OutboxEvent.id).with_for_update(skip_locked=True).limit(limit)
     ).scalars().all()
+    plain, routed = [], []
     for ev in events:
-        matched = match_event(session, ev)
+        (routed if _needs_route(session, ev) else plain).append(ev.id)
+    session.commit()  # 잠금 해제 — 경로 지정 대상은 LLM 호출 동안 잠그지 않는다
+    n = 0
+    for eid in plain + routed:
+        matched_pre: dict[str, list[str]] | None = None
+        if eid in routed:
+            ev0 = session.get(OutboxEvent, eid)
+            if ev0 is None or ev0.dispatched_at is not None:
+                continue
+            try:
+                from .orchestrator import route
+
+                matched_pre = route(session, ev0, match_event(session, ev0))  # 오케스트레이터 경로 지정 (LLM 판단 · 규칙 대체)
+                session.commit()  # 판단 기록 보존
+            except Exception:  # noqa: BLE001 — 경로 지정 실패가 디스패치를 막지 않는다
+                session.rollback()
+                logging.getLogger("nhdip.orchestrator").exception("route failed")
+                matched_pre = None
         try:
-            from .orchestrator import route
-
-            matched = route(session, ev, matched)  # 오케스트레이터 경로 지정 (LLM 판단 · 규칙 대체)
-        except Exception:  # noqa: BLE001 — 경로 지정 실패가 디스패치를 막지 않는다
-            import logging
-
-            logging.getLogger("nhdip.orchestrator").exception("route failed")
-        cause = {"event_id": ev.id, "type": ev.type, "payload": ev.payload, "at": ev.created_at.isoformat(), "actor": ev.actor, "trace_id": ev.trace_id}
-        for wf, reasons in matched.items():
-            enqueue(session, wf, {**cause, "reasons": reasons}, _debounce(session, wf, ev))
-        ev.matched = [{"workflow": wf, "reasons": r} for wf, r in matched.items()]
-        ev.dispatched_at = utcnow()
-    session.commit()
-    return len(events)
+            ev = session.execute(select(OutboxEvent).where(OutboxEvent.id == eid, OutboxEvent.dispatched_at.is_(None)).with_for_update(skip_locked=True)).scalar()
+            if ev is None:
+                session.rollback()
+                continue  # 다른 워커가 처리함
+            matched = matched_pre if matched_pre is not None else match_event(session, ev)
+            cause = {"event_id": ev.id, "type": ev.type, "payload": ev.payload, "at": ev.created_at.isoformat(), "actor": ev.actor, "trace_id": ev.trace_id}
+            record, blocked = [], []
+            for wf, reasons in matched.items():
+                why = _chain_block(session, ev, wf)
+                if why:
+                    blocked.append({"workflow": wf, "reason": why})
+                    continue
+                enqueue(session, wf, {**cause, "reasons": reasons}, _debounce(session, wf, ev))
+                record.append({"workflow": wf, "reasons": reasons})
+            ev.matched = record + [{"workflow": b["workflow"], "reasons": [], "blocked": b["reason"]} for b in blocked]
+            ev.dispatched_at = utcnow()
+            session.commit()
+            n += 1
+        except Exception:  # noqa: BLE001
+            session.rollback()
+            log.exception("dispatch failed (event %s)", eid)
+    return n
 
 
 def claim_job(session: Session, worker_id: str) -> Job | None:
+    from nhdip.locks import try_lock
+
     running = aliased(Job)
     q = (
         select(Job)
@@ -136,6 +211,11 @@ def claim_job(session: Session, worker_id: str) -> Job | None:
 
     job = None
     for cand in session.execute(q).scalars().all():
+        # 같은 워크플로우를 두 워커가 동시에 집지 않도록 — 워크플로우 잠금 후 실행 중 작업을 다시 확인 (B.32)
+        if cand.workflow_code and not try_lock(session, f"workflow:{cand.workflow_code}"):
+            continue
+        if cand.workflow_code and session.execute(select(Job.id).where(Job.workflow_code == cand.workflow_code, Job.status == "running").limit(1)).first():
+            continue
         # 오케스트레이터 — 상위 워크플로우 작업이 남아 있으면 미루고 다음 후보 (B.30)
         if gate(session, cand):
             job = cand
@@ -151,10 +231,25 @@ def claim_job(session: Session, worker_id: str) -> Job | None:
     return job
 
 
-def recover_stale(session: Session, older_than_min: int = 30) -> int:
+def recover_stale(session: Session, older_than_min: int = 30, heartbeat_stale_sec: int = 120) -> int:
+    """멈춘 작업 복구 (B.32) — 잡은 워커의 심장박동이 끊긴 실행 중 작업만 다시 대기로.
+
+    오래 걸리는 정상 실행(워커 살아 있음)은 건드리지 않는다. 고아가 된 실행(running 인 workflow_run)은 실패로 닫는다.
+    """
     res = session.execute(
-        text("UPDATE ops.job SET status='queued', locked_by=NULL WHERE status='running' AND locked_at < now() - make_interval(mins => :m)"),
-        {"m": older_than_min},
+        text(
+            "UPDATE ops.job j SET status='queued', locked_by=NULL, run_after=now() "
+            "WHERE j.status='running' AND j.locked_at < now() - make_interval(mins => :m) "
+            "AND NOT EXISTS (SELECT 1 FROM ops.worker_heartbeat h WHERE h.worker_id = j.locked_by AND h.seen_at > now() - make_interval(secs => :hb)) "
+            "RETURNING j.id"
+        ),
+        {"m": older_than_min, "hb": heartbeat_stale_sec},
     )
+    ids = [r[0] for r in res]
+    if ids:
+        session.execute(
+            text("UPDATE ops.workflow_run SET status='failed', error='워커 중단 — 작업을 다시 대기열로 돌림', finished_at=now() WHERE status='running' AND job_id = ANY(:ids)"),
+            {"ids": ids},
+        )
     session.commit()
-    return res.rowcount or 0
+    return len(ids)

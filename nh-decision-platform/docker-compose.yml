@@ -15,16 +15,30 @@ name: nhdip
 #   litellm   :4000  LiteLLM 게이트웨이 (OpenAI 호환, /ui 관리 화면)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 로그 회전 (B.32) — 컨테이너 로그가 디스크를 채우지 않도록
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 x-api-env: &api-env
+  TZ: ${TZ:-Asia/Seoul}
   NHDIP_ENV: ${NHDIP_ENV:-prod}
-  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nhdip}:${POSTGRES_PASSWORD:-nhdip}@postgres:5432/${POSTGRES_DB:-nhdip}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-nhdip}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 가 .env 에 필요합니다 (make env)}@postgres:5432/${POSTGRES_DB:-nhdip}
   NEO4J_URI: bolt://neo4j:7687
   NEO4J_USER: neo4j
-  NEO4J_PASSWORD: ${NEO4J_PASSWORD:-nhdip-neo4j}
+  NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD 가 .env 에 필요합니다 (make env)}
   FILESTORE_DIR: /data/files
   SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET 가 .env 에 필요합니다 (make env)}
   CONFIG_ENC_KEY: ${CONFIG_ENC_KEY:?CONFIG_ENC_KEY 가 .env 에 필요합니다 (make env)}
   COOKIE_SECURE: ${COOKIE_SECURE:-0}
+  # 변경 요청 Origin 허용 목록(쉼표, 예: https://nhdip.example) — 비우면 같은 출처만 (B.32)
+  TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
+  # API 문서(/docs) — 운영(prod) 기본 꺼짐. true 로 켠다
+  API_DOCS: ${API_DOCS:-}
+  # 트랜잭션 유휴 제한(ms) — 잠금을 쥔 채 멈춘 연결을 DB 가 끊는다. 0 = 끄기
+  DB_IDLE_TX_TIMEOUT_MS: ${DB_IDLE_TX_TIMEOUT_MS:-600000}
   BOOTSTRAP_ADMIN_EMP_NO: ${BOOTSTRAP_ADMIN_EMP_NO:-00000001}
   BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?BOOTSTRAP_ADMIN_PASSWORD 가 .env 에 필요합니다 (make env)}
   # 시드 시 기본 LLM 연결로 등록할 값 (이후 관리자 화면에서 변경)
@@ -55,10 +69,13 @@ x-api-env: &api-env
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    # 이미지 고정 (B.32) — 태그 + 다중 아키텍처 digest. 올릴 때는 PG_IMAGE 로 바꾼다
+    image: ${PG_IMAGE:-pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a}
+    logging: *logging
     environment:
+      TZ: ${TZ:-Asia/Seoul}
       POSTGRES_USER: ${POSTGRES_USER:-nhdip}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nhdip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 가 .env 에 필요합니다 (make env)}
       POSTGRES_DB: ${POSTGRES_DB:-nhdip}
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -72,15 +89,17 @@ services:
     restart: unless-stopped
 
   neo4j:
-    image: neo4j:5.26-community
+    image: ${NEO4J_IMAGE:-neo4j:5.26-community@sha256:c7d25c0eeebfe125718d58b72ed5d663c85d0479047733845eb2237c67ce8069}
+    logging: *logging
     environment:
-      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-nhdip-neo4j}
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD 가 .env 에 필요합니다 (make env)}
       NEO4J_server_memory_heap_initial__size: 512m
       NEO4J_server_memory_heap_max__size: 1g
       NEO4J_server_memory_pagecache_size: 512m
     ports:
-      - "${NEO4J_HTTP_PORT:-7474}:7474"
-      - "${NEO4J_BOLT_PORT:-7687}:7687"
+      # 관리용 포트는 기본으로 이 컴퓨터에서만 (외부 공개는 ADMIN_BIND=0.0.0.0)
+      - "${ADMIN_BIND:-127.0.0.1}:${NEO4J_HTTP_PORT:-7474}:7474"
+      - "${ADMIN_BIND:-127.0.0.1}:${NEO4J_BOLT_PORT:-7687}:7687"
     volumes:
       - neo4jdata:/data
     healthcheck:
@@ -92,10 +111,11 @@ services:
     restart: unless-stopped
 
   litellm:
-    image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:main-stable}
+    image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:main-stable@sha256:625981c83410a3ea68eb0697590a57ec1d764d634514d54fa5db0591077ee839}
+    logging: *logging
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-nhdip}:${POSTGRES_PASSWORD:-nhdip}@postgres:5432/litellm
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nhdip}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 가 .env 에 필요합니다 (make env)}@postgres:5432/litellm
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY 가 .env 에 필요합니다 (make env)}
       STORE_MODEL_IN_DB: "True"
       UI_USERNAME: ${LITELLM_UI_USERNAME:-admin}
@@ -103,7 +123,7 @@ services:
     volumes:
       - ./infra/litellm/config.yaml:/app/config.yaml:ro
     ports:
-      - "${LITELLM_PORT:-4000}:4000"
+      - "${ADMIN_BIND:-127.0.0.1}:${LITELLM_PORT:-4000}:4000"
     depends_on:
       postgres: {condition: service_healthy}
     healthcheck:
@@ -119,6 +139,7 @@ services:
       context: ./apps/api
     image: nhdip/api:${IMAGE_TAG:-local}
     command: ["api"]
+    logging: *logging
     environment:
       <<: *api-env
       RUN_MIGRATIONS: "1"
@@ -126,7 +147,7 @@ services:
     volumes:
       - filestore:/data/files
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${ADMIN_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
     depends_on:
       postgres: {condition: service_healthy}
       neo4j: {condition: service_started}
@@ -143,12 +164,20 @@ services:
     # api 서비스가 빌드한 같은 이미지를 쓴다(레지스트리에서 받지 않음)
     pull_policy: never
     command: ["worker"]
+    logging: *logging
     environment:
       <<: *api-env
     volumes:
       - filestore:/data/files
     depends_on:
       api: {condition: service_healthy}
+    # 워커 심장박동(5초)이 60초 넘게 끊기면 비정상 (B.32)
+    healthcheck:
+      test: ["CMD", "python", "-m", "nhdip.worker", "--health"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   web:
@@ -159,13 +188,15 @@ services:
         NEXT_PUBLIC_AS_OF: ${AS_OF_DEFAULT:-2026-08-31}
         API_INTERNAL_URL: http://api:8000
     image: nhdip/web:${IMAGE_TAG:-local}
+    logging: *logging
     environment:
+      TZ: ${TZ:-Asia/Seoul}
       NODE_ENV: production
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
       API_INTERNAL_URL: http://api:8000
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:3000"
     depends_on:
       api: {condition: service_healthy}
     healthcheck:

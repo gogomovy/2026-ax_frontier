@@ -345,6 +345,41 @@ def audit_log(actor: str | None = None, action: str | None = None, limit: int = 
 
 
 # ═════════════════════════ LLM 연동 ═════════════════════════
+_BLOCKED_HOSTS = {"metadata.google.internal", "metadata", "instance-data"}
+
+
+def _check_base_url(url: str | None) -> str | None:
+    """LLM 연결 주소 점검 (B.32 · SSRF) — http(s) 만, 링크 로컬(169.254.* · fe80::) · 클라우드 메타데이터 주소 차단.
+
+    사내 게이트웨이(사설 대역)는 허용한다 — 폐쇄망 LLM 이 사설 주소에 있기 때문이다.
+    """
+    if url is None:
+        return None
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    u = urlparse(url.strip())
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise HTTPException(422, "LLM 주소는 http(s)://호스트 형식이어야 합니다")
+    host = u.hostname.lower()
+    if host in _BLOCKED_HOSTS:
+        raise HTTPException(422, "메타데이터 주소는 LLM 연결로 쓸 수 없습니다")
+    try:
+        addrs = {ai[4][0] for ai in socket.getaddrinfo(host, None)}
+    except OSError:
+        addrs = {host}  # 아직 해석되지 않는 이름(배포 전 등록) — 문자 그대로 검사
+    for a in addrs:
+        try:
+            ip = ipaddress.ip_address(a.split("%", 1)[0])
+        except ValueError:
+            continue
+        mapped = getattr(ip, "ipv4_mapped", None) or ip
+        if mapped.is_link_local or mapped.is_multicast or mapped.is_unspecified or str(mapped) == "fd00:ec2::254":
+            raise HTTPException(422, "링크 로컬 · 메타데이터 주소는 LLM 연결로 쓸 수 없습니다")
+    return url.strip()
+
+
 class ConnIn(BaseModel):
     name: str
     base_url: str
@@ -401,7 +436,7 @@ def llm(session: Session = Depends(get_session)):
 
 @router.post("/llm/connections", status_code=201)
 def conn_create(body: ConnIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    c = LlmConnection(name=body.name, base_url=body.base_url.strip(), api_key_enc=encrypt_secret(body.api_key or ""), active=body.active, note=body.note)
+    c = LlmConnection(name=body.name, base_url=_check_base_url(body.base_url), api_key_enc=encrypt_secret(body.api_key or ""), active=body.active, note=body.note)
     session.add(c)
     audit(session, admin.emp_no, "admin.llm.connection_create", "llm_connection", body.name, {"base_url": body.base_url}, client_ip(request))
     session.commit()
@@ -414,6 +449,8 @@ def conn_patch(cid: int, body: ConnPatch, request: Request, session: Session = D
     if not c:
         raise HTTPException(404, "연결 없음")
     patch = body.model_dump(exclude_unset=True)
+    if patch.get("base_url") is not None:
+        patch["base_url"] = _check_base_url(patch["base_url"])
     if "api_key" in patch:
         if patch["api_key"] is not None:
             c.api_key_enc = encrypt_secret(patch["api_key"])
@@ -437,12 +474,14 @@ def conn_delete(cid: int, request: Request, session: Session = Depends(get_sessi
 
 
 @router.post("/llm/connections/{cid}/test")
-def conn_test(cid: int, body: TestIn, session: Session = Depends(get_session)):
+def conn_test(cid: int, body: TestIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     c = session.get(LlmConnection, cid)
     if not c:
         raise HTTPException(404, "연결 없음")
+    _check_base_url(c.base_url)
     res = test_connection(c.base_url, decrypt_secret(c.api_key_enc), body.model)
     c.last_test = {**res, "models": (res.get("models") or [])[:50], "at": utcnow().isoformat()}
+    audit(session, admin.emp_no, "admin.llm.connection_test", "llm_connection", str(cid), {"ok": res.get("ok"), "model": body.model}, client_ip(request))
     session.commit()
     return res
 
@@ -561,8 +600,9 @@ def prompt_create(code: str, body: PromptIn, request: Request, session: Session 
 
 
 @router.post("/agents/{code}/ask")
-def agent_ask(code: str, body: AskIn, session: Session = Depends(get_session)):
+def agent_ask(code: str, body: AskIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     """에이전트 시험 호출. query_assistant 등 tools_enabled 면 커널 도구 루프(CALC-10)."""
+    audit(session, admin.emp_no, "admin.agent.ask", "agent", code, {"chars": len(body.message), "useTools": body.use_tools}, client_ip(request))
     try:
         cfg = resolve(session, code)
     except LlmUnavailable as exc:
@@ -589,12 +629,21 @@ class ActivateIn(BaseModel):
     version: int
 
 
+def _dual_control(session: Session) -> bool:
+    """규칙 이중 승인 (B.32 · 설정 governance.dual_control.rules) — 켜면 새 버전은 다른 관리자가 적용해야 활성화된다."""
+    st = session.get(Setting, "governance.dual_control")
+    v = st.value if st and isinstance(st.value, dict) else {}
+    return bool(v.get("enabled")) and bool(v.get("rules", True))
+
+
 @router.get("/rules")
 def rules(session: Session = Depends(get_session)):
     out = []
+    dual = _dual_control(session)
     for r in session.execute(select(Rule).order_by(Rule.code)).scalars():
         vs = session.execute(select(RuleVersion).where(RuleVersion.rule_code == r.code).order_by(RuleVersion.version.desc())).scalars().all()
-        out.append({"code": r.code, "name": r.name, "kind": r.kind, "description": r.description, "activeVersion": r.active_version, "versions": [{"version": v.version, "body": v.body, "note": v.note, "createdBy": v.created_by, "createdAt": _iso(v.created_at)} for v in vs]})
+        out.append({"code": r.code, "name": r.name, "kind": r.kind, "description": r.description, "activeVersion": r.active_version, "dualControl": dual,
+                    "versions": [{"version": v.version, "body": v.body, "note": v.note, "createdBy": v.created_by, "createdAt": _iso(v.created_at), "pending": dual and v.version > r.active_version} for v in vs]})
     return out
 
 
@@ -603,11 +652,16 @@ def rule_version(code: str, body: RuleVersionIn, request: Request, session: Sess
     r = session.get(Rule, code)
     if not r:
         raise HTTPException(404, "규칙 없음")
+    from nhdip.locks import lock
+
+    lock(session, f"rule:{code}")
     last = session.execute(select(func.max(RuleVersion.version)).where(RuleVersion.rule_code == code)).scalar() or 0
     session.add(RuleVersion(rule_code=code, version=last + 1, body=body.body, note=body.note, created_by=admin.emp_no))
-    r.active_version = last + 1
-    emit(session, "rule.changed", {"rule": code, "version": last + 1}, admin.emp_no)
-    audit(session, admin.emp_no, "admin.rule.version", "rule", code, {"version": last + 1, "body": body.body}, client_ip(request))
+    dual = _dual_control(session)
+    if not dual:
+        r.active_version = last + 1
+        emit(session, "rule.changed", {"rule": code, "version": last + 1}, admin.emp_no)
+    audit(session, admin.emp_no, "admin.rule.version", "rule", code, {"version": last + 1, "body": body.body, "pendingApproval": dual}, client_ip(request))
     session.commit()
     return rules(session)
 
@@ -615,8 +669,11 @@ def rule_version(code: str, body: RuleVersionIn, request: Request, session: Sess
 @router.post("/rules/{code}/activate")
 def rule_activate(code: str, body: ActivateIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     r = session.get(Rule, code)
-    if not r or not session.execute(select(RuleVersion).where(RuleVersion.rule_code == code, RuleVersion.version == body.version)).first():
+    v = session.execute(select(RuleVersion).where(RuleVersion.rule_code == code, RuleVersion.version == body.version)).scalar() if r else None
+    if not r or v is None:
         raise HTTPException(404, "규칙 버전 없음")
+    if _dual_control(session) and v.created_by == admin.emp_no:
+        raise HTTPException(409, "이중 승인 — 직접 만든 규칙 버전은 다른 관리자가 적용해야 합니다")
     r.active_version = body.version
     emit(session, "rule.changed", {"rule": code, "version": body.version}, admin.emp_no)
     audit(session, admin.emp_no, "admin.rule.activate", "rule", code, {"version": body.version}, client_ip(request))

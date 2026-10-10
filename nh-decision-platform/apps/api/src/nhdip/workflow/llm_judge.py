@@ -21,7 +21,8 @@ from nhdip.llm.guard import GUARD, fence
 from nhdip.models import Setting
 
 _COOL: dict[str, float] = {}
-DEFAULT_POLICY = {"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000}
+_RESET: dict[str, Any] = {"at": None}  # reset_cooldown 시각 — 이전 DB 오류 기록은 쉬는 시간 판단에서 뺀다
+DEFAULT_POLICY = {"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000, "timeout_sec": 30, "retries": 1}
 DEFAULT_USER = "과제:\n{task}\n\n입력 자료(JSON):\n{context}\n\n출력은 JSON 객체 하나만."
 LITERAL_NUM = re.compile(r"\d+(?:[.,]\d+)+|\d+\s*(?:%p?|bp|억|조|만|천|원|건|배|점)")
 
@@ -39,18 +40,43 @@ def clean_reason(text: Any, limit: int = 200) -> tuple[str, bool]:
     return s, False
 
 
+def _cooling(session: Session, agent_code: str, sec: float) -> bool:
+    """연속 실패 쉬는 시간 — 프로세스 메모리 + DB(최근 판단 호출이 오류였는지) 둘 다 본다.
+    DB 기준이라 워커가 여러 개이거나 재시작해도 같은 판단을 한다 (B.32)."""
+    if _COOL.get(agent_code, 0.0) > time.monotonic():
+        return True
+    if sec <= 0:
+        return False
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from nhdip.models import LlmCall, utcnow
+
+    cut = utcnow() - timedelta(seconds=sec)
+    if _RESET["at"] is not None and _RESET["at"] > cut:
+        cut = _RESET["at"]
+    last = session.execute(
+        select(LlmCall.status).where(LlmCall.purpose == f"judge:{agent_code}", LlmCall.created_at > cut).order_by(LlmCall.created_at.desc()).limit(1)
+    ).scalar()
+    return last == "error"
+
+
 def ask_json(session: Session, agent_code: str, task: str, context: dict[str, Any], *, workflow_run_id: str | None = None, node_run_id: str | None = None, required: tuple[str, ...] = ()) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """(결정 JSON 또는 None, 메타{by, reason, llm_call_id, model})"""
     pol = policy(session)
     if not pol.get("enabled", True):
         return None, {"by": "rule", "reason": "LLM 판단 꺼짐(설정 agents.llm_judge)"}
-    until = _COOL.get(agent_code, 0.0)
-    if until > time.monotonic():
+    if _cooling(session, agent_code, float(pol.get("cooldown_sec", 300))):
         return None, {"by": "rule", "reason": "최근 LLM 오류 — 대기 시간 동안 규칙으로 판단"}
     try:
         llm = resolve(session, agent_code)
     except LlmUnavailable as exc:
         return None, {"by": "rule", "reason": f"LLM 미연결 — {exc}"}
+    # 판단 호출은 실행 경로 위에 있으므로 대기 · 재시도 상한을 둔다 (설정 agents.llm_judge.timeout_sec · retries) — B.32
+    import dataclasses
+
+    llm = dataclasses.replace(llm, timeout=min(llm.timeout, float(pol.get("timeout_sec", 30))), retries=min(llm.retries, int(pol.get("retries", 1))))
     ctx_text = json.dumps(context, ensure_ascii=False, default=str)[: int(pol.get("max_context_chars", 14000))]
     user = (llm.user_template or DEFAULT_USER).replace("{task}", task).replace("{context}", fence(ctx_text))
     messages = [{"role": "system", "content": (llm.system_prompt or "너는 은행 업무 판단 에이전트다. JSON 으로만 답한다.") + "\n\n" + GUARD}, {"role": "user", "content": user}]
@@ -72,4 +98,7 @@ def ask_json(session: Session, agent_code: str, task: str, context: dict[str, An
 
 def reset_cooldown() -> None:
     """테스트 · 연결 변경 직후 — 대기 상태를 비운다."""
+    from nhdip.models import utcnow
+
     _COOL.clear()
+    _RESET["at"] = utcnow()

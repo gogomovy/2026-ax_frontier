@@ -455,13 +455,14 @@ async def document_upload(
 
 
 @router.post("/documents/{origin}/{did}/reextract")
-def document_reextract(origin: str, did: int, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+def document_reextract(origin: str, did: int, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     t = source(origin)
     d = session.get(t.document, did)
     if not d:
         raise HTTPException(404, "문서 없음")
     d.status = "ingested"
     emit(session, "document.ingested", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "reextract": True}, admin.emp_no)
+    audit(session, admin.emp_no, "admin.document.reextract", "document", f"{origin}:{did}", None, client_ip(request))
     session.commit()
     return {"queued": True}
 
@@ -638,8 +639,9 @@ def ontology_issue_patch(iid: int, body: IssuePatch, session: Session = Depends(
 
 
 @router.post("/ontology/reproject")
-def ontology_reproject(session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+def ontology_reproject(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     emit(session, "manual", {"workflow": "wf_graph_projection", "reason": "관리자 재투영"}, admin.emp_no)
+    audit(session, admin.emp_no, "admin.ontology.reproject", "graph", None, None, client_ip(request))
     session.commit()
     return {"queued": True}
 
@@ -676,7 +678,7 @@ def monitor_flow(limit: int = 60, session: Session = Depends(get_session)):
         for c in r.causes or []:
             if c.get("event_id"):
                 by_event.setdefault(c["event_id"], []).append({"run": r.id, "workflow": r.workflow_code, "status": r.status, "startedAt": _iso(r.started_at), "finishedAt": _iso(r.finished_at), "published": (r.summary or {}).get("published", [])})
-    jobs = session.execute(select(Job).where(Job.status.in_(["queued", "running"]))).scalars().all()
+    jobs = session.execute(select(Job).where(Job.status.in_(["queued", "running", "approval"]))).scalars().all()
     pending: dict[int, list[dict[str, Any]]] = {}
     for j in jobs:
         for c in j.causes or []:
@@ -686,6 +688,50 @@ def monitor_flow(limit: int = 60, session: Session = Depends(get_session)):
         {"id": e.id, "type": e.type, "payload": e.payload, "actor": e.actor, "at": _iso(e.created_at), "dispatchedAt": _iso(e.dispatched_at), "matched": e.matched, "runs": by_event.get(e.id, []), "pending": pending.get(e.id, []), "traceId": e.trace_id}
         for e in events
     ]
+
+
+@router.get("/jobs/approval")
+def jobs_approval(session: Session = Depends(get_session)):
+    """사람 승인 대기 작업 (B.32 · orchestrator.policy.require_approval)."""
+    rows = session.execute(select(Job).where(Job.status == "approval").order_by(Job.created_at)).scalars().all()
+    return [{"id": j.id, "workflow": j.workflow_code, "createdAt": _iso(j.created_at), "causes": [{k: c.get(k) for k in ("event_id", "type", "reasons", "actor", "at")} for c in (j.causes or [])][-20:], "causeCount": len(j.causes or [])} for j in rows]
+
+
+class ApprovalIn(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/jobs/{jid}/approve")
+def job_approve(jid: int, body: ApprovalIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    j = session.get(Job, jid)
+    if not j or j.status != "approval":
+        raise HTTPException(404, "승인 대기 작업 없음")
+    from nhdip.models import utcnow as _now
+
+    # 같은 워크플로우의 대기 작업이 있으면 원인을 합친다 (동시 실행 1개 원칙)
+    q = session.execute(select(Job).where(Job.kind == "workflow", Job.workflow_code == j.workflow_code, Job.status == "queued").limit(1)).scalar()
+    if q is not None:
+        q.causes = [*q.causes, *j.causes][-200:]
+        q.run_after = _now()
+        j.status, j.finished_at, j.error = "done", _now(), f"승인 — 대기 작업 #{q.id} 에 병합"
+    else:
+        j.status, j.run_after = "queued", _now()
+    audit(session, admin.emp_no, "admin.job.approve", "job", str(jid), {"workflow": j.workflow_code, "reason": body.reason}, client_ip(request))
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/jobs/{jid}/reject")
+def job_reject(jid: int, body: ApprovalIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    j = session.get(Job, jid)
+    if not j or j.status != "approval":
+        raise HTTPException(404, "승인 대기 작업 없음")
+    from nhdip.models import utcnow as _now
+
+    j.status, j.finished_at, j.error = "rejected", _now(), f"반려 — {body.reason or '사유 없음'}"[:500]
+    audit(session, admin.emp_no, "admin.job.reject", "job", str(jid), {"workflow": j.workflow_code, "reason": body.reason}, client_ip(request))
+    session.commit()
+    return {"ok": True}
 
 
 @router.get("/monitor/runs")
@@ -1036,10 +1082,13 @@ def alerts_test(request: Request, session: Session = Depends(get_session), admin
 
 
 @router.post("/alerts/scan")
-def alerts_scan(session: Session = Depends(get_session)):
+def alerts_scan(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     from nhdip.alerts import scan
 
-    return {"created": scan(session)}
+    created = scan(session)
+    audit(session, admin.emp_no, "admin.alert.scan", "alert", None, {"created": created}, client_ip(request))
+    session.commit()
+    return {"created": created}
 
 
 @router.get("/llm/usage")

@@ -24,6 +24,9 @@ def all_current(session: Session) -> dict[str, Any]:
 
 
 def publish(session: Session, key: str, payload: Any, *, produced_by: str, workflow_run_id: str | None = None, changes: list[Any] | None = None) -> ViewArtifact:
+    from nhdip.locks import lock
+
+    lock(session, f"artifact:{key}")  # 세대 번호 · 현재 세대 교체를 직렬화 (B.32 — 같은 트랜잭션 안에서는 다시 잡아도 된다)
     last = session.execute(select(ViewArtifact.generation).where(ViewArtifact.key == key).order_by(ViewArtifact.generation.desc()).limit(1)).scalar()
     session.execute(update(ViewArtifact).where(ViewArtifact.key == key).values(is_current=False))
     row = ViewArtifact(
@@ -37,6 +40,49 @@ def publish(session: Session, key: str, payload: Any, *, produced_by: str, workf
     )
     session.add(row)
     return row
+
+
+# ── 동시 게시 병합 (B.32) ─────────────────────────────────────
+_MISSING = object()
+
+
+def _id_list(v: Any) -> bool:
+    return isinstance(v, list) and all(isinstance(x, dict) and "id" in x for x in v)
+
+
+def merge3(base: Any, ours: Any, theirs: Any) -> Any:
+    """3방향 JSON 병합 — 이 실행이 읽은 시점(base) 이후 다른 실행이 게시한 내용(theirs)에 이 실행의 변경(ours)만 얹는다.
+
+    dict 는 키별로, id 가 있는 dict 목록은 id 별로 병합한다. 같은 자리를 양쪽이 다르게 바꿨으면 이 실행(ours)이 이긴다
+    (가장 최근 계산). 다른 실행이 추가한 항목은 보존된다.
+    """
+    if ours == base:
+        return theirs
+    if theirs == base or theirs is _MISSING:
+        return ours
+    if isinstance(ours, dict) and isinstance(theirs, dict) and isinstance(base, dict):
+        out: dict[str, Any] = {}
+        for k in list(theirs) + [k for k in ours if k not in theirs]:
+            b, o, t = base.get(k, _MISSING), ours.get(k, _MISSING), theirs.get(k, _MISSING)
+            if o is _MISSING and b is not _MISSING:
+                continue  # 이 실행이 지운 키
+            v = merge3(b, o, t) if o is not _MISSING else t
+            if v is not _MISSING:
+                out[k] = v
+        return out
+    if _id_list(ours) and _id_list(theirs) and _id_list(base):
+        b = {x["id"]: x for x in base}
+        o = {x["id"]: x for x in ours}
+        out_l = []
+        for t in theirs:
+            i = t["id"]
+            if i in b and i not in o:
+                continue  # 이 실행이 지운 항목
+            out_l.append(merge3(b.get(i, _MISSING), o[i], t) if i in o else t)
+        seen = {x["id"] for x in out_l}
+        out_l += [x for x in ours if x["id"] not in seen and x["id"] not in b]  # 이 실행이 추가한 항목
+        return out_l
+    return ours
 
 
 # ── JSON 경로 ─────────────────────────────────────────────────
@@ -80,7 +126,7 @@ def _trace_key(obj: dict[str, Any]) -> Any:
     calc = obj.get("calc")
     if isinstance(calc, dict):
         calc = {k: v for k, v in calc.items() if k not in ("calcId", "executedAt")}
-    return (obj.get("value"), calc, obj.get("sourceRef"), obj.get("dataOrigin"), obj.get("decimals"))
+    return (obj.get("value"), calc, obj.get("sourceRef"), obj.get("dataOrigin"), obj.get("decimals"), obj.get("unit"))
 
 
 def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[str, Any]], key: str = "") -> None:
@@ -88,9 +134,21 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
     if isinstance(obj, dict):
         if _is_figure(obj) and obj["id"] in figs:
             f = figs[obj["id"]]
+            if f.get("stale"):
+                # 계산 실패 — 값은 그대로 두고 갱신 실패 표시만 (B.32)
+                if not obj.get("stale") or obj.get("staleReason") != f.get("staleReason"):
+                    obj["stale"], obj["staleReason"] = True, f.get("staleReason")
+                    changes.append({"artifact": key, "figure": obj["id"], "stale": True, "reason": f.get("staleReason")})
+                for v in obj.values():
+                    patch_figures(v, figs, changes, key)
+                return
             before = obj.get("value")
             snapshot = _trace_key(obj)
+            was_stale = obj.pop("stale", None)
+            obj.pop("staleReason", None)
             obj["value"] = f["value"]
+            if f.get("unit") and f["unit"] != obj.get("unit"):
+                obj["unit"] = f["unit"]
             if f.get("calc"):
                 obj["calc"] = f["calc"]
             if f.get("sourceRef"):
@@ -101,6 +159,8 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
                 obj["decimals"] = f["decimals"]
             if before != f["value"]:
                 changes.append({"artifact": key, "figure": obj["id"], "before": before, "after": f["value"]})
+            elif was_stale:
+                changes.append({"artifact": key, "figure": obj["id"], "before": before, "after": f["value"], "recovered": True})
             elif snapshot != _trace_key(obj):
                 # 값은 같지만 계산 근거(목데이터 고정값 → 커널 계산 추적)가 바뀐 경우도 게시한다
                 changes.append({"artifact": key, "figure": obj["id"], "before": before, "after": f["value"], "trace_only": True})

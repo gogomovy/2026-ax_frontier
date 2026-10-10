@@ -130,7 +130,7 @@ def _ym_index(v: Any) -> int | None:
     return y * 12 + (m - 1) if 1 <= m <= 12 else None
 
 
-def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[str], previous: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[str], previous: list[dict[str, Any]] | None = None, privacy: dict[str, Any] | None = None) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
 
     def add(rule: str, passed: bool, detail: str, severity: str = "error"):
@@ -197,6 +197,16 @@ def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[st
             add(f"max_change:{col}", not spikes, f"직전 버전 대비 {pct:g}% 넘게 바뀐 행 {len(spikes)}건" + (f" — {'; '.join(spikes[:3])}" if spikes else ""), sev)
         elif kind == "min_rows":
             add("min_rows", len(rows) >= int(rule.get("value", 1)), f"{len(rows)}행 (최소 {rule.get('value')})", sev)
+    # 개인정보 형식 값 검사 (B.32) — 주민등록번호 · 휴대전화 · 이메일 · 카드번호가 섞이면 적재 거부 (설정 privacy.policy)
+    from nhdip.privacy import DEFAULTS as PRIVACY_DEFAULTS, LABELS as PII_LABELS, scan_rows
+
+    pol = {**PRIVACY_DEFAULTS, **(privacy or {})}
+    if pol.get("pii_scan", True):
+        allow = set(pol.get("pii_allow_columns") or []) | {c["name"] for c in ds.columns if c.get("pii_ok")}
+        res = scan_rows(rows, allow)
+        found = ", ".join(f"{PII_LABELS[k]} {n}건" for k, n in res["found"].items())
+        where = "; ".join(f"{x['row']}행 {x['column']}({x['kind']})" for x in res["samples"][:5])
+        add("pii", not res["found"], f"개인정보 형식 값 {found} — {where} (허용 열은 설정 privacy.policy.pii_allow_columns)" if res["found"] else "개인정보 형식 값 없음")
     failed = [c for c in checks if not c["passed"] and c["severity"] == "error"]
     warned = [c for c in checks if not c["passed"] and c["severity"] != "error"]
     status = "failed" if failed else ("warning" if warned else "passed")
@@ -259,7 +269,10 @@ def ingest_rows(
     force: bool = False,
 ):
     """버전 생성 → (품질 통과 시) 확정 + 현재 버전 교체 + 아웃박스 이벤트 — 한 트랜잭션."""
+    from nhdip.locks import lock
+
     t = source(ds.origin)
+    lock(session, f"ds:{ds.origin}:{ds.code}")  # 동시 업로드 · 되돌리기 직렬화 — 버전 번호 · 현재 버전 교체가 겹치지 않도록 (B.32)
     last = session.execute(
         select(t.version.version).where(t.version.dataset_code == ds.code).order_by(t.version.version.desc()).limit(1)
     ).scalar()
@@ -332,8 +345,10 @@ def _read_any(content: bytes, filename: str, ds: Dataset) -> tuple[list[dict[str
 def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **kw):
     raw, source = _read_any(content, filename, ds)
     rows, errors = map_rows(ds, raw)
+    from nhdip.privacy import policy as privacy_policy
+
     _, prev = current_rows(session, ds)
-    quality = quality_check(ds, rows, errors, previous=prev)
+    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session))
     if source:
         quality["source"] = source  # 원본 양식 · 머리글 메타(조회일자 · 조회사무소 · 기준일 · 단위) · 변환 메모
     sha, path = _store_file(ds.origin, ds.code, filename, content)
@@ -348,7 +363,10 @@ def preview_file(ds: Dataset, filename: str, content: bytes) -> dict[str, Any]:
 
 def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
     """같은 기준일 구획 안에서 지정 버전을 현재 버전으로 되돌린다(이후 버전은 rolled_back 표시)."""
+    from nhdip.locks import lock
+
     t = source(ds.origin)
+    lock(session, f"ds:{ds.origin}:{ds.code}")
     target = session.get(t.version, version_id)
     if not target or target.dataset_code != ds.code or target.status not in ("committed", "rolled_back"):
         raise IngestError("되돌릴 수 있는 버전이 아닙니다")

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     nhdip_env: str = "dev"
     database_url: str = "postgresql+psycopg://nhdip:nhdip@localhost:5432/nhdip"
+    db_idle_tx_timeout_ms: int = 0  # 트랜잭션 유휴 제한(ms) — 0 이면 끄기. compose 기본 600000 (B.32)
 
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
@@ -23,6 +24,10 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     session_cookie: str = "nhdip_session"
     session_ttl_hours: int = 12
+    # 변경 요청(POST 등)의 Origin 허용 목록(쉼표 구분, 예: https://nhdip.example). 비우면 요청 Host 와 같은 출처만 허용 (B.32)
+    trusted_origins: str = ""
+    # API 문서(/docs · /openapi.json) — 비우면 dev 에서만 켠다. true/false 로 강제
+    api_docs: str = ""
     # SSO(OIDC · Authorization Code + PKCE) — issuer 를 비우면 꺼짐 (F.13 · AUTH-01)
     oidc_issuer: str = ""
     oidc_client_id: str = ""
@@ -45,6 +50,20 @@ class Settings(BaseSettings):
 
     worker_poll_sec: float = 1.0
     embedding_dim: int = 1024
+
+
+DEFAULT_SESSION_SECRET = Settings.model_fields["session_secret"].default
+
+
+def check_runtime(st: Settings) -> None:
+    """운영 기동 전 점검 (B.32) — 기본 비밀값으로 운영 기동을 거부한다."""
+    if st.nhdip_env == "prod" and (st.session_secret == DEFAULT_SESSION_SECRET or len(st.session_secret) < 32):
+        raise RuntimeError("운영(NHDIP_ENV=prod)에서는 32자 이상의 SESSION_SECRET 이 필요합니다 (make env)")
+
+
+def docs_enabled(st: Settings) -> bool:
+    v = st.api_docs.strip().lower()
+    return v in ("1", "true", "yes", "on") if v else st.nhdip_env != "prod"
 
 
 @lru_cache

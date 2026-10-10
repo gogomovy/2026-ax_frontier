@@ -238,8 +238,13 @@ function CalcBody({ payload }: { payload: Extract<import("@/components/providers
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {figure.dataOrigin === "simulated" ? <Badge tone="warning">시뮬레이션 데이터</Badge> : null}
           {figure.dataOrigin === "actual" ? <Badge tone="neutral">실데이터</Badge> : null}
+          {figure.dataOrigin === "mixed" ? <Badge tone="warning">실데이터 · 시뮬레이션 혼합</Badge> : null}
           {figure.value === null ? <Badge tone="critical">산출 불가</Badge> : null}
+          {figure.stale ? <Badge tone="critical">갱신 실패 — 이전 값</Badge> : null}
         </div>
+        {figure.stale && figure.staleReason ? (
+          <p className="mt-2 text-[11.5px] text-critical">최근 계산 실패: {figure.staleReason}</p>
+        ) : null}
       </div>
 
       {trace ? (
@@ -270,6 +275,13 @@ function CalcBody({ payload }: { payload: Extract<import("@/components/providers
             </ul>
           </div>
 
+          {trace.warnings?.length ? (
+            <ul className="flex flex-col gap-1 rounded-lg bg-[rgba(224,130,0,0.08)] px-3 py-2 text-[11.5px] text-charcoal">
+              {trace.warnings.map((w) => (
+                <li key={w}>확인 필요 · {w}</li>
+              ))}
+            </ul>
+          ) : null}
           {trace.note ? (
             <p className="rounded-lg bg-[rgba(0,100,224,0.05)] px-3 py-2 text-[11.5px] text-charcoal">{trace.note}</p>
           ) : null}

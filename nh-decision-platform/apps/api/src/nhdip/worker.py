@@ -102,6 +102,73 @@ def process_one(worker_id: str) -> bool:
     return True
 
 
+class _Beat:
+    """심장박동 스레드 (B.32) — 긴 워크플로우를 실행하는 동안에도 살아 있음을 알린다(멈춘 작업 복구 판단의 기준)."""
+
+    def __init__(self, worker_id: str, stats: dict, every: float = 5.0):
+        import threading
+
+        self.worker_id, self.stats, self.every = worker_id, stats, every
+        self._ev = threading.Event()
+        self._t = threading.Thread(target=self._run, name="heartbeat", daemon=True)
+
+    def _run(self) -> None:
+        while not self._ev.wait(self.every):
+            try:
+                heartbeat(self.worker_id, dict(self.stats))
+            except Exception:  # noqa: BLE001
+                log.warning("heartbeat failed", exc_info=True)
+
+    def start(self) -> "_Beat":
+        heartbeat(self.worker_id, dict(self.stats))
+        self._t.start()
+        return self
+
+    def stop(self) -> None:
+        self._ev.set()
+
+
+def housekeeping(worker_id: str, stats: dict, last: dict[str, float]) -> None:
+    """주기 작업 — 작업이 계속 있어도(바쁜 동안에도) 정해진 간격마다 돈다 (B.32).
+    알림 검사 · 보관 정리 · 멈춘 작업 복구는 여러 워커 중 하나만 하도록 잠금을 잡는다."""
+    from nhdip.locks import try_lock
+
+    now = time.monotonic()
+
+    def due(name: str, every: float) -> bool:
+        if now - last.get(name, 0.0) >= every:
+            last[name] = now
+            return True
+        return False
+
+    if due("cron", 20):
+        with SessionLocal() as s:
+            stats["scheduled"] = stats.get("scheduled", 0) + schedule_due(s)
+    if due("alert", 60):
+        from nhdip.alerts import scan as scan_alerts
+
+        with SessionLocal() as s:
+            if try_lock(s, "housekeeping:alerts"):
+                stats["alerts"] = stats.get("alerts", 0) + scan_alerts(s)
+            else:
+                s.rollback()
+    if due("recover", 300):
+        with SessionLocal() as s:
+            if try_lock(s, "housekeeping:recover"):
+                stats["recovered"] = stats.get("recovered", 0) + recover_stale(s)
+            else:
+                s.rollback()
+    if due("purge", 86400):
+        from nhdip.retention import purge
+
+        with SessionLocal() as s:
+            if try_lock(s, "housekeeping:purge"):
+                stats["purged"] = stats.get("purged", 0) + purge_request_log(s)
+                stats["retention"] = purge(s)
+            else:
+                s.rollback()
+
+
 def main() -> None:
     obs.setup_logging()
     signal.signal(signal.SIGTERM, _sig)
@@ -109,47 +176,43 @@ def main() -> None:
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
     poll = get_settings().worker_poll_sec
     log.info("worker %s started (poll %.1fs)", worker_id, poll)
-    last_hb = 0.0
-    last_recover = 0.0
-    last_cron = 0.0
-    last_purge = 0.0
-    last_alert = 0.0
     stats = {"dispatched": 0, "jobs": 0, "started_at": utcnow().isoformat()}
-    while not _stop:
-        try:
-            with SessionLocal() as s:
-                stats["dispatched"] += dispatch_once(s)
-            if process_one(worker_id):
-                stats["jobs"] += 1
-                continue
-            now = time.monotonic()
-            if now - last_hb > 5:
-                heartbeat(worker_id, stats)
-                last_hb = now
-            if now - last_cron > 20:
+    # 처음 기동 직후 바로 복구 · 정리하지 않도록 기준 시각을 지금으로 (cron · 알림은 곧바로)
+    last: dict[str, float] = {"recover": time.monotonic() - 240, "purge": time.monotonic() - 86400 + 600}
+    beat = _Beat(worker_id, stats).start()
+    try:
+        while not _stop:
+            try:
                 with SessionLocal() as s:
-                    stats["scheduled"] = stats.get("scheduled", 0) + schedule_due(s)
-                last_cron = now
-            if now - last_alert > 60:
-                from nhdip.alerts import scan as scan_alerts
-
-                with SessionLocal() as s:
-                    stats["alerts"] = stats.get("alerts", 0) + scan_alerts(s)
-                last_alert = now
-            if now - last_purge > 86400:
-                with SessionLocal() as s:
-                    stats["purged"] = stats.get("purged", 0) + purge_request_log(s)
-                last_purge = now
-            if now - last_recover > 300:
-                with SessionLocal() as s:
-                    recover_stale(s)
-                last_recover = now
-        except Exception:  # noqa: BLE001 — 루프는 계속
-            log.exception("worker loop error")
-            time.sleep(3)
-        time.sleep(poll)
+                    stats["dispatched"] += dispatch_once(s)
+                housekeeping(worker_id, stats, last)
+                if process_one(worker_id):
+                    stats["jobs"] += 1
+                    continue
+            except Exception:  # noqa: BLE001 — 루프는 계속
+                log.exception("worker loop error")
+                time.sleep(3)
+            time.sleep(poll)
+    finally:
+        beat.stop()
     log.info("worker stopped")
 
 
+def health(max_age_sec: int = 60) -> int:
+    """컨테이너 상태 검사 — 이 호스트 워커의 심장박동이 max_age_sec 안에 있으면 0 (B.32)."""
+    from sqlalchemy import select
+
+    try:
+        with SessionLocal() as s:
+            seen = s.execute(select(WorkerHeartbeat.seen_at).where(WorkerHeartbeat.worker_id.like(f"{socket.gethostname()}:%")).order_by(WorkerHeartbeat.seen_at.desc()).limit(1)).scalar()
+        return 0 if seen and (utcnow() - seen).total_seconds() <= max_age_sec else 1
+    except Exception:  # noqa: BLE001
+        return 1
+
+
 if __name__ == "__main__":
+    import sys
+
+    if sys.argv[1:2] == ["--health"]:
+        sys.exit(health())
     main()

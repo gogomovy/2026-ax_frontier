@@ -10,7 +10,8 @@ interface Rule {
   kind: string;
   description: string;
   activeVersion: number;
-  versions: { version: number; body: unknown; note: string | null; createdBy: string | null; createdAt: string }[];
+  dualControl?: boolean;
+  versions: { version: number; body: unknown; note: string | null; createdBy: string | null; createdAt: string; pending?: boolean }[];
 }
 
 /** 판정 규칙 · 임계값 · 가중치 · 반올림 (버전 관리, ADM-10) — 저장하면 관련 워크플로우가 다시 계산한다 */
@@ -32,7 +33,7 @@ export default function RulesAdmin() {
             }
           >
             <p className="mb-md text-[12.5px] text-steel">{r.description}</p>
-            <JsonEditor value={active?.body ?? {}} rows={8} disabled={busy} label="새 버전으로 저장" onSave={(v) => run(() => apiPost(`/admin/rules/${r.code}/versions`, { body: v, note: "관리자 수정" }), "새 규칙 버전을 적용했습니다", rules.reload)} />
+            <JsonEditor value={active?.body ?? {}} rows={8} disabled={busy} label="새 버전으로 저장" onSave={(v) => run(() => apiPost(`/admin/rules/${r.code}/versions`, { body: v, note: "관리자 수정" }), r.dualControl ? "새 버전을 저장했습니다 — 다른 관리자가 적용하면 반영됩니다(이중 승인)" : "새 규칙 버전을 적용했습니다", rules.reload)} />
             <div className="mt-md">
               <Collapse label={`버전 이력 ${r.versions.length}건`}>
                 <div className="flex flex-col gap-md">
@@ -40,6 +41,7 @@ export default function RulesAdmin() {
                     <div key={v.version} className="rounded-lg border border-hairline-soft p-md">
                       <div className="mb-xs flex flex-wrap items-center gap-xs text-[11.5px] text-steel">
                         <b className="text-ink-deep">v{v.version}</b> {v.createdBy ?? "-"} · {fmtTime(v.createdAt)} · {v.note ?? ""}
+                        {v.pending ? <Badge tone="warning">승인 대기</Badge> : null}
                         {v.version !== r.activeVersion ? (
                           <Button size="sm" variant="quiet" disabled={busy} onClick={() => run(() => apiPost(`/admin/rules/${r.code}/activate`, { version: v.version }), `v${v.version} 을 적용했습니다`, rules.reload)}>
                             이 버전 적용

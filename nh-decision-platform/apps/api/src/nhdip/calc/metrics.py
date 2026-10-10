@@ -222,7 +222,8 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
         if refs and len(refs) <= 3:
             src += f"!{'/'.join(refs)}"
         src += f" · {_fmt_where(q.get('where') or {})}" + (f" · {col}" if col else "") + (f" ({agg} {len(sel)}행)" if agg in ("sum", "list", "count") else "")
-        return value, src, {"dataset": ds.code, "version": v.version, "rows": len(sel)}
+        latest = {k: q["where"][k] for k, t in (ref["q"].get("where") or {}).items() if t == "$latest" and k in (q.get("where") or {})}
+        return value, src, {"dataset": ds.code, "version": v.version, "rows": len(sel), **({"latest": latest} if latest else {})}
     if "metric" in ref:
         code = ref["metric"]
         field_ = ref.get("field", "value")
@@ -299,8 +300,65 @@ def default_rounding(session: Session) -> str:
     return (s.value if s else None) or "HALF_UP"
 
 
+UNIT_CHECK_DEFAULT = {"formulas": ["SUM", "DIFF", "MEAN", "MIN_OF", "GROWTH_RATE"], "mode": "block"}
+
+
+def unit_check_policy(session: Session) -> dict[str, Any]:
+    s = session.get(Setting, "calc.unit_check")
+    return {**UNIT_CHECK_DEFAULT, **(s.value if s and isinstance(s.value, dict) else {})}
+
+
+def _origin_of(ctx: "EvalContext", sources: list[dict[str, Any]]) -> str:
+    """데이터 성격 (B.32) — 데이터셋 버전 · 선행 지표(mref)의 성격을 모두 따른다. 섞이면 mixed, 원천이 없으면(상수 · 규칙) simulated."""
+    origins: set[str] = set()
+    for s in sources:
+        if s.get("dataset"):
+            u = ctx.used_versions.get(s["dataset"])
+            origins.add((u or {}).get("data_origin") or "simulated")
+        elif s.get("metric"):
+            oc = ctx.outcomes.get(s["metric"])
+            if oc is not None:
+                origins.add(oc.data_origin)
+    if not origins:
+        return "simulated"
+    if origins == {"actual"}:
+        return "actual"
+    if "actual" in origins or "mixed" in origins:
+        return "mixed"
+    return "simulated"
+
+
+_UNIT_DIM: dict[str, tuple[str, float]] = {
+    "%": ("rate", 1), "PCT": ("rate", 1), "%p": ("rate", 1), "PP": ("rate", 1), "pp": ("rate", 1), "bp": ("rate", 0.01),
+    "원": ("money", 1), "KRW": ("money", 1), "백만원": ("money", 1e6), "KRW_MN": ("money", 1e6), "억원": ("money", 1e8),
+    "십억원": ("money", 1e9), "KRW_BN": ("money", 1e9), "조원": ("money", 1e12), "KRW_TN": ("money", 1e12),
+    "건": ("count", 1), "CNT": ("count", 1), "명": ("count", 1), "개": ("count", 1), "좌": ("count", 1),
+}
+
+
+def unit_conflict(units: dict[str, str]) -> bool:
+    """입력 단위가 서로 맞지 않는지 — 차원(비율 · 금액 · 건수)이나 배율(백만원 vs 조원)이 다르면 True. 모르는 단위는 보지 않는다.
+    %와 %p 는 같은 비율 차원으로 본다(증가율 − 안전 마진 등)."""
+    dims = {_UNIT_DIM[u] for u in units.values() if u in _UNIT_DIM}
+    return len(dims) > 1
+
+
+def _input_units(ctx: "EvalContext", m: Metric) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for name, ref in (m.args or {}).items():
+        if not isinstance(ref, dict):
+            continue
+        u = ref.get("unit")
+        if not u and ref.get("metric") and ctx.outcomes.get(ref["metric"]) is not None:
+            u = ctx.outcomes[ref["metric"]].unit
+        if u:
+            out[name] = str(u)
+    return out
+
+
 def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome]:
     rounding_default = default_rounding(ctx.session)
+    unit_pol = unit_check_policy(ctx.session)
     now = datetime.now(timezone.utc).isoformat()
     for m in order_metrics(metrics):
         inputs: dict[str, Any] = {}
@@ -317,6 +375,24 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
                 trace_inputs.append({"key": name, "label": ref.get("label", name), "value": _display_input(value), "unit": ref.get("unit", ""), "source": src})
         except (ResolveError, formulas.FormulaError, KeyError, IndexError, TypeError) as exc:
             error = str(exc)
+        warnings: list[str] = []
+        # 단위 검사 (B.32) — 합 · 차 · 평균 등은 입력 단위가 같아야 한다 (설정 calc.unit_check)
+        if error is None and m.formula in set(unit_pol.get("formulas") or []):
+            units = _input_units(ctx, m)
+            if unit_conflict(units):
+                msg = "입력 단위 불일치 — " + ", ".join(f"{k}={v}" for k, v in units.items())
+                if unit_pol.get("mode") == "block":
+                    error = msg
+                else:
+                    warnings.append(msg)
+        # 기준 시점 검사 — 입력마다 '$latest' 가 가리키는 기간이 다르면 경고
+        latest: dict[str, set[str]] = {}
+        for src_ in sources:
+            for col, val in (src_.get("latest") or {}).items():
+                latest.setdefault(col, set()).add(str(val))
+        for col, vals in latest.items():
+            if len(vals) > 1:
+                warnings.append(f"기준 시점 불일치 — {col}: {', '.join(sorted(vals))} (데이터셋별 최신 기간이 다름)")
         rounding = m.rounding or rounding_default
         run, result, display = run_and_record(
             ctx.session,
@@ -335,10 +411,7 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
         prev = ctx.session.execute(
             select(MetricValue.display_value).where(MetricValue.metric_code == m.code).order_by(MetricValue.created_at.desc()).limit(1)
         ).scalar()
-        data_origin = "simulated"
-        used = [ctx.used_versions.get(s.get("dataset")) for s in sources if s.get("dataset")]
-        if used and all(u and u.get("data_origin") == "actual" for u in used):
-            data_origin = "actual"
+        data_origin = _origin_of(ctx, sources)
         oc = MetricOutcome(
             code=m.code,
             label=m.label,
@@ -356,6 +429,7 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
                 "inputs": trace_inputs,
                 "executedAt": now,
                 "note": f"표시 {m.decimals}자리 · {rounding}" + (f" · ÷{m.scale:g}" if m.scale else "") if m.decimals is not None else None,
+                **({"warnings": warnings} if warnings else {}),
             },
             figure_ids=list(m.figure_ids or [m.code]),
             unit=m.unit,

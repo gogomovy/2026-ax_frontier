@@ -17,12 +17,15 @@
 make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 최초 마이그레이션·시드·계산 자동
 make admin-pass  # 최초 관리자 사번·비밀번호
 make ps | logs | down | reset(볼륨 삭제) | test(백엔드 테스트) | e2e(브라우저 E2E, 기동 중인 스택 대상)
+make wait-idle   # 이벤트 · 작업 처리가 끝날 때까지 대기 (기동 직후 선계산 확인)
+make backup      # DB(업무 · litellm) + 업로드 파일 → backups/<시각>/
+make restore FROM=backups/<시각> CONFIRM=yes   # 복구 (현재 데이터 덮어씀 · 그래프는 관리자 [온톨로지] 재투영)
 ```
 
 | 서비스 | 주소 | 역할 |
 |---|---|---|
 | web | http://localhost:3000 | 로그인 · 업무 화면 · 관리자(`/admin`) — `/backend/*` 를 api 로 프록시 |
-| api | http://localhost:8000/docs | 인증 · 화면 API · 상태 API · 관리자 API |
+| api | http://localhost:8000/health | 인증 · 화면 API · 상태 API · 관리자 API (문서 `/docs` 는 `API_DOCS=true` 일 때) |
 | worker | - | 아웃박스 디스패처 · 워크플로우 엔진 · 임베딩 · 문서 구조화 · 그래프 투영 |
 | postgres | (내부) | 원장 · 설정 · 계산 이력 · pgvector · 작업 큐 · LiteLLM DB |
 | neo4j | http://localhost:7474 | 온톨로지 그래프(투영) |
@@ -108,7 +111,11 @@ infra/  postgres init · litellm config · scripts(ensure-env, export-mock)
 
 - 비밀번호 bcrypt · 세션은 서명된 HttpOnly 쿠키 + DB 세션(즉시 폐기) · 5회 실패 시 잠금 · 가입은 승인제
 - LLM 키는 AES-GCM 암호화 저장(`CONFIG_ENC_KEY`), 화면에는 마스킹. `.env` 는 커밋하지 않습니다.
-- api(8000) · neo4j(7474/7687) · litellm(4000) 포트는 개발 편의를 위해 호스트에 열려 있습니다. 운영 배포 시 web 만 노출하고 나머지는 내부망으로 제한하세요. HTTPS 환경이면 `COOKIE_SECURE=1`.
+- api(8000) · neo4j(7474/7687) · litellm(4000) 포트는 기본으로 이 컴퓨터(127.0.0.1)에서만 열립니다(`ADMIN_BIND`). web 은 `WEB_BIND`(기본 0.0.0.0). HTTPS 환경이면 `COOKIE_SECURE=1`(HSTS 포함).
+- 변경 요청(POST 등)은 같은 출처만 받습니다. 다른 주소(리버스 프록시 · 도메인)로 서비스하면 `TRUSTED_ORIGINS=https://<웹 주소>` 를 넣으세요. 운영(`NHDIP_ENV=prod`)에서는 기본 · 짧은 `SESSION_SECRET` 으로 기동하지 않습니다.
+- 로그인 · 가입 · 질의 속도 제한(설정 `auth.rate_limits`), 잠금은 30분 뒤 자동 해제(`auth.lockout_minutes`, 0 = 관리자만). 보안 헤더(CSP · X-Frame-Options 등)는 web · api 모두 붙습니다.
+- 개인정보: 적재할 데이터에 주민등록번호 · 휴대전화 · 이메일 · 카드번호 형식 값이 있으면 품질 검증에서 거부하고, 차주명은 화면에서 가립니다(설정 `privacy.policy`). LLM 호출 기록에도 같은 형식 값을 가려 저장합니다.
+- 통제(선택): 규칙 이중 승인 `governance.dual_control`, 자동 실행 사람 승인 `orchestrator.policy.require_approval`(관리자 [에이전트 결정]에서 승인 · 반려). 운영 기록 보관 기간은 `retention.policy`(감사 로그는 정리하지 않음).
 - SSO(선택): `.env` 의 `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` · `OIDC_REDIRECT_URI`(`https://<웹 주소>/backend/auth/oidc/callback`) 를 넣으면 로그인 화면에 SSO 버튼이 생깁니다. 사번은 `OIDC_EMP_CLAIM` 클레임으로 기존 사용자와 연결하고 자동 가입은 하지 않습니다. 전환 후에는 `OIDC_LOCAL_LOGIN=admin`(관리자 비상 로그인만) 을 권장합니다.
 - 업로드는 파싱 전에 형식 · 압축 폭탄 · 매크로 · PDF 스크립트 · DRM 을 검사합니다. 백신을 쓰려면 `UPLOAD_AV_COMMAND`(예: `clamdscan --no-summary {path}`).
 - 모든 API 응답에 `X-Trace-Id` 가 붙습니다. 오류 문의 시 이 값을 관리자 [요청 추적] 화면에 넣으면 요청 → 워커 실행 → DB 구간까지 볼 수 있습니다.

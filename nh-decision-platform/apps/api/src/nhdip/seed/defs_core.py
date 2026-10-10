@@ -109,6 +109,30 @@ SETTINGS = {
     "auth.max_failed_logins": (5, "연속 로그인 실패 시 잠금 횟수"),
     "auth.signup_requires_approval": (True, "가입 후 관리자 승인 필요"),
     "auth.session_idle_minutes": (120, "세션 유휴 만료(분)"),
+    "auth.lockout_minutes": (30, "로그인 잠금 자동 해제(분) — 0 이면 관리자만 해제 (B.32)"),
+    "auth.rate_limits": (
+        {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "stream_user": [10, 60], "request_user": [20, 86400]},
+        "요청 속도 제한 {이름: [허용 횟수, 초]} — 0 이면 끄기. 로그인(IP · 사번) · 가입(IP) · 질의(사용자) · 분석 스트림(사용자) · 확인 요청(사용자) (B.32)",
+    ),
+    # ── 점검 보완 (B.32) ──
+    "retention.policy": (
+        {"enabled": True, "artifact_generations": 50, "llm_call_days": 180, "node_run_days": 180, "agent_decision_days": 180, "outbox_days": 90, "job_days": 90},
+        "보관 기간 정리(워커 하루 1회) — 화면 산출물 이전 세대 수 · 운영 기록 보관 일수. 0 = 정리 안 함. 감사 로그 · 계산 기록은 정리하지 않음",
+    ),
+    "privacy.policy": (
+        {"pii_scan": True, "pii_allow_columns": [], "display_mask_columns": ["brwr_nm"], "mask_llm_log": True},
+        "개인정보 — 적재 전 개인정보 형식 값 검사(주민번호 · 휴대전화 · 이메일 · 카드번호, 발견 시 적재 거부) · 검사 제외 열 · 화면 가림 열 · LLM 호출 기록 가림",
+    ),
+    "governance.dual_control": ({"enabled": False, "rules": True}, "이중 승인 — 켜면 판정 규칙 새 버전은 만든 관리자가 아닌 다른 관리자가 적용해야 활성화"),
+    "calc.unit_check": (
+        {"formulas": ["SUM", "DIFF", "MEAN", "MIN_OF", "GROWTH_RATE"], "mode": "block"},
+        "단위 검사 — 이 수식들은 입력 단위가 같아야 한다(mode: block = 계산 거부 · warn = 계산 후 경고). 입력 단위는 지표 인자의 unit · 선행 지표 단위",
+    ),
+    "request.types": (
+        {"direction_check": "경영방향 확인 요청", "perf_report": "사업 성과보고", "new_biz_check": "신규사업 확인 요청", "guide_check": "영업 가이드 확인 요청"},
+        "확인 · 보고 요청 유형 {코드: 표시 이름} — 영업점 · 사업부서가 본부에 보내는 요청",
+    ),
+    "request.to_org": ("종합기획부", "확인 · 보고 요청을 받는 부서 이름"),
     "workflow.debounce_default_sec": (60, "변경 이벤트 후 워크플로우 실행 대기(초) — 연속 변경 병합"),
     "calc.rounding_default": ("HALF_UP", "지표 표시 반올림 기본값 (HALF_UP · HALF_EVEN · DOWN · UP)"),
     "embedding.agent": ("embedder", "문서 임베딩에 사용할 에이전트 코드"),
@@ -130,9 +154,9 @@ SETTINGS = {
     "llm.pricing": ({}, "LLM 단가(1천 토큰당, 원) — {\"모델명\" 또는 \"*\": {\"prompt_per_1k\": 0, \"completion_per_1k\": 0}}. 비우면 금액 0(사내 게이트웨이)"),
     "llm.budget": ({"monthly_tokens": 0, "monthly_cost": 0, "per_agent_tokens": {}, "on_exceed": "warn", "warn_pct": 80}, "LLM 월 예산 — 0 = 한도 없음. on_exceed: warn(알림만) · block(초과 후 호출 차단, 서술은 기존 문장 유지)"),
     "orchestrator.policy": ({"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300,
-                             "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": []},
+                             "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": [], "require_approval": []},
                             "오케스트레이터 — 실행 순서(명시 의존 · 정의 도출 · 대기 간격 · 최대 대기) + LLM 경로 지정(route_on 이벤트 · 최대 추가 · 최대 연쇄 · 제외 · LLM 미연결 시 route_rules)"),
-    "agents.llm_judge": ({"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000}, "판단 에이전트(변화 감지 · 플래너 · 오케스트레이터) LLM 판단 — 켜기 · 연속 실패 시 쉬는 시간(초) · 입력 자료 최대 길이"),
+    "agents.llm_judge": ({"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000, "timeout_sec": 30, "retries": 1}, "판단 에이전트(변화 감지 · 플래너 · 오케스트레이터) LLM 판단 — 켜기 · 연속 실패 시 쉬는 시간(초) · 입력 자료 최대 길이 · 호출 대기 상한(초) · 재시도 상한"),
     "ui.as_of": ("2026-08-31", "화면 기준일 표시"),
     "ui.timezone": ("Asia/Seoul", "화면 산출물 생성 시각의 시간대"),
     "doc_class.labels": ({"gov_policy": "정부정책 DB", "mgmt_decision": "경영 의사결정 DB", "model_method": "모형·방법론", "branch_ref": "영업점 기준·공문", "reference": "참고 자료"}, "문서 분류 코드 → 화면 표시명"),

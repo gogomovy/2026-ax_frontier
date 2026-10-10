@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
-import { AdminPage, C, Card, Collapse, JsonView, Loading, Mono, Select, Table, fmtTime, useApiData } from "@/components/admin/kit";
-import { Badge } from "@/components/ui/primitives";
+import { AdminPage, C, Card, Collapse, JsonView, Loading, Mono, Select, Table, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { Badge, Button } from "@/components/ui/primitives";
+import { apiPost } from "@/lib/api-client";
 
 interface Decision {
   id: number;
@@ -14,6 +15,13 @@ interface Decision {
   summary: string;
   detail: unknown;
   traceId: string | null;
+}
+interface ApprovalJob {
+  id: number;
+  workflow: string;
+  createdAt: string;
+  causeCount: number;
+  causes: { event_id?: number; type?: string; reasons?: string[]; actor?: string; at?: string }[];
 }
 interface Topology {
   agents: { code: string; name: string; role: string; kind: string; enabled: boolean }[];
@@ -32,11 +40,40 @@ export default function AgentDecisionsAdmin() {
   const topo = useApiData<Topology>("/admin/agents/topology");
   const dec = useApiData<{ counts: Record<string, number>; items: Decision[] }>(`/admin/agents/decisions?limit=150${agent ? `&agent=${agent}` : ""}`, { refreshMs: 10000 });
   const t = topo.data;
+  const approvals = useApiData<ApprovalJob[]>("/admin/jobs/approval", { refreshMs: 10000 });
+  const { run, busy } = useAction();
   return (
     <AdminPage
       title="에이전트 결정"
       description="이벤트가 오면 오케스트레이터(LLM)가 영향받는 워크플로우를 정하고, 실행 순서는 규칙으로 보장합니다. 워크플로우 안에서는 변화 감지(LLM 중요도 판단) → 화면 갱신 → 실행 계획(LLM: 서술 대상 · 검색어 · 후속 워크플로우) → 근거 · 서술 → 검증 순으로 진행합니다. LLM 판단은 허용 목록으로 검증하고, 미연결 · 실패 시 규칙으로 대체합니다. 수치는 모두 커널이 계산합니다."
     >
+      {approvals.data?.length ? (
+        <Card title={`사람 승인 대기 ${approvals.data.length}건`}>
+          <p className="mb-md text-[12px] text-steel">설정 orchestrator.policy.require_approval 에 든 워크플로우는 자동 이벤트로 생긴 실행을 관리자가 승인해야 진행합니다.</p>
+          <Table head={["작업", "워크플로우", "생성", "원인", ""]}>
+            {approvals.data.map((j) => (
+              <tr key={j.id} data-approval-job={j.id}>
+                <C mono>#{j.id}</C>
+                <C mono>{j.workflow}</C>
+                <C>{fmtTime(j.createdAt)}</C>
+                <C>
+                  {j.causeCount}건 · {j.causes.slice(-3).map((c) => c.type).join(", ")}
+                </C>
+                <C right>
+                  <span className="inline-flex gap-1">
+                    <Button size="sm" variant="confirm" disabled={busy} onClick={() => run(() => apiPost(`/admin/jobs/${j.id}/approve`, {}), "승인했습니다 — 곧 실행됩니다", approvals.reload)}>
+                      승인
+                    </Button>
+                    <Button size="sm" variant="quiet" disabled={busy} onClick={() => run(() => apiPost(`/admin/jobs/${j.id}/reject`, { reason: "관리자 반려" }), "반려했습니다", approvals.reload)}>
+                      반려
+                    </Button>
+                  </span>
+                </C>
+              </tr>
+            ))}
+          </Table>
+        </Card>
+      ) : null}
       <Card title="워크플로우별 에이전트 배치">
         <Loading error={topo.error} loading={!t && topo.loading} />
         {t ? (

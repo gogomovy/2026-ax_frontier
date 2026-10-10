@@ -36,7 +36,7 @@ export function FigureText({
         onMouseLeave={() => setHint(false)}
         onFocus={() => setHint(true)}
         onBlur={() => setHint(false)}
-        aria-label={`${figure.label} ${text} — 계산 추적 보기`}
+        aria-label={`${figure.label} ${text}${figure.stale ? " (갱신 실패 — 이전 값)" : ""} — 계산 추적 보기`}
         className={clsx(
           "figure-traceable tnum text-left",
           undefinedValue ? "text-stone" : strong ? "font-bold text-ink-deep" : "font-bold text-ink",
@@ -44,6 +44,11 @@ export function FigureText({
         )}
       >
         {text}
+        {figure.stale ? (
+          <span aria-hidden className="ml-0.5 align-super text-[9px] font-bold text-critical" title="최근 계산 실패 — 이전 값">
+            !
+          </span>
+        ) : null}
       </button>
       {hint ? (
         <span

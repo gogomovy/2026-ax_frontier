@@ -3,6 +3,7 @@
   python -m nhdip.cli seed [--with-precompute]     기본 설정 + 목데이터 시드 (멱등)
   python -m nhdip.cli admin-password <사번>         비밀번호 재설정(표준입력) + 잠금 해제
   python -m nhdip.cli run <workflow_code>           워크플로우 즉시 실행(동기)
+  python -m nhdip.cli wait-idle [--timeout 300]    미처리 이벤트 · 대기 · 실행 중 작업이 없을 때까지 대기 (CI · 기동 직후 점검)
 """
 from __future__ import annotations
 
@@ -23,6 +24,10 @@ def main(argv: list[str] | None = None) -> int:
     ap_pw.add_argument("emp_no")
     ap_run = sub.add_parser("run")
     ap_run.add_argument("workflow")
+    ap_wait = sub.add_parser("wait-idle")
+    ap_wait.add_argument("--timeout", type=int, default=300)
+    ap_wait.add_argument("--settle", type=int, default=5, help="연속으로 비어 있어야 하는 초")
+    ap_wait.add_argument("--strict", action="store_true", help="시간 초과면 종료 코드 1")
     args = ap.parse_args(argv)
 
     if args.cmd == "seed":
@@ -52,6 +57,28 @@ def main(argv: list[str] | None = None) -> int:
             s.commit()
         print("ok")
         return 0
+    if args.cmd == "wait-idle":
+        import time
+
+        from sqlalchemy import func, select
+
+        from nhdip.models import Job, OutboxEvent
+
+        t0, quiet_since = time.monotonic(), None
+        while time.monotonic() - t0 < args.timeout:
+            with SessionLocal() as s:
+                ev = s.execute(select(func.count()).select_from(OutboxEvent).where(OutboxEvent.dispatched_at.is_(None))).scalar() or 0
+                jobs = s.execute(select(func.count()).select_from(Job).where(Job.status.in_(["queued", "running"]))).scalar() or 0
+            if ev == 0 and jobs == 0:
+                quiet_since = quiet_since or time.monotonic()
+                if time.monotonic() - quiet_since >= args.settle:
+                    print(json.dumps({"idle": True, "waited_sec": round(time.monotonic() - t0)}))
+                    return 0
+            else:
+                quiet_since = None
+            time.sleep(2)
+        print(json.dumps({"idle": False, "waited_sec": args.timeout, "events": ev, "jobs": jobs}))
+        return 1 if args.strict else 0
     if args.cmd == "run":
         from nhdip.workflow.engine import run_workflow
 

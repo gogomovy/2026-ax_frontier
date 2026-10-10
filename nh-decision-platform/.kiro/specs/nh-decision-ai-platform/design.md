@@ -2332,6 +2332,28 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | LLM 판단 (B.31) | `workflow/llm_judge.ask_json` — 프롬프트(에이전트 버전) + GUARD + 자료 구분자, JSON 필수 키 검증, 실패 · 형식 오류 · 미연결 → None(규칙), 연속 실패 쉼. 변화 감지: 커널 후보(candidate_factor) → LLM 등급 · 사유 · 묶음. 플래너: 규칙 기준안 + LLM narrate · evidence.query · followups → 허용 목록 검증. 오케스트레이터: `dispatch_once` 에서 `route()`(LLM add) · `claim_job` 에서 `gate`(상위 · 원인 연쇄 대기), 후속은 `publish` 뒤 `agent.followup` |
 | 결정 기록 | `ops.agent_decision`(0009) | `GET /admin/agents/decisions` · `GET /admin/agents/topology` · 화면 `/admin/monitor/agents`, 업무 화면 `GET /screens/changes`(리소스 `changes`) |
 
+### 19.17 점검 보완 (B.32)
+| 영역 | 위치 | 동작 |
+|---|---|---|
+| 권고 잠금 | `nhdip/locks.py` — `lock` · `try_lock`(`pg_advisory_xact_lock(hashtextextended)`) | 이름 규칙: `artifact:<키>` · `ds:<출처>:<코드>` · `rule:<코드>` · `workflow:<코드>` · `state:<ns>:<항목>` · `housekeeping:*` |
+| 게시 병합 | `views/store.publish`(키 잠금) · `merge3` · 노드 `publish` | `RunContext.load_artifacts` 가 읽은 시점 사본(`ctx.base`)을 두고, 게시 직전 현재 세대가 다르면 `merge3(base, ours, current)` |
+| 성공 후 이벤트 | `RunContext.emit_after_success` → `run_workflow` 성공 시 발행 | `change.detected` · `agent.followup` |
+| 디스패치 | `workflow/dispatcher.dispatch_once` | 1) 잠금 → 분류 → commit 2) 경로 판단 대상은 잠금 밖 `route()` 3) 재잠금(`dispatched_at IS NULL`) → `_chain_block`(순환 · `max_chain`) → `enqueue`. 이벤트별 try/rollback. `needs_approval` → 작업 상태 `approval` |
+| 작업 가져가기 · 복구 | `claim_job`(`try_lock("workflow:<코드>")` + 실행 중 재확인) · `recover_stale`(심장박동 120초 끊긴 워커의 작업만, 실행 기록 failed) | `ops.worker_heartbeat` |
+| 워커 | `worker._Beat`(5초 스레드) · `housekeeping`(cron 20초 · 알림 60초 · 복구 300초 · 보관 정리 하루) · `python -m nhdip.worker --health` | compose 상태 검사 |
+| 판단 LLM | `llm_judge` — `dataclasses.replace(timeout, retries)` 상한, `_cooling`(메모리 + 최근 `judge:<에이전트>` 호출 오류) | 설정 `agents.llm_judge` |
+| LLM 기록 | `llm/client._save_call`(독립 세션 `merge`) · `_log_messages`(`privacy.mask_obj`) | `ops.llm_call` |
+| 보관 정리 | `nhdip/retention.purge` | 설정 `retention.policy`, 감사 · 계산 기록 제외 |
+| 알림 | `alerts.scan` — `worker_stale` · `queue_backlog` · `stuck_runs` | 설정 `alerts.policy.rules` |
+| 계산 품질 | `calc/metrics.evaluate` — `unit_conflict`(차원 · 배율) · `$latest` 해석값(`detail.latest`) 비교 → `trace.warnings` · `_origin_of`(mref 포함, `mixed`) | 설정 `calc.unit_check` |
+| 화면 수치 | 노드 `build_views` → 실패 지표 `{stale, staleReason}` · 단위 코드면 `unit` → `patch_figures` | 프론트 `Figure.stale` · `CalcTrace.warnings` · `SourceDrawer` 배지 |
+| 개인정보 | `nhdip/privacy.py` — `scan_rows`(품질 검증 `pii`) · `mask_name`(빌더 `branch_top_borrowers`) · `mask_obj` | 설정 `privacy.policy` |
+| 보안 | `main.py` `_origin_ok`(CSRF) · 보안 헤더 · `config.check_runtime` · `docs_enabled` · `/health`, `ratelimit.py`, `api/auth.py`(시간 해제), `api/state.py`(`_require_admin_reset` · `_check_owner` · `_user_dept`), `api/admin_core._check_base_url`(SSRF), `apps/web/next.config.mjs headers()`, `login/page.tsx safeNext` | 설정 `auth.rate_limits` · `auth.lockout_minutes`, 환경변수 `TRUSTED_ORIGINS` · `API_DOCS` |
+| 통제 | `admin_core._dual_control` · `rule_version`(저장만) · `rule_activate`(작성자 거부), `admin_data` `GET /admin/jobs/approval` · `POST /admin/jobs/{id}/approve|reject` | 설정 `governance.dual_control` · `orchestrator.policy.require_approval`, 화면 `/admin/rules` · `/admin/monitor/agents` |
+| 확인 · 보고 요청 | `api/state.py` `POST /state/report-requests` · `GET …/types` · `GET …/mine`, `screens.py GET /screens/report-requests`(산출물 + `request.user`) | 화면 `ReportRequestForm`(`/branch/targets`) |
+| 마이그레이션 | `0010_hardening_indexes` | `agent_decision(agent_code, workflow_code, decision, id)` · `dataset_version(dataset_code, version)` 유일(겹침 있으면 일반) · `workflow_run(status, started_at)` |
+| 배포 | `docker-compose.yml`(digest 고정 · `ADMIN_BIND` · 로그 회전 · TZ · 워커 상태 검사 · 비밀번호 필수 · `DB_IDLE_TX_TIMEOUT_MS`), `infra/scripts/backup.sh` · `restore.sh`, `cli wait-idle`, `apps/web/src/app/error.tsx` · `loading.tsx`, `api-server.ts`(`AbortSignal.timeout`) | `make backup` · `make restore FROM=… CONFIRM=yes` · `make wait-idle` |
+| 시드 보강 | `seed/run.hardening_upgrade` — 사전형 설정에 없는 키만 채움(매 기동 멱등) | `agents.llm_judge` · `orchestrator.policy` · `auth.rate_limits` · `retention.policy` · `privacy.policy` · `calc.unit_check` |
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).

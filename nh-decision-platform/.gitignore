@@ -15,3 +15,5 @@ node_modules/
 __pycache__/
 .coverage
 .pytest_cache/
+# 백업 산출물 (make backup)
+backups/

@@ -41,7 +41,6 @@ for _path, _key, _res in [
     ("/domains", "domains", "domains"),
     ("/hq-dashboard", "hq_dashboard", "hq_dashboard"),
     ("/attentions", "attentions", "attentions"),
-    ("/report-requests", "report_requests", "report_requests"),
     ("/loan-overview", "loan_overview", "loan_overview"),
     ("/comparison-view", "comparison_view", "comparison_view"),
     ("/capital-view", "capital_view", "capital_view"),
@@ -53,12 +52,36 @@ for _path, _key, _res in [
     ("/risk-dashboard", "risk_dashboard", "risk_dashboard"),
     ("/analysis-tabs", "analysis_tabs", "analysis_tabs"),
     ("/inclusive", "inclusive", "inclusive"),
-    ("/action-plans", "action_plans", "action_plans"),
     ("/default-rate-trend", "default_rate_trend", "default_rate_trend"),
     ("/branch-targets", "branch_targets", "branch_targets"),
     ("/terms", "terms", "terms"),
 ]:
     _simple(_path, _key, _res)
+
+
+@router.get("/report-requests")
+def report_requests(session: Session = Depends(get_session), _: AppUser = Depends(require_resource("report_requests"))):
+    """보고 · 확인 요청 — 산출물 + 영업점 · 부서가 직접 등록한 요청(최근 순) (B.32)."""
+    from nhdip.views.user_state import NS_REPORT_REQUEST, get_ns
+
+    base = _artifact(session, "report_requests") or []
+    users = sorted(get_ns(session, NS_REPORT_REQUEST).values(), key=lambda r: r.get("createdAt", ""), reverse=True)
+    return [{k: v for k, v in r.items() if k != "createdBy"} for r in users] + list(base)
+
+
+@router.get("/action-plans")
+def action_plans(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("action_plans"))):
+    """수행방안 — 수정 권한(plan_actions)이 없는 사용자(영업점 등)에게는 영업점 참고가 켜진 진행사업만 (B.32)."""
+    from nhdip.views.user_state import merged_plans
+
+    from .deps import user_resources
+
+    plans = _artifact(session, "action_plans")
+    allowed = user_resources(session, user)
+    if allowed is None or "plan_actions" in allowed:
+        return plans
+    shared = {p["id"] for p in merged_plans(session) if p.get("branchShared") and p.get("status") == "in_progress"}
+    return [p for p in plans if p.get("id") in shared]
 
 
 @router.get("/producer")
@@ -184,8 +207,13 @@ def changes(workflow: str | None = None, limit: int = 20, session: Session = Dep
 
 
 @router.get("/insights/{insight_id}")
-def insight(insight_id: str, session: Session = Depends(get_session), _: AppUser = Depends(require_resource("insights"))):
-    arts = {k: get_current(session, k) for k in ("insights", "attentions", "risk_dashboard", "hq_dashboard")}
+def insight(insight_id: str, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("insights"))):
+    from .deps import user_resources
+
+    # 다른 부서 화면의 인사이트는 그 화면 리소스가 있을 때만 (B.32 — insights 리소스만으로 부서 간 열람 불가)
+    allowed = user_resources(session, user)
+    keys = [k for k in ("insights", "attentions", "risk_dashboard", "hq_dashboard") if allowed is None or k in allowed]
+    arts = {k: get_current(session, k) for k in keys}
     ins = find_insight({k: v for k, v in arts.items() if v is not None}, insight_id)
     if not ins:
         raise HTTPException(404, "인사이트 없음")

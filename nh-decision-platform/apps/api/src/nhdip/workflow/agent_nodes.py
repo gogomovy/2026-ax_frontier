@@ -24,9 +24,8 @@ from sqlalchemy import select
 
 from nhdip.calc import execute
 from nhdip.calc.metrics import ResolveError, resolve_ref
-from nhdip.events import emit
 from nhdip.llm import LlmUnavailable, resolve
-from nhdip.models import AgentDecision, Workflow, WorkflowNode
+from nhdip.models import AgentDecision, Workflow, WorkflowNode, WorkflowRun
 from nhdip.views.store import find_insight
 
 from .engine import NodeResult, RunContext, node_impl
@@ -115,7 +114,14 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                       "delta": float(delta), "deltaPct": None if pct is None else round(float(pct), 2), "ruleLevel": _rule_level(ratio, mult), "ratio": round(float(ratio), 2),
                       "direction": "up" if delta > 0 else "down", "figureIds": list(oc.figure_ids), "calcId": oc.calc_run_id})
     # 데이터 버전 변화 — 직전 감지 때 본 버전과 비교
-    last = ctx.session.execute(select(AgentDecision).where(AgentDecision.agent_code == DETECTOR, AgentDecision.workflow_code == ctx.workflow.code, AgentDecision.decision == "detect").order_by(AgentDecision.id.desc()).limit(1)).scalar()
+    # 직전 '성공한' 실행의 감지 기록만 — 실패한 실행이 본 버전을 기준으로 삼으면 그 변화를 놓친다 (B.32)
+    last = ctx.session.execute(
+        select(AgentDecision)
+        .join(WorkflowRun, WorkflowRun.id == AgentDecision.workflow_run_id)
+        .where(AgentDecision.agent_code == DETECTOR, AgentDecision.workflow_code == ctx.workflow.code, AgentDecision.decision == "detect", WorkflowRun.status.in_(["succeeded", "degraded"]))
+        .order_by(AgentDecision.id.desc())
+        .limit(1)
+    ).scalar()
     seen_before = (last.detail or {}).get("seen", {}) if last else {}
     seen: dict[str, Any] = {}
     row_pct = Decimal(str((pol.get("data") or {}).get("row_change_pct", 1.0)))
@@ -167,7 +173,7 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         entries = [{**i, "id": f"{ctx.run.id[:10]}-{i['kind']}-{i['code']}", "at": now, "workflow": ctx.workflow.code, "workflowName": ctx.workflow.name, "runId": ctx.run.id, **({"scope": scope} if scope else {})} for i in final]
         arts["change_feed"] = {"items": (entries + list(feed.get("items") or []))[: int(pol.get("max_feed", 200))], "updatedAt": now}
         ctx.changed.add("change_feed")
-        emit(ctx.session, "change.detected", {"workflow": ctx.workflow.code, "run": ctx.run.id, "major": major, "total": len(final), "data": data_n, "chain": [*chain, ctx.workflow.code],
+        ctx.emit_after_success("change.detected", {"workflow": ctx.workflow.code, "run": ctx.run.id, "major": major, "total": len(final), "data": data_n, "chain": [*chain, ctx.workflow.code],
                                               "changes": [{k: i.get(k) for k in ("code", "label", "level", "direction", "reason", "kind")} for i in final[:15]], **({"scope": scope} if scope else {})}, DETECTOR)
     summary = (f"유의 변화 {len(final)}건(주요 {major} · 데이터 {data_n}) · 후보 {len(items)}건 · 판단 {'LLM' if judged_by == 'llm' else '규칙'}" if final else (f"후보 {len(items)}건 모두 유의하지 않음 · 판단 {'LLM' if judged_by == 'llm' else '규칙'}" if items else "유의 변화 없음"))
     detail = {"by": judged_by, "meta": meta, "llmSummary": llm_summary, "items": final[:50], "candidates": items[:80], "seen": seen, "scope": scope}
@@ -243,7 +249,10 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         rule_choice.append(tid)
     forced = list(targets) if forced_types else []
     # 2) 후속 후보 — 사용 중 · 자기 자신 아님 · 연쇄에 없음 · 깊이 이내
-    max_chain = int(pol.get("max_chain", 3))
+    from .orchestrator import policy as orch_policy
+
+    # 연쇄 깊이는 오케스트레이터 정책이 상한 (디스패처가 같은 값으로 강제) — B.32
+    max_chain = min(int(pol.get("max_chain", 3)), int(orch_policy(ctx.session).get("max_chain", 3)))
     allow_follow = len(chain) + 1 < max_chain
     wfs = ctx.session.execute(select(Workflow).where(Workflow.enabled)).scalars().all()
     follow_cands = [{"code": w.code, "name": w.name, "description": w.description} for w in wfs if allow_follow and w.code != ctx.workflow.code and w.code not in chain and w.code not in set(pol.get("followup_exclude") or ["wf_graph_projection"])]
