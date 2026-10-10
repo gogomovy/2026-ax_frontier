@@ -61,6 +61,12 @@ for _path, _key, _res in [
     _simple(_path, _key, _res)
 
 
+@router.get("/producer")
+def producer(key: str, session: Session = Depends(get_session), _: AppUser = Depends(require_resource("meta"))):
+    """산출물을 만드는 워크플로우 코드 — 화면의 '분석 다시 실행' · 변화 피드 필터 대상 (프론트에 워크플로우 코드를 두지 않는다)."""
+    return {"key": key, "workflow": _producer(session, key)}
+
+
 @router.get("/meta")
 def meta(session: Session = Depends(get_session), _: AppUser = Depends(require_resource("meta"))):
     """화면 상단 기준일 · 최근 계산 시각 (AppShell)."""
@@ -92,12 +98,22 @@ def goal(goal_id: str, session: Session = Depends(get_session), _: AppUser = Dep
     raise HTTPException(404, "목표 없음")
 
 
+def _producer(session: Session, key: str) -> str | None:
+    """산출물을 만드는 워크플로우 — 화면의 '분석 다시 실행' 대상 (프론트에 매핑을 두지 않는다)."""
+    from nhdip.models import Workflow
+
+    for w in session.execute(select(Workflow).where(Workflow.enabled).order_by(Workflow.sort)).scalars():
+        if key in (w.outputs or []):
+            return w.code
+    return None
+
+
 @router.get("/reports/{tab_key}")
 def report(tab_key: str, session: Session = Depends(get_session), _: AppUser = Depends(require_resource("reports"))):
     row = get_current_row(session, f"report.{tab_key}")
     if not row:
         raise HTTPException(404, "보고서 없음")
-    return row.payload
+    return {**row.payload, "workflow": _producer(session, f"report.{tab_key}")}
 
 
 # ── 영업점 (B.29) — 산출물의 영업점(office.code)과 사용자 소속을 대조한다 (Q44) ──
@@ -124,7 +140,7 @@ def branch_dashboard(session: Session = Depends(get_session), user: AppUser = De
     v = _branch_artifact(session, user, "branch_dashboard")
     if v is None:
         return {"available": False, "viewer": _viewer_office(session, user)}
-    return {**v, "available": True, "viewer": _viewer_office(session, user)}
+    return {**v, "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
 
 
 @router.get("/branch/tabs")
@@ -138,7 +154,7 @@ def branch_report(tab_key: str, session: Session = Depends(get_session), user: A
     v = _branch_artifact(session, user, f"report.branch-{tab_key}")
     if v is None:
         raise HTTPException(404, "보고서 없음")
-    return v
+    return {**v, "workflow": _producer(session, f"report.branch-{tab_key}")}
 
 
 @router.get("/changes")

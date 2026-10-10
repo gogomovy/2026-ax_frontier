@@ -970,6 +970,7 @@ export const BRANCH_TABS: BranchTabs = { office: BRANCH_OFFICE, current: TABS, p
 const ALERTS: BranchKpiAlert[] = [
   {
     id: "alert-prime-corp",
+    itemCode: "CORE_PRIME",
     path: "사업KPI > 핵심사업 > 우량기업여신",
     changeType: "신설",
     title: PRIME_OPINION.title,
@@ -981,6 +982,7 @@ const ALERTS: BranchKpiAlert[] = [
   },
   {
     id: "alert-seomin",
+    itemCode: "INCL_SEOMIN",
     path: "사업KPI > 생산적·포용금융 > 서민금융",
     changeType: "신설",
     title: SEOMIN_OPINION.title,

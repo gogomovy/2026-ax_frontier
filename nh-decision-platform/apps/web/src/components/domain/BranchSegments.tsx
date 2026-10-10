@@ -50,7 +50,7 @@ export function BranchSegments({ dashboard }: { dashboard: BranchDashboard }) {
 
       {ready ? (
         <div>
-          <SectionHead title="여신 부문 현황" hint={`${dashboard.asOfLabel}`} right={<TextLink href="/branch/analysis/prime-corp">상세 분석</TextLink>} />
+          <SectionHead title="여신 부문 현황" hint={`${dashboard.asOfLabel}`} right={<TextLink href="/branch/analysis">상세 분석</TextLink>} />
           <MetricStrip
             items={[
               { label: "여신 잔액(기업 + 소매)", figure: loan.total },

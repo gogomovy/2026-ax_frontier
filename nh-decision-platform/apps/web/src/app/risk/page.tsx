@@ -76,7 +76,7 @@ export default async function RiskDashboardPage() {
           step={2}
           title="분석 결과"
           description="특이사항별 보고서를 Agent 의견부터 확인하고, 필요하면 보고서 문서로 내려받습니다."
-          href={`/risk/analysis/${current[0]?.tabKey ?? "model-monitoring"}`}
+          href={current[0] ? `/risk/analysis/${current[0].tabKey}` : "/risk/analysis"}
         />
       </div>
     </>

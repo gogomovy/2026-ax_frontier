@@ -37,6 +37,10 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
     if ev.type == "schedule" and p.get("workflow"):
         add(p["workflow"], f"trigger:cron({p.get('cron')})")
         return out
+    if ev.type == "agent.followup" and p.get("workflow"):
+        # 플래너가 정한 후속 실행 (B.31) — 연쇄(chain)는 원인에 남아 오케스트레이터가 순서 · 깊이를 관리
+        add(p["workflow"], f"agent:{p.get('by', 'planner')}({str(p.get('reason') or '')[:80]})")
+        return out
     for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled)).scalars():
         if t.kind == "any" and t.target in ("*", ev.type.split(".")[0]):
             add(t.workflow_code, f"trigger:any({t.target})")
@@ -98,6 +102,14 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
     ).scalars().all()
     for ev in events:
         matched = match_event(session, ev)
+        try:
+            from .orchestrator import route
+
+            matched = route(session, ev, matched)  # 오케스트레이터 경로 지정 (LLM 판단 · 규칙 대체)
+        except Exception:  # noqa: BLE001 — 경로 지정 실패가 디스패치를 막지 않는다
+            import logging
+
+            logging.getLogger("nhdip.orchestrator").exception("route failed")
         cause = {"event_id": ev.id, "type": ev.type, "payload": ev.payload, "at": ev.created_at.isoformat(), "actor": ev.actor, "trace_id": ev.trace_id}
         for wf, reasons in matched.items():
             enqueue(session, wf, {**cause, "reasons": reasons}, _debounce(session, wf, ev))

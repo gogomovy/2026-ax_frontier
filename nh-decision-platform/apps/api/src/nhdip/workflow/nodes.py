@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from nhdip.calc import run_and_record
 from nhdip.calc.metrics import ResolveError, evaluate
+from nhdip.events import emit
 from nhdip.graph.extraction import extract_document
 from nhdip.graph.neo4j_client import GraphUnavailable
 from nhdip.graph.projection import project_all
@@ -180,6 +181,10 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     plan = ctx.state.get("plan")
     if plan is not None and cfg.get("respect_plan", True) and not plan.get("evidence"):
         return NodeResult({"skipped": "플래너 — 서술 대상이 없거나 LLM 미연결이라 근거 검색 생략", "plan": {k: plan.get(k) for k in ("narrate", "llm")}})
+    extra_q = (plan or {}).get("evidenceQuery") if cfg.get("respect_plan", True) else None
+    if extra_q:
+        # 플래너가 이번 변화에 맞춰 덧붙인 검색어 (LLM 판단 · 정제 후)
+        cfg = {**cfg, "query": f"{cfg.get('query', '')} {extra_q}".strip()}
     concepts = cfg.get("concepts") or []
     doc_filter = graph_documents(concepts)
     qvec = None
@@ -193,6 +198,8 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             note.append(f"임베딩 실패 → 키워드 검색만 사용: {exc}")
     else:
         note.append("임베딩 모델 미설정 → 키워드 검색만 사용")
+    if extra_q:
+        note.append(f"플래너 추가 검색어: {extra_q}")
     if doc_filter is None:
         note.append("그래프 필터 없음(개념 미연결 또는 그래프 장애) → 권한 범위 전체 검색")
     k = int(cfg.get("k", 5))
@@ -327,7 +334,12 @@ def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ctx.session.flush()
         published.append({"key": key, "generation": row.generation})
     ctx.changed = {p["key"] for p in published}
-    return NodeResult({"published": published})
+    # 플래너가 정한 후속 워크플로우 — 게시가 끝난 뒤 실행되도록 이벤트로 넘긴다(오케스트레이터가 연쇄 · 순서 관리)
+    followups = []
+    for f in ctx.state.get("followups") or []:
+        emit(ctx.session, "agent.followup", {"workflow": f["workflow"], "reason": f.get("reason"), "by": "planner", "from": ctx.workflow.code, "run": ctx.run.id, "chain": f.get("chain") or [ctx.workflow.code]}, "planner")
+        followups.append(f["workflow"])
+    return NodeResult({"published": published, **({"followups": followups} if followups else {})})
 
 
 # ═════════════════════════ 문서 · 그래프 ═════════════════════════
@@ -595,7 +607,7 @@ def n_sync_tabs(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         if key == tab_key:
             continue
         for d in _walk_dicts(payload):
-            if d.get("id", "").startswith("ins-") and d.get("severity") and "statement" in d:
+            if d.get("id", "").startswith((node.config or {}).get("insight_prefix", "ins-")) and d.get("severity") and "statement" in d:
                 sev.setdefault(d["id"], d["severity"])
     own = set((node.config or {}).get("reports") or [])
     out = []
@@ -630,9 +642,10 @@ def n_select_guides(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     guides, plans_map = body.get("guides") or {}, body.get("plans") or {}
     only = set((node.config or {}).get("plans") or plans_map)
     arts = ctx.load_artifacts()
-    plans = arts.get("action_plans")
+    plan_key = (node.config or {}).get("artifact") or "action_plans"  # 수행방안 산출물 키 (노드 설정)
+    plans = arts.get(plan_key)
     if not isinstance(plans, list):
-        return NodeResult({"skipped": "수행방안 산출물 없음"}, "degraded")
+        return NodeResult({"skipped": f"수행방안 산출물 없음: {plan_key}"}, "degraded")
     out = []
     for p in plans:
         if p.get("id") not in only or p.get("id") not in plans_map:
@@ -664,7 +677,7 @@ def n_select_guides(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         guide = {"ruleId": code, "title": g.get("title"), "text": g.get("text"), "basis": basis, "rule": rule_code}
         if p.get("guideRuleId") != code or p.get("guide") != guide:
             p["guideRuleId"], p["guide"] = code, guide
-            ctx.changed.add("action_plans")
+            ctx.changed.add(plan_key)
         out.append({"plan": p["id"], "selected": code})
     return NodeResult({"rule": rule_code, "plans": out})
 

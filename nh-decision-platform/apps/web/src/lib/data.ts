@@ -164,6 +164,12 @@ export async function getChanges(workflow?: string, limit = 8): Promise<ChangeFe
   return { ...CHANGE_FEED, items };
 }
 
+/** 산출물을 만드는 워크플로우 (API 모드 — 서버의 워크플로우 정의 outputs 기준). 목데이터 모드는 null */
+export async function getProducer(key: string): Promise<string | null> {
+  if (!API_MODE) return null;
+  return (await api<{ workflow: string | null }>(`/screens/producer?key=${encodeURIComponent(key)}`)).workflow;
+}
+
 /* ── 인사이트 조회 ──────────────────────────────────────── */
 const ALL_INSIGHTS: Insight[] = [...ATTENTIONS, MODEL_OPINION, INCLUSIVE_OPINION, PRIME_OPINION, SEOMIN_OPINION];
 export async function getInsight(id: string): Promise<Insight | null> {

@@ -58,7 +58,7 @@ export const PERSONAS: Record<Persona, PersonaConfig> = {
       {
         step: 2,
         label: "분석 결과",
-        href: "/risk/analysis/model-monitoring",
+        href: "/risk/analysis",
         match: ["/risk/analysis"],
         countKey: "analyses",
       },

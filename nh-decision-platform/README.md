@@ -57,7 +57,7 @@ make ps | logs | down | reset(볼륨 삭제) | test(백엔드 테스트) | e2e(�
 - 컬럼 정의서: 종기부 컬럼정의서(T01 현황 · T02 데이터분석 · T03 목표설정)를 `/admin/contracts` 에 올리면 컬럼을 지표·서술에 연결해 `mart.hq_t01~t03` 에 적재하고, 정의서 화면값과 계산값을 대조합니다(일치 · 불일치 · 미연결).
 - 정기 실행: 워크플로우별 cron 트리거(기본 06:00 · 06:10 · 06:20 KST, `/admin/workflows`)가 데이터 변경과 같은 경로로 재계산합니다.
 - 질의: 업무 화면 우측 하단 `질문하기` — 권한 범위의 확정 수치(커널)와 근거 문서로만 답하고, 답변 숫자의 출처를 검증합니다. LLM 미연결 시 수치·근거만 보여줍니다.
-- 판단 에이전트: 오케스트레이터(워크플로우 간 순서 · 대기, 설정 `orchestrator.policy`) · 변화 감지(직전값 대비 유의 변화 · 데이터 변경, 규칙 `CHANGE_SIGNIFICANCE` → 업무 화면 '최근 감지된 변화') · 플래너(서술 · 근거 검색 대상 결정, 규칙 `PLANNER_POLICY` — 바뀐 것이 없으면 LLM 미호출). 결정과 근거는 `/admin/monitor/agents`.
+- 판단 에이전트(LLM): 오케스트레이터(이벤트마다 영향받는 워크플로우 추가 · 실행 순서 보장) · 변화 감지(커널이 계산한 변화의 업무상 중요도 판단 → '최근 감지된 변화') · 플래너(서술 대상 · 근거 검색어 · 후속 워크플로우 결정). LLM 판단은 허용 목록으로 검증하고 미연결 · 실패 시 규칙(`CHANGE_SIGNIFICANCE` · `PLANNER_POLICY` · `orchestrator.policy`)으로 대체. 결정 · 판단 주체 · 근거는 `/admin/monitor/agents`, 프롬프트는 `/admin/agents`.
 - 모니터링: `/admin/monitor/flow`(이벤트 → 매칭 사유 → 실행 → 게시) · `/admin/monitor/runs`(노드 입출력 · LLM 원문 · 계산) · `/admin/monitor/calc`(지표 값 · 추이 · 산출물 세대).
 
 ---

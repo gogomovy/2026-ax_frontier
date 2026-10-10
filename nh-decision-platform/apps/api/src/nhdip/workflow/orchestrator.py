@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 from nhdip.models import AgentDecision, Job, Metric, Setting, WorkflowNode, utcnow
 
 AGENT = "orchestrator"
-DEFAULT_POLICY: dict[str, Any] = {"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300}
+DEFAULT_POLICY: dict[str, Any] = {"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300,
+                                  # LLM 경로 지정 (B.31) — 이 이벤트가 오면 LLM 이 영향받는 다른 워크플로우를 판단해 추가 실행
+                                  "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": []}
 
 
 def policy(session: Session) -> dict[str, Any]:
@@ -72,7 +74,12 @@ def _record(session: Session, job: Job, decision: str, summary: str, detail: dic
 
 def hold_reason(session: Session, job: Job, graph: dict[str, dict[str, list[str]]], pol: dict[str, Any]) -> dict[str, Any] | None:
     """미뤄야 하면 {upstream, jobs, reasons} — 상위 워크플로우 작업이 대기(실행 시각 도래 전후 무관) · 실행 중."""
-    ups = graph.get(job.workflow_code or "", {})
+    ups = dict(graph.get(job.workflow_code or "", {}))
+    # 원인 연쇄 — 이 작업을 일으킨 워크플로우(후속 · 경로 지정)가 아직 진행 중이면 그 결과를 기다린다
+    for c in job.causes or []:
+        for w in ((c.get("payload") or {}).get("chain") or []) if isinstance(c, dict) else []:
+            if w != job.workflow_code:
+                ups.setdefault(w, ["원인 워크플로우 진행 중(연쇄)"])
     if not ups:
         return None
     pending = session.execute(select(Job).where(Job.kind == "workflow", Job.workflow_code.in_(list(ups)), Job.status.in_(["queued", "running"]), Job.id != job.id)).scalars().all()
@@ -120,3 +127,59 @@ def release_downstream(session: Session, workflow_code: str) -> list[int]:
             released.append(j.id)
     session.commit()
     return released
+
+
+ROUTE_TASK = (
+    "너는 은행 경영 의사결정 플랫폼의 오케스트레이터다. 방금 발생한 이벤트와, 이미 실행이 정해진 워크플로우(matched)를 보고\n"
+    "이 변화가 다른 업무 판단(경영목표 · 리스크 · 영업점 가이드 등)에 영향을 주어 추가로 실행해야 할 워크플로우가 있는지 판단하라.\n"
+    "- add 는 catalog 의 code 만, 정말 필요한 경우만(없으면 빈 목록). matched 에 있는 것은 넣지 않는다.\n"
+    "- reason 은 숫자 없이 한 문장. 수치를 계산하거나 만들지 않는다.\n"
+    '출력: {"add": [{"workflow": "...", "reason": "..."}], "summary": "..."}'
+)
+
+
+def route(session: Session, ev: Any, matched: dict[str, list[str]]) -> dict[str, list[str]]:
+    """이벤트 경로 지정 — LLM 이 영향받는 워크플로우를 추가한다(허용 목록 · 연쇄 깊이 검증). 실패하면 설정 route_rules(규칙)만."""
+    from nhdip.models import AgentDecision, Workflow
+
+    from .llm_judge import ask_json, clean_reason
+
+    pol = policy(session)
+    if not pol.get("enabled", True) or ev.type not in set(pol.get("route_on") or []):
+        return matched
+    p = ev.payload or {}
+    chain = list(p.get("chain") or ([p["workflow"]] if p.get("workflow") else []))
+    if len(chain) >= int(pol.get("max_chain", 3)):
+        return matched
+    excl = set(pol.get("route_exclude") or []) | set(chain) | set(matched)
+    wfs = [w for w in session.execute(select(Workflow).where(Workflow.enabled).order_by(Workflow.sort)).scalars() if w.code not in excl]
+    if not wfs:
+        return matched
+    allowed = {w.code for w in wfs}
+    adds: list[dict[str, str]] = []
+    context = {"event": {"type": ev.type, "payload": {k: v for k, v in p.items() if k in ("workflow", "major", "total", "data", "changes", "dataset", "doc_class", "title", "scope")}},
+               "matched": matched, "catalog": [{"code": w.code, "name": w.name, "description": w.description, "outputs": w.outputs} for w in wfs], "chain": chain,
+               "limits": {"max_add": int(pol.get("max_route", 2))}, "guidance": pol.get("llm_guidance")}
+    data, meta = ask_json(session, AGENT, ROUTE_TASK, context, required=("add",))
+    by = "rule"
+    if data:
+        by = "llm"
+        for a in data.get("add") or []:
+            if isinstance(a, dict) and a.get("workflow") in allowed and a["workflow"] not in {x["workflow"] for x in adds}:
+                reason, _ = clean_reason(a.get("reason"))
+                adds.append({"workflow": a["workflow"], "reason": reason or "LLM 판단"})
+    else:
+        # 규칙 경로 (LLM 미연결 · 실패) — [{"on": 이벤트, "from": 워크플로우, "min_major": n, "to": [..]}]
+        for r in pol.get("route_rules") or []:
+            if r.get("on") == ev.type and (not r.get("from") or r["from"] == p.get("workflow")) and int(p.get("major") or 0) >= int(r.get("min_major", 0)):
+                for w in r.get("to") or []:
+                    if w in allowed and w not in {x["workflow"] for x in adds}:
+                        adds.append({"workflow": w, "reason": f"규칙 route_rules({ev.type})"})
+    adds = adds[: int(pol.get("max_route", 2))]
+    if data or adds:
+        session.add(AgentDecision(agent_code=AGENT, workflow_code=p.get("workflow"), decision="route", summary=(f"[{'LLM' if by == 'llm' else '규칙'}] " + (f"추가 실행 {', '.join(a['workflow'] for a in adds)}" if adds else "추가 실행 없음"))[:500],
+                                  detail={"by": by, "meta": meta, "event": {"id": ev.id, "type": ev.type}, "matched": list(matched), "add": adds, "chain": chain, "summary": clean_reason((data or {}).get("summary"))[0] or None}))
+    out = dict(matched)
+    for a in adds:
+        out[a["workflow"]] = [f"agent:orchestrator({a['reason'][:80]})"]
+    return out

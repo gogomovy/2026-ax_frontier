@@ -428,6 +428,8 @@ export interface ReportDoc {
   limitations: string[];
   /** 영업점 보고서 — 대상 영업점 (B.29) */
   office?: BranchOffice;
+  /** 이 보고서를 만드는 워크플로우 (서버가 산출물 정의에서 찾아 붙인다) */
+  workflow?: string | null;
 }
 
 export interface AnalysisTab {
@@ -483,6 +485,8 @@ export interface KpiGroup {
 /** 기준 변경 알림 — 의견 탭으로 이어진다 */
 export interface BranchKpiAlert {
   id: string;
+  /** 배점표 항목 코드 — 득점표의 해당 항목에서 이 알림 탭으로 연결 */
+  itemCode: string;
   path: string;
   changeType: string;
   title: string;
@@ -496,6 +500,8 @@ export interface BranchKpiAlert {
 
 export interface BranchDashboard {
   available: boolean;
+  /** 이 화면을 만드는 워크플로우 (서버 제공) */
+  workflow?: string | null;
   /** 로그인 사용자의 영업점 (영업점 소속이 아니면 null) */
   viewer?: { code: string; name: string; orgCode: string } | null;
   office: BranchOffice;

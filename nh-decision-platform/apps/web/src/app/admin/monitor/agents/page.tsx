@@ -22,7 +22,8 @@ interface Topology {
 }
 
 const DECISION_TONE: Record<string, "neutral" | "info" | "attention" | "success" | "dark"> = { hold: "attention", release: "success", detect: "info", plan: "dark", narrated: "success" };
-const DECISION_LABEL: Record<string, string> = { hold: "대기", release: "실행 허용", detect: "변화 판정", plan: "실행 계획", narrated: "서술 갱신" };
+const DECISION_LABEL: Record<string, string> = { hold: "대기", release: "실행 허용", detect: "변화 판정", plan: "실행 계획", narrated: "서술 갱신", route: "경로 지정" };
+const byOf = (d: Decision) => ((d.detail ?? {}) as { by?: string }).by;
 const AGENT_NODE = new Set(["detect_changes", "plan_run", "narrate", "critic", "embed_chunks", "extract_documents"]);
 
 /** 에이전트 결정 (B.30) — 오케스트레이터 · 변화 감지 · 플래너 · 서술 에이전트가 무엇을 왜 결정했는지 */
@@ -34,7 +35,7 @@ export default function AgentDecisionsAdmin() {
   return (
     <AdminPage
       title="에이전트 결정"
-      description="워크플로우 사이는 오케스트레이터가 실행 순서를 정하고, 워크플로우 안에서는 변화 감지 → 화면 갱신 → 실행 계획(플래너) → 근거 · 서술(LLM) → 검증 순으로 진행합니다. 판단 에이전트는 규칙 기반이며 수치는 모두 커널이 계산합니다."
+      description="이벤트가 오면 오케스트레이터(LLM)가 영향받는 워크플로우를 정하고, 실행 순서는 규칙으로 보장합니다. 워크플로우 안에서는 변화 감지(LLM 중요도 판단) → 화면 갱신 → 실행 계획(LLM: 서술 대상 · 검색어 · 후속 워크플로우) → 근거 · 서술 → 검증 순으로 진행합니다. LLM 판단은 허용 목록으로 검증하고, 미연결 · 실패 시 규칙으로 대체합니다. 수치는 모두 커널이 계산합니다."
     >
       <Card title="워크플로우별 에이전트 배치">
         <Loading error={topo.error} loading={!t && topo.loading} />
@@ -91,7 +92,7 @@ export default function AgentDecisionsAdmin() {
         }
       >
         <Loading error={dec.error} loading={!dec.data && dec.loading} />
-        <Table head={["시각", "에이전트", "워크플로우", "결정", "요약", "근거"]}>
+        <Table head={["시각", "에이전트", "워크플로우", "결정", "판단", "요약", "근거"]}>
           {(dec.data?.items ?? []).map((d) => (
             <tr key={d.id}>
               <C className="whitespace-nowrap text-[11.5px]">{fmtTime(d.at)}</C>
@@ -100,6 +101,7 @@ export default function AgentDecisionsAdmin() {
               <C>
                 <Badge tone={DECISION_TONE[d.decision] ?? "neutral"}>{DECISION_LABEL[d.decision] ?? d.decision}</Badge>
               </C>
+              <C>{byOf(d) ? <Badge tone={byOf(d) === "llm" ? "info" : "neutral"}>{byOf(d) === "llm" ? "LLM" : "규칙"}</Badge> : <Badge>규칙</Badge>}</C>
               <C className="text-[12.5px]">{d.summary}</C>
               <C className="min-w-[200px]">
                 <Collapse label="보기">

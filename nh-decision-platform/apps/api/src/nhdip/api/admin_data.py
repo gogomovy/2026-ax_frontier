@@ -829,7 +829,9 @@ def contracts(session: Session = Depends(get_session)):
         t["reportAt"] = _iso(rep.created_at) if rep else None
         t["reportRun"] = rep.workflow_run_id if rep else None
     metrics_ = [m.code for m in session.execute(select(Metric).where(Metric.enabled).order_by(Metric.code)).scalars()]
-    return {"tables": list(tables.values()), "metrics": metrics_, "bindingKinds": BINDING_KINDS}
+    # 정의서 적재 노드를 가진 워크플로우 — '다시 계산' 대상 (화면에 코드를 두지 않는다)
+    wf = session.execute(select(WorkflowNode.workflow_code).where(WorkflowNode.impl == "materialize_contracts", WorkflowNode.enabled).limit(1)).scalar()
+    return {"tables": list(tables.values()), "metrics": metrics_, "bindingKinds": BINDING_KINDS, "workflow": wf}
 
 
 @router.patch("/contracts/{cid}")

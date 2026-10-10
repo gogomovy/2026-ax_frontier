@@ -208,7 +208,10 @@ def test_llm_narrate_and_critic(db, monkeypatch):
 
     def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002
         assert url.endswith("/chat/completions")
-        body = {"choices": [{"message": {"role": "assistant", "content": _json.dumps({"statement": next(replies)}, ensure_ascii=False)}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
+        # 판단 에이전트(변화 감지 · 플래너 · 오케스트레이터) 호출은 빈 판단 → 서술 에이전트만 준비된 문장을 받는다
+        narr = "분석 서술 에이전트" in (json["messages"][0]["content"] if json else "")
+        content = _json.dumps({"statement": next(replies)}, ensure_ascii=False) if narr else "{}"
+        body = {"choices": [{"message": {"role": "assistant", "content": content}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
         return httpx.Response(200, json=body, request=httpx.Request("POST", url))
 
     monkeypatch.setattr("nhdip.llm.client.httpx.post", fake_post)
@@ -978,7 +981,7 @@ def test_agents_orchestrate_detect_plan(db):
         r = run_workflow(s, "wf_branch_kpi", [{"type": "schedule", "payload": {"workflow": "wf_branch_kpi"}}])
         assert r.status == "succeeded", r.summary
     plan = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "planner", "limit": 1}).json()["items"][0]
-    assert plan["detail"]["candidates"] == [] and plan["summary"].startswith("변화 없음")
+    assert plan["detail"]["candidates"] == [] and "변화 없음" in plan["summary"] and plan["detail"]["by"] == "rule"
 
     def user(emp: str, org: str):
         c = _client()
@@ -995,3 +998,69 @@ def test_agents_orchestrate_detect_plan(db):
     topo = admin.get("/admin/agents/topology").json()
     nodes = [n["impl"] for n in next(w for w in topo["workflows"] if w["code"] == "wf_branch_kpi")["nodes"]]
     assert nodes.index("detect_changes") < nodes.index("plan_run") < nodes.index("narrate")
+
+
+def test_llm_judged_agents_dynamic_flow(db, monkeypatch):
+    """B.31 — LLM 이 변화 중요도 · 서술 대상 · 후속 워크플로우 · 경로를 판단하고, 허용 목록 · 연쇄 규칙으로 검증한다."""
+    import json as _json
+
+    from nhdip.data.datasets import ingest_rows, quality_check
+    from nhdip.llm import ChatResult
+    from nhdip.llm.client import ResolvedLlm
+    from nhdip.models import Dataset, Job, OutboxEvent
+    from nhdip.workflow import llm_judge
+    from nhdip.workflow.dispatcher import dispatch_once
+
+    llm_judge.reset_cooldown()
+    seen: dict[str, dict] = {}
+
+    def fake_resolve(session, code):
+        return ResolvedLlm(agent_code=code, connection_id=1, connection_name="fake", base_url="http://fake", api_key="", model="fake-judge", params={}, timeout=5, retries=0, tools_enabled=False)
+
+    def fake_chat(session, cfg, messages, **kw):
+        ctx = _json.loads(messages[-1]["content"].split("<<자료>>\n", 1)[1].rsplit("\n<</자료>>", 1)[0])
+        seen[cfg.agent_code] = ctx
+        if cfg.agent_code == "change_detector":
+            out = {"changes": [{"code": c["code"], "level": "minor" if c["kind"] == "metric" else "ignore", "reason": "수신 기반 확대 흐름으로 관찰이 필요하다", "group": "수신"} for c in ctx["candidates"]], "summary": "수신이 늘었다"}
+        elif cfg.agent_code == "planner":
+            out = {"narrate": [{"insight": "ins-br-seomin", "reason": "수신 변화가 서민금융 유치 여력과 관련된다"}, {"insight": "ins-unknown", "reason": "x"}],
+                   "evidence": {"run": True, "query": "수신 기반 {무시} 영업점"},
+                   "followups": [{"workflow": "wf_hq_goal_review", "reason": "영업점 수신 변화가 경영목표 점검에 영향"}, {"workflow": "wf_branch_kpi"}, {"workflow": "wf_bogus"}], "summary": "서민금융 의견만 갱신"}
+        else:
+            out = {"add": [{"workflow": "wf_inclusive_risk", "reason": "포용금융 판단에도 영향 가능"}, {"workflow": "wf_branch_kpi"}], "summary": "리스크 점검 추가"}
+        return ChatResult(_json.dumps(out, ensure_ascii=False), [], {}, f"call-{cfg.agent_code}", {})
+
+    monkeypatch.setattr(llm_judge, "resolve", fake_resolve)
+    monkeypatch.setattr(llm_judge, "chat", fake_chat)
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    with db() as s:
+        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
+        rows = [{"office_cd": "001068", "ym": "202608", "segment_cd": c, "segment_nm": n, "amount": a, "measure": m} for c, n, a, m in (("deposit", "수신", 170_000_000_000, "평잔"), ("fx", "외환", 3_840_000_000, "누적 실적"), ("pension", "퇴직연금", 21_030_000_000, "적립금"), ("card", "카드", 5_210_000_000, "누적 이용실적"))]
+        ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="영업점 사업부문별 잔액(202608)_정정2.xlsx", data_origin="simulated", actor="test", note="정정", force=True)
+        s.commit()
+    _drain(db)
+    det = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "change_detector", "limit": 1}).json()["items"][0]["detail"]
+    assert det["by"] == "llm" and det["meta"]["model"] == "fake-judge"
+    dep = next(i for i in det["items"] if i["code"] == "br_seg_deposit")
+    assert dep["level"] == "minor" and dep["ruleLevel"] == "major" and dep["judgedBy"] == "llm" and dep["reason"]  # LLM 이 주요 → 관찰로 낮춤
+    assert all(i["kind"] != "data" for i in det["items"])  # 데이터 변경은 LLM 이 '무시'
+    assert "candidates" in seen["change_detector"] and all("ruleLevel" in c for c in seen["change_detector"]["candidates"])
+    plan = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "planner", "limit": 1}).json()["items"][0]["detail"]
+    assert plan["by"] == "llm" and plan["candidates"] == ["ins-br-seomin"]  # 목록 밖 인사이트는 버림
+    assert [f["workflow"] for f in plan["followups"]] == ["wf_hq_goal_review"]  # 자기 자신 · 없는 워크플로우는 버림
+    assert plan["evidenceQuery"] == "수신 기반 무시 영업점"
+    # 후속 실행 이벤트 · 오케스트레이터 경로 지정
+    with db() as s:
+        dispatch_once(s)
+        fu = s.execute(select(OutboxEvent).where(OutboxEvent.type == "agent.followup").order_by(OutboxEvent.id.desc())).scalars().first()
+        assert fu.payload["workflow"] == "wf_hq_goal_review" and fu.payload["chain"] == ["wf_branch_kpi"]
+        assert any(m["workflow"] == "wf_hq_goal_review" for m in fu.matched)
+        ch = s.execute(select(OutboxEvent).where(OutboxEvent.type == "change.detected").order_by(OutboxEvent.id.desc())).scalars().first()
+        assert {m["workflow"] for m in ch.matched} >= {"wf_inclusive_risk"} and "wf_branch_kpi" not in {m["workflow"] for m in ch.matched}  # 연쇄 원점은 다시 넣지 않음
+        job = s.execute(select(Job).where(Job.workflow_code == "wf_hq_goal_review", Job.status == "queued")).scalars().first()
+        assert job is not None and any("agent:planner" in r for c in job.causes for r in c.get("reasons", []))
+    route = admin.get("/admin/agents/decisions", params={"agent": "orchestrator", "limit": 5}).json()["items"]
+    assert any(d["decision"] == "route" and d["detail"]["by"] == "llm" and [a["workflow"] for a in d["detail"]["add"]] == ["wf_inclusive_risk"] for d in route)
+    _drain(db)
+    llm_judge.reset_cooldown()

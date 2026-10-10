@@ -64,7 +64,7 @@ const DETAIL_HREF: Record<string, string> = {
   household: "/hq/analysis",
   revenue: "/hq/analysis",
   portfolio: "/hq/analysis",
-  inclusive_finance: "/risk/analysis/inclusive-risk",
+  inclusive_finance: "/risk/analysis",
 };
 
 const ACTION_LABEL = {

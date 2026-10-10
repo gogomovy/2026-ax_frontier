@@ -12,7 +12,8 @@ export const dynamic = "force-dynamic";
 
 /** 영업점 STEP 1 — 업적평가 득점 · 기준 변경 알림 · 사업부문 현황 (시나리오 첫 번째 화면) */
 export default async function BranchHomePage() {
-  const [dashboard, changes] = await Promise.all([getBranchDashboard(), getChanges("wf_branch_kpi")]);
+  const dashboard = await getBranchDashboard();
+  const changes = await getChanges(dashboard.workflow ?? undefined);
   if (!dashboard.available) {
     return (
       <>

@@ -577,6 +577,64 @@ def agents_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["agents_upgrade"] = True
 
 
+
+def agents_llm_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """판단 에이전트 LLM 전환(B.31) — 1회. 규칙형으로 만들어진 에이전트를 LLM 형으로(프롬프트 v1), 규칙 · 설정에 새 키만 추가."""
+    if _applied(s, "agents-llm-v1"):
+        return
+    default = s.execute(select(LlmProfile).where(LlmProfile.is_default)).scalars().first()
+    done = []
+    for code, name, role, kind, profile, system in C.AGENTS:
+        if code not in ("change_detector", "planner", "orchestrator"):
+            continue
+        a = s.get(Agent, code)
+        if a is None or a.kind != "rule":
+            continue
+        a.kind, a.role = kind, role
+        if default is not None and a.profile_id is None:
+            a.profile_id = default.id
+        if not s.execute(select(Prompt).where(Prompt.agent_code == code)).first():
+            s.add(Prompt(agent_code=code, version=1, system=system, user_template="", note="B.31 LLM 판단 전환 초기 프롬프트", created_by="seed"))
+        done.append(code)
+    # 규칙 · 설정 — 없는 키만 새 버전으로 (관리자 값 보존)
+    for code in ("CHANGE_SIGNIFICANCE", "PLANNER_POLICY"):
+        rule = s.get(Rule, code)
+        spec = next((r for r in C.RULES if r[0] == code), None)
+        if rule is None or spec is None:
+            continue
+        cur = s.execute(select(RuleVersion).where(RuleVersion.rule_code == code, RuleVersion.version == rule.active_version)).scalar()
+        body = dict(cur.body) if cur else {}
+        missing = {k: v for k, v in spec[4].items() if k not in body}
+        if missing:
+            last = s.execute(select(RuleVersion.version).where(RuleVersion.rule_code == code).order_by(RuleVersion.version.desc()).limit(1)).scalar() or 0
+            s.add(RuleVersion(rule_code=code, version=last + 1, body={**body, **missing}, note=f"B.31 LLM 판단 키 추가: {', '.join(missing)}", created_by="seed"))
+            rule.active_version, rule.name = last + 1, spec[1]
+    for key in ("orchestrator.policy",):
+        st = s.get(Setting, key)
+        if st is not None and isinstance(st.value, dict):
+            st.value = {**C.SETTINGS[key][0], **st.value}
+    # 영업점 알림의 배점표 항목 코드(itemCode) — 시드 산출물 기준으로 비어 있는 키만 채운다
+    from nhdip.views.store import get_current_row
+
+    row = get_current_row(s, "branch_dashboard")
+    path = os.path.join(_screens_dir(), "branch_dashboard.json")
+    if row is not None and os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            seed_alerts = {a["id"]: a for a in json.load(fh).get("alerts", [])}
+        payload = copy.deepcopy(row.payload)
+        changed = False
+        for a in payload.get("alerts") or []:
+            if "itemCode" not in a and seed_alerts.get(a.get("id"), {}).get("itemCode"):
+                a["itemCode"] = seed_alerts[a["id"]]["itemCode"]
+                changed = True
+        if changed:
+            publish(s, "branch_dashboard", payload, produced_by="seed-fix", changes=[{"added": "alerts.itemCode"}])
+    sc = s.get(Screen, "RISK_ANALYSIS")
+    if sc is not None and sc.path == "/risk/analysis/model-monitoring":
+        sc.path = "/risk/analysis"  # 첫 번째 분석 탭으로 이동하는 진입 경로 (탭 키를 메뉴에 두지 않는다)
+    out["agents_llm_upgrade"] = done
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -595,6 +653,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     s.flush()
     branch_upgrade(s, out, first)
     agents_upgrade(s, out)
+    agents_llm_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

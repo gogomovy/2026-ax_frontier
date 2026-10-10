@@ -21,13 +21,6 @@ import type { ReportBlock, ReportDoc } from "@/lib/types";
  *  - 목업 모드: 브라우저에서 HTML 생성
  *  - API 모드: 서버 변환(F.17) — 관리자 설정 `report.export_formats` 로 켠 형식만 메뉴에 보인다
  */
-/** 보고서 종류 → 다시 계산할 워크플로우 (온디맨드 분석, F.9) */
-const REPORT_WORKFLOW: Record<string, string> = {
-  model_monitoring: "wf_model_monitoring",
-  inclusive_risk: "wf_inclusive_risk",
-  branch_prime_corp: "wf_branch_kpi",
-  branch_seomin: "wf_branch_kpi",
-};
 
 export function ReportActions({ report, tabKey }: { report: ReportDoc; tabKey?: string }) {
   const { showToast } = useUi();
@@ -72,7 +65,7 @@ export function ReportActions({ report, tabKey }: { report: ReportDoc; tabKey?: 
   };
   return (
     <>
-      {remote && REPORT_WORKFLOW[report.kind] ? <OnDemandAnalysis workflow={REPORT_WORKFLOW[report.kind]} /> : null}
+      {remote && report.workflow ? <OnDemandAnalysis workflow={report.workflow} /> : null}
       <Button variant="ghost" size="sm" onClick={() => window.print()}>
         인쇄
       </Button>

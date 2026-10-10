@@ -282,6 +282,7 @@
  "alerts": [
   {
    "id": "alert-prime-corp",
+   "itemCode": "CORE_PRIME",
    "path": "사업KPI > 핵심사업 > 우량기업여신",
    "changeType": "신설",
    "title": "본부 추천 우량기업 중심 신규 유치로 우량기업여신 가점 확보",
@@ -300,6 +301,7 @@
   },
   {
    "id": "alert-seomin",
+   "itemCode": "INCL_SEOMIN",
    "path": "사업KPI > 생산적·포용금융 > 서민금융",
    "changeType": "신설",
    "title": "건전성 범위 안에서 NH새희망홀씨 신규 유치로 서민금융 가점 확보",

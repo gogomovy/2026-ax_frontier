@@ -64,7 +64,7 @@ SCREENS = [
     dict(code="HQ_CAPITAL", path="/hq/capital", label="총자산·수익성 기준", section="종합기획부", kind="reference", sort=14, resources=["capital_view", "profitability"]),
     dict(code="DOMAINS", path="/domains", label="사업부문 상세", section="종합기획부", kind="hidden", sort=15, resources=["domains"]),
     dict(code="RISK_HOME", path="/risk", label="현황", section="신용리스크관리부", kind="flow", step=1, match="=/risk", sort=20, resources=["changes", "risk_dashboard", "analysis_tabs", "default_rate_trend", "insights", "action_plans", "plan_state"]),
-    dict(code="RISK_ANALYSIS", path="/risk/analysis/model-monitoring", label="분석 결과", section="신용리스크관리부", kind="flow", step=2, count_key="analyses", match="/risk/analysis", sort=21, resources=["analysis_tabs", "reports", "inclusive", "insights", "action_plans", "plan_state", "plan_actions"]),
+    dict(code="RISK_ANALYSIS", path="/risk/analysis", label="분석 결과", section="신용리스크관리부", kind="flow", step=2, count_key="analyses", match="/risk/analysis", sort=21, resources=["analysis_tabs", "reports", "inclusive", "insights", "action_plans", "plan_state", "plan_actions"]),
     dict(code="RISK_GUIDES", path="/risk/guides", label="수행방안", section="신용리스크관리부", kind="flow", step=3, count_key="proposedPlans", sort=22, resources=["analysis_tabs", "action_plans", "plan_state", "plan_actions", "reports"]),
     dict(code="BRANCH_HOME", path="/branch", label="현황", section="영업점", kind="flow", step=1, match="=/branch", sort=30, resources=["branch_dashboard", "branch_tabs", "changes"]),
     dict(code="BRANCH_ANALYSIS", path="/branch/analysis", label="분석 결과", section="영업점", kind="flow", step=2, count_key="branchAnalyses", match="/branch/analysis", sort=31, resources=["branch_dashboard", "branch_tabs", "branch_reports"]),
@@ -129,7 +129,10 @@ SETTINGS = {
     "alerts.policy": ({"enabled": False, "channels": ["webhook", "email"], "min_severity": "warning", "lookback_min": 30, "rules": {"workflow_failed": {"enabled": True, "severity": "critical"}, "quality_failed": {"enabled": True, "severity": "warning"}, "auth_failures": {"enabled": True, "severity": "warning", "threshold": 10, "window_min": 10}, "llm_budget": {"enabled": True, "severity": "warning", "levels": [80, 100]}, "golden_failed": {"enabled": True, "severity": "warning"}}}, "운영 알림 — 켜기 · 채널 · 최소 심각도 · 조건별 기준. 채널 주소 · 계정은 배포 환경변수(ALERT_WEBHOOK_URL · ALERT_SMTP_*)"),
     "llm.pricing": ({}, "LLM 단가(1천 토큰당, 원) — {\"모델명\" 또는 \"*\": {\"prompt_per_1k\": 0, \"completion_per_1k\": 0}}. 비우면 금액 0(사내 게이트웨이)"),
     "llm.budget": ({"monthly_tokens": 0, "monthly_cost": 0, "per_agent_tokens": {}, "on_exceed": "warn", "warn_pct": 80}, "LLM 월 예산 — 0 = 한도 없음. on_exceed: warn(알림만) · block(초과 후 호출 차단, 서술은 기존 문장 유지)"),
-    "orchestrator.policy": ({"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300}, "오케스트레이터 — 켜기 · 명시 의존({\"워크플로우\": [\"상위\"]}, \"*\" = 전체) · 정의 도출(지표 참조 · 근거 검색 전 그래프 투영) · 대기 간격 · 최대 대기(초)"),
+    "orchestrator.policy": ({"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300,
+                             "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": []},
+                            "오케스트레이터 — 실행 순서(명시 의존 · 정의 도출 · 대기 간격 · 최대 대기) + LLM 경로 지정(route_on 이벤트 · 최대 추가 · 최대 연쇄 · 제외 · LLM 미연결 시 route_rules)"),
+    "agents.llm_judge": ({"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000}, "판단 에이전트(변화 감지 · 플래너 · 오케스트레이터) LLM 판단 — 켜기 · 연속 실패 시 쉬는 시간(초) · 입력 자료 최대 길이"),
     "ui.as_of": ("2026-08-31", "화면 기준일 표시"),
     "ui.timezone": ("Asia/Seoul", "화면 산출물 생성 시각의 시간대"),
     "doc_class.labels": ({"gov_policy": "정부정책 DB", "mgmt_decision": "경영 의사결정 DB", "model_method": "모형·방법론", "branch_ref": "영업점 기준·공문", "reference": "참고 자료"}, "문서 분류 코드 → 화면 표시명"),
@@ -200,12 +203,14 @@ RULES = [
     ("CHANGE_SIGNIFICANCE", "변화 감지 유의 기준 (B.30 · 시뮬레이션 가정 · Q51 추천안)", "threshold",
      "직전 확정값 대비 변화 — 단위별 절대 변화(abs) · 변화율(pct, %) 중 큰 비율이 1 이상이면 일반, major_multiplier 배 이상이면 주요. 지표별(metrics) 우선 · 제외(ignore) · 데이터 행 수 변화율 · 범위(scope, 영업점 산출물)",
      {"units": {"PCT": {"abs": 0.1}, "PP": {"abs": 0.1}, "RATIO": {"abs": 0.005}, "NONE": {"abs": 0.05, "pct": 1.0}, "CNT": {"pct": 1.0}, "KRW_*": {"pct": 0.5}},
-      "major_multiplier": 5, "metrics": {"psi_micro": {"abs": 0.01}, "chi_stat": {"abs": 0.5}}, "ignore": [], "max_feed": 200, "data": {"row_change_pct": 1.0},
+      "major_multiplier": 5, "candidate_factor": 0.5, "protect_major": True, "llm_guidance": "",
+      "metrics": {"psi_micro": {"abs": 0.01}, "chi_stat": {"abs": 0.5}}, "ignore": [], "max_feed": 200, "data": {"row_change_pct": 1.0},
       "scope": {"wf_branch_kpi": {"office": {"rule": "BRANCH_SCOPE", "path": "office_code"}}},
       "note": "기준값은 시뮬레이션 가정 — 행내 유의 변화 기준(보고 기준) 확정 시 교체"}),
     ("PLANNER_POLICY", "실행 계획 기준 (B.30 · Q52 추천안)", "guide",
      "전체 서술 갱신 원인(full_refresh_on) · 정기 실행 시 무조건 갱신 여부 · 데이터 변경 시 수치 없는 인사이트 갱신 · 한 번에 서술할 최대 건수(0 = 제한 없음)",
-     {"full_refresh_on": ["manual", "rule.changed", "config.changed"], "refresh_on_schedule": False, "narrate_on_data_change": True, "max_targets": 0}),
+     {"full_refresh_on": ["manual", "rule.changed", "config.changed"], "force_on": ["manual"], "refresh_on_schedule": False, "narrate_on_data_change": True, "max_targets": 0,
+      "max_followups": 2, "max_chain": 3, "followup_exclude": ["wf_graph_projection"], "llm_guidance": ""}),
     ("ROUNDING", "반올림 정책", "rounding", "지표별 반올림은 지표 정의에서, 기본값은 설정 calc.rounding_default", {"default": "HALF_UP", "note": "요구사항 Q9 확정 — 사사오입(HALF_UP): 9.1575% → 9.16%"}),
 ]
 
@@ -312,15 +317,24 @@ QUERY_SYSTEM = (
     "너는 은행 데이터 질의 보조자다. 숫자 계산이 필요하면 반드시 제공된 calc_* 도구를 호출하고, 도구 결과의 값만 인용한다. 직접 계산하지 않는다."
 )
 
+JUDGE_COMMON = (
+    "공통 규칙: 1) 수치를 계산하거나 새로 만들지 않는다 — 입력의 수치는 계산 커널이 확정한 값이다. "
+    "2) 허용된 코드(입력 목록에 있는 id · code)만 고른다. 3) 사유(reason · summary)에는 숫자를 쓰지 않는다. "
+    "4) 확신이 없으면 보수적으로(변화는 minor, 후속 실행은 하지 않음) 판단한다. 5) 출력은 지정한 JSON 하나."
+)
+CHANGE_ANALYST_SYSTEM = "너는 NH농협은행 경영 의사결정 플랫폼의 변화 감지 에이전트다. 지표 · 데이터 변화가 경영목표 · 리스크 · 영업 판단에 주는 의미를 판단해 중요도를 정한다.\n" + JUDGE_COMMON
+PLANNER_SYSTEM = "너는 NH농협은행 경영 의사결정 플랫폼의 계획(플래너) 에이전트다. 이번 실행에서 다시 서술할 의견, 근거 검색 방향, 후속 업무 워크플로우를 정해 비용과 최신성의 균형을 맞춘다.\n" + JUDGE_COMMON
+ORCHESTRATOR_SYSTEM = "너는 NH농협은행 경영 의사결정 플랫폼의 오케스트레이터 에이전트다. 이벤트가 어느 부서 업무 판단에 영향을 주는지 보고 추가로 실행할 워크플로우를 고른다. 연쇄 실행은 꼭 필요할 때만.\n" + JUDGE_COMMON
+
 # (code, name, role, kind, profile, prompt_system)
 AGENTS = [
     ("narrator_model", "모형 모니터링 서술", "신용평가모형 모니터링 결과(6B 등급 특이사항 등) 의견 서술", "llm", "default", NARRATOR_SYSTEM),
     ("narrator_inclusive", "포용금융 리스크 서술", "포용금융 충당금 비중 분석 의견 서술", "llm", "default", NARRATOR_SYSTEM),
     ("narrator_branch", "영업점 영업 가이드 서술", "업적평가 기준 변경에 따른 영업 가이드 의견 서술 — 본부 내부 문서는 인용하지 않음", "llm", "default", NARRATOR_SYSTEM),
     ("narrator_hq", "경영목표 검토 서술", "여신 현황·목표 이탈·제안 근거 서술", "llm", "default", NARRATOR_SYSTEM),
-    ("change_detector", "변화 감지", "지표 값 · 데이터 버전 변화를 커널로 비교해 유의 변화(주요 · 일반)를 판정하고 변화 피드 · change.detected 이벤트로 알림 (규칙 CHANGE_SIGNIFICANCE)", "rule", None, ""),
-    ("planner", "실행 계획", "원인 · 변화 · 서술 이력으로 이번 실행의 서술(LLM) 대상과 근거 검색 여부를 결정 — 바뀐 것이 없으면 LLM 미호출 (규칙 PLANNER_POLICY)", "rule", None, ""),
-    ("orchestrator", "오케스트레이터", "워크플로우 간 의존(지표 참조 · 근거 검색 전 그래프 투영 · 설정)을 보고 하위 작업을 미루거나 상위 완료 즉시 실행 (설정 orchestrator.policy)", "rule", None, ""),
+    ("change_detector", "변화 감지", "커널이 계산한 지표 · 데이터 변화 후보의 업무상 중요도를 LLM 이 판단(주요 · 일반 · 무시 + 사유) → 변화 피드 · change.detected. LLM 미연결 · 실패 시 규칙 CHANGE_SIGNIFICANCE", "llm", "default", CHANGE_ANALYST_SYSTEM),
+    ("planner", "실행 계획", "LLM 이 원인 · 판단된 변화 · 서술 이력으로 서술 대상 · 근거 검색어 · 후속 워크플로우를 결정(허용 목록 검증). LLM 미연결 · 실패 시 규칙 PLANNER_POLICY", "llm", "default", PLANNER_SYSTEM),
+    ("orchestrator", "오케스트레이터", "이벤트마다 LLM 이 영향받는 워크플로우를 추가 지정하고, 실행 순서(상위 대기 · 원인 연쇄 · 즉시 실행)는 규칙으로 보장 (설정 orchestrator.policy)", "llm", "default", ORCHESTRATOR_SYSTEM),
     ("critic", "서술 검증", "리터럴 숫자 · 미등록 마커 · 인과 단정 차단 (규칙 기반)", "rule", None, ""),
     ("ontology_extractor", "온톨로지 구조화", "문서 → 엔티티·관계 추출 (스키마 검증 후 그래프 반영)", "llm", "default", EXTRACTOR_SYSTEM),
     ("embedder", "문서 임베딩", "청크 임베딩(pgvector) — 임베딩 모델 지정 필요", "llm", "embedding", ""),

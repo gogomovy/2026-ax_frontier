@@ -2329,6 +2329,7 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 변화 감지 `change_detector` | 노드 `detect_changes`(지표 계산 직후) | 지표 직전값 대비 DIFF · GROWTH_RATE → 기준 배수 판정, 데이터셋 버전 변화 → `change_feed` · `change.detected` |
 | 플래너 `planner` | 노드 `plan_run`(근거 검색 직전) | 원인 × 변화 × 서술 이력 → `ctx.state.plan{narrate, candidates, why, skip, evidence, llm}` → `retrieve_evidence` · `narrate` 가 따름 |
 | 서술 `narrator_*` · 검증 `critic` | 기존 노드 | 계획 대상만 서술, 검증 통과 시 `narrated` 결정 기록 |
+| LLM 판단 (B.31) | `workflow/llm_judge.ask_json` — 프롬프트(에이전트 버전) + GUARD + 자료 구분자, JSON 필수 키 검증, 실패 · 형식 오류 · 미연결 → None(규칙), 연속 실패 쉼. 변화 감지: 커널 후보(candidate_factor) → LLM 등급 · 사유 · 묶음. 플래너: 규칙 기준안 + LLM narrate · evidence.query · followups → 허용 목록 검증. 오케스트레이터: `dispatch_once` 에서 `route()`(LLM add) · `claim_job` 에서 `gate`(상위 · 원인 연쇄 대기), 후속은 `publish` 뒤 `agent.followup` |
 | 결정 기록 | `ops.agent_decision`(0009) | `GET /admin/agents/decisions` · `GET /admin/agents/topology` · 화면 `/admin/monitor/agents`, 업무 화면 `GET /screens/changes`(리소스 `changes`) |
 
 ### 19.9 배포 (DEP-01~04)

@@ -85,8 +85,8 @@ export function BranchKpiBoard({ dashboard }: { dashboard: BranchDashboard }) {
   const { scorecard, alerts } = dashboard;
   const kpis = scorecard.groups.filter((g) => g.kind === "kpi");
   const adj = scorecard.groups.find((g) => g.kind === "adjustment");
-  const ITEM_TAB: Record<string, string> = { CORE_PRIME: "prime-corp", INCL_SEOMIN: "seomin" };
-  const tabOf = (code: string) => (alerts.some((a) => a.tabKey === ITEM_TAB[code]) ? ITEM_TAB[code] : undefined);
+  // 득점표 항목 → 그 항목의 기준 변경 알림 탭 (산출물의 itemCode 로 연결)
+  const tabOf = (code: string) => alerts.find((a) => a.itemCode === code)?.tabKey;
 
   return (
     <div className="flex flex-col gap-lg">

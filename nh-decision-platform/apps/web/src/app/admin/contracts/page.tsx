@@ -66,7 +66,7 @@ function bindingLabel(b: Record<string, unknown>): string {
 
 /** 컬럼 정의서 — 업무 담당자가 정의한 화면 테이블의 컬럼·원천·산식을 지표에 연결하고, 정의서 화면값과 계산값을 대조 (DCT-01~08) */
 export default function ContractsAdmin() {
-  const data = useApiData<{ tables: ContractTable[]; metrics: string[] }>("/admin/contracts");
+  const data = useApiData<{ tables: ContractTable[]; metrics: string[]; workflow: string | null }>("/admin/contracts");
   const { run, busy } = useAction();
   const [tab, setTab] = useState<string>("T01");
   const [filter, setFilter] = useState<string>("all");
@@ -89,7 +89,7 @@ export default function ContractsAdmin() {
       title="컬럼 정의서"
       description="종기부 컬럼정의서(T01 현황 · T02 데이터분석 · T03 목표설정)의 각 컬럼을 지표(커널 계산)·서술·기준값에 연결합니다. 실행마다 mart 테이블에 적재하고, 정의서의 화면값과 계산값을 단위 환산해 대조합니다."
       actions={
-        <Button size="sm" variant="confirm" disabled={busy} onClick={() => run(() => apiPost("/admin/workflows/wf_hq_goal_review/run"), "다시 계산을 요청했습니다", data.reload)}>
+        <Button size="sm" variant="confirm" disabled={busy || !data.data?.workflow} onClick={() => run(() => apiPost(`/admin/workflows/${data.data?.workflow}/run`), "다시 계산을 요청했습니다", data.reload)}>
           다시 계산
         </Button>
       }

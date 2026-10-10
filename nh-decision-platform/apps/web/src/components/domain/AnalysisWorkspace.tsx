@@ -27,9 +27,12 @@ const TABS: { key: TabKey; label: string }[] = [
 export function AnalysisWorkspace({
   overview,
   comparison,
+  workflow,
 }: {
   overview: LoanOverview;
   comparison: ComparisonView;
+  /** 화면 산출물을 만드는 워크플로우(서버 제공) — 없으면 '분석 다시 실행' 숨김 */
+  workflow?: string | null;
 }) {
   const [tab, setTab] = useState<TabKey>("revenue");
   const { revenue, corporate, household } = overview;
@@ -40,7 +43,7 @@ export function AnalysisWorkspace({
         eyebrow="2단계"
         title="데이터 분석"
         description="여신 실적을 원천 데이터 기준으로 해석합니다. 수치는 원천 파일·셀까지 추적되고, 해설은 인과 단정 없이 기술됩니다."
-        actions={<OnDemandAnalysis workflow="wf_hq_goal_review" />}
+        actions={workflow ? <OnDemandAnalysis workflow={workflow} /> : null}
       >
         <PillTabs
           label="분석 영역"
