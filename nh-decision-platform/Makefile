@@ -1,0 +1,74 @@
+SHELL := /bin/bash
+COMPOSE := docker compose
+
+.PHONY: help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass
+
+help:
+	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
+	@echo "make up          - .env 준비 → 이미지 빌드 → 6개 서비스 기동 (최초 시드 자동)"
+	@echo "make ps          - 상태 확인"
+	@echo "make logs        - 전체 로그 (s=api 처럼 서비스 지정 가능)"
+	@echo "make down        - 중지 (데이터 유지)"
+	@echo "make reset       - 중지 + 볼륨 삭제 (초기 상태로)"
+	@echo "make seed        - 기본 설정·목데이터 시드 재실행 (멱등)"
+	@echo "make test        - 백엔드 테스트 (api 컨테이너)"
+	@echo "make e2e         - 브라우저 E2E (기동 중인 스택 대상, Node 20+ 필요)"
+	@echo "make eval        - 골든셋 평가 (기준값 대조 · 결과를 관리자 [골든셋 평가]에 게시)"
+	@echo "make perf        - 성능 측정 (주요 API p50 · p95 · 기준치 대조)"
+	@echo "make admin-pass  - 최초 관리자 사번·비밀번호 표시"
+	@echo ""
+	@echo "── 프론트만 (도커 없이, 목데이터) ─────────────────────────"
+	@echo "make web-dev     - apps/web 개발 서버"
+
+env:
+	@bash infra/scripts/ensure-env.sh
+
+build: env
+	$(COMPOSE) build
+
+up: env
+	$(COMPOSE) up -d --build
+	@echo ""
+	@echo "  WEB      → http://localhost:$${WEB_PORT:-3000}   (로그인 화면)"
+	@echo "  API      → http://localhost:$${API_PORT:-8000}/docs"
+	@echo "  LiteLLM  → http://localhost:$${LITELLM_PORT:-4000}/ui"
+	@echo "  Neo4j    → http://localhost:$${NEO4J_HTTP_PORT:-7474}"
+	@echo "  최초 관리자 계정: make admin-pass"
+
+ps:
+	$(COMPOSE) ps
+
+logs:
+	$(COMPOSE) logs -f --tail=150 $(s)
+
+restart:
+	$(COMPOSE) restart $(s)
+
+down:
+	$(COMPOSE) down
+
+reset:
+	$(COMPOSE) down -v
+
+seed:
+	$(COMPOSE) exec api python -m nhdip.cli seed
+
+test:
+	$(COMPOSE) exec api python -m pytest -q tests
+e2e:
+	cd apps/e2e && npm install --no-audit --no-fund >/dev/null && \
+	set -a && . ../../.env && set +a && \
+	E2E_ADMIN_EMP="$$BOOTSTRAP_ADMIN_EMP_NO" E2E_ADMIN_PW="$$BOOTSTRAP_ADMIN_PASSWORD" E2E_BASE="http://localhost:$${WEB_PORT:-3000}" node e2e.mjs
+
+eval:
+	$(COMPOSE) exec api python -m nhdip.evals --publish
+perf:
+	$(COMPOSE) exec api python -m nhdip.perf
+api-sh:
+	$(COMPOSE) exec api bash
+
+admin-pass:
+	@grep -E '^BOOTSTRAP_ADMIN_(EMP_NO|PASSWORD)=' .env
+
+web-dev:
+	cd apps/web && npm install && npm run dev

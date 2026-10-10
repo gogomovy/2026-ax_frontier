@@ -1,0 +1,17 @@
+{
+  "note": "성능 기준치 (작업 8.3 · Q38 추천안) — 단일 노드 Docker 기준 p95(ms). 운영 장비 확정 시 측정값으로 다시 맞춘다",
+  "max_error_rate": 0.0,
+  "scenarios": [
+    {"name": "메뉴 · 세션", "path": "/me/menu", "p95_ms": 300},
+    {"name": "종합기획부 대시보드", "path": "/screens/hq-dashboard", "p95_ms": 400},
+    {"name": "리스크 대시보드", "path": "/screens/risk-dashboard", "p95_ms": 400},
+    {"name": "모형 모니터링 보고서", "path": "/screens/reports/model-monitoring", "p95_ms": 400},
+    {"name": "경영목표 제안", "path": "/screens/proposals", "p95_ms": 400},
+    {"name": "전파 경로(서버 계산)", "path": "/cascade/tree", "p95_ms": 500},
+    {"name": "근거 검색", "path": "/screens/search?q=%ED%8F%AC%EC%9A%A9%EA%B8%88%EC%9C%B5%20%EA%B3%B5%EA%B8%89%20%ED%99%95%EB%8C%80", "p95_ms": 800},
+    {"name": "문서 뷰어", "path": "/documents/view?id=doc-gov-inclusive&q=%ED%8F%AC%EC%9A%A9%EA%B8%88%EC%9C%B5", "p95_ms": 800},
+    {"name": "질의 패널(LLM 없음)", "method": "POST", "path": "/assist", "json": {"question": "포용금융 충당금 비중은?"}, "p95_ms": 2000, "n": 12, "c": 2},
+    {"name": "보고서 PDF 변환", "path": "/reports/model-monitoring/export?format=pdf", "p95_ms": 4000, "n": 8, "c": 2},
+    {"name": "보고서 HWPX 변환", "path": "/reports/model-monitoring/export?format=hwpx", "p95_ms": 4000, "n": 8, "c": 2}
+  ]
+}

@@ -1,0 +1,29 @@
+const API_MODE = (process.env.NEXT_PUBLIC_DATA_SOURCE ?? "mock") === "api";
+// 백엔드 내부 주소 — docker compose 에서는 http://api:8000 (빌드 인자 + 런타임 환경변수)
+const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: "standalone",
+  reactStrictMode: true,
+  poweredByHeader: false,
+  async redirects() {
+    // 3단계 흐름으로 재편하면서 이전 경로를 유지한다. (API 모드의 `/` 는 사용자 권한 첫 화면으로 — app/page.tsx)
+    return [
+      ...(API_MODE ? [] : [{ source: "/", destination: "/hq/overview", permanent: false }]),
+      { source: "/hq/dashboard", destination: "/hq/overview", permanent: false },
+      { source: "/hq/dashboard/loan", destination: "/hq/analysis", permanent: false },
+      { source: "/hq/dashboard/loan/:path*", destination: "/hq/analysis", permanent: false },
+      { source: "/hq/goals/loan", destination: "/hq/goals", permanent: false },
+    ];
+  },
+  async rewrites() {
+    // 브라우저 → 같은 출처 /backend/* → FastAPI (세션 쿠키를 같은 출처로 유지)
+    return [{ source: "/backend/:path*", destination: `${API_INTERNAL_URL}/:path*` }];
+  },
+  env: {
+    NEXT_PUBLIC_DATA_SOURCE: process.env.NEXT_PUBLIC_DATA_SOURCE ?? "mock",
+    NEXT_PUBLIC_AS_OF: process.env.NEXT_PUBLIC_AS_OF ?? "2026-08-31",
+  },
+};
+export default nextConfig;

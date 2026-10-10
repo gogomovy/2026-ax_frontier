@@ -1,0 +1,418 @@
+[
+ {
+  "id": "goal-q3-revenue",
+  "domainCode": "loan",
+  "subDomain": "revenue",
+  "title": "3분기 여신 수익 1.75조원 이상",
+  "targetType": "amount",
+  "direction": "increase",
+  "targetValue": 1.75,
+  "unit": "KRW_TN",
+  "decimals": 2,
+  "periodLabel": "2026.3Q",
+  "status": "active",
+  "creationMode": "existing",
+  "updatedAt": "2026-06-30",
+  "version": 1,
+  "metricLabel": "여신 수익(분기)",
+  "actual": {
+   "id": "g1_actual",
+   "label": "3분기 진행 실적(8월까지)",
+   "value": 1.21,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "gap": {
+   "id": "g1_gap",
+   "label": "목표까지 잔여",
+   "value": -0.54,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "gapLabel": "목표까지",
+  "gapVerdict": "on_track",
+  "history": [
+   {
+    "version": 1,
+    "at": "2026-06-30",
+    "actor": "종합기획부 김민수",
+    "to": "1.75조원 이상",
+    "reason": "하반기 사업계획 확정에 따른 신규 설정",
+    "creationMode": "existing",
+    "evidenceIds": [
+     "ev-goal-bizplan"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "goal-annual-revenue",
+  "domainCode": "loan",
+  "subDomain": "revenue",
+  "title": "2026년 여신(일반)부문 이자마진 수익 3.30조원 이상",
+  "targetType": "amount",
+  "direction": "increase",
+  "targetValue": 3.3,
+  "unit": "KRW_TN",
+  "decimals": 2,
+  "periodLabel": "2026 연간",
+  "status": "active",
+  "creationMode": "existing",
+  "updatedAt": "2025-12-27",
+  "version": 1,
+  "metricLabel": "여신(일반)부문 이자마진 수익",
+  "actual": {
+   "id": "g2_actual",
+   "label": "8월 누계 실적",
+   "value": 2.19,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "gap": {
+   "id": "g2_gap",
+   "label": "목표 진행률",
+   "value": 66.3,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "gapLabel": "진행률",
+  "gapSigned": false,
+  "gapVerdict": "on_track",
+  "history": [
+   {
+    "version": 1,
+    "at": "2025-12-27",
+    "actor": "종합기획부 김민수",
+    "to": "3.30조원 이상",
+    "reason": "2026년 사업계획 반영",
+    "creationMode": "existing",
+    "evidenceIds": [
+     "ev-goal-bizplan"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "goal-corp-growth",
+  "domainCode": "loan",
+  "subDomain": "corporate",
+  "title": "기업여신 전년 대비 +7.0% 이상 확대",
+  "targetType": "growth",
+  "direction": "increase",
+  "targetValue": 7,
+  "unit": "PCT",
+  "decimals": 1,
+  "periodLabel": "2026 연간",
+  "status": "ai_proposed",
+  "creationMode": "existing",
+  "updatedAt": "2026-07-03",
+  "version": 3,
+  "metricLabel": "기업자금대출금 증가율",
+  "actual": {
+   "id": "corp_growth",
+   "label": "기업여신 증가율(전년 동기 대비)",
+   "value": 4.04,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "calc": {
+    "calcId": "calc-corp-growth",
+    "formulaId": "GROWTH_RATE",
+    "formulaVersion": 1,
+    "expression": "(당기 − 전기) / |전기| × 100",
+    "inputs": [
+     {
+      "key": "v0",
+      "label": "기업자금대출금 (전년 동기)",
+      "value": "110,860,000",
+      "unit": "백만원",
+      "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
+     },
+     {
+      "key": "v1",
+      "label": "기업자금대출금 (당기)",
+      "value": "115,340,000",
+      "unit": "백만원",
+      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00",
+    "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
+   }
+  },
+  "gap": {
+   "id": "corp_gap",
+   "label": "목표 대비 이탈",
+   "value": -2.96,
+   "unit": "PP",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "calc": {
+    "calcId": "calc-corp-gap",
+    "formulaId": "DIFF",
+    "formulaVersion": 1,
+    "expression": "실적 증가율 − 목표 증가율",
+    "inputs": [
+     {
+      "key": "v1",
+      "label": "실적 증가율",
+      "value": "4.0411",
+      "unit": "%",
+      "source": "calc-corp-growth"
+     },
+     {
+      "key": "v0",
+      "label": "목표 증가율",
+      "value": "7.0000",
+      "unit": "%",
+      "source": "goal.goal_version(goal-corp-growth, v3)"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "gapLabel": "목표 이탈",
+  "gapVerdict": "below",
+  "history": [
+   {
+    "version": 1,
+    "at": "2025-12-27",
+    "actor": "종합기획부 김민수",
+    "to": "+6.0% 이상",
+    "reason": "2026년 사업계획 초안",
+    "creationMode": "existing",
+    "evidenceIds": [
+     "ev-goal-bizplan"
+    ]
+   },
+   {
+    "version": 2,
+    "at": "2026-02-24",
+    "actor": "종합기획부 김민수",
+    "from": "+6.0% 이상",
+    "to": "+6.5% 이상",
+    "reason": "정부 생산적 금융 공급 확대 방안 발표 반영",
+    "creationMode": "user_manual",
+    "evidenceIds": [
+     "ev-corp-policy"
+    ]
+   },
+   {
+    "version": 3,
+    "at": "2026-07-03",
+    "actor": "종합기획부 이수정",
+    "from": "+6.5% 이상",
+    "to": "+7.0% 이상",
+    "reason": "하반기 경영전략회의 기업여신 확대 기조 강화",
+    "creationMode": "ai_proposed",
+    "evidenceIds": [
+     "ev-corp-mgmt"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "goal-hh-control",
+  "domainCode": "loan",
+  "subDomain": "household",
+  "title": "가계여신 전년 대비 +4.0% 이하 관리",
+  "targetType": "limit",
+  "direction": "decrease",
+  "targetValue": 4,
+  "unit": "PCT",
+  "decimals": 1,
+  "periodLabel": "2026 연간",
+  "status": "ai_proposed",
+  "creationMode": "existing",
+  "updatedAt": "2026-03-10",
+  "version": 2,
+  "metricLabel": "가계자금대출금 증가율",
+  "actual": {
+   "id": "hh_growth",
+   "label": "가계여신 증가율(전년 동기 대비)",
+   "value": 6.5,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "calc": {
+    "calcId": "calc-hh-growth",
+    "formulaId": "GROWTH_RATE",
+    "formulaVersion": 1,
+    "expression": "(당기 − 전기) / |전기| × 100",
+    "inputs": [
+     {
+      "key": "v0",
+      "label": "가계자금대출금 (전년 동기)",
+      "value": "93,180,000",
+      "unit": "백만원",
+      "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+     },
+     {
+      "key": "v1",
+      "label": "가계자금대출금 (당기)",
+      "value": "99,240,000",
+      "unit": "백만원",
+      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00",
+    "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
+   }
+  },
+  "gap": {
+   "id": "hh_gap",
+   "label": "관리목표 대비 초과",
+   "value": 2.5,
+   "unit": "PP",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "calc": {
+    "calcId": "calc-hh-gap",
+    "formulaId": "DIFF",
+    "formulaVersion": 1,
+    "expression": "실적 증가율 − 관리목표 상한",
+    "inputs": [
+     {
+      "key": "v1",
+      "label": "실적 증가율",
+      "value": "6.5035",
+      "unit": "%",
+      "source": "calc-hh-growth"
+     },
+     {
+      "key": "v0",
+      "label": "관리목표 상한",
+      "value": "4.0000",
+      "unit": "%",
+      "source": "goal.goal_version(goal-hh-control, v2)"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "gapLabel": "관리목표 초과",
+  "gapVerdict": "breach",
+  "history": [
+   {
+    "version": 1,
+    "at": "2025-12-27",
+    "actor": "종합기획부 김민수",
+    "to": "+4.5% 이하",
+    "reason": "2026년 사업계획 반영",
+    "creationMode": "existing",
+    "evidenceIds": [
+     "ev-goal-bizplan"
+    ]
+   },
+   {
+    "version": 2,
+    "at": "2026-03-10",
+    "actor": "종합기획부 이수정",
+    "from": "+4.5% 이하",
+    "to": "+4.0% 이하",
+    "reason": "2026년 가계부채 관리방안 발표 반영",
+    "creationMode": "user_manual",
+    "evidenceIds": [
+     "ev-hh-policy"
+    ]
+   }
+  ]
+ },
+ {
+  "id": "goal-hh-balance",
+  "domainCode": "loan",
+  "subDomain": "household",
+  "title": "가계여신 잔액 100.00조원 이하 관리",
+  "targetType": "limit",
+  "direction": "maintain",
+  "targetValue": 100,
+  "unit": "KRW_TN",
+  "decimals": 2,
+  "periodLabel": "2026 연간",
+  "status": "active",
+  "creationMode": "existing",
+  "updatedAt": "2025-12-27",
+  "version": 1,
+  "metricLabel": "가계자금대출금 잔액",
+  "actual": {
+   "id": "hh_bal",
+   "label": "가계자금대출금 잔액(2026.08말)",
+   "value": 99.24,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "sourceRef": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+  },
+  "gap": {
+   "id": "g5_gap",
+   "label": "한도 여유",
+   "value": 0.76,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "calc": {
+    "calcId": "calc-hh-balance-headroom",
+    "formulaId": "CAP_HEADROOM",
+    "formulaVersion": 1,
+    "expression": "관리 한도 − 현재 잔액",
+    "inputs": [
+     {
+      "key": "cap_value",
+      "label": "잔액 관리 한도",
+      "value": "100,000,000",
+      "unit": "백만원",
+      "source": "2026년 사업계획(여신 부문).pdf p.11"
+     },
+     {
+      "key": "proposed_value",
+      "label": "2026.08말 잔액",
+      "value": "99,240,000",
+      "unit": "백만원",
+      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "gapVerdict": "near_limit"
+ },
+ {
+  "id": "goal-grade-5c",
+  "domainCode": "loan",
+  "subDomain": "quality",
+  "title": "신용등급 5C 이상 차주 비중 62%대 유지",
+  "targetType": "ratio",
+  "direction": "maintain",
+  "targetValue": 62,
+  "unit": "PCT",
+  "decimals": 1,
+  "periodLabel": "2026 연간",
+  "status": "active",
+  "creationMode": "existing",
+  "updatedAt": "2025-12-27",
+  "version": 1,
+  "metricLabel": "5C 이상 차주 비중",
+  "actual": {
+   "id": "g6_actual",
+   "label": "2026.08말 실적",
+   "value": 61.4,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "gap": {
+   "id": "g6_gap",
+   "label": "목표 대비 차이",
+   "value": -0.6,
+   "unit": "PP",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "gapLabel": "목표 대비",
+  "gapVerdict": "near_limit"
+ }
+]

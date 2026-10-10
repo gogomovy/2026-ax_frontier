@@ -1,0 +1,935 @@
+[
+ {
+  "id": "att-corp-gap",
+  "kind": "attention",
+  "persona": "P1",
+  "domainCode": "loan",
+  "subDomain": "corporate",
+  "title": "기업여신 증가율이 현재 경영목표를 하회하고 있습니다",
+  "statement": "기업여신 증가율은 [[fig:corp_growth]]로 현재 경영목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 기업여신 구성비도 2024년 8월 대비 [[fig:corp_share_delta]] 낮아져, 정부 정책과 내부 의사결정에서 확인되는 기업여신 확대 기조와 다른 방향으로 운영되고 있는 점이 주요 변화로 확인됩니다.",
+  "severity": "caution",
+  "asOf": "2026-08-31",
+  "dataOrigin": "simulated",
+  "figures": {
+   "corp_growth": {
+    "id": "corp_growth",
+    "label": "기업여신 증가율(전년 동기 대비)",
+    "value": 4.04,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-corp-growth",
+     "formulaId": "GROWTH_RATE",
+     "formulaVersion": 1,
+     "expression": "(당기 − 전기) / |전기| × 100",
+     "inputs": [
+      {
+       "key": "v0",
+       "label": "기업자금대출금 (전년 동기)",
+       "value": "110,860,000",
+       "unit": "백만원",
+       "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
+      },
+      {
+       "key": "v1",
+       "label": "기업자금대출금 (당기)",
+       "value": "115,340,000",
+       "unit": "백만원",
+       "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00",
+     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
+    }
+   },
+   "corp_goal": {
+    "id": "corp_goal",
+    "label": "현재 경영목표",
+    "value": 7,
+    "unit": "PCT",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "corp_gap": {
+    "id": "corp_gap",
+    "label": "목표 대비 이탈",
+    "value": -2.96,
+    "unit": "PP",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-corp-gap",
+     "formulaId": "DIFF",
+     "formulaVersion": 1,
+     "expression": "실적 증가율 − 목표 증가율",
+     "inputs": [
+      {
+       "key": "v1",
+       "label": "실적 증가율",
+       "value": "4.0411",
+       "unit": "%",
+       "source": "calc-corp-growth"
+      },
+      {
+       "key": "v0",
+       "label": "목표 증가율",
+       "value": "7.0000",
+       "unit": "%",
+       "source": "goal.goal_version(goal-corp-growth, v3)"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "corp_share_delta": {
+    "id": "corp_share_delta",
+    "label": "기업여신 구성비 증감(2024→2026)",
+    "value": -0.91,
+    "unit": "PP",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-corp-share-delta",
+     "formulaId": "SHARE_DELTA_PP",
+     "formulaVersion": 1,
+     "expression": "2026 구성비 − 2024 구성비",
+     "inputs": [
+      {
+       "key": "share1",
+       "label": "2026.08 구성비",
+       "value": "53.7515",
+       "unit": "%",
+       "source": "calc-corp-share"
+      },
+      {
+       "key": "share0",
+       "label": "2024.08 구성비",
+       "value": "54.6615",
+       "unit": "%",
+       "source": "fact.loan_balance_monthly(202408)"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   }
+  },
+  "evidence": [
+   {
+    "id": "ev-att-corp-data",
+    "category": "bank_data",
+    "label": "기업자금대출금 증가율 및 구성비(3개년)",
+    "sourceKind": "calc_run",
+    "snippet": "증가율 4.04% · 목표 7.0% · 이탈 −2.96%p",
+    "figureId": "corp_gap",
+    "tableRef": "calc.calc_run(GROWTH_RATE, SHARE)"
+   },
+   {
+    "id": "ev-att-corp-policy",
+    "category": "external_policy",
+    "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
+    "sourceKind": "doc_chunk",
+    "relevance": 0.88,
+    "doc": {
+     "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
+     "issuer": "금융위원회",
+     "effectiveDate": "2026-02-20",
+     "page": 5,
+     "sectionPath": "Ⅲ. 기업여신 공급 확대",
+     "dbClass": "gov_policy",
+     "isOfficial": true,
+     "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf"
+    }
+   },
+   {
+    "id": "ev-att-corp-mgmt",
+    "category": "internal_direction",
+    "label": "2026년 하반기 경영전략회의 결과",
+    "sourceKind": "doc_chunk",
+    "relevance": 0.91,
+    "doc": {
+     "title": "2026년 하반기 경영전략회의 결과",
+     "issuer": "경영전략회의",
+     "effectiveDate": "2026-07-03",
+     "page": 4,
+     "sectionPath": "3. 여신 부문 운영방향",
+     "dbClass": "mgmt_decision",
+     "fileName": "2026년 하반기 경영전략회의 결과.pdf"
+    }
+   }
+  ],
+  "verifications": [
+   {
+    "checkCode": "numeric_provenance",
+    "passed": true,
+    "detail": "모든 수치가 계산 결과를 참조"
+   },
+   {
+    "checkCode": "evidence_present",
+    "passed": true,
+    "detail": "근거 3범주 충족 여부 확인"
+   },
+   {
+    "checkCode": "causality_language",
+    "passed": true,
+    "detail": "인과 단정 표현 미검출"
+   },
+   {
+    "checkCode": "alignment",
+    "passed": true,
+    "detail": "상위 기준과 정합"
+   }
+  ],
+  "rankScore": 92.4,
+  "rankBasis": "목표 이탈 폭(2.96%p → 34.2점) + 목표 중요도(상 → 25.0점) + 변화 속도(3개년 연속 → 18.4점) + 정책 정합성 영향(상 → 14.8점)",
+  "relatedGoalId": "goal-corp-growth"
+ },
+ {
+  "id": "att-hh-limit",
+  "kind": "attention",
+  "persona": "P1",
+  "domainCode": "loan",
+  "subDomain": "household",
+  "title": "가계여신 잔액이 관리목표 상단에 근접했습니다",
+  "statement": "가계여신 잔액은 [[fig:hh_bal]]으로 관리 한도 100.00조원의 99.2%를 소진했습니다. 증가율도 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과한 수준입니다. 가계 부문 신용RWA 소진율은 92.3%로 자본 여력 관점의 여유도 축소되고 있습니다.",
+  "severity": "watch",
+  "asOf": "2026-08-31",
+  "dataOrigin": "simulated",
+  "figures": {
+   "hh_bal": {
+    "id": "hh_bal",
+    "label": "가계자금대출금 잔액(2026.08말)",
+    "value": 99.24,
+    "unit": "KRW_TN",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "sourceRef": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+   },
+   "hh_growth": {
+    "id": "hh_growth",
+    "label": "가계여신 증가율(전년 동기 대비)",
+    "value": 6.5,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-hh-growth",
+     "formulaId": "GROWTH_RATE",
+     "formulaVersion": 1,
+     "expression": "(당기 − 전기) / |전기| × 100",
+     "inputs": [
+      {
+       "key": "v0",
+       "label": "가계자금대출금 (전년 동기)",
+       "value": "93,180,000",
+       "unit": "백만원",
+       "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+      },
+      {
+       "key": "v1",
+       "label": "가계자금대출금 (당기)",
+       "value": "99,240,000",
+       "unit": "백만원",
+       "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00",
+     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
+    }
+   },
+   "hh_goal": {
+    "id": "hh_goal",
+    "label": "현재 관리목표",
+    "value": 4,
+    "unit": "PCT",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "hh_gap": {
+    "id": "hh_gap",
+    "label": "관리목표 대비 초과",
+    "value": 2.5,
+    "unit": "PP",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-hh-gap",
+     "formulaId": "DIFF",
+     "formulaVersion": 1,
+     "expression": "실적 증가율 − 관리목표 상한",
+     "inputs": [
+      {
+       "key": "v1",
+       "label": "실적 증가율",
+       "value": "6.5035",
+       "unit": "%",
+       "source": "calc-hh-growth"
+      },
+      {
+       "key": "v0",
+       "label": "관리목표 상한",
+       "value": "4.0000",
+       "unit": "%",
+       "source": "goal.goal_version(goal-hh-control, v2)"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   }
+  },
+  "evidence": [
+   {
+    "id": "ev-att-hh-data",
+    "category": "bank_data",
+    "label": "가계자금대출금 잔액·증가율·RWA 소진율",
+    "sourceKind": "calc_run",
+    "snippet": "잔액 99.24조원 / 한도 100.00조원 · 증가율 6.50%",
+    "figureId": "hh_bal",
+    "tableRef": "calc.calc_run(GROWTH_RATE, CAP_HEADROOM)"
+   },
+   {
+    "id": "ev-att-hh-policy",
+    "category": "external_policy",
+    "label": "가계부채 관리방안(2026년)",
+    "sourceKind": "doc_chunk",
+    "relevance": 0.9,
+    "doc": {
+     "title": "가계부채 관리방안(2026년)",
+     "issuer": "금융위원회·금융감독원",
+     "effectiveDate": "2026-03-05",
+     "page": 2,
+     "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
+     "dbClass": "gov_policy",
+     "isOfficial": true,
+     "fileName": "금융위원회_2026년 가계부채 관리방안.pdf"
+    }
+   },
+   {
+    "id": "ev-att-hh-mgmt",
+    "category": "internal_direction",
+    "label": "2026년 사업계획(여신 부문)",
+    "sourceKind": "doc_chunk",
+    "relevance": 0.85,
+    "doc": {
+     "title": "2026년 사업계획(여신 부문)",
+     "issuer": "종합기획부",
+     "effectiveDate": "2025-12-27",
+     "page": 11,
+     "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
+     "dbClass": "mgmt_decision",
+     "fileName": "2026년 사업계획(여신 부문).pdf"
+    }
+   }
+  ],
+  "verifications": [
+   {
+    "checkCode": "numeric_provenance",
+    "passed": true,
+    "detail": "모든 수치가 계산 결과를 참조"
+   },
+   {
+    "checkCode": "evidence_present",
+    "passed": true,
+    "detail": "근거 3범주 충족 여부 확인"
+   },
+   {
+    "checkCode": "causality_language",
+    "passed": true,
+    "detail": "인과 단정 표현 미검출"
+   },
+   {
+    "checkCode": "alignment",
+    "passed": true,
+    "detail": "상위 기준과 정합"
+   }
+  ],
+  "rankScore": 86.1,
+  "rankBasis": "한도 소진율(99.2% → 32.6점) + 목표 초과(2.50%p → 26.5점) + 목표 중요도(상 → 25.0점) + 자본 영향(2.0점)",
+  "relatedGoalId": "goal-hh-balance"
+ },
+ {
+  "id": "att-nim-share",
+  "kind": "attention",
+  "persona": "P1",
+  "domainCode": "loan",
+  "subDomain": "revenue",
+  "title": "여신 이자마진 비중이 3개년 연속 축소되고 있습니다",
+  "statement": "전체 수익 중 여신(일반)부문 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] 낮아졌습니다. 전체 수익은 [[fig:total_rev_growth]] 증가한 반면 여신 이자마진 수익은 [[fig:nim_growth]] 증가하여 증가 속도 차이가 유지되고 있습니다.",
+  "severity": "watch",
+  "asOf": "2026-08-31",
+  "dataOrigin": "simulated",
+  "figures": {
+   "total_rev_2026": {
+    "id": "total_rev_2026",
+    "label": "전체 수익(2026.08 누계)",
+    "value": 48124,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+   },
+   "total_rev_2025": {
+    "id": "total_rev_2025",
+    "label": "전체 수익(2025.08 누계)",
+    "value": 46032,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+   },
+   "total_rev_growth": {
+    "id": "total_rev_growth",
+    "label": "전체 수익 증가율",
+    "value": 4.54,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-rev-growth",
+     "formulaId": "GROWTH_RATE",
+     "formulaVersion": 1,
+     "expression": "(당기 − 전기) / |전기| × 100",
+     "inputs": [
+      {
+       "key": "v0",
+       "label": "전체 수익 (전년 동기)",
+       "value": "4,603,180",
+       "unit": "백만원",
+       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+      },
+      {
+       "key": "v1",
+       "label": "전체 수익 (당기)",
+       "value": "4,812,360",
+       "unit": "백만원",
+       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00",
+     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
+    }
+   },
+   "nim_2026": {
+    "id": "nim_2026",
+    "label": "여신(일반)부문 이자마진 수익(2026.08 누계)",
+    "value": 21865,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+   },
+   "nim_2025": {
+    "id": "nim_2025",
+    "label": "여신(일반)부문 이자마진 수익(2025.08 누계)",
+    "value": 21129,
+    "unit": "KRW_BN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+   },
+   "nim_growth": {
+    "id": "nim_growth",
+    "label": "여신 이자마진 수익 증가율",
+    "value": 3.49,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-nim-growth",
+     "formulaId": "GROWTH_RATE",
+     "formulaVersion": 1,
+     "expression": "(당기 − 전기) / |전기| × 100",
+     "inputs": [
+      {
+       "key": "v0",
+       "label": "여신(일반)부문 이자마진 수익 (전년 동기)",
+       "value": "2,112,880",
+       "unit": "백만원",
+       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+      },
+      {
+       "key": "v1",
+       "label": "여신(일반)부문 이자마진 수익 (당기)",
+       "value": "2,186,540",
+       "unit": "백만원",
+       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00",
+     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
+    }
+   },
+   "nim_share_2026": {
+    "id": "nim_share_2026",
+    "label": "전체 수익 중 여신 이자마진 비중",
+    "value": 45.44,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-nim-share-2026",
+     "formulaId": "SHARE",
+     "formulaVersion": 1,
+     "expression": "분자 / 분모 × 100",
+     "inputs": [
+      {
+       "key": "numerator",
+       "label": "여신(일반)부문 이자마진 수익",
+       "value": "2,186,540",
+       "unit": "백만원",
+       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+      },
+      {
+       "key": "denominator",
+       "label": "전체 수익",
+       "value": "4,812,360",
+       "unit": "백만원",
+       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "nim_share_2025": {
+    "id": "nim_share_2025",
+    "label": "전년 동기 비중",
+    "value": 45.9,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-nim-share-2025",
+     "formulaId": "SHARE",
+     "formulaVersion": 1,
+     "expression": "분자 / 분모 × 100",
+     "inputs": [
+      {
+       "key": "numerator",
+       "label": "여신(일반)부문 이자마진 수익",
+       "value": "2,112,880",
+       "unit": "백만원",
+       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+      },
+      {
+       "key": "denominator",
+       "label": "전체 수익",
+       "value": "4,603,180",
+       "unit": "백만원",
+       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "nim_share_delta": {
+    "id": "nim_share_delta",
+    "label": "비중 증감",
+    "value": -0.46,
+    "unit": "PP",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-nim-share-delta",
+     "formulaId": "SHARE_DELTA_PP",
+     "formulaVersion": 1,
+     "expression": "당기 비중 − 전기 비중",
+     "inputs": [
+      {
+       "key": "share1",
+       "label": "2026.08 비중",
+       "value": "45.4359",
+       "unit": "%",
+       "source": "calc-nim-share-2026"
+      },
+      {
+       "key": "share0",
+       "label": "2025.08 비중",
+       "value": "45.9004",
+       "unit": "%",
+       "source": "calc-nim-share-2025"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   }
+  },
+  "evidence": [
+   {
+    "id": "ev-att-nim-data",
+    "category": "bank_data",
+    "label": "2633_상품부문별손익계산서 3개년 8월 누계",
+    "sourceKind": "calc_run",
+    "snippet": "비중 46.53% → 45.90% → 45.43%",
+    "figureId": "nim_share_2026",
+    "tableRef": "calc.calc_run(SHARE, GROWTH_RATE)"
+   },
+   {
+    "id": "ev-att-nim-plan",
+    "category": "internal_direction",
+    "label": "2026년 사업계획(여신 부문) — 수익 목표",
+    "sourceKind": "doc_chunk",
+    "relevance": 0.79,
+    "doc": {
+     "title": "2026년 사업계획(여신 부문)",
+     "issuer": "종합기획부",
+     "effectiveDate": "2025-12-27",
+     "page": 11,
+     "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
+     "dbClass": "mgmt_decision",
+     "fileName": "2026년 사업계획(여신 부문).pdf"
+    }
+   }
+  ],
+  "verifications": [
+   {
+    "checkCode": "numeric_provenance",
+    "passed": true,
+    "detail": "모든 수치가 계산 결과를 참조"
+   },
+   {
+    "checkCode": "evidence_present",
+    "passed": true,
+    "detail": "근거 3범주 충족 여부 확인"
+   },
+   {
+    "checkCode": "causality_language",
+    "passed": true,
+    "detail": "인과 단정 표현 미검출"
+   },
+   {
+    "checkCode": "alignment",
+    "passed": true,
+    "detail": "상위 기준과 정합"
+   }
+  ],
+  "rankScore": 74.8,
+  "rankBasis": "변화 지속성(3개년 → 28.4점) + 수익 목표 연관성(상 → 24.0점) + 변화 폭(0.47%p → 12.4점) + 기타(10.0점)",
+  "relatedGoalId": "goal-annual-revenue"
+ },
+ {
+  "id": "att-inclusive-provision",
+  "kind": "attention",
+  "persona": "P1",
+  "domainCode": "loan",
+  "subDomain": "inclusive_finance",
+  "title": "포용금융 확대에 따라 충당금 비중이 상승하고 있습니다",
+  "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
+  "severity": "caution",
+  "asOf": "2026-08-31",
+  "dataOrigin": "simulated",
+  "figures": {
+   "share_base": {
+    "id": "share_base",
+    "label": "포용금융 충당금 비중(2026.01)",
+    "value": 7.97,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-share-base",
+     "formulaId": "PROVISION_SHARE",
+     "formulaVersion": 1,
+     "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
+     "inputs": [
+      {
+       "key": "numerator",
+       "label": "포용금융 상품 충당금 합계(21개 상품코드)",
+       "value": "261,840",
+       "unit": "백만원",
+       "source": "(202601)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
+      },
+      {
+       "key": "denominator",
+       "label": "전체 충당금(합계 row)",
+       "value": "3,284,600",
+       "unit": "백만원",
+       "source": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "share_now": {
+    "id": "share_now",
+    "label": "포용금융 충당금 비중(2026.08)",
+    "value": 9.16,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-share-now",
+     "formulaId": "PROVISION_SHARE",
+     "formulaVersion": 1,
+     "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
+     "inputs": [
+      {
+       "key": "numerator",
+       "label": "포용금융 상품 충당금 합계(21개 상품코드)",
+       "value": "312,470",
+       "unit": "백만원",
+       "source": "(202608)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
+      },
+      {
+       "key": "denominator",
+       "label": "전체 충당금(합계 row)",
+       "value": "3,412,180",
+       "unit": "백만원",
+       "source": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "share_delta_pp": {
+    "id": "share_delta_pp",
+    "label": "비중 증감",
+    "value": 1.19,
+    "unit": "PP",
+    "dataOrigin": "simulated",
+    "decimals": 2,
+    "calc": {
+     "calcId": "calc-share-delta-pp",
+     "formulaId": "SHARE_DELTA_PP",
+     "formulaVersion": 1,
+     "expression": "비교시점 비중 − 기준시점 비중",
+     "inputs": [
+      {
+       "key": "share1",
+       "label": "2026.08 비중",
+       "value": "9.1575",
+       "unit": "%",
+       "source": "calc-share-now"
+      },
+      {
+       "key": "share0",
+       "label": "2026.01 비중",
+       "value": "7.9717",
+       "unit": "%",
+       "source": "calc-share-base"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "share_delta_pct": {
+    "id": "share_delta_pct",
+    "label": "비중 증가율",
+    "value": 14.9,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1,
+    "calc": {
+     "calcId": "calc-share-delta-pct",
+     "formulaId": "GROWTH_RATE",
+     "formulaVersion": 1,
+     "expression": "(비교시점 비중 − 기준시점 비중) / 기준시점 비중 × 100",
+     "inputs": [
+      {
+       "key": "v0",
+       "label": "2026.01 비중",
+       "value": "7.9717",
+       "unit": "%",
+       "source": "calc-share-base"
+      },
+      {
+       "key": "v1",
+       "label": "2026.08 비중",
+       "value": "9.1575",
+       "unit": "%",
+       "source": "calc-share-now"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "prov_inclusive_now": {
+    "id": "prov_inclusive_now",
+    "label": "포용금융 상품 충당금(2026.08)",
+    "value": 312470,
+    "unit": "KRW_MN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202608)7790_상품별_충당금.xlsx · X열 21행 합계"
+   },
+   "prov_total_now": {
+    "id": "prov_total_now",
+    "label": "전체 충당금(2026.08)",
+    "value": 3412180,
+    "unit": "KRW_MN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
+   },
+   "prov_inclusive_base": {
+    "id": "prov_inclusive_base",
+    "label": "포용금융 상품 충당금(2026.01)",
+    "value": 261840,
+    "unit": "KRW_MN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202601)7790_상품별_충당금.xlsx · X열 21행 합계"
+   },
+   "prov_total_base": {
+    "id": "prov_total_base",
+    "label": "전체 충당금(2026.01)",
+    "value": 3284600,
+    "unit": "KRW_MN",
+    "dataOrigin": "simulated",
+    "sourceRef": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
+   },
+   "inc_exposure_cnt_now": {
+    "id": "inc_exposure_cnt_now",
+    "label": "포용금융 익스포저 건수(2026.08)",
+    "value": 213480,
+    "unit": "CNT",
+    "dataOrigin": "simulated",
+    "calc": {
+     "calcId": "calc-inc-cnt",
+     "formulaId": "SUM",
+     "formulaVersion": 1,
+     "expression": "포용금융 상품코드 21건 익스포저 건수 합계",
+     "inputs": [
+      {
+       "key": "base",
+       "label": "2026.01 건수",
+       "value": "184,260",
+       "unit": "건",
+       "source": "(202601) 여신 익스포저 집계"
+      },
+      {
+       "key": "now",
+       "label": "2026.08 건수",
+       "value": "213,480",
+       "unit": "건",
+       "source": "(202608) 여신 익스포저 집계"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   },
+   "inc_exposure_cnt_growth": {
+    "id": "inc_exposure_cnt_growth",
+    "label": "익스포저 건수 증가율",
+    "value": 15.9,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "inc_exposure_amt_now": {
+    "id": "inc_exposure_amt_now",
+    "label": "포용금융 익스포저 규모(2026.08)",
+    "value": 3.42,
+    "unit": "KRW_TN",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "inc_avg_grade": {
+    "id": "inc_avg_grade",
+    "label": "해당 풀 평균 신용등급(소매 기준)",
+    "value": 6.8,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "retail_avg_grade": {
+    "id": "retail_avg_grade",
+    "label": "소매 익스포저 전체 평균 신용등급",
+    "value": 4.9,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "inc_delinquency": {
+    "id": "inc_delinquency",
+    "label": "해당 풀 연체율",
+    "value": null,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "undefinedLabel": "데이터 미제공"
+   }
+  },
+  "evidence": [
+   {
+    "id": "ev-inc-data",
+    "category": "bank_data",
+    "label": "상품별 충당금 2시점 비교(2026.01 / 2026.08)",
+    "sourceKind": "calc_run",
+    "snippet": "포용금융 312,470백만원 / 전체 3,412,180백만원 = 9.16% (1월 7.97%)",
+    "figureId": "share_now",
+    "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)"
+   },
+   {
+    "id": "ev-inc-products",
+    "category": "internal_direction",
+    "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
+    "sourceKind": "doc_chunk",
+    "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
+    "relevance": 0.95,
+    "doc": {
+     "title": "포용금융 대상 상품 운영기준",
+     "issuer": "여신정책협의회",
+     "effectiveDate": "2026-01-22",
+     "page": 2,
+     "sectionPath": "2. 대상 상품 및 상품코드",
+     "dbClass": "mgmt_decision",
+     "fileName": "포용금융 대상 상품 운영기준.pdf"
+    }
+   },
+   {
+    "id": "ev-inc-perfeval",
+    "category": "internal_direction",
+    "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
+    "sourceKind": "doc_chunk",
+    "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
+    "relevance": 0.93,
+    "doc": {
+     "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
+     "issuer": "NH농협금융지주 기획조정부",
+     "effectiveDate": "2026-03-01",
+     "page": 5,
+     "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
+     "dbClass": "mgmt_decision",
+     "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf"
+    }
+   },
+   {
+    "id": "ev-inc-policy",
+    "category": "external_policy",
+    "label": "포용금융 확대방안(금융위원회)",
+    "sourceKind": "doc_chunk",
+    "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
+    "relevance": 0.9,
+    "doc": {
+     "title": "포용금융 확대방안",
+     "issuer": "금융위원회",
+     "effectiveDate": "2026-01-15",
+     "page": 3,
+     "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
+     "dbClass": "gov_policy",
+     "isOfficial": true,
+     "fileName": "금융위원회_포용금융 확대방안.pdf"
+    }
+   }
+  ],
+  "verifications": [
+   {
+    "checkCode": "numeric_provenance",
+    "passed": true,
+    "detail": "모든 수치가 계산 결과를 참조"
+   },
+   {
+    "checkCode": "evidence_present",
+    "passed": true,
+    "detail": "근거 3범주 충족 여부 확인"
+   },
+   {
+    "checkCode": "causality_language",
+    "passed": true,
+    "detail": "인과 단정 표현 미검출"
+   },
+   {
+    "checkCode": "alignment",
+    "passed": true,
+    "detail": "상위 기준과 정합"
+   }
+  ],
+  "reportKind": "inclusive_risk",
+  "reportAnchor": "i3-share",
+  "tabKey": "inclusive-risk",
+  "rankScore": 78.3,
+  "rankBasis": "사업부서 보고 연계(상 → 30.0점) + 비중 증가 폭(1.18%p → 26.3점) + 신규 목표 제안 연관성(22.0점)"
+ }
+]

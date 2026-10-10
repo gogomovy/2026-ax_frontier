@@ -1,0 +1,193 @@
+"""문서 적재 — 텍스트 추출 · 청크 분할 · 버전 · 이벤트 (ONT-04, ING-02).
+
+임베딩과 LLM 구조화는 워커(wf_graph_projection)가 비동기로 수행한다.
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import os
+import re
+from datetime import date
+from typing import Any
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from nhdip.config import get_settings
+from nhdip.events import audit, emit
+from nhdip.models import source
+
+
+class DocumentError(ValueError):
+    pass
+
+
+def extract_text(filename: str, content: bytes) -> tuple[str, list[tuple[int, str]]]:
+    """(전체 텍스트, [(page, text)])"""
+    name = filename.lower()
+    if name.endswith(".pdf"):
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(content))
+        pages = [(i + 1, (p.extract_text() or "").strip()) for i, p in enumerate(reader.pages)]
+        return "\n\n".join(t for _, t in pages), pages
+    if name.endswith((".hwpx", ".hwp")):
+        # 한글 문서(HWPX · HWP 5.0) — 면 정보가 없어 본문 전체를 1면으로, 문단 구분은 빈 줄로 보존
+        from hwpx import HwpxDocument
+
+        try:
+            text = HwpxDocument.open(io.BytesIO(content)).export_text()
+        except Exception as exc:  # noqa: BLE001 — 암호 · 배포용 · 손상 문서
+            raise DocumentError(f"한글 문서를 읽지 못했습니다(암호 · 배포용 문서는 해제 후 업로드): {type(exc).__name__}") from exc
+        text = "\n\n".join(line.strip() for line in text.splitlines() if line.strip())
+        return text, [(1, text)]
+    if name.endswith((".txt", ".md", ".csv", ".json", ".html")):
+        text = content.decode("utf-8-sig", errors="replace")
+        if name.endswith(".html"):
+            text = re.sub(r"<[^>]+>", " ", text)
+        return text, [(1, text)]
+    raise DocumentError("지원 형식: .pdf · .hwpx · .hwp · .txt · .md · .html")
+
+
+# 문서 구조(작업 3.2.3) — 행정 · 보고 문서의 제목 번호 체계. (수준, 정규식)
+HEADINGS: list[tuple[int, re.Pattern[str]]] = [
+    (1, re.compile(r"^(?:[ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ]|[IVX]{1,4})\.\s*\S")),
+    (1, re.compile(r"^(?:\(?붙임\)?|별첨|첨부)\s*\S")),
+    (2, re.compile(r"^\d{1,2}\.(?:\s+|(?=[가-힣A-Za-z]))\S")),
+    (3, re.compile(r"^[가-하]\.\s*\S")),
+    (4, re.compile(r"^(?:\d{1,2}\)|\([가-하0-9]{1,2}\))\s*\S")),
+    (5, re.compile(r"^[□■]\s*\S")),
+]
+
+
+def heading_level(line: str) -> int | None:
+    t = line.strip()
+    if not t or len(t) > 80 or t.startswith("※"):
+        return None
+    for lv, pat in HEADINGS:
+        if pat.match(t):
+            return lv
+    return None
+
+
+class SectionTracker:
+    """제목 줄을 만나면 수준별 경로를 갱신. 청크 경로 = 청크 앞부분 제목까지 반영한 경로."""
+
+    def __init__(self) -> None:
+        self.stack: list[tuple[int, str]] = []
+
+    def feed(self, line: str) -> bool:
+        lv = heading_level(line)
+        if lv is None:
+            return False
+        while self.stack and self.stack[-1][0] >= lv:
+            self.stack.pop()
+        self.stack.append((lv, line.strip()[:60]))
+        return True
+
+    @property
+    def path(self) -> str | None:
+        return " > ".join(t for _, t in self.stack) or None
+
+    def chunk_path(self, chunk: str) -> str | None:
+        lines = [ln for ln in chunk.splitlines() if ln.strip()]
+        i = 0
+        while i < len(lines) and self.feed(lines[i]):  # 앞부분 제목
+            i += 1
+        path = self.path
+        for ln in lines[i:]:  # 본문 중간 제목은 다음 청크부터
+            self.feed(ln)
+        return path
+
+
+def section_paths(chunks: list[str]) -> list[str | None]:
+    tr = SectionTracker()
+    return [tr.chunk_path(c) for c in chunks]
+
+
+def chunk_text(pages: list[tuple[int, str]], size: int = 700, overlap: int = 100) -> list[tuple[int, str]]:
+    out: list[tuple[int, str]] = []
+    for page, text in pages:
+        paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+        buf = ""
+        for p in paras:
+            if len(buf) + len(p) + 1 <= size:
+                buf = f"{buf}\n{p}".strip()
+                continue
+            if buf:
+                out.append((page, buf))
+            while len(p) > size:
+                out.append((page, p[:size]))
+                p = p[size - overlap :]
+            buf = p
+        if buf:
+            out.append((page, buf))
+    return out
+
+
+def ingest_document(
+    session: Session,
+    *,
+    origin: str,
+    doc_code: str,
+    title: str,
+    doc_class: str,
+    text: str | None = None,
+    pages: list[tuple[int, str]] | None = None,
+    filename: str | None = None,
+    content: bytes | None = None,
+    issuer: str | None = None,
+    published_at: str | None = None,
+    meta: dict[str, Any] | None = None,
+    actor: str | None = None,
+    emit_event: bool = True,
+):
+    t = source(origin)
+    sha = path = mime = None
+    if content is not None and filename:
+        text, pages = extract_text(filename, content)
+        sha = hashlib.sha256(content).hexdigest()
+        low = filename.lower()
+        mime = "application/pdf" if low.endswith(".pdf") else "application/hwp+zip" if low.endswith(".hwpx") else "application/x-hwp" if low.endswith(".hwp") else "text/plain"
+        base = os.path.join(get_settings().filestore_dir, origin, "documents")
+        try:
+            os.makedirs(base, exist_ok=True)
+            path = os.path.join(base, f"{sha[:16]}_{os.path.basename(filename)}")
+            with open(path, "wb") as fh:
+                fh.write(content)
+        except OSError:
+            path = None
+    elif not pages:
+        # 면 정보가 없는 본문은 1면으로 (면 정보가 있으면 청크에 면 번호를 남긴다)
+        pages = [(1, text or "")]
+    if not (text or "").strip():
+        raise DocumentError("본문 텍스트가 비어 있습니다(스캔 PDF 는 OCR 후 업로드)")
+    last = session.execute(select(t.document.version).where(t.document.doc_code == doc_code).order_by(t.document.version.desc()).limit(1)).scalar()
+    session.execute(update(t.document).where(t.document.doc_code == doc_code).values(is_current=False))
+    doc = t.document(
+        doc_code=doc_code,
+        version=(last or 0) + 1,
+        is_current=True,
+        title=title,
+        doc_class=doc_class,
+        issuer=issuer,
+        published_at=date.fromisoformat(published_at) if published_at else None,
+        file_name=filename,
+        file_sha256=sha,
+        file_path=path,
+        mime=mime,
+        text=text or "",
+        meta=meta or {},
+        status="ingested",
+        uploaded_by=actor,
+    )
+    session.add(doc)
+    session.flush()
+    chunks = chunk_text(pages)
+    for seq, ((page, chunk), sec) in enumerate(zip(chunks, section_paths([c for _, c in chunks])), start=1):
+        session.add(t.chunk(document_id=doc.id, seq=seq, page=page, text=chunk, section_path=sec[:500] if sec else None))
+    if emit_event:
+        emit(session, "document.ingested", {"origin": origin, "document_id": doc.id, "doc_code": doc_code, "doc_class": doc_class}, actor)
+    audit(session, actor, "document.upload", "document", doc_code, {"origin": origin, "version": doc.version, "doc_class": doc_class})
+    return doc

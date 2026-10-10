@@ -1,0 +1,310 @@
+{
+ "asOf": "2026-08-31",
+ "constraints": [
+  {
+   "id": "cap-asset-growth",
+   "kind": "total_asset_growth_cap",
+   "label": "자회사별 총자산 최대 증가율(은행)",
+   "scope": "은행",
+   "value": {
+    "id": "cap_asset_growth",
+    "label": "총자산 최대 증가율",
+    "value": 8.2,
+    "unit": "PCT",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "period": "2026.01.01 ~ 2026.12.31",
+   "issuer": "NH농협금융지주",
+   "doc": {
+    "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
+    "issuer": "NH농협금융지주",
+    "effectiveDate": "2025-12-18",
+    "page": 1,
+    "sectionPath": "2. 자회사별 총자산 최대 성장률",
+    "dbClass": "mgmt_decision",
+    "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf"
+   }
+  },
+  {
+   "id": "cap-rwa-net",
+   "kind": "rwa_net_increase_cap",
+   "label": "RWA 순증 관리목표(은행)",
+   "scope": "은행",
+   "value": {
+    "id": "cap_rwa_net",
+    "label": "RWA 순증 한도",
+    "value": 12.4,
+    "unit": "KRW_TN",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "period": "2026.01.01 ~ 2026.12.31",
+   "issuer": "NH농협금융지주",
+   "doc": {
+    "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
+    "issuer": "NH농협금융지주",
+    "effectiveDate": "2026-01-09",
+    "page": 2,
+    "sectionPath": "3. 자회사별 RWA 순증 관리목표",
+    "dbClass": "mgmt_decision",
+    "fileName": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf"
+   }
+  },
+  {
+   "id": "cap-rwa-dept",
+   "kind": "rwa_dept_allocation",
+   "label": "부서별 신용RWA 한도 배분 합계",
+   "scope": "여신 부문",
+   "value": {
+    "id": "cap_rwa_dept",
+    "label": "배분 합계",
+    "value": 8.6,
+    "unit": "KRW_TN",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "period": "2026년 하반기",
+   "issuer": "종합기획부",
+   "doc": {
+    "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
+    "issuer": "종합기획부",
+    "effectiveDate": "2026-06-26",
+    "page": 2,
+    "sectionPath": "별표1. 부서별 신용RWA 한도",
+    "dbClass": "mgmt_decision",
+    "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf"
+   }
+  }
+ ],
+ "bankTarget": {
+  "label": "은행 목표 총자산 증가율",
+  "value": {
+   "id": "bank_asset_target",
+   "label": "은행 목표 총자산 증가율",
+   "value": 7.4,
+   "unit": "PCT",
+   "dataOrigin": "actual",
+   "decimals": 1
+  },
+  "ceiling": {
+   "id": "bank_asset_ceiling",
+   "label": "지주 한도",
+   "value": 8.2,
+   "unit": "PCT",
+   "dataOrigin": "actual",
+   "decimals": 1
+  },
+  "headroom": {
+   "id": "bank_asset_headroom",
+   "label": "한도 여유",
+   "value": 0.8,
+   "unit": "PP",
+   "dataOrigin": "simulated",
+   "decimals": 1,
+   "calc": {
+    "calcId": "calc-cap-headroom",
+    "formulaId": "CAP_HEADROOM",
+    "formulaVersion": 1,
+    "expression": "한도 − 설정값",
+    "inputs": [
+     {
+      "key": "cap_value",
+      "label": "지주 총자산 최대 증가율",
+      "value": "8.2",
+      "unit": "%",
+      "source": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf p.1"
+     },
+     {
+      "key": "proposed_value",
+      "label": "은행 목표 총자산 증가율",
+      "value": "7.4",
+      "unit": "%",
+      "source": "fact.capital_constraint(bank)"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "passed": true
+ },
+ "rwaAllocation": [
+  {
+   "org": "여신(기업)",
+   "allocated": {
+    "id": "rwa_corp_alloc",
+    "label": "배분",
+    "value": 4.9,
+    "unit": "KRW_TN",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "used": {
+    "id": "rwa_corp_used",
+    "label": "사용",
+    "value": 3.42,
+    "unit": "KRW_TN",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "usageRate": {
+    "id": "rwa_corp_usage",
+    "label": "소진율",
+    "value": 69.8,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  },
+  {
+   "org": "여신(가계)",
+   "allocated": {
+    "id": "rwa_hh_alloc",
+    "label": "배분",
+    "value": 3.1,
+    "unit": "KRW_TN",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "used": {
+    "id": "rwa_hh_used",
+    "label": "사용",
+    "value": 2.86,
+    "unit": "KRW_TN",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "usageRate": {
+    "id": "rwa_hh_usage",
+    "label": "소진율",
+    "value": 92.3,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  },
+  {
+   "org": "여신(기타)",
+   "allocated": {
+    "id": "rwa_etc_alloc",
+    "label": "배분",
+    "value": 0.6,
+    "unit": "KRW_TN",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "used": {
+    "id": "rwa_etc_used",
+    "label": "사용",
+    "value": 0.31,
+    "unit": "KRW_TN",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "usageRate": {
+    "id": "rwa_etc_usage",
+    "label": "소진율",
+    "value": 51.7,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  }
+ ],
+ "bisSimulation": [
+  {
+   "label": "BIS 총자본비율(시산)",
+   "value": {
+    "id": "bis_total",
+    "label": "BIS 총자본비율",
+    "value": 14.8,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "floor": {
+    "id": "bis_floor",
+    "label": "우량은행 기준",
+    "value": 10,
+    "unit": "PCT",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "note": "최소기준 8.0% · 우량은행 기준 10.0% 대비 여유 4.8%p"
+  },
+  {
+   "label": "보통주자본비율(시산)",
+   "value": {
+    "id": "cet1",
+    "label": "보통주자본비율",
+    "value": null,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "undefinedLabel": "데이터 미비로 시산 불가"
+   },
+   "floor": {
+    "id": "cet1_floor",
+    "label": "관리기준",
+    "value": 11,
+    "unit": "PCT",
+    "dataOrigin": "actual",
+    "decimals": 1
+   },
+   "note": "보통주자본 항목 데이터가 제공되지 않아 산출하지 않았습니다(추정치 생성 금지)."
+  }
+ ],
+ "proxyNote": "여신 부문 RWA 소진율은 기업·가계자금대출금 잔액을 대리지표로 환산한 값입니다. RWA 미확보로 여신금액 기준 대체 산출했습니다.",
+ "evidence": [
+  {
+   "id": "ev-cap-limit",
+   "category": "internal_direction",
+   "label": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
+   "sourceKind": "doc_chunk",
+   "snippet": "은행 총자산 최대 증가율 8.2% 이내에서 자회사가 목표를 설정한다.",
+   "relevance": 0.95,
+   "doc": {
+    "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
+    "issuer": "NH농협금융지주",
+    "effectiveDate": "2025-12-18",
+    "page": 1,
+    "sectionPath": "2. 자회사별 총자산 최대 성장률",
+    "dbClass": "mgmt_decision",
+    "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf"
+   }
+  },
+  {
+   "id": "ev-cap-plan",
+   "category": "internal_direction",
+   "label": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 요청",
+   "sourceKind": "doc_chunk",
+   "snippet": "은행 RWA 순증 관리목표 12.4조원, 이행계획 수립 요청.",
+   "relevance": 0.9,
+   "doc": {
+    "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
+    "issuer": "NH농협금융지주",
+    "effectiveDate": "2026-01-09",
+    "page": 2,
+    "sectionPath": "3. 자회사별 RWA 순증 관리목표",
+    "dbClass": "mgmt_decision",
+    "fileName": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf"
+   }
+  },
+  {
+   "id": "ev-cap-dept",
+   "category": "internal_direction",
+   "label": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
+   "sourceKind": "doc_chunk",
+   "snippet": "여신 부문 신용RWA 한도 합계 8.6조원(기업 4.9 / 가계 3.1 / 기타 0.6).",
+   "relevance": 0.93,
+   "doc": {
+    "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
+    "issuer": "종합기획부",
+    "effectiveDate": "2026-06-26",
+    "page": 2,
+    "sectionPath": "별표1. 부서별 신용RWA 한도",
+    "dbClass": "mgmt_decision",
+    "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf"
+   }
+  }
+ ]
+}

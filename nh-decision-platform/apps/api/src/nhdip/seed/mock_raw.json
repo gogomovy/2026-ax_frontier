@@ -1,0 +1,721 @@
+{
+ "micro_grades": [
+  {
+   "gradeCode": "3A",
+   "obsCount": 1842,
+   "obsShare": 4.18,
+   "defaultCount": 3,
+   "defaultRate": 0.163,
+   "pdMid": 0.24,
+   "pdMax": 0.3,
+   "ks": 5.2,
+   "auroc": 0.004,
+   "sdrRank": 12,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "3B",
+   "obsCount": 3104,
+   "obsShare": 7.04,
+   "defaultCount": 9,
+   "defaultRate": 0.29,
+   "pdMid": 0.41,
+   "pdMax": 0.52,
+   "ks": 11.4,
+   "auroc": 0.011,
+   "sdrRank": 11,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "4A",
+   "obsCount": 5271,
+   "obsShare": 11.96,
+   "defaultCount": 27,
+   "defaultRate": 0.512,
+   "pdMid": 0.68,
+   "pdMax": 0.86,
+   "ks": 19.6,
+   "auroc": 0.028,
+   "sdrRank": 10,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "4B",
+   "obsCount": 6940,
+   "obsShare": 15.75,
+   "defaultCount": 62,
+   "defaultRate": 0.893,
+   "pdMid": 1.12,
+   "pdMax": 1.41,
+   "ks": 27.8,
+   "auroc": 0.061,
+   "sdrRank": 9,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "5A",
+   "obsCount": 7382,
+   "obsShare": 16.75,
+   "defaultCount": 118,
+   "defaultRate": 1.598,
+   "pdMid": 1.84,
+   "pdMax": 2.26,
+   "ks": 34.1,
+   "auroc": 0.104,
+   "sdrRank": 8,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "5B",
+   "obsCount": 6517,
+   "obsShare": 14.79,
+   "defaultCount": 171,
+   "defaultRate": 2.624,
+   "pdMid": 2.91,
+   "pdMax": 3.48,
+   "ks": 37.4,
+   "auroc": 0.138,
+   "sdrRank": 7,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "5C",
+   "obsCount": 4983,
+   "obsShare": 11.31,
+   "defaultCount": 196,
+   "defaultRate": 3.933,
+   "pdMid": 4.22,
+   "pdMax": 4.95,
+   "ks": 35.6,
+   "auroc": 0.142,
+   "sdrRank": 6,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "6A",
+   "obsCount": 3468,
+   "obsShare": 7.87,
+   "defaultCount": 199,
+   "defaultRate": 5.738,
+   "pdMid": 5.96,
+   "pdMax": 6.87,
+   "ks": 28.9,
+   "auroc": 0.131,
+   "sdrRank": 5,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "6B",
+   "obsCount": 2472,
+   "obsShare": 5.61,
+   "defaultCount": 196,
+   "defaultRate": 7.929,
+   "pdMid": 7.733,
+   "pdMax": 8.933,
+   "ks": 19.4,
+   "auroc": 0.108,
+   "sdrRank": 4,
+   "breach": "above_mid_within_max"
+  },
+  {
+   "gradeCode": "7A",
+   "obsCount": 1286,
+   "obsShare": 2.92,
+   "defaultCount": 132,
+   "defaultRate": 10.264,
+   "pdMid": 10.98,
+   "pdMax": 12.64,
+   "ks": 11.2,
+   "auroc": 0.072,
+   "sdrRank": 3,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "7B",
+   "obsCount": 624,
+   "obsShare": 1.42,
+   "defaultCount": 79,
+   "defaultRate": 12.66,
+   "pdMid": 14.22,
+   "pdMax": 16.38,
+   "ks": 5.1,
+   "auroc": 0.042,
+   "sdrRank": 1,
+   "breach": "within_mid"
+  },
+  {
+   "gradeCode": "8",
+   "obsCount": 178,
+   "obsShare": 0.4,
+   "defaultCount": 21,
+   "defaultRate": 11.798,
+   "pdMid": 18.9,
+   "pdMax": 22.4,
+   "ks": 0,
+   "auroc": 0.012,
+   "sdrRank": 2,
+   "breach": "within_mid",
+   "monotonicBreak": true
+  }
+ ],
+ "micro_psi_buckets": [
+  {
+   "bucket": "3A",
+   "baseShare": 7.8,
+   "currentShare": 4.18,
+   "contribution": 0.0226
+  },
+  {
+   "bucket": "3B",
+   "baseShare": 10.4,
+   "currentShare": 7.04,
+   "contribution": 0.0131
+  },
+  {
+   "bucket": "4A",
+   "baseShare": 14.6,
+   "currentShare": 11.96,
+   "contribution": 0.0053
+  },
+  {
+   "bucket": "4B",
+   "baseShare": 17.2,
+   "currentShare": 15.75,
+   "contribution": 0.0013
+  },
+  {
+   "bucket": "5A",
+   "baseShare": 17,
+   "currentShare": 16.75,
+   "contribution": 0
+  },
+  {
+   "bucket": "5B",
+   "baseShare": 12.6,
+   "currentShare": 14.79,
+   "contribution": 0.0035
+  },
+  {
+   "bucket": "5C",
+   "baseShare": 8.4,
+   "currentShare": 11.31,
+   "contribution": 0.0087
+  },
+  {
+   "bucket": "6A",
+   "baseShare": 5.2,
+   "currentShare": 7.87,
+   "contribution": 0.0111
+  },
+  {
+   "bucket": "6B",
+   "baseShare": 3.4,
+   "currentShare": 5.61,
+   "contribution": 0.0111
+  },
+  {
+   "bucket": "7A",
+   "baseShare": 2,
+   "currentShare": 2.92,
+   "contribution": 0.0035
+  },
+  {
+   "bucket": "7B",
+   "baseShare": 1,
+   "currentShare": 1.42,
+   "contribution": 0.0015
+  },
+  {
+   "bucket": "8",
+   "baseShare": 0.4,
+   "currentShare": 0.4,
+   "contribution": 0
+  }
+ ],
+ "micro_total": {
+  "obsCount": 44067,
+  "obsShare": 100,
+  "defaultCount": 1213,
+  "defaultRate": 2.753,
+  "auroc": 0.748
+ },
+ "corp_models": [
+  {
+   "modelCode": "CORP_LARGE",
+   "name": "일반기업 대기업 모형",
+   "portfolio": "corp",
+   "segment": "대기업",
+   "psi": {
+    "id": "psi_large",
+    "label": "PSI",
+    "value": 0.024,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "ar": {
+    "id": "ar_large",
+    "label": "AR",
+    "value": 62.31,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "arDecline": {
+    "id": "ard_large",
+    "label": "AR 하락률",
+    "value": 8.4,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "ks": {
+    "id": "ks_large",
+    "label": "K-S",
+    "value": 48.2,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "auroc": {
+    "id": "auroc_large",
+    "label": "AUROC",
+    "value": 0.812,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "verdict": "적정",
+   "verdictSeverity": "info",
+   "verdictBasis": "PSI 0.024(안정) · AR 하락률 8.4%(유사수준 유지) · 등급계량화 검정 통과",
+   "dataOrigin": "simulated"
+  },
+  {
+   "modelCode": "CORP_MID",
+   "name": "일반기업 중견기업 모형",
+   "portfolio": "corp",
+   "segment": "중견기업",
+   "psi": {
+    "id": "psi_mid",
+    "label": "PSI",
+    "value": 0.038,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "ar": {
+    "id": "ar_mid",
+    "label": "AR",
+    "value": 58.74,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "arDecline": {
+    "id": "ard_mid",
+    "label": "AR 하락률",
+    "value": 12.6,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "ks": {
+    "id": "ks_mid",
+    "label": "K-S",
+    "value": 44.1,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "auroc": {
+    "id": "auroc_mid",
+    "label": "AUROC",
+    "value": 0.794,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "verdict": "적정",
+   "verdictSeverity": "info",
+   "verdictBasis": "PSI 0.038(안정) · AR 하락률 12.6%(하락 주의 진입 전 구간)",
+   "dataOrigin": "simulated"
+  },
+  {
+   "modelCode": "CORP_SMALL",
+   "name": "일반기업 중소기업 모형",
+   "portfolio": "corp",
+   "segment": "중소기업",
+   "psi": {
+    "id": "psi_small",
+    "label": "PSI",
+    "value": 0.061,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "ar": {
+    "id": "ar_small",
+    "label": "AR",
+    "value": 54.18,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "arDecline": {
+    "id": "ard_small",
+    "label": "AR 하락률",
+    "value": 19.3,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "ks": {
+    "id": "ks_small",
+    "label": "K-S",
+    "value": 40.6,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "auroc": {
+    "id": "auroc_small",
+    "label": "AUROC",
+    "value": 0.771,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "verdict": "조건부 적정",
+   "verdictSeverity": "watch",
+   "verdictBasis": "PSI 0.061(관찰) · AR 하락률 19.3%(하락 주의) → 분기 점검 주기 유지",
+   "dataOrigin": "simulated"
+  },
+  {
+   "modelCode": "CORP_MICRO",
+   "name": "일반기업 소기업 모형",
+   "portfolio": "corp",
+   "segment": "소기업",
+   "psi": {
+    "id": "psi_micro",
+    "label": "PSI",
+    "value": 0.082,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "ar": {
+    "id": "ar_micro",
+    "label": "AR",
+    "value": 49.62,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "arDecline": {
+    "id": "ard_micro",
+    "label": "AR 하락률",
+    "value": 23.8,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "ks": {
+    "id": "ks_micro",
+    "label": "K-S",
+    "value": 37.4,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "auroc": {
+    "id": "auroc_micro",
+    "label": "AUROC",
+    "value": 0.748,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "verdict": "조건부 적정",
+   "verdictSeverity": "caution",
+   "verdictBasis": "PSI 0.082(관찰 상단) · AR 하락률 23.8%(하락 주의) · 6B 등급 실제부도율이 대표값 초과",
+   "dataOrigin": "simulated"
+  }
+ ],
+ "retail_models": [
+  {
+   "modelCode": "RETAIL_AS",
+   "name": "개인여신 저신용자 AS모형",
+   "portfolio": "retail",
+   "segment": "저신용자",
+   "ar": {
+    "id": "ar_as",
+    "label": "AR",
+    "value": 35.52,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "arDecline": {
+    "id": "ard_as",
+    "label": "AR 하락률",
+    "value": 34.7,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "ks": {
+    "id": "ks_as",
+    "label": "K-S",
+    "value": 27.6,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "auroc": {
+    "id": "auroc_as",
+    "label": "AUROC",
+    "value": 0.678,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "verdict": "미흡 — 재개발 검토",
+   "verdictSeverity": "caution",
+   "verdictBasis": "AR 35.52%(보통) · AR 하락률 34.7%(30% 초과, 큰 하락) · 5-6등급·8-9등급 서열화 균열",
+   "dataOrigin": "simulated"
+  },
+  {
+   "modelCode": "RETAIL_BS",
+   "name": "개인여신 BS모형",
+   "portfolio": "retail",
+   "segment": "개인 전체",
+   "ar": {
+    "id": "ar_bs",
+    "label": "AR",
+    "value": 83.84,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "arDecline": {
+    "id": "ard_bs",
+    "label": "AR 하락률",
+    "value": 2.06,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   },
+   "ks": {
+    "id": "ks_bs",
+    "label": "K-S",
+    "value": 70.2,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   },
+   "auroc": {
+    "id": "auroc_bs",
+    "label": "AUROC",
+    "value": 0.919,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 3
+   },
+   "verdict": "양호",
+   "verdictSeverity": "info",
+   "verdictBasis": "AR 83.84%(양호) · AR 하락률 2.06%(개발시점과 유사) · 등급별 불량률 서열화 유지",
+   "dataOrigin": "simulated"
+  }
+ ],
+ "inclusive_products": [
+  {
+   "productCode": "2001109170002",
+   "productName": "사잇돌중금리대출Ⅱ",
+   "productGroup": "사잇돌",
+   "provisionBase": 20780,
+   "provisionNow": 27530,
+   "diff": 6750,
+   "contribution": 13.3
+  },
+  {
+   "productCode": "2001109170001",
+   "productName": "사잇돌중금리대출",
+   "productGroup": "사잇돌",
+   "provisionBase": 30420,
+   "provisionNow": 36240,
+   "diff": 5820,
+   "contribution": 11.5
+  },
+  {
+   "productCode": "2001108220001",
+   "productName": "새희망홀씨대출(일반)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 28420,
+   "provisionNow": 33180,
+   "diff": 4760,
+   "contribution": 9.4
+  },
+  {
+   "productCode": "2001107820007",
+   "productName": "햇살론(근로자)",
+   "productGroup": "햇살론",
+   "provisionBase": 21340,
+   "provisionNow": 25620,
+   "diff": 4280,
+   "contribution": 8.5
+  },
+  {
+   "productCode": "2001108220005",
+   "productName": "새희망홀씨대출(생계자금)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 19860,
+   "provisionNow": 23940,
+   "diff": 4080,
+   "contribution": 8.1
+  },
+  {
+   "productCode": "2001107820008",
+   "productName": "햇살론(자영업자)",
+   "productGroup": "햇살론",
+   "provisionBase": 18760,
+   "provisionNow": 22180,
+   "diff": 3420,
+   "contribution": 6.8
+  },
+  {
+   "productCode": "2001107820010",
+   "productName": "햇살론(생계자금)",
+   "productGroup": "햇살론",
+   "provisionBase": 15420,
+   "provisionNow": 18340,
+   "diff": 2920,
+   "contribution": 5.8
+  },
+  {
+   "productCode": "2001107820011",
+   "productName": "햇살론(사업운영자금)",
+   "productGroup": "햇살론",
+   "provisionBase": 13280,
+   "provisionNow": 15860,
+   "diff": 2580,
+   "contribution": 5.1
+  },
+  {
+   "productCode": "2001107820012",
+   "productName": "햇살론(창업자금)",
+   "productGroup": "햇살론",
+   "provisionBase": 11640,
+   "provisionNow": 13720,
+   "diff": 2080,
+   "contribution": 4.1
+  },
+  {
+   "productCode": "2001108220006",
+   "productName": "새희망홀씨대출(사업자금)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 12340,
+   "provisionNow": 14020,
+   "diff": 1680,
+   "contribution": 3.3
+  },
+  {
+   "productCode": "2001107820013",
+   "productName": "햇살론(전환대출)",
+   "productGroup": "햇살론",
+   "provisionBase": 9820,
+   "provisionNow": 11480,
+   "diff": 1660,
+   "contribution": 3.3
+  },
+  {
+   "productCode": "2001109000001",
+   "productName": "햇살론youth",
+   "productGroup": "햇살론",
+   "provisionBase": 8640,
+   "provisionNow": 10260,
+   "diff": 1620,
+   "contribution": 3.2
+  },
+  {
+   "productCode": "2001109050001",
+   "productName": "새희망홀씨대출Ⅱ(일반)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 9780,
+   "provisionNow": 11260,
+   "diff": 1480,
+   "contribution": 2.9
+  },
+  {
+   "productCode": "2001109000002",
+   "productName": "햇살론뱅크",
+   "productGroup": "햇살론",
+   "provisionBase": 7320,
+   "provisionNow": 8740,
+   "diff": 1420,
+   "contribution": 2.8
+  },
+  {
+   "productCode": "2001109000003",
+   "productName": "햇살론카드",
+   "productGroup": "햇살론",
+   "provisionBase": 6180,
+   "provisionNow": 7420,
+   "diff": 1240,
+   "contribution": 2.4
+  },
+  {
+   "productCode": "2001109050002",
+   "productName": "새희망홀씨대출Ⅱ(생계자금)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 7420,
+   "provisionNow": 8640,
+   "diff": 1220,
+   "contribution": 2.4
+  },
+  {
+   "productCode": "2001109000004",
+   "productName": "근로자햇살론(신규)",
+   "productGroup": "햇살론",
+   "provisionBase": 5240,
+   "provisionNow": 6180,
+   "diff": 940,
+   "contribution": 1.9
+  },
+  {
+   "productCode": "2001109050003",
+   "productName": "새희망홀씨대출Ⅱ(전환대출)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 5260,
+   "provisionNow": 6180,
+   "diff": 920,
+   "contribution": 1.8
+  },
+  {
+   "productCode": "2001109060003",
+   "productName": "햇살론(특례보증)",
+   "productGroup": "햇살론",
+   "provisionBase": 4180,
+   "provisionNow": 4920,
+   "diff": 740,
+   "contribution": 1.5
+  },
+  {
+   "productCode": "2001109670001",
+   "productName": "햇살론15",
+   "productGroup": "햇살론",
+   "provisionBase": 3260,
+   "provisionNow": 3840,
+   "diff": 580,
+   "contribution": 1.1
+  },
+  {
+   "productCode": "2001109670002",
+   "productName": "햇살론17",
+   "productGroup": "햇살론",
+   "provisionBase": 2480,
+   "provisionNow": 2920,
+   "diff": 440,
+   "contribution": 0.9
+  }
+ ]
+}

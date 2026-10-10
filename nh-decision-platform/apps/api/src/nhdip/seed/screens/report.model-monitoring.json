@@ -1,0 +1,1303 @@
+{
+ "id": "rep-model-monitoring-202608",
+ "kind": "model_monitoring",
+ "title": "일반기업 신용평가모형 모니터링 결과",
+ "subtitle": "소기업 모형 중심 · 분석 기준일 2026.08.31",
+ "asOf": "2026-08-31",
+ "generatedAt": "2026-08-31T06:22:00+09:00",
+ "dataOrigin": "simulated",
+ "toc": [
+  {
+   "id": "s1-overview",
+   "label": "1. 개요",
+   "level": 2
+  },
+  {
+   "id": "s2-stability",
+   "label": "2. 안정성 분석",
+   "level": 2
+  },
+  {
+   "id": "s2-psi",
+   "label": "2.1 등급 분포 및 PSI",
+   "level": 3
+  },
+  {
+   "id": "s3-discrimination",
+   "label": "3. 변별력 분석",
+   "level": 2
+  },
+  {
+   "id": "s3-grade",
+   "label": "3.1 등급별 부도율 및 서열화",
+   "level": 3
+  },
+  {
+   "id": "s4-calibration",
+   "label": "4. 등급계량화 검증",
+   "level": 2
+  },
+  {
+   "id": "s5-findings",
+   "label": "5. 특이사항 및 가이드",
+   "level": 2
+  }
+ ],
+ "figures": {
+  "dr_6b": {
+   "id": "dr_6b",
+   "label": "소기업 6B 등급 실제부도율",
+   "value": 7.929,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3,
+   "calc": {
+    "calcId": "calc-dr-6b",
+    "formulaId": "DEFAULT_RATE",
+    "formulaVersion": 1,
+    "expression": "부도건수 / 전체건수 × 100",
+    "inputs": [
+     {
+      "key": "default_count",
+      "label": "부도건수",
+      "value": "196",
+      "unit": "건",
+      "source": "fact.model_monitoring_grade(CORP_MICRO, 6B).default_count"
+     },
+     {
+      "key": "obs_count",
+      "label": "전체건수",
+      "value": "2,472",
+      "unit": "건",
+      "source": "fact.model_monitoring_grade(CORP_MICRO, 6B).obs_count"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00",
+    "note": "표시 3자리, 내부 6자리 보존"
+   }
+  },
+  "pd_mid_6b": {
+   "id": "pd_mid_6b",
+   "label": "예측부도율 대표값",
+   "value": 7.733,
+   "unit": "PCT",
+   "dataOrigin": "actual",
+   "decimals": 3,
+   "sourceRef": "md.model_grade(CORP_MICRO, 6B).pd_mid — PD Master Scale"
+  },
+  "pd_max_6b": {
+   "id": "pd_max_6b",
+   "label": "예측부도율 최대값",
+   "value": 8.933,
+   "unit": "PCT",
+   "dataOrigin": "actual",
+   "decimals": 3,
+   "sourceRef": "md.model_grade(CORP_MICRO, 6B).pd_max — PD Master Scale"
+  },
+  "breach_gap_6b": {
+   "id": "breach_gap_6b",
+   "label": "대표값 초과 폭",
+   "value": 0.196,
+   "unit": "PP",
+   "dataOrigin": "simulated",
+   "decimals": 3,
+   "calc": {
+    "calcId": "calc-breach-6b",
+    "formulaId": "PD_BREACH_CHECK",
+    "formulaVersion": 1,
+    "expression": "실제부도율 − 예측부도율 대표값 (판정: within_mid / above_mid_within_max / above_max)",
+    "inputs": [
+     {
+      "key": "actual_dr",
+      "label": "실제부도율",
+      "value": "7.929000",
+      "unit": "%",
+      "source": "calc-dr-6b"
+     },
+     {
+      "key": "pd_mid",
+      "label": "예측부도율 대표값",
+      "value": "7.733000",
+      "unit": "%",
+      "source": "md.model_grade(CORP_MICRO, 6B)"
+     },
+     {
+      "key": "pd_max",
+      "label": "예측부도율 최대값",
+      "value": "8.933000",
+      "unit": "%",
+      "source": "md.model_grade(CORP_MICRO, 6B)"
+     },
+     {
+      "key": "verdict",
+      "label": "판정",
+      "value": "above_mid_within_max",
+      "unit": "",
+      "source": "rule_engine.MDL_PD_BREACH"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "exposure_6b": {
+   "id": "exposure_6b",
+   "label": "6B 등급 익스포저 금액",
+   "value": 4.82,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "psi_micro": {
+   "id": "psi_micro",
+   "label": "PSI",
+   "value": 0.082,
+   "unit": "RATIO",
+   "dataOrigin": "simulated",
+   "decimals": 3
+  },
+  "ar_micro": {
+   "id": "ar_micro",
+   "label": "AR",
+   "value": 49.62,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "ard_micro": {
+   "id": "ard_micro",
+   "label": "AR 하락률",
+   "value": 23.8,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "ks_micro": {
+   "id": "ks_micro",
+   "label": "K-S",
+   "value": 37.4,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 1
+  },
+  "auroc_micro": {
+   "id": "auroc_micro",
+   "label": "AUROC",
+   "value": 0.748,
+   "unit": "RATIO",
+   "dataOrigin": "simulated",
+   "decimals": 3
+  },
+  "chi_stat": {
+   "id": "chi_stat",
+   "label": "카이제곱 통계량",
+   "value": 18.42,
+   "unit": "RATIO",
+   "dataOrigin": "simulated",
+   "decimals": 2,
+   "calc": {
+    "calcId": "calc-chi-micro",
+    "formulaId": "CHI_SQUARE_PD",
+    "formulaVersion": 1,
+    "expression": "χ² = Σ (rᵢ − nᵢ·pᵢ)² / ( nᵢ·pᵢ·(1 − pᵢ) )",
+    "inputs": [
+     {
+      "key": "grades",
+      "label": "검정 대상 등급 수(k)",
+      "value": "12",
+      "unit": "개",
+      "source": "fact.model_monitoring_grade(CORP_MICRO)"
+     },
+     {
+      "key": "df",
+      "label": "자유도",
+      "value": "12",
+      "unit": "",
+      "source": "k"
+     },
+     {
+      "key": "confidence",
+      "label": "신뢰수준",
+      "value": "95%",
+      "unit": "",
+      "source": "rule_engine.settings.chi_confidence"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "chi_critical": {
+   "id": "chi_critical",
+   "label": "임계값(자유도 12, 95%)",
+   "value": 21.03,
+   "unit": "RATIO",
+   "dataOrigin": "actual",
+   "decimals": 2
+  },
+  "total_obs": {
+   "id": "total_obs",
+   "label": "소기업 모형 전체 익스포저 건수",
+   "value": 44067,
+   "unit": "CNT",
+   "dataOrigin": "simulated"
+  },
+  "total_dr": {
+   "id": "total_dr",
+   "label": "소기업 모형 전체 실제부도율",
+   "value": 2.753,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3
+  }
+ },
+ "opinions": [
+  {
+   "id": "ins-model-6b",
+   "kind": "analysis_result",
+   "persona": "P2",
+   "domainCode": "loan",
+   "subDomain": "model_risk",
+   "title": "소기업 6B 등급 부도율 특이사항",
+   "statement": "소기업 6B 등급은 실제부도율([[fig:dr_6b]])이 예측부도율 대표값([[fig:pd_mid_6b]])을 [[fig:breach_gap_6b]] 초과하나, 최대값([[fig:pd_max_6b]]) 이내 관리 중입니다. 해당 등급 익스포저는 [[fig:exposure_6b]] 규모이며, 동시적 {{term:CHI_SQUARE|카이제곱 검정}}에서는 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다.",
+   "severity": "watch",
+   "asOf": "2026-08-31",
+   "dataOrigin": "simulated",
+   "figures": {
+    "dr_6b": {
+     "id": "dr_6b",
+     "label": "소기업 6B 등급 실제부도율",
+     "value": 7.929,
+     "unit": "PCT",
+     "dataOrigin": "simulated",
+     "decimals": 3,
+     "calc": {
+      "calcId": "calc-dr-6b",
+      "formulaId": "DEFAULT_RATE",
+      "formulaVersion": 1,
+      "expression": "부도건수 / 전체건수 × 100",
+      "inputs": [
+       {
+        "key": "default_count",
+        "label": "부도건수",
+        "value": "196",
+        "unit": "건",
+        "source": "fact.model_monitoring_grade(CORP_MICRO, 6B).default_count"
+       },
+       {
+        "key": "obs_count",
+        "label": "전체건수",
+        "value": "2,472",
+        "unit": "건",
+        "source": "fact.model_monitoring_grade(CORP_MICRO, 6B).obs_count"
+       }
+      ],
+      "executedAt": "2026-08-31T06:22:00+09:00",
+      "note": "표시 3자리, 내부 6자리 보존"
+     }
+    },
+    "pd_mid_6b": {
+     "id": "pd_mid_6b",
+     "label": "예측부도율 대표값",
+     "value": 7.733,
+     "unit": "PCT",
+     "dataOrigin": "actual",
+     "decimals": 3,
+     "sourceRef": "md.model_grade(CORP_MICRO, 6B).pd_mid — PD Master Scale"
+    },
+    "pd_max_6b": {
+     "id": "pd_max_6b",
+     "label": "예측부도율 최대값",
+     "value": 8.933,
+     "unit": "PCT",
+     "dataOrigin": "actual",
+     "decimals": 3,
+     "sourceRef": "md.model_grade(CORP_MICRO, 6B).pd_max — PD Master Scale"
+    },
+    "breach_gap_6b": {
+     "id": "breach_gap_6b",
+     "label": "대표값 초과 폭",
+     "value": 0.196,
+     "unit": "PP",
+     "dataOrigin": "simulated",
+     "decimals": 3,
+     "calc": {
+      "calcId": "calc-breach-6b",
+      "formulaId": "PD_BREACH_CHECK",
+      "formulaVersion": 1,
+      "expression": "실제부도율 − 예측부도율 대표값 (판정: within_mid / above_mid_within_max / above_max)",
+      "inputs": [
+       {
+        "key": "actual_dr",
+        "label": "실제부도율",
+        "value": "7.929000",
+        "unit": "%",
+        "source": "calc-dr-6b"
+       },
+       {
+        "key": "pd_mid",
+        "label": "예측부도율 대표값",
+        "value": "7.733000",
+        "unit": "%",
+        "source": "md.model_grade(CORP_MICRO, 6B)"
+       },
+       {
+        "key": "pd_max",
+        "label": "예측부도율 최대값",
+        "value": "8.933000",
+        "unit": "%",
+        "source": "md.model_grade(CORP_MICRO, 6B)"
+       },
+       {
+        "key": "verdict",
+        "label": "판정",
+        "value": "above_mid_within_max",
+        "unit": "",
+        "source": "rule_engine.MDL_PD_BREACH"
+       }
+      ],
+      "executedAt": "2026-08-31T06:22:00+09:00"
+     }
+    },
+    "exposure_6b": {
+     "id": "exposure_6b",
+     "label": "6B 등급 익스포저 금액",
+     "value": 4.82,
+     "unit": "KRW_TN",
+     "dataOrigin": "simulated",
+     "decimals": 2
+    }
+   },
+   "evidence": [
+    {
+     "id": "ev-6b-data",
+     "category": "bank_data",
+     "label": "소기업 모형 등급별 모니터링 결과(2026.08말)",
+     "sourceKind": "metric_value",
+     "snippet": "6B 등급 전체건수 2,472건 · 부도건수 196건 · 실제부도율 7.929%",
+     "figureId": "dr_6b",
+     "tableRef": "fact.model_monitoring_grade(CORP_MICRO)"
+    },
+    {
+     "id": "ev-6b-master",
+     "category": "bank_data",
+     "label": "PD Master Scale — 6B 등급 추정치",
+     "sourceKind": "metric_value",
+     "snippet": "최소 6.412% / 대표값 7.733% / 최대 8.933%",
+     "figureId": "pd_mid_6b",
+     "tableRef": "md.model_grade(CORP_MICRO, 6B)"
+    },
+    {
+     "id": "ev-6b-report",
+     "category": "internal_direction",
+     "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
+     "sourceKind": "doc_chunk",
+     "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
+     "relevance": 0.89,
+     "doc": {
+      "title": "2025_일반기업모형 모니터링 보고서",
+      "issuer": "신용리스크관리부",
+      "effectiveDate": "2025-11-28",
+      "page": 12,
+      "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
+      "dbClass": "model_method",
+      "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf"
+     }
+    },
+    {
+     "id": "ev-6b-stat",
+     "category": "internal_direction",
+     "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
+     "sourceKind": "doc_chunk",
+     "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
+     "relevance": 0.84,
+     "doc": {
+      "title": "붙임. 통계방법론 및 용어 해설",
+      "issuer": "신용리스크관리부",
+      "effectiveDate": "2025-11-28",
+      "page": 2,
+      "sectionPath": "가. 등급계량화 검증",
+      "dbClass": "model_method",
+      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
+     }
+    }
+   ],
+   "verifications": [
+    {
+     "checkCode": "numeric_provenance",
+     "passed": true,
+     "detail": "모든 수치가 계산 결과를 참조"
+    },
+    {
+     "checkCode": "evidence_present",
+     "passed": true,
+     "detail": "근거 3범주 충족 여부 확인"
+    },
+    {
+     "checkCode": "causality_language",
+     "passed": true,
+     "detail": "인과 단정 표현 미검출"
+    },
+    {
+     "checkCode": "alignment",
+     "passed": true,
+     "detail": "상위 기준과 정합"
+    }
+   ],
+   "reportKind": "model_monitoring",
+   "reportAnchor": "s4-calibration",
+   "tabKey": "model-monitoring",
+   "rankScore": 84.2,
+   "rankBasis": "심각도(주의) × 익스포저 규모(4.82조) × 목표연관성(5C 이상 비중 목표)"
+  }
+ ],
+ "evidence": [
+  {
+   "id": "ev-6b-data",
+   "category": "bank_data",
+   "label": "소기업 모형 등급별 모니터링 결과(2026.08말)",
+   "sourceKind": "metric_value",
+   "snippet": "6B 등급 전체건수 2,472건 · 부도건수 196건 · 실제부도율 7.929%",
+   "figureId": "dr_6b",
+   "tableRef": "fact.model_monitoring_grade(CORP_MICRO)"
+  },
+  {
+   "id": "ev-6b-master",
+   "category": "bank_data",
+   "label": "PD Master Scale — 6B 등급 추정치",
+   "sourceKind": "metric_value",
+   "snippet": "최소 6.412% / 대표값 7.733% / 최대 8.933%",
+   "figureId": "pd_mid_6b",
+   "tableRef": "md.model_grade(CORP_MICRO, 6B)"
+  },
+  {
+   "id": "ev-6b-report",
+   "category": "internal_direction",
+   "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
+   "sourceKind": "doc_chunk",
+   "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
+   "relevance": 0.89,
+   "doc": {
+    "title": "2025_일반기업모형 모니터링 보고서",
+    "issuer": "신용리스크관리부",
+    "effectiveDate": "2025-11-28",
+    "page": 12,
+    "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
+    "dbClass": "model_method",
+    "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf"
+   }
+  },
+  {
+   "id": "ev-6b-stat",
+   "category": "internal_direction",
+   "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
+   "sourceKind": "doc_chunk",
+   "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
+   "relevance": 0.84,
+   "doc": {
+    "title": "붙임. 통계방법론 및 용어 해설",
+    "issuer": "신용리스크관리부",
+    "effectiveDate": "2025-11-28",
+    "page": 2,
+    "sectionPath": "가. 등급계량화 검증",
+    "dbClass": "model_method",
+    "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
+   }
+  }
+ ],
+ "limitations": [
+  "관련 보고서는 2025년 기준이나, 분석 기준일을 2026년 8월말로 설정한 가상 분석 결과입니다.",
+  "실제 익스포저 단위 데이터 수령 시 동일 스키마로 교체됩니다(코드 변경 없음).",
+  "PSI·AR 하락률 판정 임계값은 행내 확정 전 잠정값입니다."
+ ],
+ "sections": [
+  {
+   "id": "s1-overview",
+   "heading": "1. 개요",
+   "level": 2,
+   "blocks": [
+    {
+     "type": "p",
+     "text": "본 보고서는 행 내 일반기업 규모별 신용평가모형에 대해 2026년 8월말 기준 익스포저의 건수·금액·모형등급·부도여부를 활용하여 {{term:PSI|안정성}}과 {{term:AR|부도예측력}}을 측정하고, 모형 적정성을 점검한 결과입니다. 소기업 모형은 전체 익스포저 [[fig:total_obs]], 전체 실제부도율 [[fig:total_dr]] 수준입니다."
+    },
+    {
+     "type": "kv",
+     "kv": [
+      {
+       "label": "대상 모형",
+       "value": "대기업 · 중견기업 · 중소기업 · 소기업 (4개 규모별 모형)"
+      },
+      {
+       "label": "분석 기준일",
+       "value": "2026.08.31"
+      },
+      {
+       "label": "비교 기준시점",
+       "value": "2025.08.31 (PSI 기준 분포)"
+      },
+      {
+       "label": "판정 체계",
+       "value": "안정성 → 변별력 → 등급계량화 → 종합 적정성"
+      }
+     ]
+    },
+    {
+     "type": "callout",
+     "tone": "info",
+     "text": "판정 임계값은 설정값으로 관리되며, 과거 판정은 당시 임계값 버전으로 보존됩니다."
+    }
+   ]
+  },
+  {
+   "id": "s2-stability",
+   "heading": "2. 안정성 분석",
+   "level": 2,
+   "blocks": [
+    {
+     "type": "p",
+     "text": "소기업 모형의 {{term:PSI|PSI}}는 [[fig:psi_micro]]로 관찰 구간입니다. 등급 분포가 상위 등급(3A~4A)에서 하위 등급(5C~6B)으로 이동하는 흐름이 확인되며, 6B 등급 구성비는 기준시점 3.40%에서 5.61%로 상승했습니다."
+    }
+   ]
+  },
+  {
+   "id": "s2-psi",
+   "heading": "2.1 등급 분포 및 PSI",
+   "level": 3,
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "caption": "등급별 분포 비교 및 PSI 기여도",
+      "columns": [
+       {
+        "key": "bucket",
+        "label": "등급"
+       },
+       {
+        "key": "baseShare",
+        "label": "기준시점 비중(%)",
+        "align": "right"
+       },
+       {
+        "key": "currentShare",
+        "label": "비교시점 비중(%)",
+        "align": "right"
+       },
+       {
+        "key": "diff",
+        "label": "증감(%p)",
+        "align": "right"
+       },
+       {
+        "key": "contribution",
+        "label": "PSI 기여도",
+        "align": "right",
+        "term": "PSI"
+       }
+      ],
+      "rows": [
+       {
+        "bucket": "3A",
+        "baseShare": "7.80",
+        "currentShare": "4.18",
+        "diff": "-3.62",
+        "contribution": "0.0226"
+       },
+       {
+        "bucket": "3B",
+        "baseShare": "10.40",
+        "currentShare": "7.04",
+        "diff": "-3.36",
+        "contribution": "0.0131"
+       },
+       {
+        "bucket": "4A",
+        "baseShare": "14.60",
+        "currentShare": "11.96",
+        "diff": "-2.64",
+        "contribution": "0.0053"
+       },
+       {
+        "bucket": "4B",
+        "baseShare": "17.20",
+        "currentShare": "15.75",
+        "diff": "-1.45",
+        "contribution": "0.0013"
+       },
+       {
+        "bucket": "5A",
+        "baseShare": "17.00",
+        "currentShare": "16.75",
+        "diff": "-0.25",
+        "contribution": "0.0000"
+       },
+       {
+        "bucket": "5B",
+        "baseShare": "12.60",
+        "currentShare": "14.79",
+        "diff": "2.19",
+        "contribution": "0.0035"
+       },
+       {
+        "bucket": "5C",
+        "baseShare": "8.40",
+        "currentShare": "11.31",
+        "diff": "2.91",
+        "contribution": "0.0087"
+       },
+       {
+        "bucket": "6A",
+        "baseShare": "5.20",
+        "currentShare": "7.87",
+        "diff": "2.67",
+        "contribution": "0.0111"
+       },
+       {
+        "bucket": "6B",
+        "baseShare": "3.40",
+        "currentShare": "5.61",
+        "diff": "2.21",
+        "contribution": "0.0111"
+       },
+       {
+        "bucket": "7A",
+        "baseShare": "2.00",
+        "currentShare": "2.92",
+        "diff": "0.92",
+        "contribution": "0.0035"
+       },
+       {
+        "bucket": "7B",
+        "baseShare": "1.00",
+        "currentShare": "1.42",
+        "diff": "0.42",
+        "contribution": "0.0015"
+       },
+       {
+        "bucket": "8",
+        "baseShare": "0.40",
+        "currentShare": "0.40",
+        "diff": "0.00",
+        "contribution": "0.0000"
+       }
+      ],
+      "note": "기여도 합계 0.0817 → PSI 0.082 (표시 3자리). 비중 0 구간은 ε=0.0001 보정 규칙 적용 대상이나 해당 구간 없음."
+     }
+    },
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "bar",
+      "title": "등급별 구성비 — 기준시점 vs 비교시점",
+      "unit": "PCT",
+      "series": [
+       {
+        "name": "2025.08(기준)",
+        "points": [
+         {
+          "label": "3A",
+          "value": 7.8
+         },
+         {
+          "label": "3B",
+          "value": 10.4
+         },
+         {
+          "label": "4A",
+          "value": 14.6
+         },
+         {
+          "label": "4B",
+          "value": 17.2
+         },
+         {
+          "label": "5A",
+          "value": 17
+         },
+         {
+          "label": "5B",
+          "value": 12.6
+         },
+         {
+          "label": "5C",
+          "value": 8.4
+         },
+         {
+          "label": "6A",
+          "value": 5.2
+         },
+         {
+          "label": "6B",
+          "value": 3.4
+         },
+         {
+          "label": "7A",
+          "value": 2
+         },
+         {
+          "label": "7B",
+          "value": 1
+         },
+         {
+          "label": "8",
+          "value": 0.4
+         }
+        ]
+       },
+       {
+        "name": "2026.08(비교)",
+        "points": [
+         {
+          "label": "3A",
+          "value": 4.18
+         },
+         {
+          "label": "3B",
+          "value": 7.04
+         },
+         {
+          "label": "4A",
+          "value": 11.96
+         },
+         {
+          "label": "4B",
+          "value": 15.75
+         },
+         {
+          "label": "5A",
+          "value": 16.75
+         },
+         {
+          "label": "5B",
+          "value": 14.79
+         },
+         {
+          "label": "5C",
+          "value": 11.31
+         },
+         {
+          "label": "6A",
+          "value": 7.87
+         },
+         {
+          "label": "6B",
+          "value": 5.61
+         },
+         {
+          "label": "7A",
+          "value": 2.92
+         },
+         {
+          "label": "7B",
+          "value": 1.42
+         },
+         {
+          "label": "8",
+          "value": 0.4
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "s3-discrimination",
+   "heading": "3. 변별력 분석",
+   "level": 2,
+   "blocks": [
+    {
+     "type": "p",
+     "text": "소기업 모형의 {{term:AR|AR}}은 [[fig:ar_micro]]이며 개발시점 대비 {{term:AR_DECLINE|AR 하락률}}은 [[fig:ard_micro]]로 하락 주의 구간입니다. {{term:KS|K-S 통계량}}은 [[fig:ks_micro]], {{term:AUROC|AUROC}}는 [[fig:auroc_micro]] 수준입니다."
+    },
+    {
+     "type": "ul",
+     "items": [
+      "AR 하락률이 30%를 초과하지는 않았으나, 전기(15.2%) 대비 확대되는 흐름이 확인됩니다.",
+      "K-S 최대 격차는 5B 등급 구간(37.4)에서 발생했습니다.",
+      "7B·8 등급 구간에서 {{term:SDR|서열화}} 균열이 확인되어 해당 구간 표본 수(624건 / 178건)를 함께 점검할 필요가 있습니다."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s3-grade",
+   "heading": "3.1 등급별 부도율 및 서열화",
+   "level": 3,
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "caption": "소기업 모형 등급별 모니터링 결과 (2026.08.31)",
+      "columns": [
+       {
+        "key": "grade",
+        "label": "등급"
+       },
+       {
+        "key": "obsCount",
+        "label": "전체건수",
+        "align": "right"
+       },
+       {
+        "key": "obsShare",
+        "label": "구성비(%)",
+        "align": "right"
+       },
+       {
+        "key": "defaultCount",
+        "label": "부도건수",
+        "align": "right"
+       },
+       {
+        "key": "defaultRate",
+        "label": "실제부도율(%)",
+        "align": "right"
+       },
+       {
+        "key": "pdMid",
+        "label": "예측 대표값(%)",
+        "align": "right",
+        "term": "PD_MASTER_SCALE"
+       },
+       {
+        "key": "pdMax",
+        "label": "예측 최대값(%)",
+        "align": "right",
+        "term": "PD_MASTER_SCALE"
+       },
+       {
+        "key": "ks",
+        "label": "K-S",
+        "align": "right",
+        "term": "KS"
+       },
+       {
+        "key": "sdrRank",
+        "label": "SDR",
+        "align": "right",
+        "term": "SDR"
+       },
+       {
+        "key": "verdict",
+        "label": "판정"
+       }
+      ],
+      "rows": [
+       {
+        "grade": "3A",
+        "obsCount": "1,842",
+        "obsShare": "4.18",
+        "defaultCount": "3",
+        "defaultRate": "0.163",
+        "pdMid": "0.240",
+        "pdMax": "0.300",
+        "ks": "5.2",
+        "sdrRank": 12,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "3B",
+        "obsCount": "3,104",
+        "obsShare": "7.04",
+        "defaultCount": "9",
+        "defaultRate": "0.290",
+        "pdMid": "0.410",
+        "pdMax": "0.520",
+        "ks": "11.4",
+        "sdrRank": 11,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "4A",
+        "obsCount": "5,271",
+        "obsShare": "11.96",
+        "defaultCount": "27",
+        "defaultRate": "0.512",
+        "pdMid": "0.680",
+        "pdMax": "0.860",
+        "ks": "19.6",
+        "sdrRank": 10,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "4B",
+        "obsCount": "6,940",
+        "obsShare": "15.75",
+        "defaultCount": "62",
+        "defaultRate": "0.893",
+        "pdMid": "1.120",
+        "pdMax": "1.410",
+        "ks": "27.8",
+        "sdrRank": 9,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "5A",
+        "obsCount": "7,382",
+        "obsShare": "16.75",
+        "defaultCount": "118",
+        "defaultRate": "1.598",
+        "pdMid": "1.840",
+        "pdMax": "2.260",
+        "ks": "34.1",
+        "sdrRank": 8,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "5B",
+        "obsCount": "6,517",
+        "obsShare": "14.79",
+        "defaultCount": "171",
+        "defaultRate": "2.624",
+        "pdMid": "2.910",
+        "pdMax": "3.480",
+        "ks": "37.4",
+        "sdrRank": 7,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "5C",
+        "obsCount": "4,983",
+        "obsShare": "11.31",
+        "defaultCount": "196",
+        "defaultRate": "3.933",
+        "pdMid": "4.220",
+        "pdMax": "4.950",
+        "ks": "35.6",
+        "sdrRank": 6,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "6A",
+        "obsCount": "3,468",
+        "obsShare": "7.87",
+        "defaultCount": "199",
+        "defaultRate": "5.738",
+        "pdMid": "5.960",
+        "pdMax": "6.870",
+        "ks": "28.9",
+        "sdrRank": 5,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "6B",
+        "obsCount": "2,472",
+        "obsShare": "5.61",
+        "defaultCount": "196",
+        "defaultRate": "7.929",
+        "pdMid": "7.733",
+        "pdMax": "8.933",
+        "ks": "19.4",
+        "sdrRank": 4,
+        "verdict": "대표값 초과 · 최대값 이내"
+       },
+       {
+        "grade": "7A",
+        "obsCount": "1,286",
+        "obsShare": "2.92",
+        "defaultCount": "132",
+        "defaultRate": "10.264",
+        "pdMid": "10.980",
+        "pdMax": "12.640",
+        "ks": "11.2",
+        "sdrRank": 3,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "7B",
+        "obsCount": "624",
+        "obsShare": "1.42",
+        "defaultCount": "79",
+        "defaultRate": "12.660",
+        "pdMid": "14.220",
+        "pdMax": "16.380",
+        "ks": "5.1",
+        "sdrRank": 1,
+        "verdict": "예측 범위 내"
+       },
+       {
+        "grade": "8",
+        "obsCount": "178",
+        "obsShare": "0.40",
+        "defaultCount": "21",
+        "defaultRate": "11.798",
+        "pdMid": "18.900",
+        "pdMax": "22.400",
+        "ks": "0.0",
+        "sdrRank": 2,
+        "verdict": "서열화 균열"
+       }
+      ],
+      "highlightRowKey": "grade",
+      "highlightRowValue": "6B",
+      "note": "합계 44,067건 / 부도 1,213건 / 전체 실제부도율 2.753%"
+     }
+    },
+    {
+     "type": "chart",
+     "chart": {
+      "kind": "line",
+      "title": "등급별 실제부도율 vs 예측부도율 대표값·최대값",
+      "unit": "PCT",
+      "series": [
+       {
+        "name": "실제부도율",
+        "points": [
+         {
+          "label": "3A",
+          "value": 0.163
+         },
+         {
+          "label": "3B",
+          "value": 0.29
+         },
+         {
+          "label": "4A",
+          "value": 0.512
+         },
+         {
+          "label": "4B",
+          "value": 0.893
+         },
+         {
+          "label": "5A",
+          "value": 1.598
+         },
+         {
+          "label": "5B",
+          "value": 2.624
+         },
+         {
+          "label": "5C",
+          "value": 3.933
+         },
+         {
+          "label": "6A",
+          "value": 5.738
+         },
+         {
+          "label": "6B",
+          "value": 7.929
+         },
+         {
+          "label": "7A",
+          "value": 10.264
+         },
+         {
+          "label": "7B",
+          "value": 12.66
+         },
+         {
+          "label": "8",
+          "value": 11.798
+         }
+        ]
+       },
+       {
+        "name": "예측 대표값",
+        "points": [
+         {
+          "label": "3A",
+          "value": 0.24
+         },
+         {
+          "label": "3B",
+          "value": 0.41
+         },
+         {
+          "label": "4A",
+          "value": 0.68
+         },
+         {
+          "label": "4B",
+          "value": 1.12
+         },
+         {
+          "label": "5A",
+          "value": 1.84
+         },
+         {
+          "label": "5B",
+          "value": 2.91
+         },
+         {
+          "label": "5C",
+          "value": 4.22
+         },
+         {
+          "label": "6A",
+          "value": 5.96
+         },
+         {
+          "label": "6B",
+          "value": 7.733
+         },
+         {
+          "label": "7A",
+          "value": 10.98
+         },
+         {
+          "label": "7B",
+          "value": 14.22
+         },
+         {
+          "label": "8",
+          "value": 18.9
+         }
+        ]
+       },
+       {
+        "name": "예측 최대값",
+        "points": [
+         {
+          "label": "3A",
+          "value": 0.3
+         },
+         {
+          "label": "3B",
+          "value": 0.52
+         },
+         {
+          "label": "4A",
+          "value": 0.86
+         },
+         {
+          "label": "4B",
+          "value": 1.41
+         },
+         {
+          "label": "5A",
+          "value": 2.26
+         },
+         {
+          "label": "5B",
+          "value": 3.48
+         },
+         {
+          "label": "5C",
+          "value": 4.95
+         },
+         {
+          "label": "6A",
+          "value": 6.87
+         },
+         {
+          "label": "6B",
+          "value": 8.933
+         },
+         {
+          "label": "7A",
+          "value": 12.64
+         },
+         {
+          "label": "7B",
+          "value": 16.38
+         },
+         {
+          "label": "8",
+          "value": 22.4
+         }
+        ]
+       }
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "s4-calibration",
+   "heading": "4. 등급계량화 검증",
+   "level": 2,
+   "blocks": [
+    {
+     "type": "p",
+     "text": "{{term:CALIBRATION|등급계량화}} 적정성은 등급별 실제부도율과 {{term:PD_MASTER_SCALE|PD 추정치}} 비교 및 {{term:CHI_SQUARE|카이제곱 검정}}으로 확인했습니다. 검정통계량은 [[fig:chi_stat]]로 임계값 [[fig:chi_critical]]을 초과하지 않아 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다."
+    },
+    {
+     "type": "callout",
+     "tone": "attention",
+     "text": "다만 개별 등급 기준으로는 6B 등급의 실제부도율([[fig:dr_6b]])이 예측부도율 대표값([[fig:pd_mid_6b]])을 [[fig:breach_gap_6b]] 초과했습니다. 최대값([[fig:pd_max_6b]]) 이내이므로 관리 범위 내로 판정하되, 재계량화 필요성은 차기 모니터링에서 재확인 대상입니다."
+    },
+    {
+     "type": "kv",
+     "kv": [
+      {
+       "label": "[1단계]",
+       "value": "χ² = 18.42 < 임계값 21.03"
+      },
+      {
+       "label": "[2단계]",
+       "value": "귀무가설 채택"
+      },
+      {
+       "label": "[3단계]",
+       "value": "예측부도율과 실제부도율은 동일하다고 판단"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "s5-findings",
+   "heading": "5. 특이사항 및 가이드",
+   "level": 2,
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "caption": "탐지된 특이사항",
+      "columns": [
+       {
+        "key": "no",
+        "label": "No"
+       },
+       {
+        "key": "item",
+        "label": "특이사항"
+       },
+       {
+        "key": "severity",
+        "label": "심각도"
+       },
+       {
+        "key": "guide",
+        "label": "가이드"
+       }
+      ],
+      "rows": [
+       {
+        "no": 1,
+        "item": "소기업 6B 등급 실제부도율이 예측부도율 대표값 초과(최대값 이내)",
+        "severity": "주의",
+        "guide": "해당 등급 표본 구성 점검 및 등급계량화 재검토 필요성 차기 확인"
+       },
+       {
+        "no": 2,
+        "item": "소기업 모형 PSI 0.082 — 등급 하향 이동 누적",
+        "severity": "관찰",
+        "guide": "분기 점검 주기 유지, 하위 등급 신규 취급 구성 점검"
+       },
+       {
+        "no": 3,
+        "item": "7B·8 등급 서열화 균열(12.660% > 11.798%)",
+        "severity": "관찰",
+        "guide": "해당 구간 표본 수 부족 여부 확인 후 등급 병합 검토"
+       },
+       {
+        "no": 4,
+        "item": "소매 AS모형 AR 하락률 34.7% — 큰 하락 구간",
+        "severity": "주의",
+        "guide": "저신용자 모형 재개발 검토 및 대체 변수 발굴"
+       }
+      ]
+     }
+    },
+    {
+     "type": "callout",
+     "tone": "info",
+     "text": "가이드는 정부정책 DB · 경영 의사결정 DB · 종합기획부 경영계획과의 배치 여부를 검증한 결과 충돌이 확인되지 않았습니다. 반영한 기준은 근거로 함께 제시됩니다."
+    }
+   ]
+  }
+ ]
+}

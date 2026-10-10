@@ -1,0 +1,161 @@
+@import "../styles/tokens.generated.css";
+/* 폐쇄망 환경에서는 아래 CDN 이 차단되며, 그 경우 system 폰트로 폴백된다. */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-display);
+    font-size: 14px;
+    line-height: 1.43;
+    letter-spacing: -0.14px;
+  }
+  /* 금융 표 가독성: 숫자 폭 고정 */
+  table,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  /* no-hover 정책이지만 키보드 포커스 링은 필수 */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  ::selection {
+    background: rgba(0, 100, 224, 0.14);
+  }
+}
+
+@layer components {
+  .shell {
+    max-width: 1280px;
+    margin-inline: auto;
+    padding-inline: var(--space-lg);
+  }
+  @media (min-width: 768px) {
+    .shell {
+      padding-inline: var(--space-xxl);
+    }
+  }
+  /* text-input (디자인 시스템) — 44px, hairline, radius-lg, 포커스 시 2px 강조 */
+  .input {
+    height: 44px;
+    width: 100%;
+    border: 1px solid var(--color-hairline);
+    border-radius: var(--radius-lg);
+    background: var(--color-canvas);
+    padding: 0 var(--space-md);
+    font-size: 14px;
+    color: var(--color-ink);
+  }
+  .input::placeholder {
+    color: var(--color-stone);
+  }
+  .input:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px var(--color-primary);
+  }
+  textarea.input {
+    height: auto;
+    padding: var(--space-sm) var(--space-md);
+    line-height: 1.6;
+  }
+
+  /* 선택 가능한 목록 행 — 누름 상태와 선택 상태만 표현한다 */
+  .row-button {
+    width: 100%;
+    text-align: left;
+    transition: background-color 120ms ease;
+  }
+  .row-button:active {
+    background: var(--color-surface-soft);
+  }
+  .row-button[aria-current="true"] {
+    background: rgba(0, 100, 224, 0.05);
+  }
+  .card {
+    background: var(--color-canvas);
+    border: 1px solid var(--color-hairline-soft);
+    border-radius: var(--radius-xxl);
+  }
+  .panel {
+    background: var(--color-canvas);
+    border: 1px solid var(--color-hairline-soft);
+    border-radius: var(--radius-xl);
+  }
+  .soft {
+    background: var(--color-surface-soft);
+    border-radius: var(--radius-xl);
+  }
+  .label {
+    color: var(--color-steel);
+    font-size: 12px;
+    line-height: 1.33;
+  }
+  .divider {
+    height: 1px;
+    background: var(--color-hairline-soft);
+  }
+
+  /* 근거 있는 수치: 점선 밑줄로 추적 가능함을 알린다 */
+  .figure-traceable {
+    border-bottom: 1px dashed var(--color-stone);
+    cursor: help;
+  }
+  /* 용어집 연결 용어 */
+  .term-marked {
+    border-bottom: 1px dotted var(--color-primary);
+    cursor: help;
+  }
+
+  .report-body h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--color-ink-deep);
+    margin-top: var(--space-xxl);
+    margin-bottom: var(--space-md);
+    scroll-margin-top: 88px;
+  }
+  .report-body h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--color-charcoal);
+    margin-top: var(--space-lg);
+    margin-bottom: var(--space-xs);
+  }
+  .report-body p {
+    margin-bottom: var(--space-sm);
+    color: var(--color-charcoal);
+  }
+  .report-body ul {
+    margin: 0 0 var(--space-md) var(--space-base);
+    list-style: disc;
+    color: var(--color-charcoal);
+  }
+  .report-body section[data-highlight="true"] {
+    background: rgba(242, 169, 24, 0.09);
+    box-shadow: inset 3px 0 0 var(--color-attention);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-base);
+    margin-inline: calc(var(--space-base) * -1);
+    transition: background 200ms ease;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .report-body h2 {
+    break-after: avoid;
+  }
+}

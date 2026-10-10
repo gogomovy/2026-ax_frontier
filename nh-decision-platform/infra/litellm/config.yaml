@@ -1,0 +1,22 @@
+# LiteLLM 게이트웨이 설정 (요구사항 LLM-01)
+#
+# 모델·키는 이 파일에 고정하지 않는다. 운영자는 다음 중 하나로 등록한다.
+#   1) LiteLLM 관리 화면  http://localhost:4000/ui  (마스터 키로 로그인)
+#        Models → Add Model : 제공자·실제 모델·접속 정보 입력, "Public Model Name" 에 별칭 입력
+#                            (예: coder.general.multimodal — 플랫폼 관리자 화면에서 이 별칭을 그대로 사용)
+#        Virtual Keys → Create Key : 플랫폼이 쓸 키 발급
+#   2) 아래 model_list 에 직접 추가 후 컨테이너 재시작
+#
+# 플랫폼(api/worker)은 관리자 화면 [LLM 연동] 에 등록한 URL · 키 · 모델명으로만 호출한다.
+# 컨테이너 내부 주소는 http://litellm:4000 이다.
+
+model_list: []
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true
+
+litellm_settings:
+  drop_params: true          # 모델이 지원하지 않는 파라미터는 버리고 호출한다
+  request_timeout: 120

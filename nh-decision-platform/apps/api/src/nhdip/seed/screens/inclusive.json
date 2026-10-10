@@ -1,0 +1,458 @@
+{
+ "asOf": "2026-08-31",
+ "baseYm": "2026.01",
+ "nowYm": "2026.08",
+ "shareBase": {
+  "id": "share_base",
+  "label": "포용금융 충당금 비중(2026.01)",
+  "value": 7.97,
+  "unit": "PCT",
+  "dataOrigin": "simulated",
+  "decimals": 2,
+  "calc": {
+   "calcId": "calc-share-base",
+   "formulaId": "PROVISION_SHARE",
+   "formulaVersion": 1,
+   "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
+   "inputs": [
+    {
+     "key": "numerator",
+     "label": "포용금융 상품 충당금 합계(21개 상품코드)",
+     "value": "261,840",
+     "unit": "백만원",
+     "source": "(202601)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
+    },
+    {
+     "key": "denominator",
+     "label": "전체 충당금(합계 row)",
+     "value": "3,284,600",
+     "unit": "백만원",
+     "source": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
+    }
+   ],
+   "executedAt": "2026-08-31T06:22:00+09:00"
+  }
+ },
+ "shareNow": {
+  "id": "share_now",
+  "label": "포용금융 충당금 비중(2026.08)",
+  "value": 9.16,
+  "unit": "PCT",
+  "dataOrigin": "simulated",
+  "decimals": 2,
+  "calc": {
+   "calcId": "calc-share-now",
+   "formulaId": "PROVISION_SHARE",
+   "formulaVersion": 1,
+   "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
+   "inputs": [
+    {
+     "key": "numerator",
+     "label": "포용금융 상품 충당금 합계(21개 상품코드)",
+     "value": "312,470",
+     "unit": "백만원",
+     "source": "(202608)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
+    },
+    {
+     "key": "denominator",
+     "label": "전체 충당금(합계 row)",
+     "value": "3,412,180",
+     "unit": "백만원",
+     "source": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
+    }
+   ],
+   "executedAt": "2026-08-31T06:22:00+09:00"
+  }
+ },
+ "shareDeltaPP": {
+  "id": "share_delta_pp",
+  "label": "비중 증감",
+  "value": 1.19,
+  "unit": "PP",
+  "dataOrigin": "simulated",
+  "decimals": 2,
+  "calc": {
+   "calcId": "calc-share-delta-pp",
+   "formulaId": "SHARE_DELTA_PP",
+   "formulaVersion": 1,
+   "expression": "비교시점 비중 − 기준시점 비중",
+   "inputs": [
+    {
+     "key": "share1",
+     "label": "2026.08 비중",
+     "value": "9.1575",
+     "unit": "%",
+     "source": "calc-share-now"
+    },
+    {
+     "key": "share0",
+     "label": "2026.01 비중",
+     "value": "7.9717",
+     "unit": "%",
+     "source": "calc-share-base"
+    }
+   ],
+   "executedAt": "2026-08-31T06:22:00+09:00"
+  }
+ },
+ "shareDeltaPct": {
+  "id": "share_delta_pct",
+  "label": "비중 증가율",
+  "value": 14.9,
+  "unit": "PCT",
+  "dataOrigin": "simulated",
+  "decimals": 1,
+  "calc": {
+   "calcId": "calc-share-delta-pct",
+   "formulaId": "GROWTH_RATE",
+   "formulaVersion": 1,
+   "expression": "(비교시점 비중 − 기준시점 비중) / 기준시점 비중 × 100",
+   "inputs": [
+    {
+     "key": "v0",
+     "label": "2026.01 비중",
+     "value": "7.9717",
+     "unit": "%",
+     "source": "calc-share-base"
+    },
+    {
+     "key": "v1",
+     "label": "2026.08 비중",
+     "value": "9.1575",
+     "unit": "%",
+     "source": "calc-share-now"
+    }
+   ],
+   "executedAt": "2026-08-31T06:22:00+09:00"
+  }
+ },
+ "provisionInclusiveNow": {
+  "id": "prov_inclusive_now",
+  "label": "포용금융 상품 충당금(2026.08)",
+  "value": 312470,
+  "unit": "KRW_MN",
+  "dataOrigin": "simulated",
+  "sourceRef": "(202608)7790_상품별_충당금.xlsx · X열 21행 합계"
+ },
+ "provisionTotalNow": {
+  "id": "prov_total_now",
+  "label": "전체 충당금(2026.08)",
+  "value": 3412180,
+  "unit": "KRW_MN",
+  "dataOrigin": "simulated",
+  "sourceRef": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
+ },
+ "verdict": "증가",
+ "severity": "caution",
+ "products": [
+  {
+   "productCode": "2001109170002",
+   "productName": "사잇돌중금리대출Ⅱ",
+   "productGroup": "사잇돌",
+   "provisionBase": 20780,
+   "provisionNow": 27530,
+   "diff": 6750,
+   "contribution": 13.3
+  },
+  {
+   "productCode": "2001109170001",
+   "productName": "사잇돌중금리대출",
+   "productGroup": "사잇돌",
+   "provisionBase": 30420,
+   "provisionNow": 36240,
+   "diff": 5820,
+   "contribution": 11.5
+  },
+  {
+   "productCode": "2001108220001",
+   "productName": "새희망홀씨대출(일반)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 28420,
+   "provisionNow": 33180,
+   "diff": 4760,
+   "contribution": 9.4
+  },
+  {
+   "productCode": "2001107820007",
+   "productName": "햇살론(근로자)",
+   "productGroup": "햇살론",
+   "provisionBase": 21340,
+   "provisionNow": 25620,
+   "diff": 4280,
+   "contribution": 8.5
+  },
+  {
+   "productCode": "2001108220005",
+   "productName": "새희망홀씨대출(생계자금)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 19860,
+   "provisionNow": 23940,
+   "diff": 4080,
+   "contribution": 8.1
+  },
+  {
+   "productCode": "2001107820008",
+   "productName": "햇살론(자영업자)",
+   "productGroup": "햇살론",
+   "provisionBase": 18760,
+   "provisionNow": 22180,
+   "diff": 3420,
+   "contribution": 6.8
+  },
+  {
+   "productCode": "2001107820010",
+   "productName": "햇살론(생계자금)",
+   "productGroup": "햇살론",
+   "provisionBase": 15420,
+   "provisionNow": 18340,
+   "diff": 2920,
+   "contribution": 5.8
+  },
+  {
+   "productCode": "2001107820011",
+   "productName": "햇살론(사업운영자금)",
+   "productGroup": "햇살론",
+   "provisionBase": 13280,
+   "provisionNow": 15860,
+   "diff": 2580,
+   "contribution": 5.1
+  },
+  {
+   "productCode": "2001107820012",
+   "productName": "햇살론(창업자금)",
+   "productGroup": "햇살론",
+   "provisionBase": 11640,
+   "provisionNow": 13720,
+   "diff": 2080,
+   "contribution": 4.1
+  },
+  {
+   "productCode": "2001108220006",
+   "productName": "새희망홀씨대출(사업자금)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 12340,
+   "provisionNow": 14020,
+   "diff": 1680,
+   "contribution": 3.3
+  },
+  {
+   "productCode": "2001107820013",
+   "productName": "햇살론(전환대출)",
+   "productGroup": "햇살론",
+   "provisionBase": 9820,
+   "provisionNow": 11480,
+   "diff": 1660,
+   "contribution": 3.3
+  },
+  {
+   "productCode": "2001109000001",
+   "productName": "햇살론youth",
+   "productGroup": "햇살론",
+   "provisionBase": 8640,
+   "provisionNow": 10260,
+   "diff": 1620,
+   "contribution": 3.2
+  },
+  {
+   "productCode": "2001109050001",
+   "productName": "새희망홀씨대출Ⅱ(일반)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 9780,
+   "provisionNow": 11260,
+   "diff": 1480,
+   "contribution": 2.9
+  },
+  {
+   "productCode": "2001109000002",
+   "productName": "햇살론뱅크",
+   "productGroup": "햇살론",
+   "provisionBase": 7320,
+   "provisionNow": 8740,
+   "diff": 1420,
+   "contribution": 2.8
+  },
+  {
+   "productCode": "2001109000003",
+   "productName": "햇살론카드",
+   "productGroup": "햇살론",
+   "provisionBase": 6180,
+   "provisionNow": 7420,
+   "diff": 1240,
+   "contribution": 2.4
+  },
+  {
+   "productCode": "2001109050002",
+   "productName": "새희망홀씨대출Ⅱ(생계자금)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 7420,
+   "provisionNow": 8640,
+   "diff": 1220,
+   "contribution": 2.4
+  },
+  {
+   "productCode": "2001109000004",
+   "productName": "근로자햇살론(신규)",
+   "productGroup": "햇살론",
+   "provisionBase": 5240,
+   "provisionNow": 6180,
+   "diff": 940,
+   "contribution": 1.9
+  },
+  {
+   "productCode": "2001109050003",
+   "productName": "새희망홀씨대출Ⅱ(전환대출)",
+   "productGroup": "새희망홀씨대출",
+   "provisionBase": 5260,
+   "provisionNow": 6180,
+   "diff": 920,
+   "contribution": 1.8
+  },
+  {
+   "productCode": "2001109060003",
+   "productName": "햇살론(특례보증)",
+   "productGroup": "햇살론",
+   "provisionBase": 4180,
+   "provisionNow": 4920,
+   "diff": 740,
+   "contribution": 1.5
+  },
+  {
+   "productCode": "2001109670001",
+   "productName": "햇살론15",
+   "productGroup": "햇살론",
+   "provisionBase": 3260,
+   "provisionNow": 3840,
+   "diff": 580,
+   "contribution": 1.1
+  },
+  {
+   "productCode": "2001109670002",
+   "productName": "햇살론17",
+   "productGroup": "햇살론",
+   "provisionBase": 2480,
+   "provisionNow": 2920,
+   "diff": 440,
+   "contribution": 0.9
+  }
+ ],
+ "groupSummary": [
+  {
+   "group": "새희망홀씨대출",
+   "codes": 6,
+   "base": 83080,
+   "now": 97220,
+   "deltaPP": 0.32
+  },
+  {
+   "group": "햇살론",
+   "codes": 13,
+   "base": 127560,
+   "now": 151480,
+   "deltaPP": 0.56
+  },
+  {
+   "group": "사잇돌",
+   "codes": 2,
+   "base": 51200,
+   "now": 63770,
+   "deltaPP": 0.31
+  }
+ ],
+ "unmatchedCodes": [],
+ "exposure": [
+  {
+   "label": "익스포저 건수(2026.08)",
+   "figure": {
+    "id": "inc_exposure_cnt_now",
+    "label": "포용금융 익스포저 건수(2026.08)",
+    "value": 213480,
+    "unit": "CNT",
+    "dataOrigin": "simulated",
+    "calc": {
+     "calcId": "calc-inc-cnt",
+     "formulaId": "SUM",
+     "formulaVersion": 1,
+     "expression": "포용금융 상품코드 21건 익스포저 건수 합계",
+     "inputs": [
+      {
+       "key": "base",
+       "label": "2026.01 건수",
+       "value": "184,260",
+       "unit": "건",
+       "source": "(202601) 여신 익스포저 집계"
+      },
+      {
+       "key": "now",
+       "label": "2026.08 건수",
+       "value": "213,480",
+       "unit": "건",
+       "source": "(202608) 여신 익스포저 집계"
+      }
+     ],
+     "executedAt": "2026-08-31T06:22:00+09:00"
+    }
+   }
+  },
+  {
+   "label": "건수 증가율(1월 대비)",
+   "figure": {
+    "id": "inc_exposure_cnt_growth",
+    "label": "익스포저 건수 증가율",
+    "value": 15.9,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  },
+  {
+   "label": "익스포저 규모(2026.08)",
+   "figure": {
+    "id": "inc_exposure_amt_now",
+    "label": "포용금융 익스포저 규모(2026.08)",
+    "value": 3.42,
+    "unit": "KRW_TN",
+    "dataOrigin": "simulated",
+    "decimals": 2
+   }
+  },
+  {
+   "label": "해당 풀 평균 신용등급",
+   "figure": {
+    "id": "inc_avg_grade",
+    "label": "해당 풀 평균 신용등급(소매 기준)",
+    "value": 6.8,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  },
+  {
+   "label": "소매 전체 평균 신용등급",
+   "figure": {
+    "id": "retail_avg_grade",
+    "label": "소매 익스포저 전체 평균 신용등급",
+    "value": 4.9,
+    "unit": "RATIO",
+    "dataOrigin": "simulated",
+    "decimals": 1
+   }
+  },
+  {
+   "label": "해당 풀 연체율",
+   "figure": {
+    "id": "inc_delinquency",
+    "label": "해당 풀 연체율",
+    "value": null,
+    "unit": "PCT",
+    "dataOrigin": "simulated",
+    "undefinedLabel": "데이터 미제공"
+   }
+  }
+ ],
+ "limitations": [
+  "해당 풀의 연체율 데이터가 제공되지 않아 산출하지 않았습니다(추정치 생성 금지).",
+  "부도율 영향 분석은 익스포저 단위 부도여부 데이터 확보 후 수행 예정입니다.",
+  "(202608)7790 파일에 마스터 미등록 신규 상품 2건이 있으나 포용금융 대상 코드에는 해당하지 않습니다(충당금 영향 0.03%)."
+ ],
+ "ruleId": "INC_PROVISION_SHARE_TREND v1"
+}

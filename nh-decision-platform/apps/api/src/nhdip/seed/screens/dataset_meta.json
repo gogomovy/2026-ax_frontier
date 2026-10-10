@@ -1,0 +1,110 @@
+[
+ {
+  "fileName": "(202608)2633_상품부문별손익계산서.xlsx",
+  "reportCode": "2633",
+  "asOfYm": "202608",
+  "rows": 428,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "합계 검증 통과(오차 0.02%), 과목 매핑률 100%",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "여신 종합수익",
+   "수익성 트래킹",
+   "기업·가계 이자수익 비교"
+  ]
+ },
+ {
+  "fileName": "(202508)2633_상품부문별손익계산서.xlsx",
+  "reportCode": "2633",
+  "asOfYm": "202508",
+  "rows": 424,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "합계 검증 통과",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "전년 동기 비교"
+  ]
+ },
+ {
+  "fileName": "(202408)2633_상품부문별손익계산서.xlsx",
+  "reportCode": "2633",
+  "asOfYm": "202408",
+  "rows": 421,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "합계 검증 통과",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "3개년 추세"
+  ]
+ },
+ {
+  "fileName": "(202608)2020 과목별 월별 여신현황.xlsx",
+  "reportCode": "2020",
+  "asOfYm": "202608",
+  "rows": 41,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "종합계 vs 세부 합 일치, 조회사무소 005161",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "기업여신",
+   "가계여신",
+   "규모·비중·추이 비교"
+  ]
+ },
+ {
+  "fileName": "(202508)2020 과목별 월별 여신현황.xlsx",
+  "reportCode": "2020",
+  "asOfYm": "202508",
+  "rows": 41,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "종합계 vs 세부 합 일치",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "전년 동기 비교"
+  ]
+ },
+ {
+  "fileName": "(202408)2020 과목별 월별 여신현황.xlsx",
+  "reportCode": "2020",
+  "asOfYm": "202408",
+  "rows": 41,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "종합계 vs 세부 합 일치",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "3개년 추세"
+  ]
+ },
+ {
+  "fileName": "(202601)7790_상품별_충당금.xlsx",
+  "reportCode": "7790",
+  "asOfYm": "202601",
+  "rows": 312,
+  "unit": "백만원",
+  "quality": "passed",
+  "qualityNote": "포용금융 상품코드 21건 전건 매칭",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "포용금융 충당금 비중(기준시점)"
+  ]
+ },
+ {
+  "fileName": "(202608)7790_상품별_충당금.xlsx",
+  "reportCode": "7790",
+  "asOfYm": "202608",
+  "rows": 316,
+  "unit": "백만원",
+  "quality": "warning",
+  "qualityNote": "신규 상품 2건 마스터 미등록(충당금 영향 0.03%) — 마스터 등록 필요",
+  "registeredAt": "2026-09-03",
+  "usedBy": [
+   "포용금융 충당금 비중(비교시점)"
+  ]
+ }
+]

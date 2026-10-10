@@ -1,0 +1,82 @@
+[
+ {
+  "id": "goal-corp-growth",
+  "kind": "goal",
+  "label": "기업여신 전년 대비 +7.0% 이상 확대",
+  "detail": "종합기획부 · 2026 연간 · v3",
+  "org": "종합기획부",
+  "children": [
+   {
+    "id": "plan-corp-expand",
+    "kind": "plan",
+    "label": "기업여신 확대 실행방안(하반기)",
+    "detail": "우량 중소기업 신규 발굴, 정책자금 연계 취급 확대",
+    "org": "여신관리부",
+    "children": [
+     {
+      "id": "bt-corp-metro1",
+      "kind": "branch_target",
+      "label": "수도권1지역본부 — 기업여신 신규 취급 1.24조원",
+      "detail": "가이드: 5C 이상 차주 중심, 정책자금 연계 우선",
+      "org": "수도권1지역본부"
+     },
+     {
+      "id": "bt-corp-central",
+      "kind": "branch_target",
+      "label": "중부지역본부 — 기업여신 신규 취급 0.86조원",
+      "org": "중부지역본부"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "goal-hh-control",
+  "kind": "goal",
+  "label": "가계여신 전년 대비 +4.0% 이하 관리",
+  "detail": "종합기획부 · 2026 연간 · v2",
+  "org": "종합기획부",
+  "children": [
+   {
+    "id": "plan-hh-control",
+    "kind": "plan",
+    "label": "가계여신 증가율 관리 강화방안",
+    "detail": "월별 취급 한도 배분, 고DSR 구간 취급 기준 강화",
+    "org": "여신관리부",
+    "children": [
+     {
+      "id": "bt-hh-metro1",
+      "kind": "branch_target",
+      "label": "수도권1지역본부 — 가계여신 월 취급 한도 2,400억원",
+      "detail": "가이드: 잔액 한도 소진율 99.2% — 신규 취급 사전승인",
+      "org": "수도권1지역본부"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "id": "goal-inclusive-new",
+  "kind": "goal",
+  "label": "(제안) 포용금융 공급 확대",
+  "detail": "AI 제안 · 확정 전",
+  "org": "종합기획부",
+  "children": [
+   {
+    "id": "plan-inclusive-risk",
+    "kind": "plan",
+    "label": "포용금융 확대에 따른 신용리스크 중점관리방안",
+    "detail": "충당금 비중 상승 국면 — 해당 풀 연체 발생·연체율 모니터링",
+    "org": "신용리스크관리부",
+    "children": [
+     {
+      "id": "bt-inclusive-metro1",
+      "kind": "branch_target",
+      "label": "수도권1지역본부 — 포용금융 상품 취급 후 3개월 연체 모니터링",
+      "org": "수도권1지역본부"
+     }
+    ]
+   }
+  ]
+ }
+]

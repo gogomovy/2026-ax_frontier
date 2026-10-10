@@ -1,0 +1,36 @@
+{
+ "current": [
+  {
+   "tabKey": "model-monitoring",
+   "label": "① 소기업 6B 등급 부도율 특이사항",
+   "reportKind": "model_monitoring",
+   "insightId": "ins-model-6b",
+   "severity": "watch",
+   "generation": "current",
+   "asOf": "2026-08-31",
+   "generatedAt": "2026-08-31T06:22:00+09:00"
+  },
+  {
+   "tabKey": "inclusive-risk",
+   "label": "② 포용금융 확대 관련 신용리스크",
+   "reportKind": "inclusive_risk",
+   "insightId": "ins-inclusive-provision",
+   "severity": "caution",
+   "generation": "current",
+   "asOf": "2026-08-31",
+   "generatedAt": "2026-08-31T06:22:00+09:00"
+  }
+ ],
+ "previous": [
+  {
+   "tabKey": "model-monitoring-prev",
+   "label": "소기업 모형 PSI 관찰 구간 진입",
+   "reportKind": "model_monitoring",
+   "insightId": "ins-model-psi-prev",
+   "severity": "watch",
+   "generation": "previous",
+   "asOf": "2026-08-30",
+   "generatedAt": "2026-08-31T06:20:00+09:00"
+  }
+ ]
+}

@@ -1,0 +1,99 @@
+[
+ {
+  "domainCode": "loan",
+  "name": "여신",
+  "status": "active",
+  "summary": "기업·가계여신 및 여신 종합수익",
+  "headline": {
+   "id": "dom_loan_head",
+   "label": "여신 잔액(기업+가계)",
+   "value": 214.58,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "sub": [
+   {
+    "label": "여신 이자마진 수익",
+    "figure": {
+     "id": "nim_2026",
+     "label": "여신(일반)부문 이자마진 수익(2026.08 누계)",
+     "value": 21865,
+     "unit": "KRW_BN",
+     "dataOrigin": "simulated",
+     "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+    }
+   },
+   {
+    "label": "전체 수익 중 비중",
+    "figure": {
+     "id": "nim_share_2026",
+     "label": "전체 수익 중 여신 이자마진 비중",
+     "value": 45.44,
+     "unit": "PCT",
+     "dataOrigin": "simulated",
+     "decimals": 2,
+     "calc": {
+      "calcId": "calc-nim-share-2026",
+      "formulaId": "SHARE",
+      "formulaVersion": 1,
+      "expression": "분자 / 분모 × 100",
+      "inputs": [
+       {
+        "key": "numerator",
+        "label": "여신(일반)부문 이자마진 수익",
+        "value": "2,186,540",
+        "unit": "백만원",
+        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+       },
+       {
+        "key": "denominator",
+        "label": "전체 수익",
+        "value": "4,812,360",
+        "unit": "백만원",
+        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+       }
+      ],
+      "executedAt": "2026-08-31T06:22:00+09:00"
+     }
+    }
+   }
+  ]
+ },
+ {
+  "domainCode": "deposit",
+  "name": "수신",
+  "status": "placeholder",
+  "note": "2차 범위"
+ },
+ {
+  "domainCode": "pension",
+  "name": "퇴직연금",
+  "status": "placeholder",
+  "note": "2차 범위"
+ },
+ {
+  "domainCode": "wm",
+  "name": "자산관리",
+  "status": "placeholder",
+  "note": "2차 범위"
+ },
+ {
+  "domainCode": "trust",
+  "name": "신탁",
+  "status": "placeholder",
+  "note": "2차 범위"
+ },
+ {
+  "domainCode": "fx",
+  "name": "외환",
+  "status": "placeholder",
+  "note": "2차 범위"
+ },
+ {
+  "domainCode": "card",
+  "name": "카드",
+  "status": "placeholder",
+  "note": "2차 범위"
+ }
+]

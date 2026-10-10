@@ -1,0 +1,258 @@
+[
+ {
+  "assetClass": "기업자금대출금",
+  "balance": {
+   "id": "prof_corp_bal",
+   "label": "잔액",
+   "value": 115.34,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "revenue": {
+   "id": "prof_corp_rev",
+   "label": "이자수익(8월 누계)",
+   "value": 10898,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated"
+  },
+  "returnOnScale": {
+   "id": "ros_corp",
+   "label": "기업여신 규모 대비 수익률",
+   "value": 0.945,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3,
+   "calc": {
+    "calcId": "calc-ros-corp",
+    "formulaId": "RETURN_ON_SCALE",
+    "formulaVersion": 1,
+    "expression": "이자수익 / 잔액 × 100",
+    "inputs": [
+     {
+      "key": "revenue",
+      "label": "기업자금대출금이자(8월 누계)",
+      "value": "1,089,820",
+      "unit": "백만원",
+      "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
+     },
+     {
+      "key": "balance",
+      "label": "기업자금대출금(8월말)",
+      "value": "115,340,000",
+      "unit": "백만원",
+      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "trend": [
+   {
+    "label": "2024.08",
+    "value": 0.945
+   },
+   {
+    "label": "2025.08",
+    "value": 0.946
+   },
+   {
+    "label": "2026.08",
+    "value": 0.945
+   }
+  ],
+  "rank": 1,
+  "verdict": "수익 기여 상위 · 규모 확대 유리"
+ },
+ {
+  "assetClass": "가계자금대출금",
+  "balance": {
+   "id": "prof_hh_bal",
+   "label": "잔액",
+   "value": 99.24,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "revenue": {
+   "id": "prof_hh_rev",
+   "label": "이자수익(8월 누계)",
+   "value": 9100,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated"
+  },
+  "returnOnScale": {
+   "id": "ros_hh",
+   "label": "가계여신 규모 대비 수익률",
+   "value": 0.917,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3,
+   "calc": {
+    "calcId": "calc-ros-hh",
+    "formulaId": "RETURN_ON_SCALE",
+    "formulaVersion": 1,
+    "expression": "이자수익 / 잔액 × 100",
+    "inputs": [
+     {
+      "key": "revenue",
+      "label": "가계자금대출금이자(8월 누계)",
+      "value": "909,960",
+      "unit": "백만원",
+      "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
+     },
+     {
+      "key": "balance",
+      "label": "가계자금대출금(8월말)",
+      "value": "99,240,000",
+      "unit": "백만원",
+      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+     }
+    ],
+    "executedAt": "2026-08-31T06:22:00+09:00"
+   }
+  },
+  "trend": [
+   {
+    "label": "2024.08",
+    "value": 0.921
+   },
+   {
+    "label": "2025.08",
+    "value": 0.914
+   },
+   {
+    "label": "2026.08",
+    "value": 0.917
+   }
+  ],
+  "rank": 2,
+  "verdict": "기여 유지 · 관리목표 상한 근접"
+ },
+ {
+  "assetClass": "기타가계자금대출",
+  "balance": {
+   "id": "prof_etc_hh_bal",
+   "label": "잔액",
+   "value": 12.34,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "revenue": {
+   "id": "prof_etc_hh_rev",
+   "label": "이자수익(8월 누계)",
+   "value": 1062,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated"
+  },
+  "returnOnScale": {
+   "id": "ros_etc_hh",
+   "label": "규모 대비 수익률",
+   "value": 0.861,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3
+  },
+  "trend": [
+   {
+    "label": "2024.08",
+    "value": 0.848
+   },
+   {
+    "label": "2025.08",
+    "value": 0.855
+   },
+   {
+    "label": "2026.08",
+    "value": 0.861
+   }
+  ],
+  "rank": 3,
+  "verdict": "수익률 개선 흐름"
+ },
+ {
+  "assetClass": "주택자금대출",
+  "balance": {
+   "id": "prof_house_bal",
+   "label": "잔액",
+   "value": 62.48,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "revenue": {
+   "id": "prof_house_rev",
+   "label": "이자수익(8월 누계)",
+   "value": 4860,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated"
+  },
+  "returnOnScale": {
+   "id": "ros_house",
+   "label": "규모 대비 수익률",
+   "value": 0.778,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3
+  },
+  "trend": [
+   {
+    "label": "2024.08",
+    "value": 0.802
+   },
+   {
+    "label": "2025.08",
+    "value": 0.789
+   },
+   {
+    "label": "2026.08",
+    "value": 0.778
+   }
+  ],
+  "rank": 4,
+  "verdict": "규모 대비 수익률 하락 흐름"
+ },
+ {
+  "assetClass": "공공및기타자금대출",
+  "balance": {
+   "id": "prof_public_bal",
+   "label": "잔액",
+   "value": 18.62,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "revenue": {
+   "id": "prof_public_rev",
+   "label": "이자수익(8월 누계)",
+   "value": 1140,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated"
+  },
+  "returnOnScale": {
+   "id": "ros_public",
+   "label": "규모 대비 수익률",
+   "value": 0.612,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 3
+  },
+  "trend": [
+   {
+    "label": "2024.08",
+    "value": 0.634
+   },
+   {
+    "label": "2025.08",
+    "value": 0.621
+   },
+   {
+    "label": "2026.08",
+    "value": 0.612
+   }
+  ],
+  "rank": 5,
+  "verdict": "저수익 자산군 · 규모 확대 후순위"
+ }
+]

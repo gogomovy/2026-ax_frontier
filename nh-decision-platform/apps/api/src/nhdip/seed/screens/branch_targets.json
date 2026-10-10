@@ -1,0 +1,84 @@
+[
+ {
+  "id": "bt-corp-metro1",
+  "orgCode": "R001",
+  "orgName": "수도권1지역본부",
+  "title": "기업여신 신규 취급 1.24조원",
+  "guideline": "5C 이상 차주 중심 취급, 정책자금 연계 상품 우선. 6B 이하 신규 취급은 본부 사전 협의.",
+  "metricLabel": "기업여신 신규 취급액",
+  "target": {
+   "id": "bt1_target",
+   "label": "목표",
+   "value": 1.24,
+   "unit": "KRW_TN",
+   "dataOrigin": "actual",
+   "decimals": 2
+  },
+  "actual": {
+   "id": "bt1_actual",
+   "label": "8월말 실적",
+   "value": 0.78,
+   "unit": "KRW_TN",
+   "dataOrigin": "simulated",
+   "decimals": 2
+  },
+  "progress": 62.9,
+  "periodLabel": "2026 하반기",
+  "sourcePlanTitle": "기업여신 확대 실행방안(하반기)",
+  "sourceGoalTitle": "기업여신 전년 대비 +7.0% 이상 확대"
+ },
+ {
+  "id": "bt-hh-metro1",
+  "orgCode": "R001",
+  "orgName": "수도권1지역본부",
+  "title": "가계여신 월 취급 한도 2,400억원",
+  "guideline": "잔액 관리 한도 소진율 99.2% — 월 한도 내 취급, 초과 시 사전승인 필수.",
+  "metricLabel": "가계여신 월 취급액",
+  "target": {
+   "id": "bt2_target",
+   "label": "월 한도",
+   "value": 2400,
+   "unit": "KRW_BN",
+   "dataOrigin": "actual"
+  },
+  "actual": {
+   "id": "bt2_actual",
+   "label": "8월 취급액",
+   "value": 2286,
+   "unit": "KRW_BN",
+   "dataOrigin": "simulated"
+  },
+  "progress": 95.3,
+  "periodLabel": "2026.08",
+  "sourcePlanTitle": "가계여신 증가율 관리 강화방안",
+  "sourceGoalTitle": "가계여신 전년 대비 +4.0% 이하 관리"
+ },
+ {
+  "id": "bt-inclusive-metro1",
+  "orgCode": "R001",
+  "orgName": "수도권1지역본부",
+  "title": "포용금융 상품 취급 후 연체 모니터링",
+  "guideline": "새희망홀씨·햇살론·사잇돌 취급 후 3·6개월 초기 연체 점검 결과를 월별 보고.",
+  "metricLabel": "초기 연체 점검 이행률",
+  "target": {
+   "id": "bt3_target",
+   "label": "목표",
+   "value": 100,
+   "unit": "PCT",
+   "dataOrigin": "actual",
+   "decimals": 0
+  },
+  "actual": {
+   "id": "bt3_actual",
+   "label": "8월 이행률",
+   "value": 84,
+   "unit": "PCT",
+   "dataOrigin": "simulated",
+   "decimals": 0
+  },
+  "progress": 84,
+  "periodLabel": "2026 하반기",
+  "sourcePlanTitle": "포용금융 확대에 따른 신용리스크 중점관리방안",
+  "sourceGoalTitle": "(제안) 포용금융 공급 확대"
+ }
+]

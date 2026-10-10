@@ -1,0 +1,325 @@
+[
+ {
+  "docId": "doc-gov-inclusive",
+  "title": "포용금융 확대방안",
+  "dbClass": "gov_policy",
+  "dbClassLabel": "정부정책 DB",
+  "docType": "정책 보도자료",
+  "issuer": "금융위원회",
+  "effectiveDate": "2026-01-15",
+  "registeredAt": "2026-01-16",
+  "domainLabels": [
+   "여신",
+   "전행"
+  ],
+  "tags": [
+   "포용금융",
+   "서민금융",
+   "취약계층"
+  ],
+  "accessClass": "public",
+  "pageCount": 18,
+  "isOfficial": true,
+  "ingestStatus": "ready",
+  "usedByCount": 6,
+  "fileName": "금융위원회_포용금융 확대방안.pdf"
+ },
+ {
+  "docId": "doc-gov-corp",
+  "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
+  "dbClass": "gov_policy",
+  "dbClassLabel": "정부정책 DB",
+  "docType": "정책 보도자료",
+  "issuer": "금융위원회",
+  "effectiveDate": "2026-02-20",
+  "registeredAt": "2026-02-21",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "기업여신",
+   "생산적금융",
+   "확대기조"
+  ],
+  "accessClass": "public",
+  "pageCount": 24,
+  "isOfficial": true,
+  "ingestStatus": "ready",
+  "usedByCount": 4,
+  "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf"
+ },
+ {
+  "docId": "doc-gov-household",
+  "title": "가계부채 관리방안(2026년)",
+  "dbClass": "gov_policy",
+  "dbClassLabel": "정부정책 DB",
+  "docType": "정책 보도자료",
+  "issuer": "금융위원회·금융감독원",
+  "effectiveDate": "2026-03-05",
+  "registeredAt": "2026-03-06",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "가계부채",
+   "증가율 관리",
+   "DSR"
+  ],
+  "accessClass": "public",
+  "pageCount": 12,
+  "isOfficial": true,
+  "ingestStatus": "ready",
+  "usedByCount": 5,
+  "fileName": "금융위원회_2026년 가계부채 관리방안.pdf"
+ },
+ {
+  "docId": "doc-mgmt-perfeval",
+  "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "지주 성과평가 기준",
+  "issuer": "NH농협금융지주 기획조정부",
+  "effectiveDate": "2026-03-01",
+  "registeredAt": "2026-03-04",
+  "domainLabels": [
+   "여신",
+   "전행"
+  ],
+  "tags": [
+   "포용금융",
+   "성과평가",
+   "실적인정기준"
+  ],
+  "accessClass": "internal",
+  "pageCount": 9,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 7,
+  "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf"
+ },
+ {
+  "docId": "doc-mgmt-rwalimit",
+  "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "지주 한도 통보",
+  "issuer": "NH농협금융지주",
+  "effectiveDate": "2025-12-18",
+  "registeredAt": "2025-12-19",
+  "domainLabels": [
+   "전행"
+  ],
+  "tags": [
+   "RWA",
+   "총자산",
+   "한도"
+  ],
+  "accessClass": "internal",
+  "pageCount": 4,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 8,
+  "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf"
+ },
+ {
+  "docId": "doc-mgmt-rwaplan",
+  "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "지주 자본관리 요청",
+  "issuer": "NH농협금융지주",
+  "effectiveDate": "2026-01-09",
+  "registeredAt": "2026-01-10",
+  "domainLabels": [
+   "전행"
+  ],
+  "tags": [
+   "RWA",
+   "자본비율",
+   "이행계획"
+  ],
+  "accessClass": "internal",
+  "pageCount": 6,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 5,
+  "fileName": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf"
+ },
+ {
+  "docId": "doc-mgmt-rwadept",
+  "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "내부 한도 배분",
+  "issuer": "종합기획부",
+  "effectiveDate": "2026-06-26",
+  "registeredAt": "2026-06-26",
+  "domainLabels": [
+   "여신",
+   "전행"
+  ],
+  "tags": [
+   "신용RWA",
+   "한도배분"
+  ],
+  "accessClass": "dept_only",
+  "pageCount": 5,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 6,
+  "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf"
+ },
+ {
+  "docId": "doc-mgmt-strat",
+  "title": "2026년 하반기 경영전략회의 결과",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "회의 결과",
+  "issuer": "경영전략회의",
+  "effectiveDate": "2026-07-03",
+  "registeredAt": "2026-07-07",
+  "domainLabels": [
+   "여신",
+   "수신",
+   "전행"
+  ],
+  "tags": [
+   "기업여신 확대",
+   "가계여신 관리",
+   "포용금융"
+  ],
+  "accessClass": "internal",
+  "pageCount": 22,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 9,
+  "fileName": "2026년 하반기 경영전략회의 결과.pdf"
+ },
+ {
+  "docId": "doc-mgmt-bizplan",
+  "title": "2026년 사업계획(여신 부문)",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "사업계획",
+  "issuer": "종합기획부",
+  "effectiveDate": "2025-12-27",
+  "registeredAt": "2025-12-29",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "사업계획",
+   "경영목표"
+  ],
+  "accessClass": "internal",
+  "pageCount": 34,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 11,
+  "fileName": "2026년 사업계획(여신 부문).pdf"
+ },
+ {
+  "docId": "doc-mgmt-inclusive-products",
+  "title": "포용금융 대상 상품 운영기준",
+  "dbClass": "mgmt_decision",
+  "dbClassLabel": "경영 의사결정 DB",
+  "docType": "운영기준",
+  "issuer": "여신정책협의회",
+  "effectiveDate": "2026-01-22",
+  "registeredAt": "2026-01-23",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "포용금융",
+   "상품코드",
+   "새희망홀씨",
+   "햇살론",
+   "사잇돌"
+  ],
+  "accessClass": "internal",
+  "pageCount": 7,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 4,
+  "fileName": "포용금융 대상 상품 운영기준.pdf"
+ },
+ {
+  "docId": "doc-model-corp",
+  "title": "2025_일반기업모형 모니터링 보고서",
+  "dbClass": "model_method",
+  "dbClassLabel": "모형·방법론",
+  "docType": "모니터링 보고서",
+  "issuer": "신용리스크관리부",
+  "effectiveDate": "2025-11-28",
+  "registeredAt": "2025-12-02",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "일반기업모형",
+   "안정성",
+   "변별력",
+   "PSI",
+   "AR"
+  ],
+  "accessClass": "dept_only",
+  "pageCount": 41,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 12,
+  "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf"
+ },
+ {
+  "docId": "doc-model-retail",
+  "title": "'25년 3분기 소매여신모형 모니터링 결과 보고서",
+  "dbClass": "model_method",
+  "dbClassLabel": "모형·방법론",
+  "docType": "모니터링 보고서",
+  "issuer": "소매모형팀",
+  "effectiveDate": "2025-10-24",
+  "registeredAt": "2025-10-28",
+  "domainLabels": [
+   "여신"
+  ],
+  "tags": [
+   "소매여신모형",
+   "AS모형",
+   "BS모형",
+   "AR"
+  ],
+  "accessClass": "dept_only",
+  "pageCount": 28,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 8,
+  "fileName": "'25년 3분기 소매여신모형 모니터링 결과 보고서.pdf"
+ },
+ {
+  "docId": "doc-model-stat",
+  "title": "붙임. 통계방법론 및 용어 해설",
+  "dbClass": "model_method",
+  "dbClassLabel": "모형·방법론",
+  "docType": "용어·방법론 해설",
+  "issuer": "신용리스크관리부",
+  "effectiveDate": "2025-11-28",
+  "registeredAt": "2025-12-02",
+  "domainLabels": [
+   "여신",
+   "전행"
+  ],
+  "tags": [
+   "용어집",
+   "카이제곱",
+   "등급계량화",
+   "PSI",
+   "AR"
+  ],
+  "accessClass": "internal",
+  "pageCount": 14,
+  "isOfficial": false,
+  "ingestStatus": "ready",
+  "usedByCount": 12,
+  "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
+ }
+]

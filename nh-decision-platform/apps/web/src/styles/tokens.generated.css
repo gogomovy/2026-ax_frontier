@@ -1,0 +1,66 @@
+/* ───────────────────────────────────────────────────────────────
+ * 자동 생성 대상 파일 — 출처: designsys/DESIGN-meta.md (front-matter)
+ * 값은 원 디자인 시스템 토큰을 변경 없이 사용한다.
+ * 업무 맥락 재해석(용도 매핑)은 설계서 §12.1 표를 따른다.
+ * ─────────────────────────────────────────────────────────────── */
+:root {
+  /* Color — Brand & Accent */
+  --color-primary: #0064e0;        /* 확정·승인 액션 */
+  --color-primary-deep: #0457cb;   /* pressed */
+  --color-primary-soft: #0091ff;
+  --color-on-primary: #ffffff;
+  --color-ink-button: #000000;     /* 일반 주요 액션 */
+  --color-on-ink-button: #ffffff;
+
+  /* Color — Surface */
+  --color-canvas: #ffffff;
+  --color-surface-soft: #f1f4f7;
+  --color-hairline: #ced0d4;
+  --color-hairline-soft: #dee3e9;
+
+  /* Color — Text */
+  --color-ink-deep: #0a1317;
+  --color-ink: #1c1e21;
+  --color-charcoal: #444950;
+  --color-slate: #4b4c4f;
+  --color-steel: #5d6c7b;
+  --color-stone: #8595a4;
+  --color-disabled-text: #bcc0c4;
+
+  /* Color — Semantic (업무 재해석) */
+  --color-success: #31a24c;          /* 목표 달성·적정 */
+  --color-attention: #f2a918;        /* 주의(관리 범위 내) */
+  --color-warning: #f7b928;          /* 데이터 한계·시뮬레이션 */
+  --color-critical: #e41e3f;         /* 재검토 필요·한도 위반·배치 */
+  --color-critical-strong: #f0284a;
+
+  /* Radius */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 16px;
+  --radius-xxl: 24px;
+  --radius-xxxl: 32px;
+  --radius-feature: 40px;
+  --radius-full: 100px;
+  --radius-circle: 9999px;
+
+  /* Spacing */
+  --space-xxs: 4px;
+  --space-xs: 8px;
+  --space-sm: 10px;
+  --space-md: 12px;
+  --space-base: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --space-xxl: 32px;
+  --space-xxxl: 40px;
+  --space-section-sm: 48px;
+  --space-section: 64px;
+  --space-section-lg: 80px;
+
+  /* Typography — Optimistic VF 는 한글 글리프가 없어 Pretendard 를 한글 폴백으로 둔다 */
+  --font-display: "Optimistic VF", "Pretendard Variable", Pretendard, -apple-system,
+    BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+}

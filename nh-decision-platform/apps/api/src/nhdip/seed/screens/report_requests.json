@@ -1,0 +1,40 @@
+[
+ {
+  "id": "req-1",
+  "fromOrg": "신용리스크관리부",
+  "toOrg": "종합기획부",
+  "reqType": "direction_check",
+  "reqTypeLabel": "경영방향 확인 요청",
+  "title": "포용금융 확대에 따른 충당금 비중 상승 — 목표 설정 방향 확인 요청",
+  "body": "포용금융 대상 상품 충당금 비중이 2026년 1월 7.97%에서 8월 9.16%로 상승했습니다. 포용금융 공급 확대 목표를 신설하는 경우 신용리스크 중점관리사항을 병행 반영할 필요가 있어 방향 확인을 요청합니다.",
+  "dueDate": "2026-09-30",
+  "createdAt": "2026-09-15",
+  "status": "open"
+ },
+ {
+  "id": "req-2",
+  "fromOrg": "여신관리부",
+  "toOrg": "종합기획부",
+  "reqType": "perf_report",
+  "reqTypeLabel": "전기 사업 성과보고",
+  "title": "상반기 기업여신 확대 사업 성과보고",
+  "body": "상반기 기업여신 확대 사업 취급 실적은 목표 대비 71.4% 수준입니다. 정책자금 연계 상품 취급은 계획을 상회했으나 우량 중소기업 신규 발굴이 지연되었습니다. 하반기 목표 재조정 검토를 요청합니다.",
+  "dueDate": "2026-09-25",
+  "createdAt": "2026-09-10",
+  "status": "reviewing",
+  "relatedGoalId": "goal-corp-growth"
+ },
+ {
+  "id": "req-3",
+  "fromOrg": "수도권1지역본부",
+  "toOrg": "종합기획부",
+  "reqType": "direction_check",
+  "reqTypeLabel": "취급 기준 확인 요청",
+  "title": "가계여신 관리목표 상단 근접에 따른 취급 기준 확인 요청",
+  "body": "가계여신 잔액 관리 한도 소진율이 99.2%에 도달하여 4분기 신규 취급 가능 여부와 예외 승인 기준 확인을 요청합니다.",
+  "dueDate": "2026-09-22",
+  "createdAt": "2026-09-12",
+  "status": "open",
+  "relatedGoalId": "goal-hh-balance"
+ }
+]

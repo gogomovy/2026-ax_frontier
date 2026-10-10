@@ -1,0 +1,13 @@
+{
+  "name": "nhdip-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "NHDIP 브라우저 E2E — 가입·승인·권한·업로드·변경 기반 실행·모니터링 (QA-04)",
+  "scripts": {
+    "e2e": "node e2e.mjs"
+  },
+  "devDependencies": {
+    "puppeteer": "24.15.0"
+  }
+}

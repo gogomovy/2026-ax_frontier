@@ -1,0 +1,62 @@
+[importlinter]
+root_package = nhdip
+# 계층 의존 규칙 (작업 0.1) — CI backend 잡에서 lint-imports 로 검사
+include_external_packages = False
+
+[importlinter:contract:core-no-http]
+name = 핵심 계층(계산 · 데이터 · 그래프 · LLM · 화면 · 워크플로우 · 보고서 · 정의서 · 모델 · 알림)은 HTTP 계층(api · main)을 가져오지 않는다
+type = forbidden
+source_modules =
+    nhdip.calc
+    nhdip.data
+    nhdip.graph
+    nhdip.llm
+    nhdip.reports
+    nhdip.views
+    nhdip.workflow
+    nhdip.contracts
+    nhdip.models
+    nhdip.alerts
+    nhdip.orgs
+forbidden_modules =
+    nhdip.api
+    nhdip.main
+
+[importlinter:contract:kernel-pure]
+name = 계산 커널(수식 · 실행기)은 LLM · 그래프 · 화면 · 워크플로우를 모른다 (LLM 은 계산하지 않는다)
+type = forbidden
+source_modules =
+    nhdip.calc.formulas
+    nhdip.calc.kernel
+forbidden_modules =
+    nhdip.llm
+    nhdip.graph
+    nhdip.views
+    nhdip.workflow
+    nhdip.reports
+    nhdip.data
+
+[importlinter:contract:models-bottom]
+name = 모델(ORM)은 상위 계층을 가져오지 않는다
+type = forbidden
+source_modules =
+    nhdip.models
+forbidden_modules =
+    nhdip.calc
+    nhdip.data
+    nhdip.graph
+    nhdip.llm
+    nhdip.views
+    nhdip.workflow
+    nhdip.reports
+    nhdip.contracts
+    nhdip.alerts
+
+[importlinter:contract:llm-no-workflow]
+name = LLM 연동은 워크플로우 · 화면 산출물을 가져오지 않는다
+type = forbidden
+source_modules =
+    nhdip.llm
+forbidden_modules =
+    nhdip.workflow
+    nhdip.views

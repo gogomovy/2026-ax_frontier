@@ -1,0 +1,10 @@
+# 계산 커널 커버리지 게이트(작업 0.4 · QA-01) — 수식 레지스트리와 실행기만 측정
+[run]
+# source 를 함께 쓰면 include 가 무시되므로 include 만 둔다
+include =
+    */nhdip/calc/formulas.py
+    */nhdip/calc/kernel.py
+
+[report]
+fail_under = 90
+show_missing = True
