@@ -36,7 +36,8 @@ x-api-env: &api-env
   # 변경 요청 Origin 허용 목록(쉼표, 예: https://nhdip.example) — 비우면 같은 출처만 (B.32)
   TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
   # 사용자 IP 판정 — X-Forwarded-For 를 믿을 바로 앞 프록시 대역(기본: 이 컴퓨터 + Docker 내부망)
-  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32,::1/128,172.16.0.0/12}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-127.0.0.1/32,::1/128,web}
+  TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
   # API 문서(/docs) — 운영(prod) 기본 꺼짐. true 로 켠다
   API_DOCS: ${API_DOCS:-}
   # 트랜잭션 유휴 제한(ms) — 잠금을 쥔 채 멈춘 연결을 DB 가 끊는다. 0 = 끄기
@@ -200,6 +201,8 @@ services:
       PORT: "3000"
       HOSTNAME: "0.0.0.0"
       API_INTERNAL_URL: http://api:8000
+      # 앞에 사내 L7 프록시가 있어 X-Forwarded-For 를 그 프록시가 채우면 1 (기본 0 = 사용자가 보낸 값은 지움)
+      TRUST_UPSTREAM_PROXY: ${TRUST_UPSTREAM_PROXY:-0}
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:3000"
     depends_on:

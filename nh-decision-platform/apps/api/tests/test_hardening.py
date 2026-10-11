@@ -451,16 +451,108 @@ def test_rate_limit_db_backend_shared(db):
         ratelimit.check(s, "t_shared", "k2")  # 키별로 따로
 
 
-def test_client_ip_behind_trusted_proxy():
+def test_client_ip_behind_trusted_proxy(monkeypatch):
     from starlette.requests import Request
 
+    from nhdip.api import deps
     from nhdip.api.deps import client_ip
+    from nhdip.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "trusted_proxies", "127.0.0.1/32,172.19.0.7/32")
+    monkeypatch.setattr(get_settings(), "trusted_proxy_hops", 1)
+    deps._NETS.update(at=0.0, nets=[])
 
     def req(peer: str, xff: str | None):
         headers = [(b"x-forwarded-for", xff.encode())] if xff else []
         return Request({"type": "http", "method": "GET", "path": "/", "headers": headers, "client": (peer, 1234), "query_string": b""})
 
     assert client_ip(req("172.19.0.7", "203.0.113.9")) == "203.0.113.9"  # web 컨테이너 경유
-    assert client_ip(req("172.19.0.7", "6.6.6.6, 203.0.113.9")) == "203.0.113.9"  # 사용자가 넣은 가짜 앞부분은 무시
+    assert client_ip(req("172.19.0.7", "6.6.6.6, 203.0.113.9")) == "203.0.113.9"  # 사용자가 넣은 앞부분은 무시
+    assert client_ip(req("172.19.0.7", "203.0.113.77, 172.20.0.9")) == "172.20.0.9"  # 사내망 사용자가 위조해도 Next 가 붙인 실제 주소
     assert client_ip(req("203.0.113.50", "1.2.3.4")) == "203.0.113.50"  # 신뢰하지 않는 곳에서 직접 온 헤더는 무시
+    assert client_ip(req("172.19.0.8", "1.2.3.4")) == "172.19.0.8"  # 같은 대역이라도 목록에 없는 주소는 신뢰하지 않음
     assert client_ip(req("172.19.0.7", None)) == "172.19.0.7"
+    monkeypatch.setattr(get_settings(), "trusted_proxy_hops", 2)  # 앞에 사내 L7 프록시가 한 겹 더
+    assert client_ip(req("172.19.0.7", "6.6.6.6, 198.51.100.4, 10.0.0.5")) == "198.51.100.4"
+    deps._NETS.update(at=0.0, nets=[])
+
+
+def test_merge3_prepends_new_feed_items():
+    from nhdip.views.store import merge3
+
+    base = {"items": [{"id": "o1"}, {"id": "o2"}]}
+    theirs = {"items": [{"id": "b1"}, {"id": "o1"}, {"id": "o2"}]}
+    ours = {"items": [{"id": "a1"}, {"id": "o1"}, {"id": "o2"}]}
+    assert [x["id"] for x in merge3(base, ours, theirs)["items"]] == ["a1", "b1", "o1", "o2"]
+
+
+def test_goal_rule_update_waits_and_respects_dual_control(db):
+    from nhdip.api.state import _update_goal_rule
+    from nhdip.models import Rule, RuleVersion, Setting
+
+    with db() as s:
+        links = (s.get(Setting, "goal.rule_links").value or {}) if s.get(Setting, "goal.rule_links") else {}
+        if not links:
+            import pytest
+
+            pytest.skip("목표-규칙 연결 없음")
+        gid, link = next(iter(links.items()))
+        rule = s.get(Rule, link["rule"])
+        active = rule.active_version
+        s.get(Setting, "governance.dual_control").value = {"enabled": True, "rules": True}
+        s.commit()
+        try:
+            out = _update_goal_rule(s, gid, 123.45, "tester")
+            s.commit()
+            assert out and out["pendingApproval"] is True
+            s.refresh(rule)
+            assert rule.active_version == active  # 이중 승인 — 저장만
+            assert s.query(RuleVersion).filter(RuleVersion.rule_code == rule.code, RuleVersion.version == out["version"]).one().body[link["path"]] == 123.45
+        finally:
+            s.get(Setting, "governance.dual_control").value = {"enabled": False, "rules": True}
+            s.commit()
+
+
+def test_governance_setting_needs_second_admin(db):
+    from nhdip.models import AppUser, Setting
+    from nhdip.security import hash_password
+
+    with db() as s:
+        if not s.get(AppUser, "00000002"):
+            s.add(AppUser(emp_no="00000002", name="관리자2", org_code="D100", role="admin", status="active", password_hash=hash_password("Admin1234!")))
+        s.get(Setting, "governance.dual_control").value = {"enabled": True, "rules": True}
+        s.commit()
+    a1, a2 = _admin(), _client()
+    assert _login(a2, "00000002", "Admin1234!").status_code == 200
+    off = {"value": {"enabled": False, "rules": True}}
+    r = a1.put("/admin/settings/governance.dual_control", json=off).json()
+    assert r.get("pending") is True
+    with db() as s:
+        assert s.get(Setting, "governance.dual_control").value["enabled"] is True  # 혼자서는 못 끈다
+    assert a1.put("/admin/settings/governance.dual_control", json=off).json().get("pending") is True  # 같은 사람 재요청도 대기
+    assert a2.put("/admin/settings/governance.dual_control", json=off).json().get("pending") is None  # 다른 관리자가 같은 값 → 반영
+    with db() as s:
+        assert s.get(Setting, "governance.dual_control").value["enabled"] is False
+
+
+def test_orphan_jobs_of_previous_boot_are_requeued(db):
+    from nhdip.models import Job, WorkerHeartbeat, WorkflowRun, new_id, utcnow
+    from nhdip.workflow.dispatcher import recover_own_orphans, recover_stale
+
+    with db() as s:
+        j = Job(kind="workflow", workflow_code="wf_x_orphan", causes=[], status="running", locked_by="hostA:1:oldboot", locked_at=utcnow())
+        other = Job(kind="workflow", workflow_code="wf_x_other", causes=[], status="running", locked_by="hostB:1:x", locked_at=utcnow())
+        s.add_all([j, other])
+        s.merge(WorkerHeartbeat(worker_id="hostA:1:oldboot", seen_at=utcnow(), info={}))
+        s.flush()
+        run = WorkflowRun(id=new_id(), workflow_code="wf_x_orphan", job_id=j.id, status="running", causes=[])
+        s.add(run)
+        s.commit()
+        assert recover_stale(s) == 0  # 심장박동은 살아 있어 보인다(같은 이름 재기동)
+        assert recover_own_orphans(s, "hostA", "hostA:1:newboot") == 1
+        s.expire_all()
+        assert s.get(Job, j.id).status == "queued" and s.get(Job, other.id).status == "running"
+        assert s.get(WorkflowRun, run.id).status == "failed"
+        s.delete(s.get(Job, j.id))
+        s.delete(s.get(Job, other.id))
+        s.commit()

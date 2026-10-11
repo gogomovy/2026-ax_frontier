@@ -30,8 +30,10 @@ class Settings(BaseSettings):
     session_ttl_hours: int = 12
     # 변경 요청(POST 등)의 Origin 허용 목록(쉼표 구분, 예: https://nhdip.example). 비우면 요청 Host 와 같은 출처만 허용 (B.32)
     trusted_origins: str = ""
-    # X-Forwarded-For 를 믿을 바로 앞 프록시 대역(쉼표, CIDR) — 기본: 이 컴퓨터 + Docker 내부망. 사용자 IP(속도 제한 · 감사) 판정에 씀 (B.33)
-    trusted_proxies: str = "127.0.0.1/32,::1/128,172.16.0.0/12"
+    # X-Forwarded-For 를 믿을 바로 앞 프록시(쉼표, CIDR 또는 호스트 이름) — 기본: 이 컴퓨터 + compose 의 web 컨테이너 (B.33)
+    trusted_proxies: str = "127.0.0.1/32,::1/128,web"
+    # 신뢰 프록시가 몇 겹인지 — 1 = Next(web) 가 붙인 값 하나. 앞에 사내 L7 프록시가 하나 더 있으면 2
+    trusted_proxy_hops: int = 1
     # API 문서(/docs · /openapi.json) — 비우면 dev 에서만 켠다. true/false 로 강제
     api_docs: str = ""
     # SSO(OIDC · Authorization Code + PKCE) — issuer 를 비우면 꺼짐 (F.13 · AUTH-01)

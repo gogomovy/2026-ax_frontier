@@ -32,6 +32,8 @@ RUN addgroup -g 10001 -S nodejs && adduser -S -u 10001 -G nodejs nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# 전달 헤더(X-Forwarded-For 등)를 실제 접속 주소로 바로잡는 시작점 (B.33)
+COPY --chown=nextjs:nodejs server-entry.cjs ./server-entry.cjs
 USER nextjs
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "server-entry.cjs"]

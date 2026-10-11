@@ -319,6 +319,25 @@ def settings(session: Session = Depends(get_session)):
 
 @router.put("/settings/{key}")
 def setting_put(key: str, body: SettingIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    if key.startswith("governance.") and _dual_control(session):
+        # 이중 승인이 켜져 있으면 통제 설정 자체도 두 사람 — 첫 관리자는 요청만, 다른 관리자가 같은 값을 저장하면 반영 (B.33)
+        from nhdip.locks import lock
+
+        lock(session, "setting:governance")
+        pend = session.get(Setting, "governance.pending")
+        req = (pend.value or {}).get(key) if pend and isinstance(pend.value, dict) else None
+        if not req or req.get("by") == admin.emp_no or req.get("value") != body.value:
+            reqs = {**(pend.value if pend and isinstance(pend.value, dict) else {}), key: {"value": body.value, "by": admin.emp_no, "at": utcnow().isoformat()}}
+            if pend:
+                pend.value = reqs
+            else:
+                session.add(Setting(key="governance.pending", value=reqs, description="이중 승인 대기 중인 통제 설정 변경 요청 (다른 관리자가 같은 값을 저장하면 반영)", updated_by=admin.emp_no))
+            audit(session, admin.emp_no, "admin.setting.request", "setting", key, {"value": body.value}, client_ip(request))
+            session.commit()
+            return {"ok": True, "pending": True, "message": "이중 승인 — 다른 관리자가 같은 값을 저장하면 반영됩니다"}
+        reqs = dict(pend.value)
+        reqs.pop(key, None)
+        pend.value = reqs
     s = session.get(Setting, key)
     before = s.value if s else None
     if s:

@@ -91,7 +91,7 @@ export default function AdminHome() {
                   {row.updatedBy ?? "-"} · {fmtTime(row.updatedAt)}
                 </p>
               </div>
-              <JsonEditor value={row.value} rows={typeof row.value === "object" ? 5 : 1} disabled={busy} onSave={(v) => run(() => apiPut(`/admin/settings/${encodeURIComponent(row.key)}`, { value: v }), "저장했습니다", settings.reload)} />
+              <JsonEditor value={row.value} rows={typeof row.value === "object" ? 5 : 1} disabled={busy} onSave={(v) => run(() => apiPut<{ message?: string }>(`/admin/settings/${encodeURIComponent(row.key)}`, { value: v }), (r) => r?.message ?? "저장했습니다", settings.reload)} />
             </div>
           ))}
         </div>

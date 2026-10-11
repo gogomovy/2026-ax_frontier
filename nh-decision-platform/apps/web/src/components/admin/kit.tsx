@@ -55,11 +55,12 @@ export function useAction() {
   const { showToast } = useUi();
   const [busy, setBusy] = useState(false);
   const run = useCallback(
-    async <T,>(fn: () => Promise<T>, ok?: string, after?: () => unknown): Promise<T | null> => {
+    async <T,>(fn: () => Promise<T>, ok?: string | ((r: T) => string), after?: () => unknown): Promise<T | null> => {
       setBusy(true);
       try {
         const r = await fn();
-        if (ok) showToast(ok);
+        const msg = typeof ok === "function" ? ok(r) : ok;
+        if (msg) showToast(msg);
         await after?.();
         return r;
       } catch (e) {

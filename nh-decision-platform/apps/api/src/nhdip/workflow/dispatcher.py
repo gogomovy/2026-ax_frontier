@@ -182,7 +182,9 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
                 logging.getLogger("nhdip.orchestrator").exception("route failed")
                 matched_pre = None
         try:
-            ev = session.execute(select(OutboxEvent).where(OutboxEvent.id == eid, OutboxEvent.dispatched_at.is_(None)).with_for_update(skip_locked=True)).scalar()
+            # 선점한(경로 판단한) 이벤트는 기다려서라도 잠근다 — 다른 워커의 1단계 묶음 잠금은 짧고, 건너뛰면 선점 만료까지 묶인다 (B.33)
+            q_ev = select(OutboxEvent).where(OutboxEvent.id == eid, OutboxEvent.dispatched_at.is_(None))
+            ev = session.execute(q_ev.with_for_update() if eid in routed else q_ev.with_for_update(skip_locked=True)).scalar()
             if ev is None:
                 session.rollback()
                 continue  # 다른 워커가 처리함
@@ -245,10 +247,35 @@ def claim_job(session: Session, worker_id: str) -> Job | None:
     return job
 
 
+def _close_runs(session: Session, ids: list[int], why: str) -> None:
+    if ids:
+        session.execute(
+            text("UPDATE ops.workflow_run SET status='failed', error=:why, finished_at=now() WHERE status='running' AND job_id = ANY(:ids)"),
+            {"ids": ids, "why": why},
+        )
+
+
+def recover_own_orphans(session: Session, hostname: str, worker_id: str) -> int:
+    """기동 시 — 같은 호스트의 이전 기동이 실행 중으로 남긴 작업을 다시 대기열로 (B.33).
+    컨테이너 재시작은 hostname 이 같으므로, 이 호스트에서 잡혔는데 지금 워커가 아닌 작업은 모두 고아다."""
+    res = session.execute(
+        text(
+            "UPDATE ops.job SET status='queued', locked_by=NULL, run_after=now() "
+            "WHERE status='running' AND locked_by LIKE :h AND locked_by <> :me RETURNING id"
+        ),
+        {"h": f"{hostname}:%", "me": worker_id},
+    )
+    ids = [r[0] for r in res]
+    _close_runs(session, ids, "워커 재시작 — 작업을 다시 대기열로 돌림")
+    session.commit()
+    return len(ids)
+
+
 def recover_stale(session: Session, older_than_min: int = 30, heartbeat_stale_sec: int = 120) -> int:
     """멈춘 작업 복구 (B.32) — 잡은 워커의 심장박동이 끊긴 실행 중 작업만 다시 대기로.
 
-    오래 걸리는 정상 실행(워커 살아 있음)은 건드리지 않는다. 고아가 된 실행(running 인 workflow_run)은 실패로 닫는다.
+    오래 걸리는 정상 실행(워커 살아 있음)은 건드리지 않는다(실행 시간 상한은 워커 감시 스레드가 지킨다).
+    고아가 된 실행(running 인 workflow_run)은 실패로 닫는다.
     """
     res = session.execute(
         text(
@@ -260,10 +287,6 @@ def recover_stale(session: Session, older_than_min: int = 30, heartbeat_stale_se
         {"m": older_than_min, "hb": heartbeat_stale_sec},
     )
     ids = [r[0] for r in res]
-    if ids:
-        session.execute(
-            text("UPDATE ops.workflow_run SET status='failed', error='워커 중단 — 작업을 다시 대기열로 돌림', finished_at=now() WHERE status='running' AND job_id = ANY(:ids)"),
-            {"ids": ids},
-        )
+    _close_runs(session, ids, "워커 중단 — 작업을 다시 대기열로 돌림")
     session.commit()
     return len(ids)

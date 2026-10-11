@@ -18,6 +18,7 @@ export function proxy(req: NextRequest) {
   const nonce = newNonce();
   const csp = buildCsp(nonce);
   const headers = new Headers(req.headers);
+  // 전달 헤더(X-Forwarded-For)는 시작점(server-entry.cjs)이 실제 접속 주소로 바로잡아 둔다 (B.33)
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", csp);
   const pass = () => withCsp(NextResponse.next({ request: { headers } }), csp);

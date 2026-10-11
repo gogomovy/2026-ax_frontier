@@ -30,9 +30,10 @@ case "$ROLE" in
     fi
     if [[ -n "${APP_DB_PASSWORD:-}" ]]; then
       echo "[entrypoint] API 전용 DB 계정 준비 (${APP_DB_USER:-nhdip_app})"
+      # 보안 통제이므로 실패하면 기동하지 않는다(조용히 소유자 계정으로 넘어가지 않음). 끄려면 APP_DB_PASSWORD 를 비운다
       NHDIP_USE_APP_ROLE=0 python -m nhdip.cli db-app-role || {
-        echo "[entrypoint] 경고: 앱 계정 준비 실패 — 이번 기동은 소유자 계정으로 접속합니다" >&2
-        export NHDIP_USE_APP_ROLE=0
+        echo "[entrypoint] 오류: API 전용 DB 계정 준비 실패 — 로그를 확인하거나 .env 의 APP_DB_PASSWORD 를 비워 이전 방식으로 기동하세요" >&2
+        exit 1
       }
     fi
     if [[ "${SEED_ON_START:-0}" == "1" ]]; then

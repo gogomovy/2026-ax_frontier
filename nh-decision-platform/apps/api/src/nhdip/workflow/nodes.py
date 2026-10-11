@@ -360,7 +360,8 @@ def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     for f in ctx.state.get("followups") or []:
         ctx.emit_after_success("agent.followup", {"workflow": f["workflow"], "reason": f.get("reason"), "by": "planner", "from": ctx.workflow.code, "run": ctx.run.id, "chain": f.get("chain") or [ctx.workflow.code]}, "planner")
         followups.append(f["workflow"])
-    return NodeResult({"published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {})})
+    events = ctx.flush_deferred()  # 게시와 같은 트랜잭션 (B.33)
+    return NodeResult({"events": events, "published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {})})
 
 
 # ═════════════════════════ 문서 · 그래프 ═════════════════════════

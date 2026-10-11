@@ -60,12 +60,23 @@ def job_trace_id(causes: list) -> str | None:
     return None
 
 
+_BUSY: dict[str, float | int | None] = {"job": None, "since": None}  # 지금 실행 중인 작업 (감시 스레드가 본다)
+
+
 def process_one(worker_id: str) -> bool:
     with SessionLocal() as s:
         job = claim_job(s, worker_id)
         if not job:
             return False
         job_id, wf, causes = job.id, job.workflow_code, job.causes
+    _BUSY.update(job=job_id, since=time.monotonic())
+    try:
+        return _process(worker_id, job_id, wf, causes)
+    finally:
+        _BUSY.update(job=None, since=None)
+
+
+def _process(worker_id: str, job_id: int, wf: str, causes: list) -> bool:
     with obs.scope(job_trace_id(causes)) as db_stats:
         log.info("job %s → %s (%d causes)", job_id, wf, len(causes))
         status, error, run_id = "done", None, None
@@ -102,8 +113,23 @@ def process_one(worker_id: str) -> bool:
     return True
 
 
+def max_run_minutes() -> float:
+    """실행 시간 상한(분) — 설정 `workflow.max_run_minutes`(기본 120, 0 = 끔). 넘으면 워커가 스스로 재시작한다 (B.33)."""
+    from nhdip.models import Setting
+
+    try:
+        with SessionLocal() as s:
+            st = s.get(Setting, "workflow.max_run_minutes")
+            return float(st.value) if st and st.value is not None else 120.0
+    except Exception:  # noqa: BLE001
+        return 120.0
+
+
 class _Beat:
-    """심장박동 스레드 (B.32) — 긴 워크플로우를 실행하는 동안에도 살아 있음을 알린다(멈춘 작업 복구 판단의 기준)."""
+    """심장박동 · 감시 스레드 (B.32 · B.33).
+    - 긴 워크플로우를 실행하는 동안에도 살아 있음을 알린다(멈춘 작업 복구 판단의 기준). 정보에 실행 중 작업 · 경과를 싣는다.
+    - 한 작업이 실행 시간 상한을 넘으면(멈춘 외부 호출 · 무한 대기) 프로세스를 끝낸다 → 컨테이너가 다시 띄우고,
+      새 워커가 기동 때 이 호스트의 고아 작업을 다시 대기열로 돌린다(recover_own_orphans)."""
 
     def __init__(self, worker_id: str, stats: dict, every: float = 5.0):
         import threading
@@ -111,13 +137,23 @@ class _Beat:
         self.worker_id, self.stats, self.every = worker_id, stats, every
         self._ev = threading.Event()
         self._t = threading.Thread(target=self._run, name="heartbeat", daemon=True)
+        self._limit_at = 0.0
+        self._limit = 120.0
 
     def _run(self) -> None:
         while not self._ev.wait(self.every):
+            now = time.monotonic()
+            if now - self._limit_at > 60:
+                self._limit, self._limit_at = max_run_minutes(), now
+            since = _BUSY.get("since")
+            busy_sec = int(now - since) if since else 0
             try:
-                heartbeat(self.worker_id, dict(self.stats))
+                heartbeat(self.worker_id, {**self.stats, "busy_job": _BUSY.get("job"), "busy_sec": busy_sec})
             except Exception:  # noqa: BLE001
                 log.warning("heartbeat failed", exc_info=True)
+            if self._limit and busy_sec > self._limit * 60:
+                log.critical("job %s 가 실행 시간 상한 %.0f분을 넘었습니다 — 워커를 재시작합니다", _BUSY.get("job"), self._limit)
+                os._exit(3)
 
     def start(self) -> "_Beat":
         heartbeat(self.worker_id, dict(self.stats))
@@ -173,9 +209,21 @@ def main() -> None:
     obs.setup_logging()
     signal.signal(signal.SIGTERM, _sig)
     signal.signal(signal.SIGINT, _sig)
-    worker_id = f"{socket.gethostname()}:{os.getpid()}"
+    import uuid
+
+    # 기동마다 고유 — 컨테이너 재시작 때 hostname · PID(1)가 같아도 이전 기동의 작업과 구분된다 (B.33)
+    worker_id = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
     poll = get_settings().worker_poll_sec
     log.info("worker %s started (poll %.1fs)", worker_id, poll)
+    try:
+        from nhdip.workflow.dispatcher import recover_own_orphans
+
+        with SessionLocal() as s:
+            n = recover_own_orphans(s, socket.gethostname(), worker_id)
+        if n:
+            log.warning("이전 기동이 남긴 실행 중 작업 %d건을 다시 대기열로 돌렸습니다", n)
+    except Exception:  # noqa: BLE001
+        log.exception("orphan recovery failed")
     stats = {"dispatched": 0, "jobs": 0, "started_at": utcnow().isoformat()}
     # 처음 기동 직후 바로 복구 · 정리하지 않도록 기준 시각을 지금으로 (cron · 알림은 곧바로)
     last: dict[str, float] = {"recover": time.monotonic() - 240, "purge": time.monotonic() - 86400 + 600}

@@ -29,11 +29,12 @@ def ensure_app_role(engine: Engine, user: str, password: str) -> list[str]:
         exists = c.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :u"), {"u": user}).scalar()
         # 비밀번호는 식별자 · 리터럴 바인딩이 안 되는 DDL 이라 따옴표를 이스케이프해 넣는다
         pw = password.replace("'", "''")
+        # text() 는 ':이름' 을 바인딩으로 읽으므로 드라이버 SQL 로 보낸다(psycopg 는 매개변수가 없으면 % 를 해석하지 않음)
         if not exists:
-            c.execute(text(f"CREATE ROLE {user} LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT"))
+            c.exec_driver_sql(f"CREATE ROLE {user} LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT")
             done.append("create role")
         else:
-            c.execute(text(f"ALTER ROLE {user} WITH LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE"))
+            c.exec_driver_sql(f"ALTER ROLE {user} WITH LOGIN PASSWORD '{pw}' NOSUPERUSER NOCREATEDB NOCREATEROLE")
         c.execute(text(f'GRANT CONNECT ON DATABASE "{db}" TO {user}'))
         for sch in SCHEMAS:
             if not c.execute(text("SELECT 1 FROM pg_namespace WHERE nspname = :s"), {"s": sch}).scalar():

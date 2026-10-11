@@ -114,6 +114,7 @@ SETTINGS = {
         {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "stream_user": [10, 60], "request_user": [20, 86400]},
         "요청 속도 제한 {이름: [허용 횟수, 초]} — 0 이면 끄기. 로그인(IP · 사번) · 가입(IP) · 질의(사용자) · 분석 스트림(사용자) · 확인 요청(사용자) (B.32)",
     ),
+    "workflow.max_run_minutes": (120, "워크플로우 한 번 실행 시간 상한(분) — 넘으면 워커가 재시작하고 작업을 다시 대기열로 (0 = 끔) (B.33 · 시뮬레이션 가정)"),
     "auth.rate_limit_backend": ("db", "속도 제한 저장 위치 — db(여러 API 프로세스가 함께 셈 · 기본) · memory(프로세스별) (B.33)"),
     # ── 점검 보완 (B.32) ──
     "retention.policy": (

@@ -43,8 +43,18 @@ class RunContext:
         return self.artifacts
 
     def emit_after_success(self, type_: str, payload: dict[str, Any], actor: str | None = None) -> None:
-        """실행이 성공(게시 완료)한 뒤에만 낼 이벤트 — 실패한 실행의 변화가 다른 워크플로우를 깨우지 않도록 (B.32)."""
+        """실행이 성공(게시 완료)한 뒤에만 낼 이벤트 — 실패한 실행의 변화가 다른 워크플로우를 깨우지 않도록 (B.32).
+        게시 노드가 자기 트랜잭션 안에서 내보낸다(flush_deferred) — 게시와 이벤트가 함께 커밋된다(B.33). 게시 노드가 없으면 실행 끝에."""
         self.deferred.append((type_, payload, actor))
+
+    def flush_deferred(self) -> int:
+        from nhdip.events import emit
+
+        n = len(self.deferred)
+        for type_, payload, actor in self.deferred:
+            emit(self.session, type_, payload, actor)
+        self.deferred = []
+        return n
 
 
 class NodeResult:
@@ -124,10 +134,7 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
             session.commit()
         run.status = "degraded" if degraded else "succeeded"
         if ctx.deferred:
-            from nhdip.events import emit
-
-            for type_, payload, actor in ctx.deferred:
-                emit(session, type_, payload, actor)
+            ctx.flush_deferred()
             session.commit()
     except Exception as exc:  # noqa: BLE001
         session.rollback()

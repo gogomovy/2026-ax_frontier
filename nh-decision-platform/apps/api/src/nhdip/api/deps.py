@@ -22,43 +22,54 @@ from nhdip.security import session_hash, unsign_session
 COMMON_RESOURCES = {"terms", "meta", "menu", "assist"}  # assist 는 답변 안의 지표를 사용자 권한으로 다시 거른다
 
 
-def _trusted_nets():
-    import ipaddress
+_NETS: dict[str, Any] = {"at": 0.0, "nets": []}
 
+
+def _trusted_nets():
+    """신뢰 프록시 목록 — CIDR 또는 호스트 이름(예: compose 의 web). 이름은 60초마다 다시 해석한다."""
+    import ipaddress
+    import socket
+    import time
+
+    if time.monotonic() - _NETS["at"] < 60 and _NETS["nets"]:
+        return _NETS["nets"]
     from nhdip.config import get_settings
 
     out = []
     for x in get_settings().trusted_proxies.split(","):
         x = x.strip()
-        if x:
+        if not x:
+            continue
+        try:
+            out.append(ipaddress.ip_network(x, strict=False))
+        except ValueError:
             try:
-                out.append(ipaddress.ip_network(x, strict=False))
-            except ValueError:
+                for ai in socket.getaddrinfo(x, None):
+                    out.append(ipaddress.ip_network(ai[4][0].split("%", 1)[0]))
+            except OSError:
                 pass
+    _NETS.update(at=time.monotonic(), nets=out)
     return out
 
 
 def client_ip(request: Request) -> str | None:
-    """요청한 사용자 IP (B.33) — 바로 앞이 신뢰 프록시(web 컨테이너 등, 설정 TRUSTED_PROXIES)면
-    X-Forwarded-For 를 오른쪽부터 따라가 처음 나오는 신뢰하지 않는 주소를 쓴다. 속도 제한 · 감사 기록 기준."""
+    """요청한 사용자 IP (B.33) — 바로 앞이 신뢰 프록시(설정 TRUSTED_PROXIES — 기본: 이 컴퓨터 · compose 의 web 컨테이너)일 때만
+    X-Forwarded-For 의 오른쪽에서 TRUSTED_PROXY_HOPS(기본 1 = Next 가 붙인 값)번째를 쓴다.
+    사용자가 보낸 앞쪽 값은 보지 않으므로 위조할 수 없다. 속도 제한 · 감사 기록 기준."""
     import ipaddress
 
+    from nhdip.config import get_settings
+
     peer = request.client.host if request.client else None
-    nets = _trusted_nets()
-
-    def trusted(ip: str | None) -> bool:
-        try:
-            return ip is not None and any(ipaddress.ip_address(ip) in n for n in nets)
-        except ValueError:
-            return False
-
-    if not trusted(peer):
+    try:
+        trusted = peer is not None and any(ipaddress.ip_address(peer) in n for n in _trusted_nets())
+    except ValueError:
+        trusted = False
+    if not trusted:
         return peer
     chain = [h.strip() for h in (request.headers.get("x-forwarded-for") or "").split(",") if h.strip()]
-    for ip in reversed(chain):
-        if not trusted(ip):
-            return ip[:64]
-    return chain[0][:64] if chain else peer
+    hops = max(1, int(get_settings().trusted_proxy_hops))
+    return chain[-hops][:64] if len(chain) >= hops else peer
 
 
 from nhdip.orgs import org_chain  # noqa: E402,F401 — 조직 경로는 핵심 계층(orgs)에서 제공(계층 규칙)

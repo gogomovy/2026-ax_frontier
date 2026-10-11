@@ -703,13 +703,14 @@ class ApprovalIn(BaseModel):
 
 @router.post("/jobs/{jid}/approve")
 def job_approve(jid: int, body: ApprovalIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    j = session.get(Job, jid)
+    # 행 잠금 — 디스패처가 같은 작업에 원인을 덧붙이는 중이면 끝날 때까지 기다린다 (B.33)
+    j = session.execute(select(Job).where(Job.id == jid).with_for_update()).scalar()
     if not j or j.status != "approval":
         raise HTTPException(404, "승인 대기 작업 없음")
     from nhdip.models import utcnow as _now
 
     # 같은 워크플로우의 대기 작업이 있으면 원인을 합친다 (동시 실행 1개 원칙)
-    q = session.execute(select(Job).where(Job.kind == "workflow", Job.workflow_code == j.workflow_code, Job.status == "queued").limit(1)).scalar()
+    q = session.execute(select(Job).where(Job.kind == "workflow", Job.workflow_code == j.workflow_code, Job.status == "queued").limit(1).with_for_update()).scalar()
     if q is not None:
         q.causes = [*q.causes, *j.causes][-200:]
         q.run_after = _now()
@@ -723,7 +724,7 @@ def job_approve(jid: int, body: ApprovalIn, request: Request, session: Session =
 
 @router.post("/jobs/{jid}/reject")
 def job_reject(jid: int, body: ApprovalIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    j = session.get(Job, jid)
+    j = session.execute(select(Job).where(Job.id == jid).with_for_update()).scalar()
     if not j or j.status != "approval":
         raise HTTPException(404, "승인 대기 작업 없음")
     from nhdip.models import utcnow as _now

@@ -104,19 +104,26 @@ def _update_goal_rule(session: Session, goal_id: str, value: float, actor: str) 
     link = (links_s.value if links_s else {}).get(goal_id)
     if not link:
         return None
+    from nhdip.locks import lock
+
+    # 잠금을 먼저 잡고 활성 버전을 읽는다 — 같은 규칙의 다른 목표 확정과 겹쳐도 앞 확정값을 잃지 않는다 (B.33)
+    lock(session, f"rule:{link['rule']}")
     rule = session.get(Rule, link["rule"])
     if not rule:
         return None
+    session.refresh(rule)
     cur = session.execute(select(RuleVersion).where(RuleVersion.rule_code == rule.code, RuleVersion.version == rule.active_version)).scalar()
     body = dict(cur.body if cur else {})
     if body.get(link["path"]) == value:
         return None
     body[link["path"]] = value
-    from nhdip.locks import lock
-
-    lock(session, f"rule:{rule.code}")  # 같은 규칙에 동시에 새 버전을 만들면 버전 번호가 겹친다
     last = session.execute(select(RuleVersion.version).where(RuleVersion.rule_code == rule.code).order_by(RuleVersion.version.desc()).limit(1)).scalar() or 0
     session.add(RuleVersion(rule_code=rule.code, version=last + 1, body=body, note=f"경영목표 확정({goal_id})", created_by=actor))
+    from .admin_core import _dual_control
+
+    if _dual_control(session):
+        # 이중 승인 — 규칙 반영은 관리자 [판정 규칙]에서 다른 관리자가 적용해야 활성화
+        return {"rule": rule.code, "version": last + 1, link["path"]: value, "pendingApproval": True}
     rule.active_version = last + 1
     emit(session, "rule.changed", {"rule": rule.code, "version": last + 1, "source": goal_id}, actor)
     return {"rule": rule.code, "version": last + 1, link["path"]: value}

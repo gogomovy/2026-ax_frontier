@@ -80,8 +80,11 @@ def merge3(base: Any, ours: Any, theirs: Any) -> Any:
                 continue  # 이 실행이 지운 항목
             out_l.append(merge3(b.get(i, _MISSING), o[i], t) if i in o else t)
         seen = {x["id"] for x in out_l}
-        out_l += [x for x in ours if x["id"] not in seen and x["id"] not in b]  # 이 실행이 추가한 항목
-        return out_l
+        # 이 실행이 추가한 항목 — 이 실행 목록에서 기존 항목보다 앞에 있던 것은 앞에(최신순 피드 등), 나머지는 뒤에 (B.33)
+        first_old = next((k for k, x in enumerate(ours) if x["id"] in b), len(ours))
+        added = [(k, x) for k, x in enumerate(ours) if x["id"] not in seen and x["id"] not in b]
+        # (최대 건수 자르기는 각 노드가 다음 실행에서 다시 한다 — 여기서 자르면 양쪽이 추가한 항목을 잃는다)
+        return [x for k, x in added if k < first_old] + out_l + [x for k, x in added if k >= first_old]
     return ours
 
 

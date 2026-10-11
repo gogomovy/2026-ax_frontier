@@ -2364,6 +2364,7 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | CSP nonce | `apps/web/src/proxy.ts`(요청마다 nonce → 요청 · 응답 `Content-Security-Policy`) · `src/lib/csp.ts` · `next.config.mjs`(목데이터 모드만 정적 CSP) | Next 가 렌더링 때 프레임워크 스크립트에 nonce 부착 |
 | 포커스 | `src/lib/a11y.ts useFocusTrap` — `Sheet`(드로어가 없을 때만) · `SourceDrawer`(자동 포커스 · 복귀) | Tab · Shift+Tab 순환 |
 | 프론트 테스트 | `vitest.config.mts` · `src/lib/units.test.ts` · `npm test`(CI web 잡) | |
+| 리뷰 반영 (Q73) | `worker.main`(ID `host:pid:uuid8` · `recover_own_orphans`) · `_Beat`(실행 중 작업 · 경과 보고, 상한 초과 시 `os._exit(3)`) · `state._update_goal_rule`(잠금 → 새로 읽기 → 이중 승인이면 대기) · `admin_core.setting_put`(`governance.pending`) · `store.merge3`(추가 항목 위치 보존) · `deps.client_ip`(오른쪽 N번째) · `apps/web/server-entry.cjs` · `nodes.n_publish` → `ctx.flush_deferred()` | 설정 `workflow.max_run_minutes` |
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).
