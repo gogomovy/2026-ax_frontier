@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { useUi } from "@/components/providers/UiProvider";
 import { Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
+import { ScrollRegion } from "@/components/ui/ScrollRegion";
 
 /* ── 데이터 로드 ───────────────────────────────────────────── */
 export function useApiData<T>(path: string | null, opts: { refreshMs?: number } = {}) {
@@ -115,7 +116,7 @@ export function Loading({ error, loading }: { error?: string | null; loading?: b
 /* ── 표 ─────────────────────────────────────────────────────── */
 export function Table({ head, children, dense = true }: { head: ReactNode[]; children: ReactNode; dense?: boolean }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollRegion>
       <table className="w-full border-collapse text-[12.5px]">
         <thead>
           <tr className="border-y border-hairline-soft bg-surface-soft">
@@ -128,7 +129,7 @@ export function Table({ head, children, dense = true }: { head: ReactNode[]; chi
         </thead>
         <tbody>{children}</tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 
@@ -259,11 +260,11 @@ export function TextInput({ label, value, onChange, type = "text", placeholder, 
   );
 }
 
-export function Select({ label, value, onChange, options, className }: { label?: string; value: string | number | null | undefined; onChange: (v: string) => void; options: { value: string | number; label: string }[]; className?: string }) {
+export function Select({ label, value, onChange, options, className, ariaLabel }: { label?: string; value: string | number | null | undefined; onChange: (v: string) => void; options: { value: string | number; label: string }[]; className?: string; ariaLabel?: string }) {
   return (
     <label className={clsx("block", className)}>
       {label ? <span className="mb-1 block text-[11.5px] font-bold text-steel">{label}</span> : null}
-      <select className="input !h-9 text-[13px]" value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+      <select className="input !h-9 text-[13px]" aria-label={label ? undefined : ariaLabel} value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
         {options.map((o) => (
           <option key={String(o.value)} value={o.value}>
             {o.label}
@@ -296,7 +297,7 @@ export function Tabs<K extends string>({ tabs, active, onChange }: { tabs: { key
           className={clsx("rounded-pill px-4 py-1.5 text-[12.5px] font-bold", active === t.key ? "bg-ink-deep text-white" : "bg-surface-soft text-charcoal")}
         >
           {t.label}
-          {t.count !== undefined ? <span className="ml-1 tnum opacity-70">{t.count}</span> : null}
+          {t.count !== undefined ? <span className="ml-1 tnum">{t.count}</span> : null}
         </button>
       ))}
     </div>

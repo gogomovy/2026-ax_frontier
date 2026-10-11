@@ -155,7 +155,7 @@ export function BranchKpiBoard({ dashboard }: { dashboard: BranchDashboard }) {
                 </span>
                 <span className="relative z-10 inline-flex shrink-0 items-center gap-1 text-[12.5px] font-bold text-primary">
                   예상 <FigureText figure={a.uplift} signed />점
-                  <Link href={`/branch/analysis/${a.tabKey}`} aria-label={`${a.title} 분석 결과 열기`} className="inline-flex items-center gap-1">
+                  <Link href={`/branch/analysis/${a.tabKey}`} aria-label={`의견 보기 — ${a.title} 분석 결과`} className="inline-flex items-center gap-1">
                     의견 보기 <IconArrowRight />
                   </Link>
                 </span>

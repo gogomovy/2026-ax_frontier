@@ -24,7 +24,7 @@
   --color-charcoal: #444950;
   --color-slate: #4b4c4f;
   --color-steel: #5d6c7b;
-  --color-stone: #8595a4;
+  --color-stone: #616f7f;          /* 접근성 조정(B.34 · AA 4.5:1) — 원값 #8595a4 */
   --color-disabled-text: #bcc0c4;
 
   /* Color — Semantic (업무 재해석) */
@@ -33,6 +33,10 @@
   --color-warning: #f7b928;          /* 데이터 한계·시뮬레이션 */
   --color-critical: #e41e3f;         /* 재검토 필요·한도 위반·배치 */
   --color-critical-strong: #f0284a;
+  /* 글자용 상태 색 (B.34 · WCAG AA 4.5:1 — 흰 바탕 · 연한 상태색 칩 바탕 모두). 배경 · 선 · 점은 위 원래 색을 쓴다 */
+  --color-primary-text: #0052bd;
+  --color-success-text: #1c7434;
+  --color-critical-text: #c4162f;
 
   /* Radius */
   --radius-xs: 2px;

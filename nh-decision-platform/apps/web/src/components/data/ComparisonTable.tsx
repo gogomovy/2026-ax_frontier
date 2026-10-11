@@ -2,6 +2,7 @@
 
 import { DeltaFigure, FigureText } from "@/components/data/FigureText";
 import type { ComparisonRow } from "@/lib/types";
+import { ScrollRegion } from "@/components/ui/ScrollRegion";
 
 /** 현재 / 전년 / 전전년 / 증감액 / 증감률 5열 비교표 (요구사항 LOAN-03) */
 export function ComparisonTable({
@@ -14,7 +15,7 @@ export function ComparisonTable({
   positiveIsGood?: boolean;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollRegion>
       <table className="w-full border-collapse text-[13px]">
         <caption className="mb-2 text-left text-[11.5px] text-stone">단위 {unitLabel} · 8월 누계/말 기준</caption>
         <thead>
@@ -64,6 +65,6 @@ export function ComparisonTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }

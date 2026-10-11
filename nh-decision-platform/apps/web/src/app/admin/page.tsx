@@ -15,6 +15,13 @@ interface SystemInfo {
   users: Record<string, number>;
   recentRuns: { id: string; workflow: string; status: string; startedAt: string; finishedAt: string | null }[];
 }
+interface Readiness {
+  at: string;
+  ready: boolean;
+  counts: { ok: number; warn: number; fail: number };
+  items: { key: string; label: string; level: "ok" | "warn" | "fail"; message: string; fix: string }[];
+}
+const LEVEL = { ok: { status: "ok", label: "정상" }, warn: { status: "warning", label: "확인" }, fail: { status: "error", label: "위험" } } as const;
 interface SettingRow {
   key: string;
   value: unknown;
@@ -27,6 +34,7 @@ interface SettingRow {
 export default function AdminHome() {
   const sys = useApiData<SystemInfo>("/admin/system", { refreshMs: 10000 });
   const settings = useApiData<SettingRow[]>("/admin/settings");
+  const ready = useApiData<Readiness>("/admin/readiness", { refreshMs: 60000 });
   const { run, busy } = useAction();
   const s = sys.data;
 
@@ -79,6 +87,37 @@ export default function AdminHome() {
         </>
       ) : null}
 
+      <Card
+        title={
+          ready.data ? (
+            <span className="flex flex-wrap items-center gap-xs">
+              운영 준비 점검 <StatusBadge status={ready.data.ready ? "ok" : "error"} label={ready.data.ready ? "운영 가능" : "위험 항목 있음"} />
+              <span className="text-[11.5px] font-normal text-steel">
+                정상 {ready.data.counts.ok} · 확인 {ready.data.counts.warn} · 위험 {ready.data.counts.fail}
+              </span>
+            </span>
+          ) : (
+            "운영 준비 점검"
+          )
+        }
+        actions={<span className="text-[11.5px] text-stone">서버에서는 make preflight</span>}
+      >
+        <Loading error={ready.error} loading={!ready.data && ready.loading} />
+        {ready.data ? (
+          <Table head={["항목", "상태", "현재", "고치는 방법"]}>
+            {[...ready.data.items].sort((a, b) => ["fail", "warn", "ok"].indexOf(a.level) - ["fail", "warn", "ok"].indexOf(b.level)).map((it) => (
+              <tr key={it.key} data-readiness={it.key}>
+                <C className="font-bold text-ink-deep">{it.label}</C>
+                <C>
+                  <StatusBadge status={LEVEL[it.level].status} label={LEVEL[it.level].label} />
+                </C>
+                <C>{it.message}</C>
+                <C className="text-steel">{it.level === "ok" ? "" : it.fix}</C>
+              </tr>
+            ))}
+          </Table>
+        ) : null}
+      </Card>
       <Card title="운영 설정값" actions={<span className="text-[11.5px] text-stone">변경은 즉시 반영 · 감사 로그 기록</span>}>
         <Loading error={settings.error} loading={!settings.data && settings.loading} />
         <div className="flex flex-col gap-md">

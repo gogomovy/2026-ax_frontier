@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle
+.PHONY: help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y preflight host-check set
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
@@ -13,9 +13,13 @@ help:
 	@echo "make seed        - 기본 설정·목데이터 시드 재실행 (멱등)"
 	@echo "make test        - 백엔드 테스트 (api 컨테이너)"
 	@echo "make e2e         - 브라우저 E2E (기동 중인 스택 대상, Node 20+ 필요)"
+	@echo "make a11y        - 자동 접근성 점검(axe-core · WCAG 2.1 A·AA 자동 규칙, 기동 중인 스택 대상)"
 	@echo "make eval        - 골든셋 평가 (기준값 대조 · 결과를 관리자 [골든셋 평가]에 게시)"
 	@echo "make perf        - 성능 측정 (주요 API p50 · p95 · 기준치 대조)"
 	@echo "make admin-pass  - 최초 관리자 사번·비밀번호 표시"
+	@echo "make preflight   - 운영 준비 점검 (보안 · 계정 · LLM · 워커 · 알림 · 백업 — 위험 항목이 있으면 실패)"
+	@echo "make host-check  - 서버 점검 (Docker · Compose · buildx 버전 · 메모리 · 디스크 · 포트) — 처음 띄우기 전에"
+	@echo "make set k=WEB_PORT v=80 - .env 값 지정(같은 키 중복 없이) → make up 으로 반영"
 	@echo "make backup      - DB(업무 · litellm) 덤프 + 업로드 파일 → backups/<시각>/"
 	@echo "make restore FROM=backups/<시각> CONFIRM=yes - 백업에서 복구 (현재 데이터 덮어씀)"
 	@echo "make wait-idle   - 이벤트 · 작업 처리가 끝날 때까지 대기"
@@ -63,6 +67,10 @@ e2e:
 	set -a && . ../../.env && set +a && \
 	E2E_ADMIN_EMP="$$BOOTSTRAP_ADMIN_EMP_NO" E2E_ADMIN_PW="$$BOOTSTRAP_ADMIN_PASSWORD" E2E_BASE="http://localhost:$${WEB_PORT:-3000}" node e2e.mjs
 
+a11y:
+	cd apps/e2e && npm install --no-audit --no-fund >/dev/null && \
+	set -a && . ../../.env && set +a && \
+	E2E_ADMIN_EMP="$$BOOTSTRAP_ADMIN_EMP_NO" E2E_ADMIN_PW="$$BOOTSTRAP_ADMIN_PASSWORD" E2E_BASE="http://localhost:$${WEB_PORT:-3000}" node a11y.mjs
 eval:
 	$(COMPOSE) exec api python -m nhdip.evals --publish
 perf:
@@ -79,5 +87,11 @@ backup:
 	@bash infra/scripts/backup.sh
 restore:
 	@bash infra/scripts/restore.sh
+preflight:
+	$(COMPOSE) exec -T api python -m nhdip.cli preflight
+host-check:
+	@bash infra/scripts/check-host.sh
+set:
+	@bash infra/scripts/set-env.sh "$(k)" "$(v)"
 wait-idle:
 	$(COMPOSE) exec -T api python -m nhdip.cli wait-idle --timeout $${t:-300}

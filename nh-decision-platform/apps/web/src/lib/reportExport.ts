@@ -134,7 +134,7 @@ export function buildReportHtml(report: ReportDoc): string {
   h3 { font-size: 15px; margin: 20px 0 6px; color: #444950 }
   p, li, td, th { font-size: 13.5px }
   .meta { color: #5d6c7b; font-size: 12px; margin: 0 0 24px }
-  .muted { color: #8595a4; font-size: 11.5px }
+  .muted { color: #616f7f; font-size: 11.5px }
   .op { background: #f1f4f7; border-radius: 12px; padding: 16px 20px; margin: 0 0 24px }
   .op > p { margin: 0 0 8px; font-weight: 700; font-size: 12px; color: #5d6c7b }
   .op ol { margin: 0; padding-left: 20px }
@@ -153,12 +153,12 @@ export function buildReportHtml(report: ReportDoc): string {
   ul.evidence li { border-top: 1px dashed #dee3e9; padding: 6px 0; font-size: 12px }
   .cat { display: inline-block; background: #e9eef4; border-radius: 10px; padding: 1px 8px; font-size: 11px; margin-right: 6px }
   .src { display: block; color: #5d6c7b; font-size: 11.5px }
-  .snippet { display: block; color: #8595a4; font-size: 11.5px }
+  .snippet { display: block; color: #616f7f; font-size: 11.5px }
   dl { margin: 12px 0 }
   dl > div { display: flex; gap: 12px; border-bottom: 1px solid #dee3e9; padding: 4px 0 }
   dt { width: 180px; color: #5d6c7b; font-size: 12px }
   dd { margin: 0; font-size: 13px }
-  footer { margin-top: 40px; border-top: 1px solid #dee3e9; padding-top: 12px; color: #8595a4; font-size: 11.5px }
+  footer { margin-top: 40px; border-top: 1px solid #dee3e9; padding-top: 12px; color: #616f7f; font-size: 11.5px }
 </style></head>
 <body>
   <h1>${esc(report.title)}</h1>

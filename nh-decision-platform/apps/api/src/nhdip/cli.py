@@ -4,6 +4,8 @@
   python -m nhdip.cli admin-password <사번>         비밀번호 재설정(표준입력) + 잠금 해제
   python -m nhdip.cli run <workflow_code>           워크플로우 즉시 실행(동기)
   python -m nhdip.cli db-app-role                  API 전용 DB 계정 생성 · 권한 부여 (APP_DB_PASSWORD, 소유자 계정으로 실행)
+  python -m nhdip.cli preflight                    운영 준비 점검 (fail 이 있으면 종료 코드 1, --json 이면 JSON)
+  python -m nhdip.cli record-backup <폴더> <바이트>  백업 기록 남기기 (make backup 이 호출 — 운영 준비 점검의 '백업' 항목)
   python -m nhdip.cli wait-idle [--timeout 300]    미처리 이벤트 · 대기 · 실행 중 작업이 없을 때까지 대기 (CI · 기동 직후 점검)
 """
 from __future__ import annotations
@@ -26,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
     ap_run = sub.add_parser("run")
     ap_run.add_argument("workflow")
     sub.add_parser("db-app-role")
+    ap_pf = sub.add_parser("preflight")
+    ap_pf.add_argument("--json", action="store_true")
+    ap_rb = sub.add_parser("record-backup")
+    ap_rb.add_argument("folder")
+    ap_rb.add_argument("size", type=int, nargs="?", default=0)
     ap_wait = sub.add_parser("wait-idle")
     ap_wait.add_argument("--timeout", type=int, default=300)
     ap_wait.add_argument("--settle", type=int, default=5, help="연속으로 비어 있어야 하는 초")
@@ -56,6 +63,30 @@ def main(argv: list[str] | None = None) -> int:
             u.failed_count = 0
             if u.status == "locked":
                 u.status = "active"
+            s.commit()
+        print("ok")
+        return 0
+    if args.cmd == "preflight":
+        from nhdip.preflight import run_checks
+
+        with SessionLocal() as s:
+            rep = run_checks(s)
+        if args.json:
+            print(json.dumps(rep, ensure_ascii=False, indent=1))
+        else:
+            mark = {"ok": "OK  ", "warn": "WARN", "fail": "FAIL"}
+            for it in rep["items"]:
+                print(f"{mark[it['level']]}  {it['label']:<14} {it['message']}")
+                if it["fix"] and it["level"] != "ok":
+                    print(f"      → {it['fix']}")
+            c = rep["counts"]
+            print(f"\n정상 {c['ok']} · 확인 {c['warn']} · 위험 {c['fail']} — {'운영 가능' if rep['ready'] else '위험 항목을 먼저 고치세요'}")
+        return 0 if rep["ready"] else 1
+    if args.cmd == "record-backup":
+        from nhdip.events import audit
+
+        with SessionLocal() as s:
+            audit(s, "ops", "ops.backup", "backup", args.folder[:200], {"bytes": args.size}, None)
             s.commit()
         print("ok")
         return 0

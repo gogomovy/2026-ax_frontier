@@ -6,6 +6,7 @@ import { RichText } from "@/components/data/RichText";
 import { TermText } from "@/components/data/TermText";
 import { Badge, PillTabs, SEVERITY_TONE, SectionHead } from "@/components/ui/primitives";
 import type { Figure, ModelSummaryRow } from "@/lib/types";
+import { ScrollRegion } from "@/components/ui/ScrollRegion";
 /** 판정 근거 문구의 [[fig:ID]] 마커 → 같은 행의 계산 수치 */
 function rowFigures(row: ModelSummaryRow): Record<string, Figure> {
   const out: Record<string, Figure> = {};
@@ -40,7 +41,7 @@ export function ModelMonitoringPanel({ corp, retail }: { corp: ModelSummaryRow[]
           />
         }
       />
-      <div className="overflow-x-auto rounded-2xl border border-hairline-soft">
+      <ScrollRegion className="overflow-x-auto rounded-2xl border border-hairline-soft">
         <table className="w-full min-w-[760px] border-collapse text-[13px]">
           <thead>
             <tr className="bg-surface-soft text-left">
@@ -99,7 +100,7 @@ export function ModelMonitoringPanel({ corp, retail }: { corp: ModelSummaryRow[]
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
     </section>
   );
 }

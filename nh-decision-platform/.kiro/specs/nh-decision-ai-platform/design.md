@@ -2365,6 +2365,15 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 포커스 | `src/lib/a11y.ts useFocusTrap` — `Sheet`(드로어가 없을 때만) · `SourceDrawer`(자동 포커스 · 복귀) | Tab · Shift+Tab 순환 |
 | 프론트 테스트 | `vitest.config.mts` · `src/lib/units.test.ts` · `npm test`(CI web 잡) | |
 | 리뷰 반영 (Q73) | `worker.main`(ID `host:pid:uuid8` · `recover_own_orphans`) · `_Beat`(실행 중 작업 · 경과 보고, 상한 초과 시 `os._exit(3)`) · `state._update_goal_rule`(잠금 → 새로 읽기 → 이중 승인이면 대기) · `admin_core.setting_put`(`governance.pending`) · `store.merge3`(추가 항목 위치 보존) · `deps.client_ip`(오른쪽 N번째) · `apps/web/server-entry.cjs` · `nodes.n_publish` → `ctx.flush_deferred()` | 설정 `workflow.max_run_minutes` |
+### 19.19 운영 준비 (B.34)
+| 영역 | 위치 | 동작 |
+|---|---|---|
+| 자동 접근성 점검 | `apps/e2e/a11y.mjs`(axe-core 4.14.0, CDP 평가라 CSP 영향 없음) · `make a11y` · CI e2e 잡 | 로그인 전 2 + 업무 · 관리자 21 화면, `wcag2a · wcag2aa · wcag21a · wcag21aa`, `A11Y_LEVEL`(기본 serious) 이상이면 실패, 결과 `e2e-out/a11y.json` |
+| 글자 대비 | `tokens.generated.css` `--color-stone` · `--color-{primary,success,critical}-text`, `tailwind.config.ts` `theme.extend.textColor` | `text-*` 만 글자용 색, `bg-*` · `border-*` 는 원래 색 |
+| 키보드 스크롤 | `components/ui/ScrollRegion.tsx` — ResizeObserver 로 넘칠 때만 `tabIndex=0 · role=region` | DataTable · 관리자 Table · 비교표 · 현황 · 모형 표 |
+| 운영 준비 점검 | `nhdip/preflight.run_checks` → `cli preflight` · `GET /admin/readiness` · 관리자 [시스템 상태] 카드 | 항목별 ok · warn · fail + 고치는 방법 |
+| 서버 점검 · 설정 | `infra/scripts/check-host.sh`(`make host-check`) · `set-env.sh`(`make set`) · `ensure-env.sh` 키 중복 경고 | |
+| 백업 기록 · 보관 | `backup.sh` → `cli record-backup`(감사 `ops.backup`) · `BACKUP_KEEP` | 운영 준비 점검 '백업' 항목 |
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).

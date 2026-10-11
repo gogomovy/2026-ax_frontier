@@ -556,3 +556,24 @@ def test_orphan_jobs_of_previous_boot_are_requeued(db):
         s.delete(s.get(Job, j.id))
         s.delete(s.get(Job, other.id))
         s.commit()
+
+
+# ═════════════════════════ B.34 ═════════════════════════
+def test_preflight_readiness_and_backup_record(db):
+    from nhdip.cli import main as cli
+    from nhdip.preflight import run_checks
+
+    with db() as s:
+        rep = run_checks(s)
+    keys = {i["key"]: i for i in rep["items"]}
+    assert {"env", "session_secret", "db_role", "cookie_secure", "admin_password", "llm", "worker", "backup", "alerts"} <= set(keys)
+    assert keys["session_secret"]["level"] == "ok"
+    assert keys["admin_password"]["level"] == "warn"  # 테스트 관리자는 최초 비밀번호 그대로
+    assert all(i["level"] in ("ok", "warn", "fail") and "Admin1234" not in i["message"] for i in rep["items"])  # 비밀값 미노출
+    assert cli(["record-backup", "backups/20261011-020000", "1024"]) == 0
+    with db() as s:
+        assert {i["key"]: i for i in run_checks(s)["items"]}["backup"]["level"] == "ok"
+    admin = _admin()
+    r = admin.get("/admin/readiness")
+    assert r.status_code == 200 and r.json()["counts"]["ok"] >= 1
+    assert _client().get("/admin/readiness").status_code == 401

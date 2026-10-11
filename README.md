@@ -243,4 +243,45 @@ docker compose exec postgres psql -U nhdip -d nhdip \
 - 적재 데이터에 주민등록번호 · 휴대전화 · 이메일 · 카드번호 형식 값이 있으면 적재를 거부하고, 차주명은 화면에서 가립니다(관리자 설정 `privacy.policy`).
 - 로그인 후 `/admin/users` 에서 관리자 비밀번호를 재설정하고, 공유 환경에서는 `DEMO_USER_PASSWORD` 를 비워 두세요.
 
+## 12. 서버 배포 (아마존 리눅스 2023 · EC2)
+권장 사양: 메모리 8GB 이상(t3.large · 부족하면 스왑 4GB), 디스크 30GB 이상, x86 · Graviton 모두 가능. 이미지 · 패키지를 받기 위해 서버에서 인터넷으로 나가는 연결이 필요합니다.
+
+```bash
+# 1) 도구 — docker · git · make (설치 후 다시 로그인하거나 newgrp docker)
+sudo dnf install -y docker git make openssl && sudo systemctl enable --now docker && sudo usermod -aG docker $USER && newgrp docker
+
+# 2) compose · buildx 플러그인 (아마존 리눅스 저장소에는 없음 — compose 2.30 이상은 buildx 0.17 이상 필요)
+ARCH=$(uname -m); BX=$([ "$ARCH" = aarch64 ] && echo arm64 || echo amd64)
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -fSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$ARCH -o /usr/local/lib/docker/cli-plugins/docker-compose
+mkdir -p ~/.docker/cli-plugins && curl -fSL https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-$BX -o ~/.docker/cli-plugins/docker-buildx
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; chmod +x ~/.docker/cli-plugins/docker-buildx
+
+# 3) 코드 받기 → 플랫폼 폴더로 (gogomovy 저장소는 nh-decision-platform/ 안)
+git clone -b feat/nh-decision-platform https://github.com/gogomovy/2026-ax_frontier.git && cd 2026-ax_frontier/nh-decision-platform
+
+# 4) 점검 → 기동
+make host-check       # Docker · buildx 버전 · 메모리 · 디스크 · .env · 포트 · EC2 공인 IP — FAIL 이 있으면 안내된 명령 실행
+make up               # .env 비밀값 생성 → 빌드(처음 10~20분) → 기동
+make wait-idle && make ps      # 6개 모두 (healthy)
+make admin-pass       # 최초 관리자 사번 · 비밀번호
+make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에도 표시)
+```
+
+**외부 접속**
+- 웹만 외부에 열립니다(api · LiteLLM · Neo4j 는 서버 안에서만). 80 포트로 열려면 `make set k=WEB_PORT v=80 && make up` 후 EC2 보안 그룹 인바운드에 `TCP 80` 을 추가하고 `http://<공인 IP>` 로 접속합니다.
+- `.env` 값은 `make set k=<키> v=<값>` 으로 바꿉니다. `echo ... >> .env` 로 추가하면 같은 키가 두 줄이 되어 어느 값이 쓰일지 알 수 없습니다(`make host-check` 가 찾아 줍니다).
+- 서버 안에서는 열리는데 밖에서 안 되면: 보안 그룹 인바운드(포트 · 소스) → 서브넷 라우팅 테이블에 `0.0.0.0/0 → igw-…` 경로 → 네트워크 ACL → 내 쪽 회사망이 해당 포트를 막는지(휴대폰 핫스팟으로 확인) 순서로 봅니다. 외부 인바운드가 막힌 VPC 라면 SSH · SSM 터널을 씁니다.
+  ```bash
+  ssh -i <키.pem> -L 3000:localhost:3000 ec2-user@<서버 IP>          # → 내 PC 에서 http://localhost:3000
+  aws ssm start-session --target <인스턴스 ID> --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3000"],"localPortNumber":["3000"]}'
+  ```
+- 도메인 + HTTPS(ALB · nginx 뒤): `make set k=COOKIE_SECURE v=1`, `make set k=TRUSTED_ORIGINS v=https://<도메인>`, 앞단 프록시가 X-Forwarded-For 를 채우면 `make set k=TRUST_UPSTREAM_PROXY v=1` · `make set k=TRUSTED_PROXY_HOPS v=2` 후 `make up`.
+
+**운영**
+- 관리자 비밀번호: 관리자 [사용자] 의 [비밀번호], 잊었거나 잠겼으면 `echo '새비밀번호123' | docker compose exec -T api python -m nhdip.cli admin-password 00000001` (8자 이상 · 영문 + 숫자).
+- 백업은 매일 권장 — `crontab -e` 에 `0 2 * * * cd ~/2026-ax_frontier/nh-decision-platform && make backup >> backups/cron.log 2>&1` (최근 14개 보관, `BACKUP_KEEP`). 복구는 `make restore FROM=backups/<시각> CONFIRM=yes`.
+- 최신 코드: `git pull && make up`. 서버를 재부팅해도 Docker · 컨테이너가 자동으로 다시 뜹니다.
+
+---
 플랫폼의 데이터 흐름 · 화면 구성 · 코드 구조 · 목데이터 기준값은 [`nh-decision-platform/README.md`](nh-decision-platform/README.md), 요구사항 · 설계는 [`nh-decision-platform/.kiro/specs/nh-decision-ai-platform/`](nh-decision-platform/.kiro/specs/nh-decision-ai-platform/) 에 있습니다.

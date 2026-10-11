@@ -122,6 +122,7 @@ export default function AgentDecisionsAdmin() {
         title="최근 결정"
         actions={
           <Select
+            ariaLabel="에이전트 선택"
             value={agent}
             onChange={setAgent}
             options={[{ value: "", label: "전체 에이전트" }, ...(t?.agents ?? []).filter((a) => dec.data?.counts[a.code]).map((a) => ({ value: a.code, label: `${a.name} (${dec.data?.counts[a.code] ?? 0})` }))]}

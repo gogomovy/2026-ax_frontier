@@ -10,6 +10,7 @@ import { Badge, IconArrowRight, NextStep, ProgressBar, SectionHead, TextLink } f
 import { UNIT_LABEL } from "@/lib/format";
 import { resolveGoal } from "@/lib/goalView";
 import type { CapitalView, DomainCardInfo, Figure, Goal, LoanOverview } from "@/lib/types";
+import { ScrollRegion } from "@/components/ui/ScrollRegion";
 
 /**
  * STEP 1 — 현황·목표
@@ -156,7 +157,7 @@ export function OverviewWorkspace({
               hint={`${domainGoals.length}건 · 종합기획부 확정`}
               right={<TextLink href="/hq/goals">목표 설정</TextLink>}
             />
-            <div className="overflow-x-auto rounded-2xl border border-hairline-soft">
+            <ScrollRegion className="overflow-x-auto rounded-2xl border border-hairline-soft">
               <table className="w-full min-w-[720px] border-collapse text-[13px]">
                 <thead>
                   <tr className="bg-surface-soft text-left">
@@ -202,7 +203,7 @@ export function OverviewWorkspace({
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollRegion>
           </section>
 
           {/* 은행 종합목표 */}

@@ -33,7 +33,7 @@ export function TermText({
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
-        aria-label={`${term.prefLabel} 용어 설명 보기`}
+        aria-label={`${label ?? term.prefLabel} — 용어 설명 보기`}
         className={clsx("term-marked font-medium text-ink", className)}
       >
         {label ?? term.prefLabel}

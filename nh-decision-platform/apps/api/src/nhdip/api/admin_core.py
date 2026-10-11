@@ -45,6 +45,14 @@ def _iso(v):
 
 
 # ═════════════════════════ 시스템 상태 ═════════════════════════
+@router.get("/readiness")
+def readiness(session: Session = Depends(get_session)):
+    """운영 준비 점검 (B.34) — 설정 · 상태가 권장값과 맞는지."""
+    from nhdip.preflight import run_checks
+
+    return run_checks(session)
+
+
 @router.get("/system")
 def system(session: Session = Depends(get_session)):
     pg = {"ok": True}

@@ -105,11 +105,11 @@ function SeriesTile({
         type="button"
         onClick={onClick}
         aria-pressed={!off}
-        aria-label={`${series.label} 계열 차트 ${off ? "표시" : "숨기기"}`}
+        title={`차트에서 ${off ? "다시 표시" : "숨기기"}`}
         className="flex w-full items-center gap-1.5 text-left"
       >
         <span className="h-[3px] w-3 shrink-0 rounded-pill" style={{ background: color }} aria-hidden="true" />
-        <span className="min-w-0 flex-1 truncate text-[12px] font-bold text-ink-deep">{series.label}</span>
+        <span className="min-w-0 flex-1 truncate text-[12px] font-bold text-ink-deep">{series.label}</span>{" "}
         <span className="text-[10.5px] font-bold text-stone">{off ? "숨김" : "표시"}</span>
       </button>
       <p className="mt-1.5 text-[18px] font-bold leading-none text-ink-deep">

@@ -119,7 +119,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#dee3e9" strokeWidth="1" />
-              <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="#8595a4">
+              <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="#616f7f">
                 {fmt(t, unit, decimals)}
               </text>
             </g>

@@ -27,7 +27,7 @@ colors:
   charcoal: "#444950"
   slate: "#4b4c4f"
   steel: "#5d6c7b"
-  stone: "#8595a4"
+  stone: "#616f7f"  # 접근성 조정(B.34 · WCAG AA 글자 대비 4.5:1) — 원값 #8595a4 (흰 배경 3.07:1)
   hairline: "#ced0d4"
   hairline-soft: "#dee3e9"
   disabled-text: "#bcc0c4"

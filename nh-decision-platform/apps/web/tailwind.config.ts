@@ -67,6 +67,12 @@ const config: Config = {
         "heading-md": ["28px", { lineHeight: "1.21" }],
         "heading-lg": ["36px", { lineHeight: "1.28" }],
       },
+      // 글자 색만 대비를 높인 값으로 (B.34) — text-primary · text-success · text-critical. bg-* · border-* 는 colors 그대로
+      textColor: {
+        primary: "var(--color-primary-text)",
+        success: "var(--color-success-text)",
+        critical: "var(--color-critical-text)",
+      },
       boxShadow: {
         panel: "rgba(20, 22, 26, 0.12) 0px 1px 4px 0px",
         pop: "rgba(20, 22, 26, 0.22) 0px 6px 24px 0px",

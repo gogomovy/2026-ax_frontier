@@ -265,9 +265,14 @@
   - 결과: pytest 137 · 커버리지 95% · 계층 계약 4/4 · vitest 18 · tsc · eslint · next build(목데이터 · API) · 브라우저 E2E 66/66(CSP 위반 없음) · 골든셋 100% · 실기동(api 접속 계정 `nhdip_app` · 감사 IP 실제 사용자)
 - [x] B.33 리뷰 반영 (Q73) — 독립 코드 리뷰 지적 10건: 워커 고아 작업 · 실행 상한, 목표 확정 동시성 · 이중 승인 우회, 변화 피드 병합 순서, X-Forwarded-For 위조, 경로 판단 정체, 이벤트 원자성, 승인 행 잠금, 앱 계정 실패 시 기동 중단
   - 결과: pytest 141 · 커버리지 95% · 계층 계약 4/4 · vitest 18 · tsc · eslint · 브라우저 E2E 66/66 · 골든셋 100% · 실기동(위조 X-Forwarded-For 무시 확인)
-- [ ] B.34 운영 확정 (운영 입력 필요)
-  - [ ] 운영 값: `TRUSTED_ORIGINS` · `COOKIE_SECURE` · `TRUSTED_PROXIES` · 보관 기간 · 이중 승인 / 사람 승인 범위 · 백업 주기 · 보관 위치 · DB 계정 비밀번호 보관 · 교체
-  - [ ] WCAG 2.1 AA — 보조기술 실사용 테스트 · 전문가 검토
+- [x] B.34 운영 준비 (Q74~Q77) — 운영 입력 없이 할 수 있는 부분
+  - [x] 자동 접근성 점검(axe-core · `make a11y` · CI) + 위반 158건 수정(글자 대비 · 이름 · 키보드 스크롤 · 선택 상자) — 23개 화면 위반 0
+  - [x] 운영 준비 점검(`make preflight` · 관리자 [시스템 상태]) · 서버 점검(`make host-check`) · `.env` 지정(`make set`) · 백업 기록 · 보관 개수
+  - [x] README 서버 배포(아마존 리눅스 2023 · EC2) — 도구 설치 · 점검 · 기동 · 외부 접속 · 터널 · HTTPS · 백업 cron
+- [ ] B.35 운영 확정 (운영 입력 필요)
+  - [ ] 운영 값: 도메인 · HTTPS(`TRUSTED_ORIGINS` · `COOKIE_SECURE`) · 앞단 프록시(`TRUST_UPSTREAM_PROXY` · `TRUSTED_PROXY_HOPS`) · 보관 기간 · 이중 승인 / 사람 승인 범위 · 백업 외부 보관 위치 · DB 계정 비밀번호 교체 주기
+  - [ ] WCAG 2.1 AA — 보조기술(화면 낭독기 · 키보드 전용) 실사용 테스트 · 전문가 검토
+  - [ ] 보조 글자색 변경(Q74)의 브랜드 가이드 확인
 - [ ] B.15 리스크관리부 · 영업점 컬럼 정의서 — 같은 방식(`contracts.dept_prefix` risk · branch)으로 추가
 
 ---

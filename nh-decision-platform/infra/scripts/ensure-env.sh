@@ -48,4 +48,7 @@ fill LITELLM_UI_PASSWORD "$(rand_hex 12)"
 fill BOOTSTRAP_ADMIN_PASSWORD "Nh!$(rand_hex 6)"
 
 chmod 600 "$TARGET"
+# 3) 같은 키가 여러 줄이면 경고 (echo >> 로 추가한 경우 — 값 지정은 infra/scripts/set-env.sh)
+DUP=$(grep -E '^[A-Z_][A-Z0-9_]*=' "$TARGET" | cut -d= -f1 | sort | uniq -d | tr '\n' ' ')
+[ -n "$DUP" ] && echo "[env] 경고: 같은 키가 여러 줄 — ${DUP}→ bash infra/scripts/set-env.sh <키> <값> 으로 한 줄로 정리하세요" >&2
 echo "[env] 준비 완료 — 최초 관리자 사번: $(grep -E '^BOOTSTRAP_ADMIN_EMP_NO=' "$TARGET" | cut -d= -f2) (비밀번호는 .env 의 BOOTSTRAP_ADMIN_PASSWORD)"

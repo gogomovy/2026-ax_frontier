@@ -87,6 +87,10 @@ jobs:
         run: make e2e
         env:
           E2E_OUT: ${{ github.workspace }}/e2e-out
+      - name: 자동 접근성 점검 (axe-core · serious 이상이면 실패)
+        run: make a11y
+        env:
+          E2E_OUT: ${{ github.workspace }}/e2e-out
       - name: golden set (compose 스택 · 선계산 후)
         run: docker compose exec -T api python -m nhdip.evals --json /tmp/eval.json
       - name: perf smoke (참고용 · 공용 러너 편차로 실패해도 계속)

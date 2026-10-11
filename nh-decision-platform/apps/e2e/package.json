@@ -5,9 +5,11 @@
   "type": "module",
   "description": "NHDIP 브라우저 E2E — 가입·승인·권한·업로드·변경 기반 실행·모니터링 (QA-04)",
   "scripts": {
-    "e2e": "node e2e.mjs"
+    "e2e": "node e2e.mjs",
+    "a11y": "node a11y.mjs"
   },
   "devDependencies": {
+    "axe-core": "4.14.0",
     "puppeteer": "24.15.0"
   }
 }

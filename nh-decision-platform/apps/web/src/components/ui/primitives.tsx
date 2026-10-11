@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { ScrollRegion } from "./ScrollRegion";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { Severity } from "@/lib/types";
@@ -216,7 +217,7 @@ export function DataTable({
   dense?: boolean;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollRegion label={typeof caption === "string" ? caption : undefined}>
       <table className="w-full border-collapse text-[13px]">
         {caption ? <caption className="mb-2 text-left text-[12px] text-steel">{caption}</caption> : null}
         <thead>
@@ -241,7 +242,7 @@ export function DataTable({
         </thead>
         <tbody>{children}</tbody>
       </table>
-    </div>
+    </ScrollRegion>
   );
 }
 

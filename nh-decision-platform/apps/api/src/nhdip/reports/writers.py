@@ -27,7 +27,7 @@ _CSS = """
   h3 { font-size: 15px; margin: 20px 0 6px; color: #444950 }
   p, li, td, th { font-size: 13.5px }
   .meta { color: #5d6c7b; font-size: 12px; margin: 0 0 24px; white-space: pre-line }
-  .muted { color: #8595a4; font-size: 11.5px }
+  .muted { color: #616f7f; font-size: 11.5px }
   .op_title { font-weight: 700; color: #0a1317; margin: 12px 0 4px }
   table { width: 100%; border-collapse: collapse; margin: 12px 0 }
   caption { text-align: left; font-size: 12px; color: #5d6c7b; padding-bottom: 6px }
@@ -125,7 +125,7 @@ def to_pdf(title: str, els: list[Element], font_cfg: dict[str, Any]) -> bytes:
         "h3": ParagraphStyle("h3", fontName=bold, fontSize=11.5, leading=16, spaceBefore=10, spaceAfter=4, textColor=colors.HexColor("#444950")),
         "body": ParagraphStyle("body", fontName=font, fontSize=9.5, leading=14.5, spaceAfter=4, wordWrap="CJK"),
         "meta": ParagraphStyle("meta", fontName=font, fontSize=8.5, leading=12.5, spaceAfter=10, textColor=colors.HexColor("#5d6c7b"), wordWrap="CJK"),
-        "muted": ParagraphStyle("muted", fontName=font, fontSize=8, leading=11.5, textColor=colors.HexColor("#8595a4"), wordWrap="CJK"),
+        "muted": ParagraphStyle("muted", fontName=font, fontSize=8, leading=11.5, textColor=colors.HexColor("#616f7f"), wordWrap="CJK"),
         "op_title": ParagraphStyle("op_title", fontName=bold, fontSize=10, leading=14, spaceBefore=6, wordWrap="CJK"),
         "cell": ParagraphStyle("cell", fontName=font, fontSize=8.5, leading=11.5, wordWrap="CJK"),
         "cell_r": ParagraphStyle("cell_r", fontName=font, fontSize=8.5, leading=11.5, alignment=TA_RIGHT, wordWrap="CJK"),
@@ -174,7 +174,7 @@ def to_pdf(title: str, els: list[Element], font_cfg: dict[str, Any]) -> bytes:
     def footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
         canvas.setFont(font, 7.5)
-        canvas.setFillColor(colors.HexColor("#8595a4"))
+        canvas.setFillColor(colors.HexColor("#616f7f"))
         canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"{title} · {doc.page}")
         canvas.restoreState()
 
