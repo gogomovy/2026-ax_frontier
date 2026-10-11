@@ -138,5 +138,5 @@ def test_prospect_select_filters_and_weights():
     # B 등급 초과 · C 지점 집중 업종(G46) · D 업종 중복(C21) · E 부채비율 · F 지역 외 → A, G (C29 는 10% → 집중 업종이라 제외)
     assert "G46" in r.extra["overlap_industries"] and "C29" in r.extra["overlap_industries"]
     assert names == ["A"] and r.value == Decimal(1)
-    assert r.extra["excluded"] == {"region": 1, "grade": 1, "debt": 1, "overlap": 2, "duplicate": 1, "limit": 0}
+    assert r.extra["excluded"] == {"existing": 0, "region": 1, "grade": 1, "debt": 1, "overlap": 2, "duplicate": 1, "limit": 0}
     assert r.extra["weighted_mn"] == Decimal(3000) * Decimal("1.5")

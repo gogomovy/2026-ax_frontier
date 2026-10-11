@@ -93,8 +93,22 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
         if span and _norm(span) not in text:
             issues.append({"kind": "span_not_found", "reason": "관계 evidence_span 이 원문에 없음", "raw": r})
             continue
-        frm = "$doc" if str(r.get("from")) in ("$doc", "doc", "document") else keymap.get(str(r.get("from")))
-        to = keymap.get(str(r.get("to")))
+        def end(v: Any) -> tuple[str, str] | None:
+            # 양끝은 키 문자열 또는 {key, label}(모델에 따라 객체로 답함 — B.40) — 엔티티 목록에 없으면 별칭 사전으로 해석
+            if isinstance(v, dict):
+                raw, lab = str(v.get("key") or v.get("name") or ""), v.get("label")
+            else:
+                raw, lab = str(v or ""), None
+            if raw in keymap:
+                return keymap[raw]
+            if lab and lab in resolver.classes:
+                k = resolver.resolve(lab, raw)
+                return (lab, k) if k else None
+            return None
+
+        frm_raw = r.get("from")
+        frm = "$doc" if (frm_raw.get("key") if isinstance(frm_raw, dict) else str(frm_raw)) in ("$doc", "doc", "document") else end(frm_raw)
+        to = end(r.get("to"))
         if not to or (frm != "$doc" and not frm):
             issues.append({"kind": "unresolved_entity", "reason": "관계 양끝 엔티티를 해석하지 못함", "raw": r})
             continue

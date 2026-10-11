@@ -2380,6 +2380,45 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 간단 설정 | `GET · POST /admin/llm/setup` (`api/admin_core.llm_setup`) · 화면 `/admin/llm` `QuickSetup` | 기본 프로필의 연결(없으면 `litellm` 연결 생성)에 주소 · 키 저장 → 기본 · 임베딩 프로필 모델 저장 → `test_connection`(GET /models + 1토큰 chat) → `last_test` · 감사 `admin.llm.setup` · `llm_judge.reset_cooldown()` |
 | 호출 차단 | `llm/client.resolve` — 연결 주소가 비면 `LlmUnavailable` | 서술 · 판단 · 질의는 규칙 · 기존 문장으로 대체 |
 | 내장 게이트웨이 | `docker-compose.yml` `litellm.profiles: [litellm]` · `config.llm_default_base_url=""` · `seed/run._clear_bundled_litellm` | 기본 5개 서비스. `COMPOSE_PROFILES=litellm` 이면 6개 |
+### 19.21 부서별 컬럼 정의서 · 다행 적재 (B.38 · DCT-09~12)
+| 영역 | 위치 | 동작 |
+|---|---|---|
+| 파서 | `contracts/workbook.parse_workbook(content, prefixes, raw_depts)` · `table_code` | 시트 `[TS]NN_부서_이름` → 표 코드(기준 부서 외 `<접두>_TNN`), S 시트는 정의서 T 시트의 부서를 따르고 이름은 `주제_이름` |
+| 시드 | `seed/contracts/{risk,branch}_column_def_v1.json` · `seed/defs_dept_contracts.py` · `seed/run.dept_contracts_upgrade`(1회 `dept-contracts-v1`, 연결 갱신은 `BINDING_UPGRADES`) | 표가 없을 때만 반영, 설정 `contracts.dept_prefix` 병합 · `contracts.row_builders` 생성, 워크플로우에 노드 `contracts`(materialize_contracts, 게시 직전) 추가 |
+| 연결 종류 | `contracts/materialize.resolve_binding` | 기존(metric · base_ym · const · version · insight · proposal · unmapped) + `row`(행 생성기 값, `check` 대조 행 · `optional`) · `dataset`(원천 컬럼 검사) · `analysis`(id · dt) · `evidence`(인사이트 근거 → JSON) · `report`(HTML · `section` 글 · `field: title`) · `plan`(실행계획 항목). 공통 값 `rows_where` 로 일부 행에만 |
+| 다행 적재 | `materialize._materialize_rows` · `contracts/rows.py` `ROW_BUILDERS` | 행 생성기 → 공통 값 병합 → 같은 기준월(+사무소) 행 삭제 후 넣기. JSON 컬럼은 JSONB. 원천 표(S01~S03)는 검사만(`kind: source`) |
+| 표 → 워크플로우 | `wf_model_monitoring`(RISK_T01 · T02 · S99) · `wf_inclusive_risk`(RISK_T03) · `wf_branch_kpi`(BRANCH_*) | `workflow/dispatcher.match_event` 가 `contract.changed` 의 표를 적재하는 워크플로우를 계보로 매칭 |
+| 화면 | `/admin/contracts` | 부서 선택 → 표 탭, 행 생성기 · 적재 행 수 · 원천 검사 표시, 판정에 `행 값 · 원천 확인 · 값 없음` 추가 |
+
+### 19.22 파이프라인 시각화 (B.39 · PIPE-01~07)
+**API** `GET /admin/pipeline` (`api/admin_data.pipeline`) — 한 번에 그림 전체:
+- `stages`: 설정 `pipeline.stages` `[{key, label, impls[]}]`(순서 = 표시 순서, 미지정 구현은 `etc`)
+- `sources`: 데이터셋(코드 · 이름 · 당행/외부 · 현재 버전 · 확정 시각) · 문서 분류 · 규칙 · 이벤트 · 정기 실행(트리거에서)
+- `workflows[]`: 코드 · 이름 · 사용 여부 · `inputs[{source, via: trigger|lineage}]` · `nodes[{key, name, impl, stage, enabled, agent{code, name, kind, model}, last{status, ms, summary, by}}]` · `lastRun{id, status, startedAt, finishedAt, causes}` · `live{status: running|queued, runId, currentNode, done, total, jobs[]}` · `outputs[]`(outputs ∪ 적재 노드 표 → `mart:<코드>`)
+- `outputs[]`: 산출물 키 · 종류(화면 · 보고서 · mart) · 최근 게시 시각 · `screens[]`(설정 `screen.resources` 에 키가 있는 화면, 보고서는 `reports` 리소스를 가진 화면)
+- `screens[]`: 업무 화면 코드 · 이름 · 경로
+- 노드 요약 `_node_summary(impl, output)` — 계산(지표 수 · 오류) · 감지(판단 주체 · 유의 변화 수) · 계획(판단 주체 · 서술 대상 수) · 근거(문서 수) · 서술(모델 · 건수) · 검증(검토 수) · 적재(표 수) · 게시(산출물 수), 그 외 `summary` 문자열
+- 모델 표시: `llm/client.resolve` 의 모델(연결 없음이면 '미연결')
+
+**화면** `/admin/pipeline` (화면 코드 `ADMIN_PIPELINE`, 관리자 · 모니터링) — `components/admin/pipeline.tsx`
+- 탭 `전체 지도` — 4열(원천 · 워크플로우 · 산출물 · 화면) 카드. 연결선은 카드 위치를 재서 그린 SVG 곡선(`aria-hidden`), 선택하면 연결된 카드 · 선만 강조. 각 카드에 '연결: …' 글자 목록. 트리거는 실선, 계보는 점선
+- 탭 `워크플로우` — 워크플로우 선택 → 단계 열(머리글) 안에 노드 카드 가로 흐름(→), 상태 띠(색) + 상태 글자, 에이전트 배지(LLM 모델 · 규칙), 실행 중 노드는 점 표시(`motion-safe:animate-pulse`). 아래에 노드 상세 · 에이전트 판단 타임라인(`/admin/agents/decisions?run=`) · [지금 실행]
+- 탭 `이벤트 흐름` — `/admin/monitor/flow` 데이터를 한 줄 칩 흐름으로
+- 갱신 5초(`useApiData refreshMs`)
+
+### 19.23 업로드 기반 에이전트 시험 · 견고성 보완 (B.40)
+| 영역 | 위치 | 동작 |
+|---|---|---|
+| 시험 파일 | `apps/e2e/fixtures/make_upload_fixtures.py` | api 컨테이너에서 현재 확정 버전을 읽어 2026.09 자료 생성(seed 20260930). 7790 은 원본 양식(머리글 · 다단 헤더 · X 열 · 합계 행) |
+| 시험 실행 | `apps/e2e/upload-agents.mjs` | 로그인 → (환경변수로) LLM 간단 설정 → 이전 상태 → 업로드 5 · 문서 2 → 흐름 대기(이벤트 디스패치 · 실행 · 대기 작업 종료 2회 연속) → 이벤트 매칭 · 실행 · 판단 주체 · 노드 요약 · 문서 추출 · 지표 전후 · mart 기준월 · 질의 판정 → `upload-agents.{json,md}` |
+| 출력 잘림 | `llm/client.chat` | `finish_reason=length` · 도구 호출 없음 · `max_tokens < llm.max_tokens_cap` 이면 두 배로 다시(최대 2회, 재시도 횟수와 별도) |
+| 판단 형식 | `workflow/llm_judge.ask_json` | JSON 파싱 실패 → 오류 문구와 함께 1회 재요청(`format_retries`), 실패해도 쉬는 시간 없음 |
+| 후보 상한 | `workflow/agent_nodes.n_detect` | `llm_max_candidates`(25) 초과분은 규칙 판단, 메타 `llmCandidates` · `ruleOnly` |
+| 온톨로지 | `graph/extraction.validate` | 관계 양끝이 `{key, label}` 객체여도 엔티티 목록 → 별칭 사전 순으로 해석 |
+| 스냅숏 | `seed/defs_branch`(득점 지표 `as_of: $latest`) · `views/branch.b_kpi_scorecard` · `contracts/rows` · `seed/run.score_snapshot_upgrade` | 최근 기준일 · 기준월만 |
+| 미거래 | `calc/formulas.PROSPECT_SELECT(existing)` · `seed/defs_branch.PROSPECT_EXISTING` | 지역 조건 다음 기존 차주명 제외(`excluded.existing`) |
+| 단위 중복 | `contracts/materialize.render_markers` · `web components/data/RichText.renderRich` · 서술 지시문 | 마커 바로 뒤 같은 단위는 생략 |
+
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).

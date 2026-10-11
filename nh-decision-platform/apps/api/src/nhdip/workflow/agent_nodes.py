@@ -140,13 +140,19 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     # LLM 판단 (후보가 있을 때만)
     judged_by, meta, llm_summary = "rule", {"by": "rule", "reason": "후보 없음"}, None
     if items:
+        # 후보가 많으면(예: 영업점 50여 개) 규칙상 주요 · 변화율 큰 순으로 상한(규칙 CHANGE_SIGNIFICANCE.llm_max_candidates)만 LLM 에 묻고, 나머지는 규칙 판단 (B.40)
+        cap = int(pol.get("llm_max_candidates", 25) or 0)
+        ranked = sorted(items, key=lambda i: (i.get("ruleLevel") != "major", -abs(float(i.get("deltaPct") or 0))))
+        ask_items = ranked[:cap] if cap else ranked
         context = {"workflow": {"code": ctx.workflow.code, "name": ctx.workflow.name, "description": ctx.workflow.description}, "guidance": pol.get("llm_guidance"),
-                   "candidates": [{k: i.get(k) for k in ("kind", "code", "label", "unit", "before", "after", "delta", "deltaPct", "direction", "ruleLevel", "files")} for i in items]}
+                   "candidates": [{k: i.get(k) for k in ("kind", "code", "label", "unit", "before", "after", "delta", "deltaPct", "direction", "ruleLevel", "files")} for i in ask_items]}
         data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",))
+        if len(ask_items) < len(items):
+            meta = {**meta, "llmCandidates": len(ask_items), "ruleOnly": len(items) - len(ask_items)}
         by_code = {}
         if data:
             for d in data.get("changes") or []:
-                if isinstance(d, dict) and d.get("code") in {i["code"] for i in items} and d.get("level") in LEVELS:
+                if isinstance(d, dict) and d.get("code") in {i["code"] for i in ask_items} and d.get("level") in LEVELS:
                     by_code[d["code"]] = d
             judged_by = "llm" if by_code else "rule"
             llm_summary, _ = clean_reason(data.get("summary"))

@@ -53,7 +53,7 @@ def b_kpi_scorecard(ctx: EvalContext, p: dict[str, Any]):
     office, period, prev = _val(ctx, p["office"]), _val(ctx, p["period"]), _val(ctx, p.get("prev_period"))
     scheme = _rows(ctx, p.get("scheme", "BRANCH_KPI_SCHEME"), {"period": period})
     prev_max = {r["item_cd"]: r.get("max_points") for r in _rows(ctx, p.get("scheme", "BRANCH_KPI_SCHEME"), {"period": prev})} if prev else {}
-    scores = {r["item_cd"]: r for r in _rows(ctx, p.get("score", "BRANCH_KPI_SCORE"), {"office_cd": office, "period": period})}
+    scores = {r["item_cd"]: r for r in _rows(ctx, p.get("score", "BRANCH_KPI_SCORE"), {"office_cd": office, "period": period, "as_of": "$latest"})}  # 득점 현황은 기준일 스냅숏 — 최근 기준일만
 
     def item(r: dict[str, Any]) -> dict[str, Any]:
         sc = scores.get(r["item_cd"], {})
@@ -207,7 +207,7 @@ def b_prospect_note(ctx: EvalContext, p: dict[str, Any]):
     pol = _rule(ctx, p.get("rule", "BRANCH_PROSPECT_POLICY"))
     ex = oc.extra.get("excluded") or {}
     ov = ", ".join(oc.extra.get("overlap_industries") or []) or "없음"
-    return (f"본부 추천 기업 중 제외 — 지역 외 {ex.get('region', 0)}개 · 예상재무등급 {pol.get('max_grade')} 초과 {ex.get('grade', 0)}개 · 부채비율 {pol.get('max_debt_ratio_pct')}% 초과 {ex.get('debt', 0)}개 · "
+    return (f"본부 추천 기업 중 제외 — 기존 여신 거래 {ex.get('existing', 0)}개 · 지역 외 {ex.get('region', 0)}개 · 예상재무등급 {pol.get('max_grade')} 초과 {ex.get('grade', 0)}개 · 부채비율 {pol.get('max_debt_ratio_pct')}% 초과 {ex.get('debt', 0)}개 · "
             f"지점 집중 업종({ov}, 금액 비중 {pol.get('overlap_share_pct')}% 이상) {ex.get('overlap', 0)}개 · 업종 중복 {ex.get('duplicate', 0)}개 · 후보 상한({pol.get('max_candidates')}개) 초과 {ex.get('limit', 0)}개. "
             "신규 여신 가정액은 NICS 모형별 가정값(규칙 BRANCH_PROSPECT_POLICY · 시뮬레이션 가정), 금액 단위 억원.")
 

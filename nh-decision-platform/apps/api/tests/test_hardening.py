@@ -652,3 +652,52 @@ def test_bundled_litellm_default_is_cleared():
     assert not _clear_bundled_litellm(keyed, resolver=gone) and keyed.base_url == "http://litellm:4000"  # 키를 넣었으면 보존
     ext = SimpleNamespace(base_url="https://gw.example", api_key_enc=encrypt_secret(""), active=True, note="")
     assert not _clear_bundled_litellm(ext)
+
+
+# ═════════════════════════ B.37 실제 게이트웨이 대응 ═════════════════════════
+def test_chat_drops_param_the_model_rejects(db, monkeypatch):
+    import httpx
+
+    from nhdip.llm import client
+    from nhdip.llm.client import ResolvedLlm, chat
+
+    client._UNSUPPORTED.clear()
+    sent = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002
+        sent.append(dict(json))
+        if "temperature" in json:
+            msg = "litellm.UnsupportedParamsError: global.anthropic.claude-sonnet-5 does not support temperature=0.2. Only temperature=1 is supported."
+            return httpx.Response(400, json={"error": {"message": msg}}, request=httpx.Request("POST", url))
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}], "usage": {}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("nhdip.llm.client.httpx.post", fake_post)
+    cfg = ResolvedLlm(agent_code="t", connection_id=1, connection_name="gw", base_url="http://gw", api_key="", model="claude-sonnet-5", params={"temperature": 0.2, "max_tokens": 100}, timeout=5, retries=0, tools_enabled=False)
+    with db() as s:
+        r = chat(s, cfg, [{"role": "user", "content": "x"}])
+        assert r.text == "{}" and len(sent) == 2 and "temperature" not in sent[1] and sent[1]["max_tokens"] == 100  # 재시도 0 이어도 한 번 더
+        sent.clear()
+        chat(s, cfg, [{"role": "user", "content": "y"}])
+        assert len(sent) == 1 and "temperature" not in sent[0]  # 기억해서 처음부터 빼고 보낸다
+    client._UNSUPPORTED.clear()
+
+
+def test_chat_expands_max_tokens_when_truncated(db, monkeypatch):
+    """B.40 — 추론형 모델이 생각 토큰으로 max_tokens 를 다 써서 JSON 이 잘리면(finish_reason=length) 상한을 두 배로 늘려 다시 호출."""
+    import httpx
+
+    from nhdip.llm.client import ResolvedLlm, chat
+
+    sent = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002
+        sent.append(dict(json))
+        if json["max_tokens"] < 3000:
+            return httpx.Response(200, json={"choices": [{"message": {"content": '{"changes": [{"code": "a", "le'}, "finish_reason": "length"}], "usage": {}}, request=httpx.Request("POST", url))
+        return httpx.Response(200, json={"choices": [{"message": {"content": '{"changes": []}'}, "finish_reason": "stop"}], "usage": {}}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("nhdip.llm.client.httpx.post", fake_post)
+    cfg = ResolvedLlm(agent_code="t", connection_id=1, connection_name="gw", base_url="http://gw", api_key="", model="m-trunc", params={"max_tokens": 1500}, timeout=5, retries=0, tools_enabled=False)
+    with db() as s:
+        r = chat(s, cfg, [{"role": "user", "content": "x"}])
+    assert r.text == '{"changes": []}' and [b["max_tokens"] for b in sent] == [1500, 3000]

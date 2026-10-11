@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, getcontext
 from typing import Any, Callable
@@ -574,15 +576,21 @@ def grade_weight(seq: int, weights: list[dict[str, Any]], scale: list[str]) -> t
     return Decimal(1), ""
 
 
+def _corp_key(name: Any) -> str:
+    """기업명 비교 키 — 공백 · (주) · 주식회사 표기 차이를 무시."""
+    s = re.sub(r"\s+", "", str(name or ""))
+    return re.sub(r"\(주\)|㈜|주식회사|\(유\)|유한회사", "", s)
+
+
 @formula(
     "PROSPECT_SELECT",
     expression="지역 일치 → 예상재무등급 ≤ 기준 → 부채비율 ≤ 기준 → 지점 집중 업종 제외 → 업종당 1개 → 등급 · 자산 순 상위 N",
     description="여신가망 재무우량 기업 중 영업점 마케팅 후보 선정 — 값 = 후보 수, 신규 여신 가정액 · 평균 등급 · 등급 가중 실적은 부가 결과",
-    params={"prospects": "object[]", "branch_rows": "object[]", "office": "object", "policy": "object", "weights": "object[]", "grade_scale": "string[]"},
+    params={"prospects": "object[]", "branch_rows": "object[]", "office": "object", "policy": "object", "weights": "object[]", "grade_scale": "string[]", "existing": "string[](선택 · 당행 기존 차주명)"},
     returns="object",
     tool_enabled=False,
 )
-def f_prospect_select(prospects, branch_rows, office, policy, weights, grade_scale):
+def f_prospect_select(prospects, branch_rows, office, policy, weights, grade_scale, existing=None):
     if not isinstance(policy, dict) or not isinstance(office, dict):
         raise FormulaError("선정 기준 · 영업점 정보가 필요합니다")
     scale = list(grade_scale or [])
@@ -607,11 +615,16 @@ def f_prospect_select(prospects, branch_rows, office, policy, weights, grade_sca
     sig_list = [x.strip() for x in sigungu.split("|") if x.strip()]
     loan_by_model = {str(k): D(v) for k, v in (policy.get("loan_mn_by_model") or {}).items()}
     default_loan = D(policy.get("default_loan_mn", 1000))
-    excluded = {"region": 0, "grade": 0, "debt": 0, "overlap": 0, "duplicate": 0, "limit": 0}
+    excluded = {"existing": 0, "region": 0, "grade": 0, "debt": 0, "overlap": 0, "duplicate": 0, "limit": 0}
+    # 이미 당행 여신 거래 중인 기업(최근 기준월 차주 명세)은 '미거래 기업' 후보에서 뺀다 (B.40 — 유치 후에도 계속 추천되던 문제)
+    known = {_corp_key(n) for n in (existing or []) if n}
     pool = []
     for p in prospects or []:
         if str(p.get("region") or "") != region or not any(str(p.get("sigungu") or "").startswith(s) for s in sig_list):
             excluded["region"] += 1
+            continue
+        if known and _corp_key(p.get("corp_nm")) in known:
+            excluded["existing"] += 1
             continue
         seq = _grade_seq(p.get("exp_grade"), scale)
         if seq is None or seq > max_seq:

@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y preflight host-check set
+.PHONY: upload-test help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y preflight host-check set
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
@@ -67,6 +67,8 @@ e2e:
 	set -a && . ../../.env && set +a && \
 	E2E_ADMIN_EMP="$$BOOTSTRAP_ADMIN_EMP_NO" E2E_ADMIN_PW="$$BOOTSTRAP_ADMIN_PASSWORD" E2E_BASE="http://localhost:$${WEB_PORT:-3000}" node e2e.mjs
 
+upload-test:
+	@bash infra/scripts/upload-test.sh
 a11y:
 	cd apps/e2e && npm install --no-audit --no-fund >/dev/null && \
 	set -a && . ../../.env && set +a && \

@@ -83,6 +83,7 @@ SCREENS = [
     dict(code="ADMIN_CONTRACTS", path="/admin/contracts", label="컬럼 정의서", section="관리자", kind="admin", sort=108, admin_only=True),
     dict(code="ADMIN_ONTOLOGY", path="/admin/ontology", label="온톨로지", section="관리자", kind="admin", sort=109, admin_only=True),
     dict(code="ADMIN_RULES", path="/admin/rules", label="판정 규칙", section="관리자", kind="admin", sort=110, admin_only=True),
+    dict(code="ADMIN_PIPELINE", path="/admin/pipeline", label="파이프라인", section="관리자 · 모니터링", kind="admin", sort=119, admin_only=True),
     dict(code="ADMIN_FLOW", path="/admin/monitor/flow", label="데이터 흐름", section="관리자 · 모니터링", kind="admin", sort=120, admin_only=True),
     dict(code="ADMIN_RUNS", path="/admin/monitor/runs", label="에이전트 실행", section="관리자 · 모니터링", kind="admin", sort=121, admin_only=True),
     dict(code="ADMIN_CALC", path="/admin/monitor/calc", label="수치 모니터링", section="관리자 · 모니터링", kind="admin", sort=122, admin_only=True),
@@ -104,6 +105,21 @@ GRANTS = {
 }
 
 # ═════════════════════════ 설정값 ═════════════════════════
+# 관리자 [파이프라인] 기본 단계 (B.39 · 설정 pipeline.stages)
+PIPELINE_STAGES: list[dict[str, Any]] = [
+    {"key": "input", "label": "입력 고정", "impls": ["load_inputs", "embed_chunks", "extract_documents"]},
+    {"key": "compute", "label": "계산 · 판정(커널 · 규칙)", "impls": ["compute_metrics", "judge", "recommend_goals", "rank_attentions", "project_graph"]},
+    {"key": "detect", "label": "변화 감지", "impls": ["detect_changes"]},
+    {"key": "views", "label": "화면 갱신", "impls": ["build_views", "sync_analysis_tabs", "select_guides", "apply_segment_labels"]},
+    {"key": "plan", "label": "실행 계획", "impls": ["plan_run"]},
+    {"key": "evidence", "label": "근거 검색", "impls": ["retrieve_evidence"]},
+    {"key": "narrate", "label": "의견 서술", "impls": ["narrate"]},
+    {"key": "verify", "label": "검증", "impls": ["critic"]},
+    {"key": "load", "label": "정의서 적재", "impls": ["materialize_contracts"]},
+    {"key": "publish", "label": "게시", "impls": ["publish"]},
+]
+
+
 SETTINGS = {
     "org.unit_types": (ORG_UNIT_TYPES, "조직 유형(본부 · 부 · 국 · 팀 · 지역본부 · 영업점)과 허용 상위 유형"),
     "auth.max_failed_logins": (5, "연속 로그인 실패 시 잠금 횟수"),
@@ -140,7 +156,9 @@ SETTINGS = {
     "calc.rounding_default": ("HALF_UP", "지표 표시 반올림 기본값 (HALF_UP · HALF_EVEN · DOWN · UP)"),
     "embedding.agent": ("embedder", "문서 임베딩에 사용할 에이전트 코드"),
     "search.top_k": (5, "근거 검색 결과 수"),
-    "contracts.dept_prefix": ({"종기부": "hq", "리스크": "risk", "영업점": "branch"}, "컬럼 정의서 부서 → mart 테이블 접두어 (예: 종기부 T01 → mart.hq_t01)"),
+    "contracts.dept_prefix": ({"종기부": "hq", "리스크": "risk", "사업부서": "risk", "영업점": "branch"}, "컬럼 정의서 부서 → mart 테이블 접두어 (예: 종기부 T01 → mart.hq_t01 · 사업부서 T01 → 표 코드 RISK_T01 · mart.risk_t01)"),
+    "pipeline.stages": (PIPELINE_STAGES, "관리자 [파이프라인] 단계 — [{key, label, impls[]}] 순서대로 표시, 비우면 기본 단계(api/pipeline_view.DEFAULT_STAGES). 미지정 구현은 '기타'"),
+    "contracts.raw_depts": (["종기부"], "표 코드에 부서 접두를 붙이지 않는 기준 부서 (T01 그대로) — 나머지 부서는 '<접두>_T01'"),
     "assist.workflow_resources": ({"wf_model_monitoring": "risk_dashboard", "wf_inclusive_risk": "risk_dashboard", "wf_hq_goal_review": "hq_dashboard", "wf_branch_kpi": "branch_dashboard"}, "질의 패널 — 워크플로우 지표를 볼 수 있는 화면 리소스 (권한 없는 지표는 답변에서 제외)"),
     "format.unit_labels": ({"KRW_MN": "백만원", "KRW_BN": "억원", "KRW_TN": "조원", "PCT": "%", "PP": "%p", "CNT": "건", "RATIO": "", "NONE": ""}, "단위 코드 → 표시 문자 (전파 경로 목표 라벨 갱신 · 보고서 내보내기)"),
     "report.export_formats": (["pdf", "hwpx", "hwp", "html"], "보고서 내려받기 형식과 메뉴 순서 (pdf · hwpx · hwp · html) — 빼면 화면 메뉴에서도 사라짐"),
@@ -154,6 +172,8 @@ SETTINGS = {
     "docs.owner_orgs": ({"doc-mgmt-rwadept": ["D100"], "doc-model-corp": ["D200"], "doc-model-retail": ["D200"]}, "부서한정 문서의 소유 부서(조직 코드, 하위 조직 포함) — 목록 · 근거 검색 · 원본 열람에서 같은 기준으로 검증"),
     "evidence.policy": ({"weights": {"official": 0.40, "recency": 0.25, "semantic": 0.20, "path": 0.15}, "recency_half_life_days": 365, "max_age_days": 1825, "min_keyword_coverage": 1, "max_cosine_distance": 0.65}, "근거 선별 — 우선순위 가중치(공식성 · 시점 · 의미 · 개념경로) · 시점 반감기 · 최대 경과일 · 의미 기준"),
     "alerts.policy": ({"enabled": False, "channels": ["webhook", "email"], "min_severity": "warning", "lookback_min": 30, "rules": {"workflow_failed": {"enabled": True, "severity": "critical"}, "quality_failed": {"enabled": True, "severity": "warning"}, "auth_failures": {"enabled": True, "severity": "warning", "threshold": 10, "window_min": 10}, "llm_budget": {"enabled": True, "severity": "warning", "levels": [80, 100]}, "golden_failed": {"enabled": True, "severity": "warning"}}}, "운영 알림 — 켜기 · 채널 · 최소 심각도 · 조건별 기준. 채널 주소 · 계정은 배포 환경변수(ALERT_WEBHOOK_URL · ALERT_SMTP_*)"),
+    "assist.synonyms": ({"차이": ["초과 폭", "격차", "이탈", "증감"], "초과": ["초과 폭"], "변화": ["증감", "증가율"], "비중": ["구성비"]}, "질의 패널 지표 찾기 — 질문어 → 같은 뜻의 지표명 표현(질문어가 지표명에 없을 때 보강) (B.40)"),
+    "llm.max_tokens_cap": (8000, "LLM 출력이 max_tokens 에서 잘리면(추론형 모델의 생각 토큰 등) 두 배씩(최대 2회) 늘려 다시 호출할 상한. 0 = 늘리지 않음 (B.40)"),
     "llm.pricing": ({}, "LLM 단가(1천 토큰당, 원) — {\"모델명\" 또는 \"*\": {\"prompt_per_1k\": 0, \"completion_per_1k\": 0}}. 비우면 금액 0(사내 게이트웨이)"),
     "llm.budget": ({"monthly_tokens": 0, "monthly_cost": 0, "per_agent_tokens": {}, "on_exceed": "warn", "warn_pct": 80}, "LLM 월 예산 — 0 = 한도 없음. on_exceed: warn(알림만) · block(초과 후 호출 차단, 서술은 기존 문장 유지)"),
     "orchestrator.policy": ({"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300,
@@ -230,7 +250,7 @@ RULES = [
     ("CHANGE_SIGNIFICANCE", "변화 감지 유의 기준 (B.30 · 시뮬레이션 가정 · Q51 추천안)", "threshold",
      "직전 확정값 대비 변화 — 단위별 절대 변화(abs) · 변화율(pct, %) 중 큰 비율이 1 이상이면 일반, major_multiplier 배 이상이면 주요. 지표별(metrics) 우선 · 제외(ignore) · 데이터 행 수 변화율 · 범위(scope, 영업점 산출물)",
      {"units": {"PCT": {"abs": 0.1}, "PP": {"abs": 0.1}, "RATIO": {"abs": 0.005}, "NONE": {"abs": 0.05, "pct": 1.0}, "CNT": {"pct": 1.0}, "KRW_*": {"pct": 0.5}},
-      "major_multiplier": 5, "candidate_factor": 0.5, "protect_major": True, "llm_guidance": "",
+      "major_multiplier": 5, "candidate_factor": 0.5, "protect_major": True, "llm_max_candidates": 25, "llm_guidance": "",
       "metrics": {"psi_micro": {"abs": 0.01}, "chi_stat": {"abs": 0.5}}, "ignore": [], "max_feed": 200, "data": {"row_change_pct": 1.0},
       "scope": {"wf_branch_kpi": {"office": {"rule": "BRANCH_SCOPE", "path": "office_code"}}},
       "note": "기준값은 시뮬레이션 가정 — 행내 유의 변화 기준(보고 기준) 확정 시 교체"}),

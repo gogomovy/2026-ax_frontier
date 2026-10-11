@@ -21,6 +21,7 @@ make wait-idle   # 이벤트 · 작업 처리가 끝날 때까지 대기 (기동
 make backup      # DB(업무 · litellm) + 업로드 파일 → backups/<시각>/
 make restore FROM=backups/<시각> CONFIRM=yes   # 복구 (현재 데이터 덮어씀 · 그래프는 관리자 [온톨로지] 재투영)
 make preflight   # 운영 준비 점검 · make host-check 서버 점검 · make a11y 자동 접근성 점검 · make set k=키 v=값 (.env 지정)
+make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트 3100)에 2026.09 시험 엑셀 · PDF 를 올려 워크플로우 · 에이전트 · mart 갱신 확인 후 내림 (LLM: E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL 환경변수)
 ```
 
 | 서비스 | 주소 | 역할 |

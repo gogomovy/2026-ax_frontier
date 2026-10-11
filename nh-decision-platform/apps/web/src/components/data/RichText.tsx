@@ -1,5 +1,6 @@
 "use client";
 
+import { UNIT_LABEL } from "@/lib/format";
 import type { ReactNode } from "react";
 import clsx from "clsx";
 import { FigureText } from "./FigureText";
@@ -33,6 +34,12 @@ export function RichText({
 
 export function renderRich(text: string, figures?: Record<string, Figure>): ReactNode[] {
   const parts = text.split(TOKEN).filter((p) => p !== "");
+  // 서술이 마커 뒤에 단위를 한 번 더 쓴 경우(예: "[[fig:cnt]]건" → "12건건") 뒤의 단위를 뺀다 — 마커가 이미 단위를 표시함 (B.40)
+  for (let i = 1; i < parts.length; i++) {
+    const m = parts[i - 1].match(/^\[\[fig:([a-zA-Z0-9_\-]+)\]\]$/);
+    const unit = m ? UNIT_LABEL[figures?.[m[1]]?.unit as Figure["unit"]] : "";
+    if (unit && parts[i].startsWith(unit)) parts[i] = parts[i].slice(unit.length);
+  }
   return parts.map((part, index) => {
     const figMatch = part.match(/^\[\[fig:([a-zA-Z0-9_\-]+)\]\]$/);
     if (figMatch) {

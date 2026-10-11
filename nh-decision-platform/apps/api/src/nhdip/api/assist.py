@@ -83,6 +83,10 @@ def metrics_for(session: Session, user: AppUser, q: str, concepts: list[str], li
     s = session.get(Setting, "assist.workflow_resources")
     wf_res: dict[str, str] = s.value if s else DEFAULT_WF_RESOURCES
     terms = list(dict.fromkeys(_terms(q) + concepts))  # 개념과 질문어가 같으면 한 번만
+    # 질문어 동의어(설정 assist.synonyms) — '차이' 로 물으면 '초과 폭' · '격차' 지표도 찾는다(LLM 이 직접 빼지 않도록 · B.40)
+    syn_s = session.get(Setting, "assist.synonyms")
+    syn = syn_s.value if syn_s is not None and isinstance(syn_s.value, dict) else {}
+    terms = list(dict.fromkeys(terms + [x for t in terms for x in (syn.get(t) or [])]))
     scored = []
     for m in session.execute(select(Metric).where(Metric.enabled)).scalars():
         if allowed is not None and wf_res.get(m.workflow_code) not in allowed:

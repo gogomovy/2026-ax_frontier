@@ -852,7 +852,7 @@ def settings_summary(session: Session = Depends(get_session)):
 
 
 # ═════════════════════════ 컬럼 정의서 (DCT-01~08) ═════════════════════════
-BINDING_KINDS = ("metric", "base_ym", "const", "version", "insight", "proposal", "unmapped")
+BINDING_KINDS = ("metric", "base_ym", "const", "version", "insight", "proposal", "row", "dataset", "analysis", "evidence", "report", "plan", "unmapped")
 
 
 def _contract_json(c) -> dict[str, Any]:
@@ -877,8 +877,18 @@ def contracts(session: Session = Depends(get_session)):
         t["reportRun"] = rep.workflow_run_id if rep else None
     metrics_ = [m.code for m in session.execute(select(Metric).where(Metric.enabled).order_by(Metric.code)).scalars()]
     # 정의서 적재 노드를 가진 워크플로우 — '다시 계산' 대상 (화면에 코드를 두지 않는다)
-    wf = session.execute(select(WorkflowNode.workflow_code).where(WorkflowNode.impl == "materialize_contracts", WorkflowNode.enabled).limit(1)).scalar()
-    return {"tables": list(tables.values()), "metrics": metrics_, "bindingKinds": BINDING_KINDS, "workflow": wf}
+    nodes = session.execute(select(WorkflowNode).where(WorkflowNode.impl == "materialize_contracts", WorkflowNode.enabled).order_by(WorkflowNode.workflow_code)).scalars().all()
+    by_table: dict[str, str] = {}
+    for n in nodes:
+        for code in (n.config or {}).get("tables") or list(tables):
+            by_table.setdefault(code, n.workflow_code)
+    for code, t in tables.items():
+        t["workflow"] = by_table.get(code)
+    builders = (session.get(Setting, "contracts.row_builders").value if session.get(Setting, "contracts.row_builders") else {}) or {}
+    for code, t in tables.items():
+        t["builder"] = builders.get(code)
+    wf = nodes[0].workflow_code if nodes else None
+    return {"tables": list(tables.values()), "metrics": metrics_, "bindingKinds": BINDING_KINDS, "workflow": next((n.workflow_code for n in nodes if "T01" in ((n.config or {}).get("tables") or [])), wf)}
 
 
 @router.patch("/contracts/{cid}")
@@ -909,16 +919,22 @@ async def contract_import(request: Request, file: UploadFile = File(...), sessio
     from nhdip.contracts.materialize import import_workbook
     from nhdip.contracts.workbook import parse_workbook
     from nhdip.seed.defs_contracts import BINDINGS
+    from nhdip.seed.defs_dept_contracts import BINDINGS as DEPT_BINDINGS
 
     _, content = await _read(file, "contract", session, request, admin.emp_no)
+    prefixes = (session.get(Setting, "contracts.dept_prefix").value if session.get(Setting, "contracts.dept_prefix") else None) or {"종기부": "hq"}
+    raw = (session.get(Setting, "contracts.raw_depts").value if session.get(Setting, "contracts.raw_depts") else None) or ["종기부"]
     try:
-        tables = parse_workbook(content)
+        tables = parse_workbook(content, prefixes, raw)
     except Exception as exc:  # noqa: BLE001 — 형식 오류는 사용자에게
         raise HTTPException(422, f"엑셀을 읽을 수 없습니다(DRM 암호화 파일은 해제 후 업로드): {exc}") from exc
     if not tables:
         raise HTTPException(422, "정의서 시트가 없습니다 — 시트명 'T01_부서_이름', 헤더 '컬럼명' 행이 필요합니다")
     invalid = [f"{t['table_code']}.{c['column_name']}" for t in tables for c in t["columns"] if not c["valid_name"]]
-    res = import_workbook(session, tables, file.filename or "upload.xlsx", BINDINGS, admin.emp_no)
+    unknown = sorted({t["dept"] for t in tables if t["dept"] not in prefixes})
+    if unknown:
+        raise HTTPException(422, f"부서 접두가 없습니다: {', '.join(unknown)} — 설정 contracts.dept_prefix 에 추가 후 다시 올려 주세요")
+    res = import_workbook(session, tables, file.filename or "upload.xlsx", {**BINDINGS, **DEPT_BINDINGS}, admin.emp_no)
     emit(session, "contract.changed", {"workbook": file.filename, **res}, admin.emp_no)
     audit(session, admin.emp_no, "admin.contract.import", "contract", file.filename, {**res, "invalid": invalid}, client_ip(request))
     session.commit()
@@ -1038,6 +1054,14 @@ def agent_decisions(agent: str | None = None, workflow: str | None = None, run: 
         "counts": counts,
         "items": [{"id": d.id, "at": _iso(d.at), "agent": d.agent_code, "workflow": d.workflow_code, "jobId": d.job_id, "runId": d.workflow_run_id, "decision": d.decision, "summary": d.summary, "detail": d.detail, "traceId": d.trace_id} for d in session.execute(q).scalars()],
     }
+
+
+@router.get("/pipeline")
+def pipeline(session: Session = Depends(get_session)):
+    """파이프라인 화면 (B.39) — 원천 → 워크플로우(노드 · 에이전트 · 실행) → 산출물 → 화면."""
+    from .pipeline_view import build_pipeline
+
+    return build_pipeline(session)
 
 
 @router.get("/agents/topology")

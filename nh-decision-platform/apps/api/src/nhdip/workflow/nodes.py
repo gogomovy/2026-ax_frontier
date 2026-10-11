@@ -258,7 +258,7 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ev = ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]
         ev_lines = [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ev]
         tmpl = llm.user_template or (
-            "다음 확정 수치와 근거로 '{title}' 의견 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다. 인과를 단정하지 않는다. 2~4문장.\n\n"
+            "다음 확정 수치와 근거로 '{title}' 의견 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다(마커가 단위까지 표시하므로 마커 뒤에 건 · % · 원 같은 단위를 붙이지 않는다). 인과를 단정하지 않는다. 2~4문장.\n\n"
             "수치:\n{figures}\n\n판정:\n{verdicts}\n\n근거:\n{evidence}\n\n기존 서술(참고):\n{current}\n\n{instruction}\n출력: {{\"statement\": \"...\"}}"
         )
         # 산출물 문장(제목 · 기존 서술)도 자료로 구분자 안에 넣는다 — 편집 가능한 값이 지시문으로 읽히지 않도록 (B.32)

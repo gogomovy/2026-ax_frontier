@@ -399,7 +399,7 @@ def test_column_contracts_materialize_and_reconcile(db):
     _drain(db)
     d = admin.get("/admin/contracts").json()
     tables = {t["code"]: t for t in d["tables"]}
-    assert set(tables) == {"T01", "T02", "T03"} and len(tables["T01"]["columns"]) == 37
+    assert {"T01", "T02", "T03"} <= set(tables) and len(tables["T01"]["columns"]) == 37
     rep = {c["column"]: c for c in tables["T01"]["report"]["columns"]}
     assert rep["LOAN_NIM_PROGRESS_RT"]["verdict"] == "match" and rep["LOAN_NIM_PROGRESS_RT"]["display"] == "66.3"
     assert rep["LOAN_NIM_INCOME_AMT"]["verdict"] == "match"  # 21,865억원 ↔ 21865 (KRW_BN)
@@ -460,6 +460,88 @@ def test_column_contracts_materialize_and_reconcile(db):
     with db() as s:
         archived = s.execute(sql("SELECT count(*) FROM information_schema.tables WHERE table_schema='mart' AND table_name LIKE 'hq_t01__%'")).scalar()
     assert archived >= 1  # BIZ_DIV_CD 가 빠져 기본키가 바뀜 → 기존 테이블 보관 후 재생성
+
+
+def test_dept_contracts_rows_and_sources(db):
+    """B.38 — 사업부서 · 영업점 정의서: 다행 표 적재(행 생성기), 목업값 대조(6B 7.929 · 0.196%p · 3,500만원), 원천 검사, 계보 재실행."""
+    from sqlalchemy import text as sql
+
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    for wf in ("wf_model_monitoring", "wf_inclusive_risk", "wf_branch_kpi"):
+        assert admin.post(f"/admin/workflows/{wf}/run").status_code == 200
+    _drain(db, 40)
+    d = admin.get("/admin/contracts").json()
+    tables = {t["code"]: t for t in d["tables"]}
+    assert {"RISK_T01", "RISK_T02", "RISK_T03", "RISK_S99", "BRANCH_T01", "BRANCH_T02", "BRANCH_T03", "BRANCH_S01", "BRANCH_S02", "BRANCH_S03", "BRANCH_S99"} <= set(tables)
+    assert tables["RISK_T02"]["mart"] == "mart.risk_t02" and tables["BRANCH_T02"]["workflow"] == "wf_branch_kpi" and tables["RISK_T03"]["workflow"] == "wf_inclusive_risk"
+    for code in ("RISK_T01", "RISK_T02", "RISK_T03", "BRANCH_T01", "BRANCH_T02", "BRANCH_T03", "BRANCH_S01", "BRANCH_S02", "BRANCH_S03", "RISK_S99", "BRANCH_S99"):
+        rep = tables[code]["report"]
+        assert rep is not None, code
+        assert not rep["summary"].get("error") and not rep["summary"].get("mismatch"), (code, rep["summary"], [c for c in rep["columns"] if c["verdict"] in ("error", "mismatch")])
+    r2 = {c["column"]: c for c in tables["RISK_T02"]["report"]["columns"]}
+    assert r2["PD_GAP_PP"]["verdict"] == "match"  # 0.196%p (정의서 목업값, 대조 행 6B)
+    assert r2["PSI_THRESHOLD"]["verdict"] == "unmapped"  # 방법론 원문 전 임의 확정 금지
+    r1 = {c["column"]: c for c in tables["RISK_T01"]["report"]["columns"]}
+    assert r1["ACTUAL_DEFAULT_RT"]["verdict"] == "match" and r1["PRED_PD_MAX_RT"]["verdict"] == "match" and r1["AGENT_SUMMARY"]["verdict"] == "text"  # 7.929% · 8.933%
+    b3 = {c["column"]: c for c in tables["BRANCH_T03"]["report"]["columns"]}
+    assert b3["ANNUAL_BORROWER_LIMIT_AMT"]["verdict"] == "match"  # 35,000,000 원
+    assert tables["BRANCH_S01"]["report"]["kind"] == "source" and tables["BRANCH_S01"]["report"]["summary"] == {"mapped": 11}
+    with db() as s:
+        g6b = s.execute(sql("SELECT actual_default_rt, pred_pd_rt, exceed_rep_pd_yn, exceed_max_pd_yn, model_psi FROM mart.risk_t02 WHERE grade_cd='6B'")).mappings().one()
+        psi_t01 = s.execute(sql("SELECT psi, monitor_status_cd FROM mart.risk_t01")).mappings().one()
+        corp = s.execute(sql("SELECT count(*) AS n, count(report_html) AS html FROM mart.branch_t02")).mappings().one()
+        allrow = s.execute(sql("SELECT brc_borrower_cnt, candidate_cnt FROM mart.branch_t02 WHERE group_kind_cd='ALL'")).mappings().one()
+        prod = s.execute(sql("SELECT count(*) AS n, min(prov_share_diff_pp) AS d FROM mart.risk_t03")).mappings().one()
+        docs = s.execute(sql("SELECT count(*) AS n, count(*) FILTER (WHERE branch_visible_yn='N') AS hidden FROM mart.branch_s99")).mappings().one()
+    assert (g6b["exceed_rep_pd_yn"], g6b["exceed_max_pd_yn"]) == ("Y", "N") and round(float(g6b["actual_default_rt"]), 3) == 7.929
+    assert round(float(g6b["model_psi"]), 4) == round(float(psi_t01["psi"]), 4)  # 모형 PSI — T01(지표) · T02(행 생성기) 같은 입력
+    assert psi_t01["monitor_status_cd"] == "주의(상한내관리)"
+    assert corp["n"] > 20 and corp["html"] == 1  # 보고서 HTML 은 전체(ALL) 행에만
+    assert allrow["brc_borrower_cnt"] > 0 and allrow["candidate_cnt"] is not None
+    assert prod["n"] == 21 and prod["d"] is not None
+    assert docs["n"] > 0 and docs["hidden"] == 0  # 영업점 S99 는 영업점 노출 허용 문서만
+    # 계보 — 사업부서 표 연결 변경은 그 표를 적재하는 워크플로우를 깨운다
+    from nhdip.models import ColumnContract, OutboxEvent
+    from nhdip.workflow.dispatcher import match_event
+
+    with db() as s:
+        col = s.execute(select(ColumnContract).where(ColumnContract.table_code == "RISK_T03", ColumnContract.column_name == "PRODUCT_NM")).scalar_one()
+        m = match_event(s, OutboxEvent(type="contract.changed", payload={"table": col.table_code, "column": col.column_name}))
+    assert "wf_inclusive_risk" in m and any("lineage:contract" in r for r in m["wf_inclusive_risk"])
+    rows = admin.get("/admin/contracts/BRANCH_T03/rows").json()
+    assert rows["table"] == "mart.branch_t03" and len(rows["rows"]) == 10
+
+
+def test_pipeline_view(db):
+    """B.39 — 파이프라인: 단계 설정 · 원천(트리거/계보) · 노드 상태 · 에이전트 · 산출물 → 화면 연결이 DB 정의에서 만들어진다."""
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    d = admin.get("/admin/pipeline").json()
+    stages = [s["key"] for s in d["stages"]]
+    assert stages[0] == "input" and stages[-1] == "etc" and "narrate" in stages
+    wfs = {w["code"]: w for w in d["workflows"]}
+    br = wfs["wf_branch_kpi"]
+    ins = {i["source"]: i["via"] for i in br["inputs"]}
+    assert ins["dataset:OBLG_GRD_DEF"] == "trigger" and "rule:BRANCH_SCOPE" in ins and any(k.startswith("cron:") for k in ins)
+    nodes = {n["key"]: n for n in br["nodes"]}
+    assert nodes["narrate"]["stage"] == "narrate" and nodes["narrate"]["agent"]["kind"] == "llm"
+    assert nodes["critic"]["agent"]["kind"] == "rule" and nodes["contracts"]["stage"] == "load"
+    assert nodes["compute"]["last"] and nodes["compute"]["last"]["status"] in ("succeeded", "degraded") and "지표" in nodes["compute"]["last"]["summary"]
+    assert "mart:BRANCH_T02" in br["outputs"] and "art:branch_dashboard" in br["outputs"]
+    outs = {o["id"]: o for o in d["outputs"]}
+    assert "BRANCH_HOME" in outs["art:branch_dashboard"]["screens"]
+    assert set(outs["art:report.branch-seomin"]["screens"]) <= {"BRANCH_HOME", "BRANCH_ANALYSIS"}  # 다른 부서 화면에 연결하지 않음
+    srcs = {s["id"]: s for s in d["sources"]}
+    assert srcs["dataset:OBLG_GRD_DEF"]["version"] and srcs["cron:30 6 * * *"]["label"] == "정기 실행 매일 06:30"
+    # 단계 설정을 바꾸면 그대로 반영(미지정 구현은 기타)
+    assert admin.put("/admin/settings/pipeline.stages", json={"value": [{"key": "all", "label": "전체", "impls": ["narrate"]}]}).status_code in (200, 204)
+    d2 = admin.get("/admin/pipeline").json()
+    n2 = {n["key"]: n["stage"] for n in next(w for w in d2["workflows"] if w["code"] == "wf_branch_kpi")["nodes"]}
+    assert n2["narrate"] == "all" and n2["compute"] == "etc"
+    from nhdip.seed.defs_core import PIPELINE_STAGES
+
+    admin.put("/admin/settings/pipeline.stages", json={"value": PIPELINE_STAGES})
 
 
 def test_cascade_tree_server_computed(db):

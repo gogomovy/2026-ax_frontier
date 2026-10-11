@@ -19,7 +19,7 @@ from nhdip.models import ColumnContract, Setting
 from nhdip.views.store import find_insight
 
 IDENT = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
-TYPE_RE = re.compile(r"^(CHAR|VARCHAR|DECIMAL|NUMERIC|INTEGER|INT|BIGINT|TEXT|DATE)(?:\((\d+)(?:,(\d+))?\))?$")
+TYPE_RE = re.compile(r"^(CHAR|VARCHAR|DECIMAL|NUMERIC|INTEGER|INT|BIGINT|TEXT|DATE|JSON|JSONB)(?:\((\d+)(?:,(\d+))?\))?$")
 # 숫자 뒤에 단위가 오거나, 단위 없이 끝나는 경우만 값으로 본다 ('3개년' · '5C' 같은 표현은 제외)
 NUM = re.compile(r"([+-]?\d[\d,]*(?:\.\d+)?)(?:\s*(%p|%|조원|억원|백만원|건)|(?![\d.,가-힣A-Za-z]))")
 UNIT_MN = {"조원": Decimal(1_000_000), "억원": Decimal(100), "백만원": Decimal(1)}
@@ -33,7 +33,10 @@ def _setting(session: Session, key: str, default: Any) -> Any:
 
 def mart_table(session: Session, table_code: str, dept: str) -> str:
     prefix = _setting(session, "contracts.dept_prefix", {"종기부": "hq"}).get(dept, "t")
-    name = f"{prefix}_{table_code.lower()}"
+    code = table_code.lower()
+    if code.startswith(f"{prefix}_"):
+        code = code[len(prefix) + 1 :]  # RISK_T01 → risk_t01 (접두 중복 없이)
+    name = f"{prefix}_{code}"
     if not IDENT.match(name):
         raise ValueError(f"mart 테이블 이름 오류: {name}")
     return name
@@ -49,7 +52,7 @@ def sql_type(c: ColumnContract) -> str:
         return f"{base}({int(p or 255)})"
     if base in ("DECIMAL", "NUMERIC"):
         return f"NUMERIC({int(p or 24)},{int(s or 0)})"
-    return {"INT": "INTEGER"}.get(base, base)
+    return {"INT": "INTEGER", "JSON": "JSONB"}.get(base, base)
 
 
 def scale_of(c: ColumnContract) -> int | None:
@@ -153,7 +156,10 @@ def render_markers(s: str | None, figures: dict[str, Any]) -> str | None:
         d = f.get("decimals") or 0
         v = Decimal(str(f["value"]))
         sign = "+" if f.get("unit") == "PP" and v > 0 else ""
-        return f"{sign}{v:,.{d}f}{UNIT_TEXT.get(f.get('unit'), '')}"
+        unit = UNIT_TEXT.get(f.get("unit"), "")
+        if unit and m.string.startswith(unit, m.end()):
+            unit = ""  # 서술이 마커 뒤에 단위를 또 쓴 경우(예: '12건건') 한 번만 (B.40)
+        return f"{sign}{v:,.{d}f}{unit}"
 
     return TERM_RE.sub(lambda m: m.group(1), FIG_RE.sub(fig, s))
 
@@ -164,8 +170,65 @@ def _latest_ym(ctx: EvalContext, dataset: str) -> str | None:
     return vals[-1] if vals else None
 
 
-def resolve_binding(ctx: EvalContext, c: ColumnContract, artifacts: dict[str, Any]) -> dict[str, Any]:
+def _plain(text: str | None) -> str | None:
+    if not text:
+        return text
+    return TERM_RE.sub(lambda m: m.group(1), text)
+
+
+def resolve_binding(ctx: EvalContext, c: ColumnContract, artifacts: dict[str, Any], run: dict[str, Any] | None = None) -> dict[str, Any]:
     b = c.binding or {}
+    run = run or {}
+    if "row" in b:
+        return {"kind": "row", "col": b["row"]}
+    if "dataset" in b:
+        # 원천 정의(S 시트) — 데이터셋 정의에 그 컬럼이 있는지 검사(값은 데이터셋에 있음)
+        from nhdip.models import Dataset
+
+        ds = ctx.session.get(Dataset, b["dataset"])
+        cols = {x["name"] for x in (ds.columns if ds else [])}
+        ok = ds is not None and (not b.get("column") or b["column"] in cols)
+        return {"kind": "source", "ok": ok, "ref": f"{b['dataset']}.{b.get('column') or '*'}", "reason": None if ok else ("데이터셋 없음" if ds is None else f"데이터셋에 {b.get('column')} 없음")}
+    if "analysis" in b:
+        return {"kind": "derived", "value": run.get("analysis_id") if b["analysis"] == "id" else run.get("analysis_dt")}
+    if "evidence" in b:
+        ins = find_insight(artifacts, b["evidence"]) or {}
+        refs = []
+        for e in ins.get("evidence") or []:
+            d = e.get("doc") or {}
+            if d or e.get("docId"):
+                refs.append({"doc": e.get("docId") or d.get("fileName") or d.get("title"), "title": d.get("title"), "page": d.get("page"), "category": e.get("category")})
+        import json as _json
+
+        return {"kind": "text", "value": _json.dumps(refs, ensure_ascii=False) if refs else None, "ref": b["evidence"]}
+    if "report" in b:
+        rep = artifacts.get(b["report"])
+        if not isinstance(rep, dict):
+            return {"kind": "text", "value": None, "ref": b["report"]}
+        if b.get("field") == "title":
+            return {"kind": "text", "value": rep.get("title"), "ref": f"{b['report']}.title"}
+        if b.get("section"):
+            sec = next((x for x in rep.get("sections") or [] if x.get("id") == b["section"]), None) or {}
+            parts: list[str] = []
+            for blk in sec.get("blocks") or []:
+                if blk.get("text"):
+                    parts.append(blk["text"])
+                for it in blk.get("items") or []:
+                    parts.append(it if isinstance(it, str) else str(it.get("text") or ""))
+                for kv in blk.get("kv") or []:
+                    if isinstance(kv, dict) and kv.get("value"):
+                        parts.append(f"{kv.get('label', '')}: {kv['value']}.")
+            return {"kind": "text", "value": render_markers(" ".join(p for p in parts if p).strip() or None, rep.get("figures") or {}), "ref": f"{b['report']}#{b['section']}"}
+        from nhdip.reports import export
+
+        try:
+            data, _, _ = export(ctx.session, rep, "html")
+            return {"kind": "text", "value": data.decode("utf-8", "ignore"), "ref": b["report"]}
+        except Exception as exc:  # noqa: BLE001
+            return {"kind": "text", "value": None, "ref": b["report"], "error": f"보고서 변환 실패: {exc}"}
+    if "plan" in b:
+        pl = next((x for x in artifacts.get("action_plans") or [] if x.get("id") == b["plan"]), None) or {}
+        return {"kind": "text", "value": _plain(pl.get(b.get("field", "body"))), "ref": b["plan"]}
     if "metric" in b:
         oc = ctx.outcomes.get(b["metric"])
         if oc is None:
@@ -204,7 +267,11 @@ def materialize(session: Session, ctx: EvalContext, artifacts: dict[str, Any], t
         if not tables or c.table_code in tables:
             by_table.setdefault(c.table_code, []).append(c)
     reports: dict[str, Any] = {}
+    builders = _setting(session, "contracts.row_builders", {}) or {}
     for code, cols in by_table.items():
+        if code in builders or any("row" in (c.binding or {}) or "dataset" in (c.binding or {}) for c in cols):
+            reports[code] = _materialize_rows(session, ctx, artifacts, code, cols, builders.get(code), run_id)
+            continue
         table = mart_table(session, code, cols[0].dept)
         notes = ensure_table(session, table, cols)
         row: dict[str, Any] = {}
@@ -294,8 +361,9 @@ def _upsert(session: Session, table: str, cols: list[ColumnContract], row: dict[
         where = " AND ".join(f'"{k}" = :{k}' for k in pk)
         session.execute(text(f'DELETE FROM mart."{table}" WHERE {where}'), {k: row[k] for k in pk})
     params = {k: (v.quantize(Decimal(1).scaleb(-12), rounding=ROUND_HALF_UP) if isinstance(v, Decimal) else v) for k, v in row.items()}
+    jsonb = {c.column_name.lower() for c in cols if sql_type(c) == "JSONB"}
     cols_sql = ", ".join(f'"{n}"' for n in names) + ', "_run_id"'
-    vals_sql = ", ".join(f":{n}" for n in names) + ", :_run_id"
+    vals_sql = ", ".join(f"CAST(:{n} AS JSONB)" if n in jsonb else f":{n}" for n in names) + ", :_run_id"
     session.execute(text(f'INSERT INTO mart."{table}" ({cols_sql}) VALUES ({vals_sql})'), {**params, "_run_id": run_id})
 
 
@@ -324,3 +392,98 @@ def import_workbook(session: Session, tables: list[dict[str, Any]], workbook: st
                 c.active = False
                 deactivated += 1
     return {"added": added, "updated": updated, "deactivated": deactivated, "tables": [t["table_code"] for t in tables]}
+
+
+def _materialize_rows(session: Session, ctx: EvalContext, artifacts: dict[str, Any], code: str, cols: list[ColumnContract], spec: dict[str, Any] | None, run_id: str | None) -> dict[str, Any]:
+    """다행 정의서 테이블 (B.38) — 행 생성기(설정 contracts.row_builders)가 만든 행 + 공통 바인딩(지표 · 서술 · 보고서 · 기준월)."""
+    from datetime import date
+
+    from nhdip.contracts.rows import ROW_BUILDERS
+
+    run = {"analysis_id": run_id, "analysis_dt": date.today()}
+    # 원천 정의(S01~S03) — 행 생성기 없이 데이터셋 바인딩만 있으면 적재하지 않고 원천 컬럼 존재만 검사
+    source_only = not spec and any("dataset" in (c.binding or {}) for c in cols) and not any("row" in (c.binding or {}) for c in cols)
+    rows: list[dict[str, Any]] = []
+    scoped: dict[str, dict[str, Any]] = {}  # 공통 값을 일부 행에만(binding.rows_where — 예: 집계유형 ALL 행)
+    err = None
+    if spec and not source_only:
+        fn = ROW_BUILDERS.get(spec.get("builder", ""))
+        if fn is None:
+            err = f"행 생성기 없음: {spec.get('builder')}"
+        else:
+            try:
+                rows = fn(ctx, spec.get("params") or {})
+            except Exception as exc:  # noqa: BLE001
+                err = f"행 생성 실패: {type(exc).__name__}: {exc}"
+    common: dict[str, Any] = {}
+    checks: list[dict[str, Any]] = []
+    for c in cols:
+        r = resolve_binding(ctx, c, artifacts, run)
+        col = c.column_name.lower()
+        kind = r["kind"]
+        verdict, note, val, disp = "unmapped", r.get("reason") or r.get("error") or "", None, None
+        if kind == "source":
+            verdict, note = ("mapped" if r["ok"] else "error"), (r["ref"] if r["ok"] else r["reason"])
+        elif kind == "row":
+            key = r["col"]
+            have = [x.get(key) for x in rows if x.get(key) is not None]
+            if have:
+                verdict, note, val = "row", f"{len(have)}/{len(rows)}행", have[0]
+                # 정의서 목업값 대조 — binding.check 로 고른 행(예: grade_cd=6B), 없으면 첫 행
+                chk = (c.binding or {}).get("check") or {}
+                tgt = next((x for x in rows if all(str(x.get(k)) == str(v) for k, v in chk.items())), rows[0]) if chk else None
+                if chk and tgt is not None and c.expected_text:
+                    unit = (c.binding or {}).get("unit", "")
+                    verdict, note = compare(c.expected_text, tgt.get(key), unit)
+                    note = f"{note} · 대조 행 {chk}".strip(" ·")
+                    val = tgt.get(key)
+            elif (c.binding or {}).get("optional") and rows:
+                verdict, note = "empty", f"0/{len(rows)}행 — 원천에 값 없음(선택 항목)"
+            else:
+                verdict, note = ("unmapped", "원천 없음 — 정의서 '추가 필요'") if c.is_mock else ("error", "행 생성기가 이 값을 만들지 못함")
+        elif r.get("error"):
+            verdict = "error"
+        elif kind == "metric":
+            common[col] = r["value"]
+            val, disp = r["value"], r["display"]
+            exp = (c.binding or {}).get("expected") or c.expected_text
+            verdict, note = compare(exp, r["display"], r["unit"])
+        elif kind in ("base_ym", "const", "derived"):
+            common[col] = r["value"]
+            verdict, val = "derived", r["value"]
+        elif kind == "text":
+            common[col] = r["value"]
+            val = r["value"]
+            verdict, note = ("text", "") if r["value"] else ("error", f"서술 없음: {r.get('ref')}")
+        if col in common and (c.binding or {}).get("rows_where"):
+            scoped[col] = (c.binding or {})["rows_where"]
+            note = f"{note} · 적용 행 {scoped[col]}".strip(" ·")
+        checks.append({"column": c.column_name, "kor": c.kor_name, "kind": kind, "binding": c.binding,
+                       "value": None if val is None else (val[:300] if isinstance(val, str) else str(val)), "display": None if disp is None else str(disp),
+                       "unit": r.get("unit"), "expected": c.expected_text, "isMock": c.is_mock, "source": c.source_desc, "sourceColumn": c.source_column, "verdict": verdict, "note": note})
+    summary: dict[str, int] = {}
+    for ch in checks:
+        summary[ch["verdict"]] = summary.get(ch["verdict"], 0) + 1
+    if err:
+        summary["error"] = summary.get("error", 0) + 1
+    rep = {"name": cols[0].table_name, "dept": cols[0].dept, "summary": summary, "columns": checks, "notes": [err] if err else [], "rows": len(rows), "kind": "source" if source_only else "rows"}
+    if source_only:
+        rep["table"] = None
+        return rep
+    table = mart_table(session, code, cols[0].dept)
+    rep["table"] = f"mart.{table}"
+    rep["notes"] = rep["notes"] + ensure_table(session, table, cols)
+    names = {c.column_name.lower() for c in cols}
+    def _common_for(x: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in common.items() if k not in scoped or all(str(x.get(a)) == str(b) for a, b in scoped[k].items())}
+
+    full = [{k: v for k, v in {**_common_for(x), **x}.items() if k in names} for x in rows]
+    rep["baseYm"] = full[0].get("base_ym") if full else common.get("base_ym")
+    if full and full[0].get("base_ym"):
+        # 같은 기준월 · 같은 범위(사무소 등)의 이전 적재는 지우고 다시 넣는다 — 빠진 행이 남지 않도록
+        scope = {k: full[0][k] for k in ("base_ym", "brc") if k in full[0]}
+        where = " AND ".join(f'"{k}" = :{k}' for k in scope)
+        session.execute(text(f'DELETE FROM mart."{table}" WHERE {where}'), scope)
+    for x in full:
+        _upsert(session, table, cols, x, run_id)
+    return rep

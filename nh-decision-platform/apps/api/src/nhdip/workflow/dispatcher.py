@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import and_, exists, select, text
 from sqlalchemy.orm import Session, aliased
 
-from nhdip.models import Job, Metric, OutboxEvent, Setting, ViewBinding, Workflow, WorkflowTrigger, utcnow
+from nhdip.models import Job, Metric, OutboxEvent, Setting, ViewBinding, Workflow, WorkflowNode, WorkflowTrigger, utcnow
 
 
 def _datasets_in(obj: Any) -> set[str]:
@@ -54,6 +54,13 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
             add(t.workflow_code, f"trigger:rule({t.target})")
         elif t.kind == "setting" and ev.type == "config.changed" and p.get("kind") == "setting" and t.target == p.get("key"):
             add(t.workflow_code, f"trigger:setting({t.target})")
+    if ev.type == "contract.changed":
+        # 정의서 계보 (B.38) — 바뀐 표를 적재하는 워크플로우(적재 노드 config.tables)
+        changed = set(p.get("tables") or ([p["table"]] if p.get("table") else []))
+        for n in session.execute(select(WorkflowNode).where(WorkflowNode.impl == "materialize_contracts", WorkflowNode.enabled)).scalars():
+            hit = sorted(changed & set((n.config or {}).get("tables") or []))
+            if hit:
+                add(n.workflow_code, f"lineage:contract({', '.join(hit[:3])})")
     if ev.type.startswith("dataset.") and p.get("dataset"):
         ds = p["dataset"]
         for m in session.execute(select(Metric).where(Metric.enabled)).scalars():

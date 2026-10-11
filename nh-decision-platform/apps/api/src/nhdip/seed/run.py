@@ -678,6 +678,86 @@ def hardening_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["hardening_upgrade"] = added
 
 
+def dept_contracts_upgrade(s: Session, out: dict[str, Any], first: bool) -> None:
+    """사업부서 · 영업점 컬럼 정의서(B.38) — 1회. 정의서 반영 · 부서 접두 · 행 생성기 설정 · 적재 노드(관리자 편집 보존: 없는 것만 넣는다)."""
+    from nhdip.contracts.materialize import import_workbook
+    from nhdip.models import ColumnContract, WorkflowNode
+    from nhdip.seed import defs_dept_contracts as DD
+
+    up = 0
+    for key, olds in DD.BINDING_UPGRADES.items():
+        t, col = key.split(".", 1)
+        c = s.execute(select(ColumnContract).where(ColumnContract.table_code == t, ColumnContract.column_name == col)).scalar()
+        if c is not None and c.binding in olds and c.binding != DD.BINDINGS.get(key):
+            c.binding = DD.BINDINGS[key]
+            up += 1
+    if up:
+        out["dept_binding_upgraded"] = up
+    if _applied(s, "dept-contracts-v1"):
+        return
+    done: dict[str, Any] = {}
+    st = s.get(Setting, "contracts.dept_prefix")
+    if st is not None and isinstance(st.value, dict):
+        st.value = {**DD.DEPT_PREFIX, **st.value}
+    else:
+        s.add(Setting(key="contracts.dept_prefix", value={"종기부": "hq", "리스크": "risk", "영업점": "branch", **DD.DEPT_PREFIX}, description="정의서 부서 → mart 테이블 접두"))
+    if s.get(Setting, "contracts.row_builders") is None:
+        s.add(Setting(key="contracts.row_builders", value=DD.ROW_BUILDERS,
+                      description="다행 정의서 표의 행 생성기(contracts/rows.py) · 파라미터 — 표 코드 → {builder, params}. 단위 환산 계수는 데이터셋 정의 단위 기준"))
+    s.flush()
+    for fn in DD.SPEC_FILES:
+        with open(os.path.join(HERE, "contracts", fn), encoding="utf-8") as fh:
+            spec = json.load(fh)
+        new = [t for t in spec["tables"] if not s.execute(select(ColumnContract.id).where(ColumnContract.table_code == t["table_code"]).limit(1)).first()]
+        if new:
+            done[fn] = import_workbook(s, new, spec["source_file"], DD.BINDINGS, "seed")
+    nodes = 0
+    for wf, tables in DD.WORKFLOW_TABLES.items():
+        have = s.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf).order_by(WorkflowNode.seq)).scalars().all()
+        if not have or any(n.key == "contracts" for n in have):
+            continue
+        pub = next((n for n in have if n.impl == "publish"), None)
+        seq = pub.seq if pub else max(n.seq for n in have) + 1
+        if pub:
+            for n in have:
+                if n.seq >= seq:
+                    n.seq += 1
+        s.add(WorkflowNode(workflow_code=wf, seq=seq, key="contracts", name="컬럼 정의서 테이블 적재·대조", impl="materialize_contracts", enabled=True, config={"tables": tables, "optional": True}))
+        nodes += 1
+    done["nodes"] = nodes
+    s.flush()
+    if not first:
+        for wf in DD.WORKFLOW_TABLES:
+            emit(s, "manual", {"workflow": wf, "reason": "사업부서 · 영업점 컬럼 정의서 반영 후 적재"}, "seed")
+    out["dept_contracts_upgrade"] = done
+
+
+def score_snapshot_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """B.40 — 득점 현황(BRANCH_KPI_SCORE)은 기준일 스냅숏: 새 기준일을 올리면 이전 기준일 행과 중복 합산되던 지표에 '최근 기준일' 조건을 더한다(조건이 없을 때만 · 멱등)."""
+    from nhdip.models import Metric
+
+    n = 0
+    for m in s.execute(select(Metric)).scalars():
+        args = json.loads(json.dumps(m.args or {}))
+        hit = False
+        for ref in args.values():
+            q = ref.get("q") if isinstance(ref, dict) else None
+            if isinstance(q, dict) and q.get("dataset") == "BRANCH_KPI_SCORE" and "as_of" not in (q.get("where") or {}):
+                q["where"] = {**(q.get("where") or {}), "as_of": "$latest"}
+                hit = True
+        if hit:
+            m.args = args
+            n += 1
+    # 마케팅 후보 '미거래' 조건 — 지표 br_prospect_pick 에 기존 차주 입력이 없으면 추가 (B.40 · 관리자가 지운 경우를 구분하려고 1회)
+    if not _applied(s, "prospect-existing-v1"):
+        m = s.get(Metric, "br_prospect_pick")
+        if m is not None and m.formula == "PROSPECT_SELECT" and "existing" not in (m.args or {}):
+            m.args = {**(m.args or {}), "existing": B.PROSPECT_EXISTING}
+            n += 1
+    if n:
+        out["score_snapshot_upgrade"] = n
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -698,6 +778,9 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     agents_upgrade(s, out)
     agents_llm_upgrade(s, out)
     hardening_upgrade(s, out)
+    s.flush()
+    dept_contracts_upgrade(s, out, first)
+    score_snapshot_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

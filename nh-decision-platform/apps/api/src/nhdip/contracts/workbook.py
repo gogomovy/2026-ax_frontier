@@ -19,7 +19,7 @@ HEADER_KEYS = {
     "mock": ["목데이터 여부(확인필요)", "목데이터", "목데이터여부"],
     "expected": ["화면값", "목업값(검증용)", "목업값"],
 }
-SHEET_RE = re.compile(r"^(T\d{2,3})_([^_]+)_(.+)$")
+SHEET_RE = re.compile(r"^([TS]\d{2,3})_([^_]+)_(.+)$")  # T = 화면 테이블, S = 원천 · 근거 정의
 COL_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,62}$")
 
 
@@ -34,7 +34,14 @@ def _cell(v: Any) -> str | None:
     return s or None
 
 
-def parse_workbook(content: bytes) -> list[dict[str, Any]]:
+def table_code(code: str, dept: str, prefixes: dict[str, str] | None, raw_depts: list[str] | tuple[str, ...] = ("종기부",)) -> str:
+    """부서별 표 코드 — 부서마다 T01 이 따로 있으므로 '<접두>_T01'(예: RISK_T01 · BRANCH_T02). 기준 부서(종기부)는 그대로 T01 (B.38)."""
+    if dept in raw_depts or not prefixes or dept not in prefixes:
+        return code
+    return f"{prefixes[dept].upper()}_{code}"[:10]
+
+
+def parse_workbook(content: bytes, prefixes: dict[str, str] | None = None, raw_depts: list[str] | tuple[str, ...] = ("종기부",)) -> list[dict[str, Any]]:
     import openpyxl
 
     wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
@@ -76,5 +83,12 @@ def parse_workbook(content: bytes) -> list[dict[str, Any]]:
                     "expected_text": get("expected"),
                 }
             )
-        tables.append({"table_code": m.group(1), "dept": m.group(2), "name": m.group(3), "sheet": ws.title, "columns": cols})
+        tables.append({"code": m.group(1), "dept": m.group(2), "name": m.group(3), "kind": "source" if m.group(1).startswith("S") else "screen", "sheet": ws.title, "columns": cols})
+    # 원천 · 근거 시트(S01_기업여신_원천 · S99_문서근거_메타데이터)의 두 번째 토막은 부서가 아니라 주제 — 정의서 부서(T 시트)를 따른다
+    wb_dept = next((t["dept"] for t in tables if t["kind"] == "screen"), None)
+    for t in tables:
+        if t["kind"] == "source" and wb_dept:
+            t["name"] = f"{t['dept']}_{t['name']}"
+            t["dept"] = wb_dept
+        t["table_code"] = table_code(t.pop("code"), t["dept"], prefixes, raw_depts)
     return tables

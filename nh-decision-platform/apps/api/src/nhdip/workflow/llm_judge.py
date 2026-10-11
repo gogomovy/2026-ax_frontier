@@ -22,7 +22,7 @@ from nhdip.models import Setting
 
 _COOL: dict[str, float] = {}
 _RESET: dict[str, Any] = {"at": None}  # reset_cooldown 시각 — 이전 DB 오류 기록은 쉬는 시간 판단에서 뺀다
-DEFAULT_POLICY = {"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000, "timeout_sec": 30, "retries": 1}
+DEFAULT_POLICY = {"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000, "timeout_sec": 30, "retries": 1, "format_retries": 1}
 DEFAULT_USER = "과제:\n{task}\n\n입력 자료(JSON):\n{context}\n\n출력은 JSON 객체 하나만."
 LITERAL_NUM = re.compile(r"\d+(?:[.,]\d+)+|\d+\s*(?:%p?|bp|억|조|만|천|원|건|배|점)")
 
@@ -82,9 +82,24 @@ def ask_json(session: Session, agent_code: str, task: str, context: dict[str, An
     messages = [{"role": "system", "content": (llm.system_prompt or "너는 은행 업무 판단 에이전트다. JSON 으로만 답한다.") + "\n\n" + GUARD}, {"role": "user", "content": user}]
     try:
         res = chat(session, llm, messages, json_mode=True, workflow_run_id=workflow_run_id, node_run_id=node_run_id, purpose=f"judge:{agent_code}")
-        data = parse_json(res.text)
+        try:
+            data = parse_json(res.text)
+        except ValueError as exc:
+            # 출력 형식 오류(쉼표 누락 · 잘림 등)는 모델 장애가 아니다 — 오류를 알려 주고 같은 내용을 JSON 으로 다시 받는다(B.40, 설정 format_retries)
+            data = None
+            for _ in range(int(pol.get("format_retries", 1))):
+                fix = messages + [{"role": "assistant", "content": res.text[:6000]},
+                                  {"role": "user", "content": f"앞 응답은 JSON 형식 오류({str(exc)[:120]})로 읽을 수 없다. 같은 판단을 올바른 JSON 객체 하나로만 다시 출력하라. 설명 · 코드펜스 금지."}]
+                res = chat(session, llm, fix, json_mode=True, workflow_run_id=workflow_run_id, node_run_id=node_run_id, purpose=f"judge:{agent_code}")
+                try:
+                    data = parse_json(res.text)
+                    break
+                except ValueError as again:
+                    exc = again
+            if data is None:
+                return None, {"by": "rule", "reason": f"LLM 출력 형식 오류(재요청 후에도 JSON 아님: {str(exc)[:120]}) — 규칙으로 대체", "llm_call_id": res.call_id, "model": llm.model}
         if not isinstance(data, dict):
-            raise ValueError("JSON 객체가 아님")
+            return None, {"by": "rule", "reason": "LLM 출력 형식 오류(JSON 객체가 아님) — 규칙으로 대체", "llm_call_id": res.call_id, "model": llm.model}
         missing = [k for k in required if not isinstance(data.get(k), list)]
         if missing:
             # 형식이 맞지 않으면 판단으로 쓰지 않는다(쉬지는 않음 — 모델 오류가 아닌 출력 형식 문제)

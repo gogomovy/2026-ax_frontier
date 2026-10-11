@@ -19,6 +19,22 @@ from nhdip.models import Agent, LlmCall, LlmConnection, LlmProfile, Prompt, new_
 from nhdip.security import decrypt_secret
 
 PARAM_KEYS = ("temperature", "top_p", "max_tokens")
+# 게이트웨이가 '지원하지 않는 파라미터' 로 거절한 (모델, 파라미터) — 이후 호출에서는 보내지 않는다 (B.37)
+_UNSUPPORTED: dict[str, set[str]] = {}
+_DROPPABLE = ("temperature", "top_p", "max_tokens", "presence_penalty", "frequency_penalty", "seed", "stop")
+
+
+def _unsupported_param(text: str, body: dict) -> str | None:
+    """400 응답이 특정 파라미터 미지원이면 그 이름 (LiteLLM UnsupportedParamsError · OpenAI 'Unsupported parameter')."""
+    import re
+
+    t = text or ""
+    if "nsupported" not in t and "does not support" not in t and "not supported" not in t:
+        return None
+    for k in _DROPPABLE:
+        if k in body and re.search(rf"\b{k}\b", t):
+            return k
+    return None
 
 
 class LlmUnavailable(RuntimeError):
@@ -158,6 +174,17 @@ def _save_call(call: LlmCall) -> None:
         logging.getLogger("nhdip.llm").warning("llm_call 기록 실패", exc_info=True)
 
 
+def _max_tokens_cap(session: Session) -> int:
+    """출력 잘림 시 늘릴 수 있는 max_tokens 상한 — 설정 llm.max_tokens_cap (기본 8000, 0 = 늘리지 않음)."""
+    try:
+        from nhdip.models import Setting
+
+        s = session.get(Setting, "llm.max_tokens_cap") if session is not None else None
+        return int(s.value) if s is not None and s.value is not None else 8000
+    except Exception:  # noqa: BLE001
+        return 8000
+
+
 def chat(
     session: Session,
     cfg: ResolvedLlm,
@@ -178,6 +205,8 @@ def chat(
         body["tool_choice"] = "auto"
     if json_mode and not tools:
         body["response_format"] = {"type": "json_object"}
+    for k in _UNSUPPORTED.get(cfg.model, set()):
+        body.pop(k, None)
     call = LlmCall(
         node_run_id=node_run_id,
         workflow_run_id=workflow_run_id,
@@ -193,10 +222,23 @@ def chat(
     t0 = time.monotonic()
     last_err = ""
     attempts = 0
-    for attempt in range(cfg.retries + 1):
-        attempts = attempt + 1
+    dropped: list[str] = []
+    expanded: list[int] = []
+    cap = _max_tokens_cap(session)
+    for attempt in range(cfg.retries + 1 + len(_DROPPABLE) + 2):
+        if attempts - len(dropped) - len(expanded) > cfg.retries:
+            break
+        attempts += 1
         try:
             resp = httpx.post(_url(cfg.base_url, "/chat/completions"), headers=_headers(cfg.api_key), json=body, timeout=cfg.timeout)
+            bad = _unsupported_param(resp.text, body) if resp.status_code == 400 else None
+            if bad:
+                # 모델이 받지 않는 파라미터(예: temperature 고정 모델) — 빼고 다시 보낸다(재시도 횟수에 넣지 않음)
+                body.pop(bad, None)
+                _UNSUPPORTED.setdefault(cfg.model, set()).add(bad)
+                dropped.append(bad)
+                logging.getLogger("nhdip.llm").warning("model %s 가 %s 를 지원하지 않아 빼고 다시 호출", cfg.model, bad)
+                continue
             if resp.status_code == 400 and "response_format" in body:
                 # 일부 모델은 JSON 모드를 지원하지 않는다 → 끄고 재시도
                 body.pop("response_format", None)
@@ -209,15 +251,24 @@ def chat(
                 last_err = f"HTTP {resp.status_code}: {resp.text[:500]}"
                 break
             data = resp.json()
-            msg = (data.get("choices") or [{}])[0].get("message") or {}
+            choice = (data.get("choices") or [{}])[0]
+            msg = choice.get("message") or {}
             usage = data.get("usage") or {}
+            cur = body.get("max_tokens")
+            if choice.get("finish_reason") == "length" and not msg.get("tool_calls") and isinstance(cur, int) and cur < cap and len(expanded) < 2:
+                # 출력 상한에 걸려 잘림(추론형 모델은 생각 토큰이 상한을 먼저 씀) — 상한을 늘려 다시 보낸다(설정 llm.max_tokens_cap · B.40)
+                body["max_tokens"] = min(cap, cur * 2)
+                expanded.append(body["max_tokens"])
+                logging.getLogger("nhdip.llm").warning("model %s 출력이 max_tokens %s 에서 잘려 %s 로 다시 호출", cfg.model, cur, body["max_tokens"])
+                continue
             call.response = data
             call.output_text = msg.get("content") or ""
             call.prompt_tokens = usage.get("prompt_tokens")
             call.completion_tokens = usage.get("completion_tokens")
             call.latency_ms = int((time.monotonic() - t0) * 1000)
             call.status = "ok"
-            call.params = {**call.params, "attempts": attempts}
+            call.params = {**call.params, "attempts": attempts, **({"dropped": dropped} if dropped else {}), **({"max_tokens_expanded": expanded} if expanded else {}),
+                           **({"truncated": True} if choice.get("finish_reason") == "length" else {})}
             out = ChatResult(call.output_text, msg.get("tool_calls") or [], data, call.id, msg)
             _save_call(call)
             return out

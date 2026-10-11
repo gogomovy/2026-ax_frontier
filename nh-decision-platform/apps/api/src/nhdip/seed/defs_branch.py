@@ -378,6 +378,12 @@ LOWC = {"pool_id": {"in_dataset": {"dataset": PM, "col": "pool_id", "where": {"l
 RT_ALL = {"std_ym": "$latest"}
 
 
+# 마케팅 후보의 '미거래' 조건 — 최근 기준월 이 지점 기업 차주명(B.40 · Q85). 차주 명세에 사업자번호가 없어 이름으로 맞추므로
+# 전행 기준이면 동명 기업이 많아(시뮬레이션 이름 포함) 지점 기준으로 둔다 — 사업자번호 원천이 생기면 where 를 전행으로 넓힌다
+PROSPECT_EXISTING = {"q": {"dataset": "OBLG_GRD_DEF", "where": {"std_ym": "$latest", "SUVMN_BRC": {"ref": {"rule": "BRANCH_SCOPE", "path": "office_code"}}}, "col": "brwr_nm", "agg": "list"},
+                     "label": "지점 기존 여신 차주(미거래 조건)", "unit": ""}
+
+
 def _scope(where: dict[str, Any], branch: bool, key: str = "SUVMN_BRC") -> dict[str, Any]:
     return {**where, key: OFF} if branch else dict(where)
 
@@ -424,14 +430,15 @@ def metrics() -> list[dict[str, Any]]:
         metric("br_prospect_pick", "우량기업 마케팅 후보 수", "PROSPECT_SELECT",
                {"prospects": q("CORP_PROSPECT", {}, None, "list", "본부 추천 여신가망 재무우량 기업"), "branch_rows": q(OB, _scope(VALID, True), None, "list", "지점 기업 익스포저(업종 집중도)"),
                 "office": q("BRANCH_OFFICE_MASTER", {"office_cd": OFF}, None, "first", "영업점 소재 지역"), "policy": {"rule": "BRANCH_PROSPECT_POLICY", "label": "선정 기준(시뮬레이션 가정)"},
-                "weights": {"rule": "BRANCH_PRIME_CORP_POLICY", "path": "weights", "label": "등급 구간 가중치"}, "grade_scale": {"rule": "CORP_GRADE_SCALE", "path": "labels", "label": "등급 체계"}},
+                "weights": {"rule": "BRANCH_PRIME_CORP_POLICY", "path": "weights", "label": "등급 구간 가중치"}, "grade_scale": {"rule": "CORP_GRADE_SCALE", "path": "labels", "label": "등급 체계"},
+                "existing": PROSPECT_EXISTING},
                wf=WF, unit="NONE", decimals=0, sort=30, figures=["br_prospect_cnt"]),
         metric("br_prospect_amt", "후보 신규 여신 가정액", "VALUE", {"value": mref("br_prospect_pick", "후보 신규 여신 합계", "원", "amount_won")}, wf=WF, unit="KRW_BN", decimals=0, scale=1e8, sort=31),
         metric("br_prospect_avg_grade", "후보 평균 예상재무등급(금액 가중, 1~16)", "VALUE", {"value": mref("br_prospect_pick", "후보 평균 등급", "", "avg_grade")}, wf=WF, unit="NONE", decimals=2, sort=31),
         metric("br_prospect_weighted", "후보 유치 시 등급 가중 실적", "VALUE", {"value": mref("br_prospect_pick", "가중 실적", "백만원", "weighted_mn")}, wf=WF, unit="KRW_BN", decimals=0, scale=100, sort=31),
         metric("br_avg_grade_after", "후보 유치 후 지점 평균 신용등급", "BLEND_AVG", {"avg_a": mref("br_avg_grade", "현재 지점 평균 등급"), "w_a": mref("br_corp_amt", "현재 대출잔액", "원"), "avg_b": mref("br_prospect_avg_grade", "후보 평균 등급"), "w_b": mref("br_prospect_amt", "후보 신규 여신", "원")}, wf=WF, unit="NONE", decimals=2, sort=32),
         metric("br_avg_grade_improve", "평균 신용등급 개선 폭(단계)", "DIFF", {"a": mref("br_avg_grade", "유치 전"), "b": mref("br_avg_grade_after", "유치 후")}, wf=WF, unit="NONE", decimals=2, sort=33),
-        metric("br_prime_actual", "우량기업여신 현재 실적(등급 가중)", "VALUE", {"value": q("BRANCH_KPI_SCORE", {"office_cd": OFF, "period": PER, "item_cd": "CORE_PRIME"}, "actual_value", label="하반기 누적 가중 실적", unit="백만원")}, wf=WF, unit="KRW_BN", decimals=0, scale=100, sort=34),
+        metric("br_prime_actual", "우량기업여신 현재 실적(등급 가중)", "VALUE", {"value": q("BRANCH_KPI_SCORE", {"office_cd": OFF, "period": PER, "item_cd": "CORE_PRIME", "as_of": "$latest"}, "actual_value", label="하반기 누적 가중 실적", unit="백만원")}, wf=WF, unit="KRW_BN", decimals=0, scale=100, sort=34),
         metric("br_prime_target", "우량기업여신 만점 목표(등급 가중)", "VALUE", {"value": {"rule": "BRANCH_PRIME_CORP_POLICY", "path": "target_weighted_mn", "label": "목표(시뮬레이션 가정)", "unit": "백만원"}}, wf=WF, unit="KRW_BN", decimals=0, scale=100, sort=34),
         metric("br_prime_points", "우량기업여신 배점", "VALUE", {"value": q("BRANCH_KPI_SCHEME", {"period": PER, "item_cd": "CORE_PRIME"}, "max_points", label="배점표(하반기)", unit="점")}, wf=WF, unit="NONE", decimals=0, sort=34),
         metric("br_prime_score_now", "우량기업여신 현재 득점", "KPI_PROPORTIONAL_SCORE", {"actual": mref("br_prime_actual", "현재 실적", "백만원"), "target": mref("br_prime_target", "목표", "백만원"), "points": mref("br_prime_points", "배점", "점")}, wf=WF, unit="NONE", decimals=1, sort=35),
@@ -456,7 +463,7 @@ def metrics() -> list[dict[str, Any]]:
         metric("br_seomin_amt_after", "유치 후 지점 서민금융 익스포저", "LINEAR", {"a": mref("br_seomin_amt", "현재", "원"), "b": mref("br_seomin_rec_amt", "권고 규모", "원"), "c": {"const": 1}}, wf=WF, unit="KRW_MN", decimals=0, scale=1e6, sort=48, figures=[]),
         metric("br_retail_amt_after", "유치 후 지점 소매여신 익스포저", "LINEAR", {"a": mref("br_retail_amt", "현재", "원"), "b": mref("br_seomin_rec_amt", "권고 규모", "원"), "c": {"const": 1}}, wf=WF, unit="KRW_BN", decimals=1, scale=1e8, sort=48, figures=[]),
         metric("br_seomin_share_after", "유치 후 지점 서민금융 비중", "SHARE", {"numerator": mref("br_seomin_amt_after", "유치 후 서민금융", "원"), "denominator": mref("br_retail_amt_after", "유치 후 소매여신", "원")}, wf=WF, unit="PCT", decimals=2, sort=49),
-        metric("br_seomin_actual", "서민금융 하반기 신규 실적", "VALUE", {"value": q("BRANCH_KPI_SCORE", {"office_cd": OFF, "period": PER, "item_cd": "INCL_SEOMIN"}, "actual_value", label="하반기 누적 신규 건수", unit="건")}, wf=WF, unit="CNT", decimals=0, sort=50),
+        metric("br_seomin_actual", "서민금융 하반기 신규 실적", "VALUE", {"value": q("BRANCH_KPI_SCORE", {"office_cd": OFF, "period": PER, "item_cd": "INCL_SEOMIN", "as_of": "$latest"}, "actual_value", label="하반기 누적 신규 건수", unit="건")}, wf=WF, unit="CNT", decimals=0, sort=50),
         metric("br_seomin_target", "서민금융 만점 목표 건수", "VALUE", {"value": {"rule": "BRANCH_SEOMIN_POLICY", "path": "target_cnt", "label": "목표(시뮬레이션 가정)", "unit": "건"}}, wf=WF, unit="CNT", decimals=0, sort=50),
         metric("br_seomin_points", "서민금융 배점", "VALUE", {"value": q("BRANCH_KPI_SCHEME", {"period": PER, "item_cd": "INCL_SEOMIN"}, "max_points", label="배점표(하반기)", unit="점")}, wf=WF, unit="NONE", decimals=0, sort=50),
         metric("br_seomin_score_now", "서민금융 현재 득점", "KPI_PROPORTIONAL_SCORE", {"actual": mref("br_seomin_actual", "현재 실적", "건"), "target": mref("br_seomin_target", "목표", "건"), "points": mref("br_seomin_points", "배점", "점")}, wf=WF, unit="NONE", decimals=1, sort=51),
@@ -465,7 +472,7 @@ def metrics() -> list[dict[str, Any]]:
     ]
     # 업적평가 합계
     SC = "BRANCH_KPI_SCORE"
-    base = {"office_cd": OFF, "period": PER, "level": 2}
+    base = {"office_cd": OFF, "period": PER, "level": 2, "as_of": "$latest"}  # 득점 현황은 기준일 스냅숏 — 새 기준일을 올려도 중복 합산하지 않음
     M += [
         metric("br_kpi_total", "업적평가 총득점(가 · 감점 포함)", "SUM", {"values": q(SC, base, "score", "list", "평가항목 득점", "점")}, wf=WF, unit="NONE", decimals=1, sort=60),
         metric("br_kpi_max", "업적평가 총배점", "SUM", {"values": q("BRANCH_KPI_SCHEME", {"period": PER, "level": 2, "group_cd": {"ne": "ADJ"}}, "max_points", "list", "평가항목 배점", "점")}, wf=WF, unit="NONE", decimals=0, sort=60),
