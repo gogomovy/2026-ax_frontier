@@ -16,6 +16,7 @@ os.environ["BOOTSTRAP_ADMIN_EMP_NO"] = "00000001"
 os.environ["BOOTSTRAP_ADMIN_PASSWORD"] = "Admin1234!"
 os.environ["FILESTORE_DIR"] = "/tmp/nhdip-test-files"
 os.environ["LLM_DEFAULT_MODEL"] = ""
+os.environ["LLM_DEFAULT_BASE_URL"] = "http://llm.test:4000"  # 시드 연결 주소(호출은 각 테스트가 가짜로 대체) — 기본값은 비어 있음(B.36)
 os.environ["NHDIP_USE_APP_ROLE"] = "0"  # 테스트 DB 는 소유자 계정으로 (앱 계정 권한은 test_app_role 에서 따로 검증)
 
 

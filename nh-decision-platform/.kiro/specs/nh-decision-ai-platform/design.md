@@ -2374,6 +2374,12 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 운영 준비 점검 | `nhdip/preflight.run_checks` → `cli preflight` · `GET /admin/readiness` · 관리자 [시스템 상태] 카드 | 항목별 ok · warn · fail + 고치는 방법 |
 | 서버 점검 · 설정 | `infra/scripts/check-host.sh`(`make host-check`) · `set-env.sh`(`make set`) · `ensure-env.sh` 키 중복 경고 | |
 | 백업 기록 · 보관 | `backup.sh` → `cli record-backup`(감사 `ops.backup`) · `BACKUP_KEEP` | 운영 준비 점검 '백업' 항목 |
+### 19.20 외부 LiteLLM (B.36)
+| 영역 | 위치 | 동작 |
+|---|---|---|
+| 간단 설정 | `GET · POST /admin/llm/setup` (`api/admin_core.llm_setup`) · 화면 `/admin/llm` `QuickSetup` | 기본 프로필의 연결(없으면 `litellm` 연결 생성)에 주소 · 키 저장 → 기본 · 임베딩 프로필 모델 저장 → `test_connection`(GET /models + 1토큰 chat) → `last_test` · 감사 `admin.llm.setup` · `llm_judge.reset_cooldown()` |
+| 호출 차단 | `llm/client.resolve` — 연결 주소가 비면 `LlmUnavailable` | 서술 · 판단 · 질의는 규칙 · 기존 문장으로 대체 |
+| 내장 게이트웨이 | `docker-compose.yml` `litellm.profiles: [litellm]` · `config.llm_default_base_url=""` · `seed/run._clear_bundled_litellm` | 기본 5개 서비스. `COMPOSE_PROFILES=litellm` 이면 6개 |
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).

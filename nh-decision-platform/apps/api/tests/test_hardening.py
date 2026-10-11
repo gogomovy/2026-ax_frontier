@@ -577,3 +577,78 @@ def test_preflight_readiness_and_backup_record(db):
     r = admin.get("/admin/readiness")
     assert r.status_code == 200 and r.json()["counts"]["ok"] >= 1
     assert _client().get("/admin/readiness").status_code == 401
+
+
+# ═════════════════════════ B.36 외부 LiteLLM ═════════════════════════
+def test_external_litellm_quick_setup(db, monkeypatch):
+    from nhdip.api import admin_core
+    from nhdip.llm import LlmUnavailable, resolve
+    from nhdip.models import LlmConnection, LlmProfile
+    from nhdip.security import decrypt_secret
+
+    seen = {}
+
+    def fake_test(base_url, api_key, model=None, timeout=15.0):
+        seen.update(url=base_url, key=api_key, model=model)
+        return {"ok": True, "models": ["gpt-x", "embed-x"], "latency_ms": 12, "chat_ok": True, "chat_latency_ms": 30}
+
+    monkeypatch.setattr(admin_core, "test_connection", fake_test)
+    admin = _admin()
+    with db() as s:
+        prof = s.query(LlmProfile).filter(LlmProfile.is_default).first()
+        conn = s.get(LlmConnection, prof.connection_id)
+        before = (conn.base_url, conn.api_key_enc, conn.active, prof.model)
+        conn.base_url = ""
+        s.commit()
+        try:
+            resolve(s, "narrator_model")
+            raise AssertionError("주소가 비었는데 호출 가능")
+        except LlmUnavailable as exc:
+            assert "주소" in str(exc)
+    try:
+        assert admin.post("/admin/llm/setup", json={"base_url": "http://169.254.169.254/x", "api_key": "k"}).status_code == 422  # SSRF 차단
+        r = admin.post("/admin/llm/setup", json={"base_url": "https://litellm.example.test/v1", "api_key": "sk-test-123", "model": "gpt-x", "embedding_model": "embed-x"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["test"]["ok"] and body["model"] == "gpt-x" and body["embeddingModel"] == "embed-x"
+        assert "sk-test-123" not in r.text and body["connection"]["hasKey"]  # 키는 돌려주지 않는다
+        assert seen == {"url": "https://litellm.example.test/v1", "key": "sk-test-123", "model": "gpt-x"}
+        # 키를 비우면 유지
+        assert admin.post("/admin/llm/setup", json={"base_url": "https://litellm.example.test/v1", "model": "gpt-x"}).status_code == 200
+        with db() as s:
+            prof = s.query(LlmProfile).filter(LlmProfile.is_default).first()
+            conn = s.get(LlmConnection, prof.connection_id)
+            assert decrypt_secret(conn.api_key_enc) == "sk-test-123" and conn.active
+            cfg = resolve(s, "narrator_model")
+            assert cfg.base_url == "https://litellm.example.test/v1" and cfg.model == "gpt-x"
+        g = admin.get("/admin/llm/setup").json()
+        assert g["connection"]["baseUrl"] == "https://litellm.example.test/v1" and g["model"] == "gpt-x"
+        assert _client().post("/admin/llm/setup", json={"base_url": "https://x.test"}).status_code == 401
+    finally:
+        with db() as s:
+            prof = s.query(LlmProfile).filter(LlmProfile.is_default).first()
+            conn = s.get(LlmConnection, prof.connection_id)
+            conn.base_url, conn.api_key_enc, conn.active, prof.model = before
+            emb = s.query(LlmProfile).filter(LlmProfile.name == "embedding").first()
+            if emb:
+                emb.model = ""
+            s.commit()
+
+
+def test_bundled_litellm_default_is_cleared():
+    from types import SimpleNamespace
+
+    from nhdip.security import encrypt_secret
+    from nhdip.seed.run import _clear_bundled_litellm
+
+    def gone(*_):
+        raise OSError("no litellm")
+
+    old = SimpleNamespace(base_url="http://litellm:4000", api_key_enc=encrypt_secret(""), active=True, note="")
+    assert _clear_bundled_litellm(old, resolver=gone) and old.base_url == "" and old.active is False  # 내장 컨테이너가 없으면 비움
+    alive = SimpleNamespace(base_url="http://litellm:4000", api_key_enc=encrypt_secret(""), active=True, note="")
+    assert not _clear_bundled_litellm(alive, resolver=lambda *_: [("ok",)])  # 내장 게이트웨이를 켜 두었으면 그대로
+    keyed = SimpleNamespace(base_url="http://litellm:4000", api_key_enc=encrypt_secret("sk-1"), active=True, note="")
+    assert not _clear_bundled_litellm(keyed, resolver=gone) and keyed.base_url == "http://litellm:4000"  # 키를 넣었으면 보존
+    ext = SimpleNamespace(base_url="https://gw.example", api_key_enc=encrypt_secret(""), active=True, note="")
+    assert not _clear_bundled_litellm(ext)

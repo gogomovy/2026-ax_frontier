@@ -63,8 +63,8 @@ def system(session: Session = Depends(get_session)):
     except Exception as exc:  # noqa: BLE001
         pg = {"ok": False, "error": str(exc)[:200]}
     conn = session.execute(select(LlmConnection).where(LlmConnection.active).order_by(LlmConnection.id)).scalars().first()
-    litellm: dict[str, Any] = {"ok": False}
-    if conn:
+    litellm: dict[str, Any] = {"ok": False, "error": "LLM 주소 미입력 — 관리자 [LLM 연동]"}
+    if conn and (conn.base_url or "").strip():
         base = conn.base_url.rstrip("/").removesuffix("/v1")
         try:
             r = httpx.get(f"{base}/health/liveliness", timeout=5)
@@ -459,6 +459,60 @@ def llm(session: Session = Depends(get_session)):
         "connections": [_conn_json(c) for c in session.execute(select(LlmConnection).order_by(LlmConnection.id)).scalars()],
         "profiles": [_profile_json(p) for p in session.execute(select(LlmProfile).order_by(LlmProfile.id)).scalars()],
     }
+
+
+class LlmSetupIn(BaseModel):
+    base_url: str
+    api_key: str | None = None  # None = 유지, "" = 삭제
+    model: str | None = None  # 기본 프로필 모델 (None = 유지)
+    embedding_model: str | None = None  # 임베딩 프로필 모델 (None = 유지, "" = 끔)
+
+
+@router.get("/llm/setup")
+def llm_setup_get(session: Session = Depends(get_session)):
+    """간단 설정 화면 — 기본 프로필이 쓰는 연결 · 모델 (B.36)."""
+    prof = session.execute(select(LlmProfile).where(LlmProfile.is_default)).scalars().first()
+    conn = session.get(LlmConnection, prof.connection_id) if prof and prof.connection_id else session.execute(select(LlmConnection).order_by(LlmConnection.id)).scalars().first()
+    emb = session.execute(select(LlmProfile).where(LlmProfile.name == "embedding")).scalars().first()
+    return {"connection": _conn_json(conn) if conn else None, "model": prof.model if prof else "", "embeddingModel": emb.model if emb else ""}
+
+
+@router.post("/llm/setup")
+def llm_setup(body: LlmSetupIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """외부 LiteLLM 주소 · 키 · 모델을 한 번에 저장하고 연결을 확인한다 (B.36).
+    기본 프로필이 쓰는 연결을 고친다(없으면 'litellm' 연결을 만든다). 확인 결과의 모델 목록으로 모델을 고를 수 있다."""
+    url = _check_base_url(body.base_url)
+    prof = session.execute(select(LlmProfile).where(LlmProfile.is_default)).scalars().first()
+    conn = session.get(LlmConnection, prof.connection_id) if prof and prof.connection_id else None
+    conn = conn or session.execute(select(LlmConnection).where(LlmConnection.name == "litellm")).scalar()
+    if conn is None:
+        conn = LlmConnection(name="litellm", base_url=url, api_key_enc=encrypt_secret(""), active=True, note="외부 LiteLLM 게이트웨이")
+        session.add(conn)
+        session.flush()
+    conn.base_url, conn.active = url, True
+    if body.api_key is not None:
+        conn.api_key_enc = encrypt_secret(body.api_key)
+    if prof is None:
+        prof = LlmProfile(name="default", connection_id=conn.id, model=(body.model or "").strip(), timeout_sec=60, retries=2, is_default=True, extra={})
+        session.add(prof)
+    prof.connection_id = conn.id
+    if body.model is not None:
+        prof.model = body.model.strip()
+    emb = session.execute(select(LlmProfile).where(LlmProfile.name == "embedding")).scalars().first()
+    if body.embedding_model is not None:
+        if emb is None:
+            emb = LlmProfile(name="embedding", connection_id=conn.id, model="", timeout_sec=60, retries=2, extra={})
+            session.add(emb)
+        emb.connection_id, emb.model = conn.id, body.embedding_model.strip()
+    session.flush()
+    res = test_connection(conn.base_url, decrypt_secret(conn.api_key_enc), prof.model or None)
+    conn.last_test = {**res, "models": (res.get("models") or [])[:50], "at": utcnow().isoformat()}
+    audit(session, admin.emp_no, "admin.llm.setup", "llm_connection", str(conn.id), {"base_url": url, "api_key": "변경" if body.api_key is not None else "유지", "model": prof.model, "embedding_model": emb.model if emb else None, "ok": res.get("ok")}, client_ip(request))
+    session.commit()
+    from nhdip.workflow.llm_judge import reset_cooldown
+
+    reset_cooldown()  # 연결을 바꿨으므로 판단 에이전트의 '최근 오류 쉼'을 푼다
+    return {"connection": _conn_json(conn), "model": prof.model, "embeddingModel": emb.model if emb else "", "test": res}
 
 
 @router.post("/llm/connections", status_code=201)

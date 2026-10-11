@@ -3,7 +3,7 @@ name: nhdip
 # ─────────────────────────────────────────────────────────────────────────────
 # NH AI 경영 의사결정 플랫폼 — 전 구성 단일 기동 (설계 §19.1, 요구사항 DEP-01~04)
 #
-#   make up        → 6개 서비스 기동 (최초 기동 시 마이그레이션 + 기본 설정 + 목데이터 시드 자동)
+#   make up        → 5개 서비스 기동 (최초 기동 시 마이그레이션 + 기본 설정 + 목데이터 시드 자동)
 #   make down      → 중지 (데이터 유지)
 #   make reset     → 중지 + 볼륨 삭제 (초기 상태로)
 #
@@ -12,7 +12,8 @@ name: nhdip
 #   worker    -      아웃박스 디스패처 · 워크플로우 엔진 · 적재 · 그래프 투영
 #   postgres  -      PostgreSQL 16 + pgvector (원장 · 설정 · 이력 · 벡터 · 작업 큐) + litellm DB
 #   neo4j     :7474  온톨로지 그래프 (브라우저 UI) / :7687 bolt
-#   litellm   :4000  LiteLLM 게이트웨이 (OpenAI 호환, /ui 관리 화면)
+#   litellm   :4000  (선택 · 기본 꺼짐) 내장 LiteLLM 게이트웨이 — 외부 LiteLLM 을 쓰면 띄우지 않는다.
+#                    켜려면 .env 에 COMPOSE_PROFILES=litellm
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 로그 회전 (B.32) — 컨테이너 로그가 디스크를 채우지 않도록
@@ -45,7 +46,8 @@ x-api-env: &api-env
   BOOTSTRAP_ADMIN_EMP_NO: ${BOOTSTRAP_ADMIN_EMP_NO:-00000001}
   BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?BOOTSTRAP_ADMIN_PASSWORD 가 .env 에 필요합니다 (make env)}
   # 시드 시 기본 LLM 연결로 등록할 값 (이후 관리자 화면에서 변경)
-  LLM_DEFAULT_BASE_URL: ${LLM_DEFAULT_BASE_URL:-http://litellm:4000}
+  # 외부 LiteLLM 주소 · 키 — 최초 시드 때만 쓴다(비우면 관리자 [LLM 연동] 에서 입력)
+  LLM_DEFAULT_BASE_URL: ${LLM_DEFAULT_BASE_URL:-}
   LLM_DEFAULT_API_KEY: ${LLM_DEFAULT_API_KEY:-}
   LLM_DEFAULT_MODEL: ${LLM_DEFAULT_MODEL:-}
   AS_OF_DEFAULT: ${AS_OF_DEFAULT:-2026-08-31}
@@ -114,12 +116,14 @@ services:
     restart: unless-stopped
 
   litellm:
+    # 선택 서비스 (B.36) — 외부 LiteLLM 을 관리자 화면에 등록해 쓰는 것이 기본. 내장 게이트웨이가 필요할 때만 COMPOSE_PROFILES=litellm
+    profiles: ["litellm"]
     image: ${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:main-stable@sha256:625981c83410a3ea68eb0697590a57ec1d764d634514d54fa5db0591077ee839}
     logging: *logging
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-nhdip}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 가 .env 에 필요합니다 (make env)}@postgres:5432/litellm
-      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY 가 .env 에 필요합니다 (make env)}
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
       STORE_MODEL_IN_DB: "True"
       UI_USERNAME: ${LITELLM_UI_USERNAME:-admin}
       UI_PASSWORD: ${LITELLM_UI_PASSWORD:-}

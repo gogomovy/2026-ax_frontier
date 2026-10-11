@@ -25,7 +25,7 @@ const PAGES = (process.env.A11Y_PAGES ?? "").split(",").filter(Boolean).length
       "/risk", "/risk/analysis/model-monitoring", "/risk/analysis/inclusive-risk", "/risk/guides",
       "/branch", "/branch/analysis/prime-corp", "/branch/analysis/seomin", "/branch/targets",
       "/knowledge", "/knowledge/gov_policy", "/domains/loan",
-      "/admin", "/admin/users", "/admin/datasets", "/admin/rules", "/admin/monitor/agents",
+      "/admin", "/admin/users", "/admin/datasets", "/admin/rules", "/admin/llm", "/admin/monitor/agents",
     ];
 if (!ADMIN || !ADMIN_PW) {
   console.error("E2E_ADMIN_EMP · E2E_ADMIN_PW 가 필요합니다 (make a11y 는 .env 의 BOOTSTRAP_ADMIN_* 를 사용)");

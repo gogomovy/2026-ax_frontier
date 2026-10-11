@@ -85,6 +85,8 @@ def resolve(session: Session, agent_code: str | None) -> ResolvedLlm:
     conn = session.get(LlmConnection, int(conn_id)) if conn_id else None
     if not conn or not conn.active:
         raise LlmUnavailable("LLM 연결이 설정되지 않았거나 비활성입니다")
+    if not (conn.base_url or "").strip():
+        raise LlmUnavailable("LLM 주소가 입력되지 않았습니다 — 관리자 [LLM 연동]")
     model = pick("model", "")
     if not model:
         raise LlmUnavailable("모델명이 설정되지 않았습니다")

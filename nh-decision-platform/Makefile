@@ -5,7 +5,7 @@ COMPOSE := docker compose
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
-	@echo "make up          - .env 준비 → 이미지 빌드 → 6개 서비스 기동 (최초 시드 자동)"
+	@echo "make up          - .env 준비 → 이미지 빌드 → 5개 서비스 기동 (최초 시드 자동)"
 	@echo "make ps          - 상태 확인"
 	@echo "make logs        - 전체 로그 (s=api 처럼 서비스 지정 가능)"
 	@echo "make down        - 중지 (데이터 유지)"
@@ -38,7 +38,7 @@ up: env
 	@echo ""
 	@echo "  WEB      → http://localhost:$${WEB_PORT:-3000}   (로그인 화면)"
 	@echo "  API      → http://localhost:$${API_PORT:-8000}/health   (문서 /docs 는 API_DOCS=true 일 때)"
-	@echo "  LiteLLM  → http://localhost:$${LITELLM_PORT:-4000}/ui"
+	@echo "  LLM      → 관리자 [LLM 연동] 에서 외부 LiteLLM 주소 · 키 입력 (내장 게이트웨이는 COMPOSE_PROFILES=litellm)"
 	@echo "  Neo4j    → http://localhost:$${NEO4J_HTTP_PORT:-7474}"
 	@echo "  최초 관리자 계정: make admin-pass"
 

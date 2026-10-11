@@ -81,7 +81,7 @@ def run_checks(session: Session) -> dict[str, Any]:
     # LLM
     conn = session.execute(select(LlmConnection).where(LlmConnection.active)).scalars().first()
     prof = session.execute(select(LlmProfile).where(LlmProfile.is_default)).scalars().first()
-    if conn is None or prof is None or not (prof.model or "").strip():
+    if conn is None or not (conn.base_url or "").strip() or prof is None or not (prof.model or "").strip():
         add(_item("llm", "LLM 연결", "warn", "연결 · 기본 모델이 없음 — 수치는 정상, 서술 · 판단은 규칙 · 기존 문장으로 대체", "관리자 [LLM 연동] 에서 연결 키 · 모델 입력"))
     else:
         from nhdip.security import decrypt_secret

@@ -119,9 +119,12 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
     st = get_settings()
     conn = s.execute(select(LlmConnection).where(LlmConnection.name == "litellm")).scalar()
     if not conn:
-        conn = LlmConnection(name="litellm", base_url=st.llm_default_base_url, api_key_enc=encrypt_secret(st.llm_default_api_key), active=True, note="docker compose 의 LiteLLM 게이트웨이. 키는 LiteLLM 가상 키 또는 마스터 키")
+        url = (st.llm_default_base_url or "").strip()
+        conn = LlmConnection(name="litellm", base_url=url, api_key_enc=encrypt_secret(st.llm_default_api_key), active=bool(url), note=EXTERNAL_LLM_NOTE)
         s.add(conn)
         s.flush()
+    else:
+        _clear_bundled_litellm(conn)
     profiles = {}
     for name, model, is_default, extra in (("default", st.llm_default_model, True, {}), ("embedding", "", False, {})):
         p = s.execute(select(LlmProfile).where(LlmProfile.name == name)).scalar()
@@ -193,6 +196,32 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
         for b in [*D.bindings(), *B.bindings()]:
             s.add(ViewBinding(**b, enabled=True))
     out["cfg"] = "ok"
+
+
+EXTERNAL_LLM_NOTE = "외부 LiteLLM(OpenAI 호환) 게이트웨이 — 관리자 [LLM 연동] 에서 주소 · 키 · 모델 입력. 키는 LiteLLM 가상 키 또는 마스터 키"
+BUNDLED_LITELLM_URL = "http://litellm:4000"
+
+
+def _clear_bundled_litellm(conn: Any, resolver: Any = None) -> bool:
+    """예전 기본값(compose 내장 LiteLLM 주소)이 남아 있는데 그 컨테이너가 없으면 주소를 비우고 끈다 (B.36).
+    키를 넣었거나 주소를 바꿨으면 건드리지 않는다. 내장 LiteLLM 을 켜서(COMPOSE_PROFILES=litellm) 이름이 풀리면 그대로 둔다."""
+    import socket
+
+    from nhdip.security import decrypt_secret
+
+    if (conn.base_url or "").rstrip("/") != BUNDLED_LITELLM_URL:
+        return False
+    try:
+        if decrypt_secret(conn.api_key_enc):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        (resolver or socket.getaddrinfo)("litellm", 4000)
+        return False
+    except OSError:
+        conn.base_url, conn.active, conn.note = "", False, EXTERNAL_LLM_NOTE
+        return True
 
 
 def _applied(s: Session, name: str) -> bool:

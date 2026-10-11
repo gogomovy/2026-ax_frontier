@@ -64,7 +64,7 @@ else
   else
     ok ".env 키 중복 없음"
   fi
-  for k in SESSION_SECRET CONFIG_ENC_KEY POSTGRES_PASSWORD NEO4J_PASSWORD LITELLM_MASTER_KEY BOOTSTRAP_ADMIN_PASSWORD; do
+  for k in SESSION_SECRET CONFIG_ENC_KEY POSTGRES_PASSWORD NEO4J_PASSWORD BOOTSTRAP_ADMIN_PASSWORD; do
     grep -qE "^${k}=.+" .env || bad ".env 의 ${k} 가 비어 있음" "bash infra/scripts/ensure-env.sh"
   done
 fi

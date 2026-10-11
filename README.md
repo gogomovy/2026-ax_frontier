@@ -27,7 +27,7 @@
 | 항목 | 버전 · 조건 | 확인 명령 |
 |---|---|---|
 | Docker Desktop (또는 Docker Engine + Compose 플러그인) | Compose v2 (`docker compose`) | `docker compose version` |
-| Docker 메모리 할당 | 최소 4GB, **권장 6~8GB** (6개 서비스 실사용 약 2GB, 빌드 시 더 필요) | Docker Desktop → Settings → Resources |
+| Docker 메모리 할당 | 최소 4GB, **권장 6~8GB** (5개 서비스 실사용 약 1.5GB, 빌드 시 더 필요) | Docker Desktop → Settings → Resources |
 | 디스크 여유 | 약 5GB (이미지 약 3.5GB + 볼륨) | |
 | git · make · openssl · bash | macOS / Linux 기본 포함 | `make -v`, `openssl version` |
 | Node.js (선택) | 20 이상 — `make e2e`, `make web-dev` 에만 필요 | `node -v` |
@@ -35,7 +35,7 @@
 
 - Apple Silicon(arm64) · Intel(amd64) 모두 동작합니다(arm64 Mac 에서 검증).
 - Windows 는 **WSL2(Ubuntu)** 안에서 아래 명령을 그대로 실행하세요. PowerShell 만 쓸 경우 2.3의 `make` 없이 실행하는 방법을 참고합니다.
-- 사용하는 호스트 포트: `3000`(web) · `8000`(api) · `4000`(litellm) · `7474` · `7687`(neo4j). 이미 쓰고 있으면 4장에서 바꿉니다.
+- 사용하는 호스트 포트: `3000`(web) · `8000`(api) · `7474` · `7687`(neo4j). LLM 은 외부 LiteLLM 을 씁니다(서버에서 그 주소로 나갈 수 있어야 함). 이미 쓰고 있으면 4장에서 바꿉니다.
 
 ---
 
@@ -60,7 +60,7 @@ make up
 
 1. **`.env` 준비** (`infra/scripts/ensure-env.sh`) — `.env` 가 없으면 `.env.example` 을 복사하고, 비어 있는 비밀값(DB · Neo4j 비밀번호, 세션 서명 키, 설정 암호화 키, LiteLLM 마스터 키, 최초 관리자 비밀번호)을 무작위로 채웁니다. 이미 있는 값은 덮어쓰지 않습니다.
 2. **이미지 빌드** — `nhdip/api`(Python 3.12), `nhdip/web`(Node 20, Next standalone). 처음에는 네트워크에 따라 수 분~십여 분 걸립니다.
-3. **6개 서비스 기동** — postgres → neo4j · litellm → api → worker · web 순서로 헬스체크를 기다리며 올라옵니다.
+3. **5개 서비스 기동** — postgres → neo4j → api → worker · web 순서로 헬스체크를 기다리며 올라옵니다. (내장 LiteLLM 은 기본으로 띄우지 않습니다 — 필요하면 `.env` 에 `COMPOSE_PROFILES=litellm`)
 4. **최초 1회 자동 초기화** — api 컨테이너가 DB 마이그레이션(alembic) → 기본 설정 · 목데이터 시드 → 최초 계산까지 수행합니다(멱등이라 재기동해도 중복되지 않음).
 
 ### 2.3 `make` 없이 실행 (Windows PowerShell 등)
@@ -75,12 +75,12 @@ bash 를 쓸 수 없으면 `.env.example` 을 `.env` 로 복사한 뒤 비어 �
 ### 2.4 기동 확인
 
 ```bash
-make ps                     # 모든 서비스가 running, api · web · postgres · neo4j · litellm 은 (healthy)
+make ps                     # 5개 서비스(api · web · worker · postgres · neo4j) 가 (healthy)
 make logs s=api             # api 로그 — "alembic upgrade head" → "seeding" → uvicorn 시작이 보이면 정상
 curl -fsS http://localhost:8000/health
 ```
 
-litellm 은 처음 기동 시 1~2분 정도 `starting` 으로 보일 수 있습니다. 플랫폼 화면은 litellm 상태와 관계없이 동작합니다.
+LLM 연결 상태와 관계없이 플랫폼 화면은 동작합니다(LLM 이 없으면 서술 문장만 기본 문장).
 
 ### 2.5 로그인
 
@@ -102,7 +102,7 @@ make admin-pass
 | web | http://localhost:3000 | 로그인 · 업무 화면 · 관리자(`/admin`) |
 | api | http://localhost:8000/health | API 상태 확인 (API 문서 `/docs` 는 `.env` 에 `API_DOCS=true` 일 때) |
 | neo4j | http://localhost:7474 | 온톨로지 그래프 브라우저 (사용자 `neo4j` / `.env` 의 `NEO4J_PASSWORD`) |
-| litellm | http://localhost:4000/ui | LLM 게이트웨이 관리 (사용자 `admin` / `.env` 의 `LITELLM_UI_PASSWORD`) |
+| (LLM) | 외부 LiteLLM | 관리자 `/admin/llm` 의 **간단 설정** 에서 주소 · 키 · 모델 입력 |
 
 주요 업무 화면:
 
@@ -132,7 +132,7 @@ make admin-pass
 | HTTPS 뒤에서 운영 | `COOKIE_SECURE=1` |
 | SSO(OIDC) | `OIDC_ISSUER` · `OIDC_CLIENT_ID` · `OIDC_CLIENT_SECRET` · `OIDC_REDIRECT_URI` |
 | 운영 알림 채널 | `ALERT_WEBHOOK_URL` 또는 `ALERT_SMTP_*` |
-| 다른 PC 에서 api · litellm · neo4j 접속 | `ADMIN_BIND=0.0.0.0` (기본은 이 PC 에서만) |
+| 다른 PC 에서 api · neo4j 접속 | `ADMIN_BIND=0.0.0.0` (기본은 이 PC 에서만) |
 | 다른 주소(도메인 · 프록시)로 서비스 | `TRUSTED_ORIGINS=https://<웹 주소>` (변경 요청은 같은 출처만 허용) |
 | API 문서 보기 | `API_DOCS=true` |
 
@@ -142,7 +142,7 @@ make admin-pass
 
 ## 5. 처음 사용 순서
 
-1. **LLM 연결(선택)** — 관리자 `/admin/llm` 에서 LiteLLM 연결 키를 입력합니다. 연결하지 않아도 모든 수치 · 표 · 차트는 계산 커널로 동작하고, 서술 문장만 기본 문장으로 대체됩니다(모니터링에 "축소 실행" 으로 표시).
+1. **LLM 연결(선택)** — 관리자 `/admin/llm` → **LiteLLM 연결 (간단 설정)** 에 외부(사내) LiteLLM 의 주소 · API 키 · 모델을 넣고 [저장하고 연결 확인]을 누릅니다. 확인되면 그 게이트웨이의 모델 목록이 나오니 눌러서 고르면 됩니다(재기동 불필요). 연결하지 않아도 모든 수치 · 표 · 차트는 계산 커널로 동작하고, 서술 문장만 기본 문장으로 대체됩니다.
 2. **사용자 가입 · 승인** — 사용자는 `/signup` 에서 사번 8자리 + 소속으로 가입하고, 관리자가 `/admin/users` 에서 승인합니다.
 3. **화면 권한** — `/admin/screens` 에서 조직 단위로 부여합니다(하위 조직 상속).
 4. **데이터 반영** — 7장 참고.
@@ -157,7 +157,7 @@ make up            # 다시 기동 (코드가 바뀌었으면 다시 빌드)
 make restart s=api # 특정 서비스만 재시작
 make reset         # 중지 + 볼륨 삭제 → 다음 make up 에서 처음 상태로 재시드
 make seed          # 기본 설정 · 목데이터 시드만 다시 실행 (멱등)
-make backup        # DB(업무 · litellm) + 업로드 파일 → nh-decision-platform/backups/<시각>/
+make backup        # DB + 업로드 파일 → nh-decision-platform/backups/<시각>/
 make restore FROM=backups/<시각> CONFIRM=yes   # 백업에서 복구 (현재 데이터를 덮어씀)
 ```
 복구 후에는 관리자 [온톨로지]에서 재투영하면 그래프가 다시 만들어집니다.
@@ -236,7 +236,7 @@ docker compose exec postgres psql -U nhdip -d nhdip \
 ## 11. 보안 메모
 
 - 기본 비밀번호는 없습니다. 모든 비밀값은 PC 마다 `.env` 에 무작위로 생성되며 `.env` 는 커밋하지 않습니다.
-- api(8000) · neo4j(7474/7687) · litellm(4000) 포트는 기본으로 이 PC(127.0.0.1)에서만 열립니다. web(3000)만 외부에 노출됩니다.
+- api(8000) · neo4j(7474/7687) 포트는 기본으로 이 PC(127.0.0.1)에서만 열립니다. web(3000)만 외부에 노출됩니다.
 - 운영 모드에서는 기본 · 짧은 세션 키로 기동하지 않고, API 문서는 꺼져 있습니다. 보안 헤더(CSP 등) · CSRF 출처 검사 · 로그인 속도 제한이 기본으로 켜져 있습니다.
 - api 는 데이터 조작만 가능한 DB 계정(`nhdip_app`)으로 접속해 감사 로그를 고치거나 지울 수 없습니다(`.env` 의 `APP_DB_PASSWORD`, make env 가 생성).
 - 앞에 사내 프록시가 있으면 `.env` 의 `TRUSTED_PROXIES` 에 그 대역을 더해야 로그인 속도 제한 · 감사 기록이 실제 사용자 IP 기준이 됩니다.
@@ -263,13 +263,13 @@ git clone -b feat/nh-decision-platform https://github.com/gogomovy/2026-ax_front
 # 4) 점검 → 기동
 make host-check       # Docker · buildx 버전 · 메모리 · 디스크 · .env · 포트 · EC2 공인 IP — FAIL 이 있으면 안내된 명령 실행
 make up               # .env 비밀값 생성 → 빌드(처음 10~20분) → 기동
-make wait-idle && make ps      # 6개 모두 (healthy)
+make wait-idle && make ps      # 5개 모두 (healthy)
 make admin-pass       # 최초 관리자 사번 · 비밀번호
 make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에도 표시)
 ```
 
 **외부 접속**
-- 웹만 외부에 열립니다(api · LiteLLM · Neo4j 는 서버 안에서만). 80 포트로 열려면 `make set k=WEB_PORT v=80 && make up` 후 EC2 보안 그룹 인바운드에 `TCP 80` 을 추가하고 `http://<공인 IP>` 로 접속합니다.
+- 웹만 외부에 열립니다(api · Neo4j 는 서버 안에서만). 서버에서 외부 LiteLLM 주소로 나갈 수 있어야 합니다. 80 포트로 열려면 `make set k=WEB_PORT v=80 && make up` 후 EC2 보안 그룹 인바운드에 `TCP 80` 을 추가하고 `http://<공인 IP>` 로 접속합니다.
 - `.env` 값은 `make set k=<키> v=<값>` 으로 바꿉니다. `echo ... >> .env` 로 추가하면 같은 키가 두 줄이 되어 어느 값이 쓰일지 알 수 없습니다(`make host-check` 가 찾아 줍니다).
 - 서버 안에서는 열리는데 밖에서 안 되면: 보안 그룹 인바운드(포트 · 소스) → 서브넷 라우팅 테이블에 `0.0.0.0/0 → igw-…` 경로 → 네트워크 ACL → 내 쪽 회사망이 해당 포트를 막는지(휴대폰 핫스팟으로 확인) 순서로 봅니다. 외부 인바운드가 막힌 VPC 라면 SSH · SSM 터널을 씁니다.
   ```bash

@@ -19,9 +19,10 @@ echo "[restore] postgres ${DB}"
 docker compose exec -T postgres pg_restore -U "$USER_" -d "$DB" --clean --if-exists --no-owner < "${FROM}/${DB}.dump"
 if [[ -f "${FROM}/litellm.dump" ]]; then
   echo "[restore] postgres litellm"
-  docker compose stop litellm
+  LITE=$(docker compose ps -q litellm 2>/dev/null || true)   # 내장 LiteLLM(선택)을 쓰는 경우만
+  [ -n "$LITE" ] && docker compose stop litellm
   docker compose exec -T postgres pg_restore -U "$USER_" -d litellm --clean --if-exists --no-owner < "${FROM}/litellm.dump"
-  docker compose start litellm
+  [ -n "$LITE" ] && docker compose start litellm
 fi
 echo "[restore] filestore"
 docker compose run --rm --no-deps -T --entrypoint sh api -c 'rm -rf /data/files/* && tar -xzf - -C /data/files' < "${FROM}/filestore.tar.gz"

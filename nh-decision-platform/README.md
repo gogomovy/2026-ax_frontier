@@ -6,12 +6,12 @@
 |---|---|
 | 스펙 | `.kiro/specs/nh-decision-ai-platform/` — `requirements.md`(§16) · `design.md`(§19) · `tasks.md`(Phase B) |
 | 프론트엔드 | Next.js 16 · React 19 — 업무 화면 3개 부서(종합기획부 · 신용리스크관리부 · 영업점) + 로그인·가입 + 관리자 화면 15종 |
-| 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), pgvector 검색, LiteLLM, 변경 기반 워크플로우 |
+| 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), pgvector 검색, 외부 LiteLLM 연동, 변경 기반 워크플로우 |
 | 데이터 | 목데이터(시뮬레이션 버전)로 시드 — 실데이터는 관리자 화면에서 같은 데이터셋 정의로 업로드 |
 
 ---
 
-## 1. 실행 (Docker, 6개 서비스)
+## 1. 실행 (Docker, 5개 서비스)
 
 ```bash
 make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 최초 마이그레이션·시드·계산 자동
@@ -28,12 +28,12 @@ make preflight   # 운영 준비 점검 · make host-check 서버 점검 · make
 | web | http://localhost:3000 | 로그인 · 업무 화면 · 관리자(`/admin`) — `/backend/*` 를 api 로 프록시 |
 | api | http://localhost:8000/health | 인증 · 화면 API · 상태 API · 관리자 API (문서 `/docs` 는 `API_DOCS=true` 일 때) |
 | worker | - | 아웃박스 디스패처 · 워크플로우 엔진 · 임베딩 · 문서 구조화 · 그래프 투영 |
-| postgres | (내부) | 원장 · 설정 · 계산 이력 · pgvector · 작업 큐 · LiteLLM DB |
+| postgres | (내부) | 원장 · 설정 · 계산 이력 · pgvector · 작업 큐 |
 | neo4j | http://localhost:7474 | 온톨로지 그래프(투영) |
-| litellm | http://localhost:4000/ui | LLM 게이트웨이 (OpenAI 호환) |
+| (LLM) | 외부 LiteLLM | 관리자 `/admin/llm` 에서 주소 · 키 · 모델 입력. 내장 게이트웨이가 필요하면 `.env` 에 `COMPOSE_PROFILES=litellm`(선택) |
 
 **처음 사용 순서**
-1. 관리자 계정으로 로그인 → `/admin/llm` 에서 LiteLLM 연결의 키를 입력하고, 프로필(또는 에이전트별) 모델명은 `coder.general.multimodal` 로 설정돼 있습니다(Q11).
+1. 관리자 계정으로 로그인 → `/admin/llm` 의 **LiteLLM 연결 (간단 설정)** 에 외부 LiteLLM 주소 · API 키 · 모델을 넣고 [저장하고 연결 확인](모델 목록에서 골라도 됨).
    LLM 이 설정되지 않아도 모든 수치·화면은 동작하며, 서술 노드만 기존 문장으로 폴백(degraded)합니다.
 2. 사용자는 `/signup` 에서 사번 8자리 + 소속(본부 > 부 > 국 > 팀 또는 지역본부 > 영업점)으로 가입 → 관리자가 `/admin/users` 에서 승인.
 3. 화면 권한은 `/admin/screens` 에서 조직 단위로 부여합니다(하위 조직이 상속). 기본: 종합기획부 · 신용리스크관리부 · 수도권1지역본부 · 중부지역본부(영업점 포함).
@@ -65,13 +65,13 @@ git clone -b <브랜치> <저장소 주소> && cd <플랫폼 폴더>
 # 4) 점검 → 기동
 make host-check       # Docker · buildx 버전 · 메모리 · 디스크 · .env · 포트 · EC2 공인 IP — FAIL 이 있으면 안내된 명령 실행
 make up               # .env 비밀값 생성 → 빌드(처음 10~20분) → 기동
-make wait-idle && make ps      # 6개 모두 (healthy)
+make wait-idle && make ps      # 5개 모두 (healthy)
 make admin-pass       # 최초 관리자 사번 · 비밀번호
 make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에도 표시)
 ```
 
 **외부 접속**
-- 웹만 외부에 열립니다(api · LiteLLM · Neo4j 는 서버 안에서만). 80 포트로 열려면 `make set k=WEB_PORT v=80 && make up` 후 EC2 보안 그룹 인바운드에 `TCP 80` 을 추가하고 `http://<공인 IP>` 로 접속합니다.
+- 웹만 외부에 열립니다(api · Neo4j 는 서버 안에서만). 서버에서 외부 LiteLLM 주소로 나갈 수 있어야 합니다(보안 그룹 아웃바운드 · 방화벽). 80 포트로 열려면 `make set k=WEB_PORT v=80 && make up` 후 EC2 보안 그룹 인바운드에 `TCP 80` 을 추가하고 `http://<공인 IP>` 로 접속합니다.
 - `.env` 값은 `make set k=<키> v=<값>` 으로 바꿉니다. `echo ... >> .env` 로 추가하면 같은 키가 두 줄이 되어 어느 값이 쓰일지 알 수 없습니다(`make host-check` 가 찾아 줍니다).
 - 서버 안에서는 열리는데 밖에서 안 되면: 보안 그룹 인바운드(포트 · 소스) → 서브넷 라우팅 테이블에 `0.0.0.0/0 → igw-…` 경로 → 네트워크 ACL → 내 쪽 회사망이 해당 포트를 막는지(휴대폰 핫스팟으로 확인) 순서로 봅니다. 외부 인바운드가 막힌 VPC 라면 SSH · SSM 터널을 씁니다.
   ```bash
@@ -153,7 +153,7 @@ infra/  postgres init · litellm config · scripts(ensure-env, export-mock)
 
 - 비밀번호 bcrypt · 세션은 서명된 HttpOnly 쿠키 + DB 세션(즉시 폐기) · 5회 실패 시 잠금 · 가입은 승인제
 - LLM 키는 AES-GCM 암호화 저장(`CONFIG_ENC_KEY`), 화면에는 마스킹. `.env` 는 커밋하지 않습니다.
-- api(8000) · neo4j(7474/7687) · litellm(4000) 포트는 기본으로 이 컴퓨터(127.0.0.1)에서만 열립니다(`ADMIN_BIND`). web 은 `WEB_BIND`(기본 0.0.0.0). HTTPS 환경이면 `COOKIE_SECURE=1`(HSTS 포함).
+- api(8000) · neo4j(7474/7687) · (선택) litellm(4000) 포트는 기본으로 이 컴퓨터(127.0.0.1)에서만 열립니다(`ADMIN_BIND`). web 은 `WEB_BIND`(기본 0.0.0.0). HTTPS 환경이면 `COOKIE_SECURE=1`(HSTS 포함).
 - api 는 데이터 조작만 가능한 DB 계정(`nhdip_app`, 비밀번호 `APP_DB_PASSWORD`)으로 접속해 감사 로그를 고치거나 지울 수 없습니다. 마이그레이션 · 시드 · 워커는 소유자 계정. 비우면 이전 방식.
 - 속도 제한은 DB 에서 함께 셉니다(API 여러 개 가능). 사용자 IP 는 앞단 프록시(`TRUSTED_PROXIES`)가 넘긴 X-Forwarded-For 로 판정합니다. API 모드 화면은 요청마다 nonce 를 쓰는 CSP 로 스크립트를 제한합니다.
 - 변경 요청(POST 등)은 같은 출처만 받습니다. 다른 주소(리버스 프록시 · 도메인)로 서비스하면 `TRUSTED_ORIGINS=https://<웹 주소>` 를 넣으세요. 운영(`NHDIP_ENV=prod`)에서는 기본 · 짧은 `SESSION_SECRET` 으로 기동하지 않습니다.

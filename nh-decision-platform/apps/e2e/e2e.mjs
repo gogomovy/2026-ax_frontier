@@ -346,6 +346,7 @@ try {
     const fail = t.indexOf("요청 실패");
     ok(`관리자 ${p}`, t.includes("관리자") && fail < 0, fail >= 0 ? t.slice(Math.max(0, fail - 120), fail + 60).replace(/\n/g, " | ") : a.url());
     if (p === "/admin/workflows") ok("워크플로우: 정기 실행(cron) 다음 시각 표시", t.includes("다음 "));
+    if (p === "/admin/llm") ok("LLM 연동: 외부 LiteLLM 간단 설정(주소 · 키 · 모델)", t.includes("LiteLLM 연결 (간단 설정)") && (await a.$("[data-llm-setup]")) !== null);
     if (p === "/admin/contracts") {
       ok("컬럼 정의서: T01~T03 대조 결과", t.includes("T01 현황") && t.includes("T03 목표설정") && t.includes("mart.hq_t01") && t.includes("일치"));
       await shot(a, "07-admin-contracts");

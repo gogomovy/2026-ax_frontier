@@ -32,11 +32,109 @@ interface Profile {
 
 const num = (v: string) => (v === "" ? null : Number(v));
 
+interface SetupState {
+  connection: Conn | null;
+  model: string;
+  embeddingModel: string;
+}
+interface TestResult {
+  ok: boolean;
+  models?: string[];
+  latency_ms?: number;
+  chat_ok?: boolean;
+  chat_latency_ms?: number;
+  error?: string;
+  chat_error?: string;
+  models_status?: number;
+}
+
+/** 외부 LiteLLM 간단 설정 (B.36) — 주소 · 키 · 모델을 넣고 저장하면 바로 연결을 확인한다 */
+function QuickSetup({ onSaved }: { onSaved: () => void }) {
+  const cur = useApiData<SetupState>("/admin/llm/setup");
+  const { run, busy } = useAction();
+  const [f, setF] = useState<{ url: string; key: string; model: string; emb: string } | null>(null);
+  const [test, setTest] = useState<TestResult | null>(null);
+  const c = cur.data;
+  const form = f ?? { url: c?.connection?.baseUrl ?? "", key: "", model: c?.model ?? "", emb: c?.embeddingModel ?? "" };
+  const set = (patch: Partial<typeof form>) => setF({ ...form, ...patch });
+  const last = (c?.connection?.lastTest ?? null) as TestResult | null;
+  const shown = test ?? last;
+  const save = () =>
+    run(
+      () =>
+        apiPost<SetupState & { test: TestResult }>("/admin/llm/setup", {
+          base_url: form.url.trim(),
+          ...(form.key ? { api_key: form.key } : {}),
+          model: form.model.trim(),
+          embedding_model: form.emb.trim(),
+        }),
+      (r) => (r?.test?.ok ? "저장했습니다 — 연결 확인 성공" : "저장했습니다 — 연결 확인 실패(아래 결과 확인)"),
+      () => {
+        cur.reload();
+        onSaved();
+      },
+    ).then((r) => {
+      if (r) {
+        setTest(r.test);
+        setF({ ...form, key: "" });
+      }
+    });
+  return (
+    <Card title="LiteLLM 연결 (간단 설정)" actions={c?.connection?.hasKey ? <Badge tone="success">키 {c.connection.apiKeyMasked}</Badge> : <Badge tone="attention">키 없음</Badge>}>
+      <p className="mb-md text-[12.5px] text-steel">
+        사내 · 외부 LiteLLM(OpenAI 호환) 게이트웨이의 주소와 키를 넣고 저장하면 바로 연결을 확인합니다. 확인되면 그 게이트웨이에 등록된 모델 목록이 나오니 눌러서 고르세요. 키는 암호화 저장되고 다시 보여 주지 않습니다(비워 두면 기존 키 유지).
+      </p>
+      <Loading error={cur.error} loading={!c && cur.loading} />
+      <div className="grid grid-cols-1 gap-md md:grid-cols-2" data-llm-setup>
+        <TextInput label="LiteLLM 주소 (예: https://litellm.example.com 또는 …/v1)" value={form.url} onChange={(v) => set({ url: v })} mono placeholder="https://" />
+        <TextInput label={c?.connection?.hasKey ? "API 키 (비우면 유지)" : "API 키"} type="password" value={form.key} onChange={(v) => set({ key: v })} />
+        <TextInput label="기본 모델 (서술 · 판단 · 질의)" value={form.model} onChange={(v) => set({ model: v })} mono placeholder="예: coder.general.multimodal" />
+        <TextInput label="임베딩 모델 (선택 — 비우면 키워드 검색만)" value={form.emb} onChange={(v) => set({ emb: v })} mono />
+      </div>
+      <div className="mt-md flex flex-wrap items-center gap-xs">
+        <Button size="sm" variant="confirm" disabled={busy || !/^https?:\/\/.+/.test(form.url.trim())} onClick={save}>
+          {busy ? "확인 중…" : "저장하고 연결 확인"}
+        </Button>
+        {shown ? (
+          <span className="text-[12px]" role="status">
+            {shown.ok ? <Badge tone="success">연결 성공</Badge> : <Badge tone="critical">연결 실패</Badge>}{" "}
+            {shown.latency_ms !== undefined ? `모델 목록 ${shown.latency_ms}ms` : ""}
+            {shown.chat_ok !== undefined ? ` · 모델 호출 ${shown.chat_ok ? `성공 ${shown.chat_latency_ms}ms` : "실패"}` : ""}
+          </span>
+        ) : null}
+      </div>
+      {shown && !shown.ok ? (
+        <p className="mt-xs break-all text-[12px] text-critical">
+          {shown.error || shown.chat_error || `HTTP ${shown.models_status ?? "-"}`} — 주소(…/v1 포함 여부) · 키 · 서버에서 그 주소로 나갈 수 있는지(보안 그룹 · 방화벽)를 확인하세요.
+        </p>
+      ) : null}
+      {shown?.models?.length ? (
+        <div className="mt-md">
+          <p className="mb-xs text-[12px] font-bold text-charcoal">사용할 수 있는 모델 {shown.models.length}개 — 눌러서 기본 모델로</p>
+          <div className="flex flex-wrap gap-1.5">
+            {shown.models.slice(0, 60).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => set({ model: m })}
+                aria-pressed={form.model === m}
+                className={`rounded-pill border px-2.5 py-1 font-mono text-[11.5px] ${form.model === m ? "border-primary bg-[rgba(0,100,224,0.08)] text-primary" : "border-hairline-soft text-charcoal"}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 /** LiteLLM 연결 · 키 · 기본 프로필 (ADM-05, LLM-01~03) */
 export default function LlmAdmin() {
   const data = useApiData<{ connections: Conn[]; profiles: Profile[] }>("/admin/llm");
   const { run, busy } = useAction();
-  const [newConn, setNewConn] = useState({ name: "", base_url: "http://litellm:4000", api_key: "" });
+  const [newConn, setNewConn] = useState({ name: "", base_url: "", api_key: "" });
   const [testModel, setTestModel] = useState<Record<number, string>>({});
   const [testResult, setTestResult] = useState<Record<number, unknown>>({});
   const conns = data.data?.connections ?? [];
@@ -44,10 +142,11 @@ export default function LlmAdmin() {
   return (
     <AdminPage
       title="LLM 연동"
-      description="LiteLLM(OpenAI 호환) 게이트웨이 연결과 키를 등록합니다. 키는 암호화(AES-GCM) 저장되고 화면에는 가려서 표시됩니다. 에이전트별 연결·모델·파라미터는 [에이전트]에서 덮어씁니다."
+      description="외부 LiteLLM(OpenAI 호환) 게이트웨이의 주소 · 키 · 모델을 등록합니다. 키는 암호화(AES-GCM) 저장되고 화면에는 가려서 표시됩니다. 보통은 위 '간단 설정' 만으로 충분하고, 연결을 여러 개 두거나 에이전트별로 다른 모델 · 파라미터를 쓸 때 아래 상세 설정과 [에이전트]를 씁니다."
     >
+      <QuickSetup onSaved={data.reload} />
       <Loading error={data.error} loading={!data.data && data.loading} />
-      <Card title="연결">
+      <Card title="연결 (상세)">
         <div className="flex flex-col gap-lg">
           {conns.map((c) => (
             <ConnRow
@@ -148,31 +247,31 @@ function ProfileRow({ p, conns, busy, onSave }: { p: Profile; conns: Conn[]; bus
         <span className="font-bold text-ink-deep">{p.name}</span>
       </C>
       <C className="min-w-[130px]">
-        <Select value={f.connection_id} onChange={(v) => setF({ ...f, connection_id: v })} options={[{ value: "", label: "-" }, ...conns.map((c) => ({ value: String(c.id), label: c.name }))]} />
+        <Select ariaLabel={`${p.name} 연결`} value={f.connection_id} onChange={(v) => setF({ ...f, connection_id: v })} options={[{ value: "", label: "-" }, ...conns.map((c) => ({ value: String(c.id), label: c.name }))]} />
       </C>
       <C className="min-w-[220px]">
-        <TextInput value={f.model} onChange={(v) => setF({ ...f, model: v })} mono placeholder="모델명" />
+        <TextInput ariaLabel={`${p.name} 모델`} value={f.model} onChange={(v) => setF({ ...f, model: v })} mono placeholder="모델명" />
       </C>
       <C className="w-[90px]">
-        <TextInput value={f.temperature} onChange={(v) => setF({ ...f, temperature: v })} type="number" />
+        <TextInput ariaLabel={`${p.name} temperature`} value={f.temperature} onChange={(v) => setF({ ...f, temperature: v })} type="number" />
       </C>
       <C className="w-[80px]">
-        <TextInput value={f.top_p} onChange={(v) => setF({ ...f, top_p: v })} type="number" />
+        <TextInput ariaLabel={`${p.name} top_p`} value={f.top_p} onChange={(v) => setF({ ...f, top_p: v })} type="number" />
       </C>
       <C className="w-[100px]">
-        <TextInput value={f.max_tokens} onChange={(v) => setF({ ...f, max_tokens: v })} type="number" />
+        <TextInput ariaLabel={`${p.name} max_tokens`} value={f.max_tokens} onChange={(v) => setF({ ...f, max_tokens: v })} type="number" />
       </C>
       <C className="w-[80px]">
-        <TextInput value={f.timeout_sec} onChange={(v) => setF({ ...f, timeout_sec: v })} type="number" />
+        <TextInput ariaLabel={`${p.name} 대기 상한(초)`} value={f.timeout_sec} onChange={(v) => setF({ ...f, timeout_sec: v })} type="number" />
       </C>
       <C className="w-[70px]">
-        <TextInput value={f.retries} onChange={(v) => setF({ ...f, retries: v })} type="number" />
+        <TextInput ariaLabel={`${p.name} 재시도`} value={f.retries} onChange={(v) => setF({ ...f, retries: v })} type="number" />
       </C>
       <C>
-        <Check label="" checked={f.tools_enabled} onChange={(v) => setF({ ...f, tools_enabled: v })} />
+        <Check label="" ariaLabel={`${p.name} 도구 호출`} checked={f.tools_enabled} onChange={(v) => setF({ ...f, tools_enabled: v })} />
       </C>
       <C>
-        <Check label={f.is_default ? "★" : ""} checked={f.is_default} onChange={(v) => setF({ ...f, is_default: v })} />
+        <Check label={f.is_default ? "★" : ""} ariaLabel={`${p.name} 기본 프로필`} checked={f.is_default} onChange={(v) => setF({ ...f, is_default: v })} />
       </C>
       <C>
         <Button

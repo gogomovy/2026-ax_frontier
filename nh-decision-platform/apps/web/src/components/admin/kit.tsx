@@ -251,11 +251,11 @@ export function JsonEditor({ value, onSave, rows = 12, label = "저장", disable
 }
 
 /* ── 입력 ───────────────────────────────────────────────────── */
-export function TextInput({ label, value, onChange, type = "text", placeholder, className, mono }: { label?: string; value: string | number | null | undefined; onChange: (v: string) => void; type?: string; placeholder?: string; className?: string; mono?: boolean }) {
+export function TextInput({ label, value, onChange, type = "text", placeholder, className, mono, ariaLabel }: { label?: string; value: string | number | null | undefined; onChange: (v: string) => void; type?: string; placeholder?: string; className?: string; mono?: boolean; ariaLabel?: string }) {
   return (
     <label className={clsx("block", className)}>
       {label ? <span className="mb-1 block text-[11.5px] font-bold text-steel">{label}</span> : null}
-      <input className={clsx("input !h-9 text-[13px]", mono && "font-mono")} type={type} value={value ?? ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <input className={clsx("input !h-9 text-[13px]", mono && "font-mono")} type={type} value={value ?? ""} placeholder={placeholder} aria-label={label ? undefined : ariaLabel} onChange={(e) => onChange(e.target.value)} />
     </label>
   );
 }
@@ -275,10 +275,10 @@ export function Select({ label, value, onChange, options, className, ariaLabel }
   );
 }
 
-export function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+export function Check({ label, checked, onChange, ariaLabel }: { label: string; checked: boolean; onChange: (v: boolean) => void; ariaLabel?: string }) {
   return (
     <label className="inline-flex items-center gap-1.5 text-[12.5px] text-charcoal">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" aria-label={ariaLabel} checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
   );

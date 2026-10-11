@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     bootstrap_admin_emp_no: str = "00000001"
     bootstrap_admin_password: str = ""
 
-    llm_default_base_url: str = "http://litellm:4000"
+    llm_default_base_url: str = ""  # 비우면 관리자 [LLM 연동] 에서 외부 LiteLLM 주소 · 키를 입력 (B.36)
     llm_default_api_key: str = ""
     llm_default_model: str = ""
 
