@@ -462,14 +462,14 @@ WORKFLOWS = [
     ),
     dict(
         code="wf_graph_projection", name="그래프 투영 · 문서 구조화", sort=9,
-        description="모든 데이터셋·문서·설정 변경 시 임베딩 → 문서 구조화 → Neo4j 투영 (가벼운 작업)",
+        description="모든 데이터셋·문서·설정 변경 및 분석 결과 색인 갱신(kb.indexed) 시 임베딩 → 문서 구조화 → Neo4j 투영 (가벼운 작업)",
         outputs=[],
         nodes=[
             ("embed", "청크 임베딩", "embed_chunks", "embedder", {"optional": True}),
             ("extract", "문서 구조화", "extract_documents", "ontology_extractor", {"optional": True}),
             ("project", "그래프 투영", "project_graph", None, {}),
         ],
-        triggers=[("any", "dataset"), ("any", "document"), ("any", "ontology"), ("any", "config")],
+        triggers=[("any", "dataset"), ("any", "document"), ("any", "ontology"), ("any", "config"), ("event", "kb.indexed")],
         debounce=5,
     ),
 ]

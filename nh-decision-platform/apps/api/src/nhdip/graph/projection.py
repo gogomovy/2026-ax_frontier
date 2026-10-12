@@ -9,11 +9,11 @@ import time
 from collections import defaultdict
 from typing import Any, Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nhdip.data.datasets import current_rows, current_versions
-from nhdip.models import Dataset, Metric, OntologySchema, Workflow, WorkflowTrigger, source
+from nhdip.models import Dataset, KbChunk, Metric, OntologySchema, Workflow, WorkflowTrigger, source
 
 from .neo4j_client import run, safe_name
 
@@ -180,8 +180,20 @@ def project_all(session: Session) -> dict[str, Any]:
             for r in ex.get("relations", []):
                 fl, fk = (r["from_label"], r["from"]) if r.get("from") != "$doc" else ("Document", dkey)
                 b.rel(r["type"], fl, fk, r["to_label"], r["to"], r.get("props"), extracted_by=by, src_ref=f"{origin}.document({d.id})")
+    # 4) 분석 결과(질문하기 색인) ↔ 개념 — 산출물이 언급한 개념 (KB-07). 원장은 PostgreSQL(kb_chunk.concepts), 그래프는 투영(비워도 재투영으로 복원)
+    from .extraction import Resolver
+
+    label_of = {key: label for label, amap in Resolver(schema).alias.items() for key in amap.values()}
+    n_mentions = 0
+    for skey, concept in session.execute(select(KbChunk.source_key, func.unnest(KbChunk.concepts).label("concept")).distinct()).all():
+        label = label_of.get(concept)
+        if not label:
+            continue
+        b.node("Artifact", skey, {"name": skey}, src_kind="artifact", src_ref=f"app.kb_chunk({skey})")
+        b.rel("MENTIONS", "Artifact", skey, label, concept, src_ref=f"app.kb_chunk({skey})")
+        n_mentions += 1
     stats = b.flush()
-    return {**stats, "documents": n_docs, "generation": gen, "schema_version": schema.version, "rejected": sorted(set(b.rejected))[:50]}
+    return {**stats, "artifact_mentions": n_mentions, "documents": n_docs, "generation": gen, "schema_version": schema.version, "rejected": sorted(set(b.rejected))[:50]}
 
 
 def impact_of_dataset(code: str) -> list[dict[str, Any]]:

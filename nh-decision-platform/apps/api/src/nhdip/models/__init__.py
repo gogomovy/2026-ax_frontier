@@ -19,6 +19,7 @@ from .cfg import (
     WorkflowTrigger,
 )
 from .iam import AppUser, OrgUnit, Screen, ScreenGrant, UserSession
+from .kb import KbChunk, KbCollection
 from .runtime import (
     AgentDecision,
     AuditLog,

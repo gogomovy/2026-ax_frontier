@@ -19,6 +19,7 @@ from nhdip.models import (
     Agent,
     AppUser,
     Dataset,
+    KbCollection,
     LlmConnection,
     LlmProfile,
     Metric,
@@ -44,6 +45,7 @@ from . import defs_branch as B
 from . import defs_contracts as DC
 from . import defs_core as C
 from . import defs_data as D
+from . import defs_knowledge as K
 
 log = logging.getLogger("nhdip.seed")
 HERE = os.path.dirname(__file__)
@@ -884,6 +886,26 @@ def analysis_agents_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["analysis_agents_upgrade"] = _merge_screen_resources(s, {"ANALYSIS_BUILDER"})
 
 
+def seed_knowledge(s: Session, out: dict[str, Any]) -> None:
+    """질문하기 통합 지식 색인(Phase D · 요구사항 §21) — 컬렉션 정의(없는 코드만, 관리자 편집 보존) + 분석 결과 색인 대조.
+    새 DB · 업그레이드 · 직접 게시 경로를 모두 보강한다(멱등 — 이미 색인된 것은 건드리지 않음). 임베딩은 워커가 채운다."""
+    from nhdip.knowledge.maintenance import reconcile
+
+    added = 0
+    for c in K.COLLECTIONS:
+        if s.get(KbCollection, c["code"]) is None:
+            s.add(KbCollection(**c))
+            added += 1
+    s.flush()
+    try:
+        with s.begin_nested():
+            stats = reconcile(s)
+        out["knowledge"] = {"collections_added": added, **stats.as_dict()}
+    except Exception as exc:  # noqa: BLE001 — 색인 실패가 기동을 막지 않는다(워커 대조가 다시 시도)
+        log.exception("지식 색인 시드 실패")
+        out["knowledge"] = {"collections_added": added, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -912,6 +934,8 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     upload_request_upgrade(s, out)
     analysis_spaces_upgrade(s, out)
     analysis_agents_upgrade(s, out)
+    s.flush()
+    seed_knowledge(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

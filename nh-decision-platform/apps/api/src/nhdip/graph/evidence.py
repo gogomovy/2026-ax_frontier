@@ -120,7 +120,8 @@ def rank_evidence(
                 dist = sig.get("cosine_distance")
                 kw_ok = kw is not None and float(kw) >= float(pol["min_keyword_coverage"])
                 vec_ok = dist is not None and float(dist) <= float(pol["max_cosine_distance"])
-                if not (kw_ok or vec_ok):
+                graph_ok = bool(sig.get("graph"))  # 그래프 채널로 들어온 후보(질의 개념과 연결된 문서 — 하이브리드 검색 §21.6)
+                if not (kw_ok or vec_ok or graph_ok):
                     reason = ("semantic", f"의미 기준 미달(키워드 {kw} · 거리 {dist})")
                 elif doc_filter is not None and h["document_id"] not in (doc_filter.get(h["origin"]) or []):
                     reason = ("concept_path", "질의 개념과 그래프로 연결되지 않은 문서")
@@ -136,7 +137,9 @@ def rank_evidence(
         cover = float(sig.get("keyword_score") or 0) / max(1, query_terms) if query_terms else 0.0
         vec = 1.0 - float(sig["cosine_distance"]) if sig.get("cosine_distance") is not None else 0.0
         semantic = min(1.0, max(cover, vec))
-        path = 1.0 if doc_filter is not None else 0.5
+        if sig.get("graph"):
+            semantic = max(semantic, 0.6)
+        path = 1.0 if doc_filter is not None or sig.get("graph") else 0.5
         prio = w["official"] * official + w["recency"] * recency + w["semantic"] * semantic + w["path"] * path
         cat = pol["category_of"].get(h["doc_class"], "external_policy")
         accepted.append({**h, "category": cat, "priority": round(prio, 4), "priorityParts": {"official": official, "recency": round(recency, 3), "semantic": round(semantic, 3), "path": path}, "sectionPath": h.get("section_path"), "issuer": d.issuer if d else None, "docCode": d.doc_code if d else None})

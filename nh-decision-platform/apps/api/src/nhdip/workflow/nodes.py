@@ -330,7 +330,23 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
 
 
 # ═════════════════════════ 게시 ═════════════════════════
-@node_impl("publish", "변경된 산출물만 새 세대로 게시 (이전 세대 보존, 사용자 상태는 별도 보존)")
+def _index_knowledge(session: Session, keys: list[str]) -> dict[str, Any] | None:
+    """게시한 산출물을 같은 트랜잭션에서 질문하기 지식 색인에 반영한다(텍스트 · 개념 · 컬렉션 — 네트워크 호출 없음, KB-01).
+    임베딩은 워커가 이어서 채운다. 색인 실패는 게시를 막지 않는다 — 워커 대조(1분)가 다시 색인한다."""
+    import logging
+
+    from nhdip.knowledge.indexer import index_artifacts
+
+    try:
+        with session.begin_nested():
+            session.flush()
+            return index_artifacts(session, keys).as_dict()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("nhdip.workflow").warning("지식 색인 실패(게시는 유지, 워커 대조가 복구): %s", exc, exc_info=True)
+        return {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+@node_impl("publish", "변경된 산출물만 새 세대로 게시 (이전 세대 보존, 사용자 상태는 별도 보존) — 같은 트랜잭션에서 질문하기 지식 색인 반영")
 def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     from datetime import datetime
     from zoneinfo import ZoneInfo
@@ -360,13 +376,14 @@ def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ctx.session.flush()
         published.append({"key": key, "generation": row.generation})
     ctx.changed = {p["key"] for p in published}
+    kb = _index_knowledge(ctx.session, [p["key"] for p in published]) if published else None
     # 플래너가 정한 후속 워크플로우 — 게시가 끝난 뒤 실행되도록 이벤트로 넘긴다(오케스트레이터가 연쇄 · 순서 관리)
     followups = []
     for f in ctx.state.get("followups") or []:
         ctx.emit_after_success("agent.followup", {"workflow": f["workflow"], "reason": f.get("reason"), "by": "planner", "from": ctx.workflow.code, "run": ctx.run.id, "chain": f.get("chain") or [ctx.workflow.code]}, "planner")
         followups.append(f["workflow"])
     events = ctx.flush_deferred()  # 게시와 같은 트랜잭션 (B.33)
-    return NodeResult({"events": events, "published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {})})
+    return NodeResult({"events": events, "published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {}), **({"knowledge": kb} if kb else {})})
 
 
 # ═════════════════════════ 문서 · 그래프 ═════════════════════════

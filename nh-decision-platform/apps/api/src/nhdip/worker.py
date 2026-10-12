@@ -194,6 +194,21 @@ def housekeeping(worker_id: str, stats: dict, last: dict[str, float]) -> None:
                 stats["recovered"] = stats.get("recovered", 0) + recover_stale(s)
             else:
                 s.rollback()
+    if due("knowledge", 60):
+        # 질문하기 지식 색인 — 대조(놓친 게시 복구) · 임베딩 채우기 · 그래프 반영 이벤트 (KB-09)
+        from nhdip.knowledge.maintenance import run_maintenance
+
+        with SessionLocal() as s:
+            if try_lock(s, "housekeeping:knowledge"):
+                try:
+                    res = run_maintenance(s)
+                    stats["kb_indexed"] = stats.get("kb_indexed", 0) + int((res.get("index") or {}).get("inserted", 0))
+                    stats["kb_embedded"] = stats.get("kb_embedded", 0) + int((res.get("embed") or {}).get("embedded", 0))
+                except Exception:  # noqa: BLE001 — 유지보수 실패가 작업 처리를 막지 않는다
+                    s.rollback()
+                    log.exception("knowledge maintenance failed")
+            else:
+                s.rollback()
     if due("purge", 86400):
         from nhdip.retention import purge
 

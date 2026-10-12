@@ -85,6 +85,7 @@ SCREENS = [
     dict(code="ADMIN_DATASETS", path="/admin/datasets", label="데이터셋·문서", section="데이터와 지식", kind="admin", sort=121, admin_only=True),
     dict(code="ADMIN_CONTRACTS", path="/admin/contracts", label="컬럼 정의서", section="데이터와 지식", kind="admin", sort=122, admin_only=True),
     dict(code="ADMIN_ONTOLOGY", path="/admin/ontology", label="온톨로지", section="데이터와 지식", kind="admin", sort=123, admin_only=True),
+    dict(code="ADMIN_KNOWLEDGE", path="/admin/knowledge", label="질문하기 색인", section="데이터와 지식", kind="admin", sort=124, admin_only=True),
     dict(code="ADMIN_ANALYSIS_AGENTS", path="/admin/analysis-agents", label="분석 에이전트", section="AI · 에이전트", kind="admin", sort=130, admin_only=True),
     dict(code="ADMIN_LLM", path="/admin/llm", label="LLM 연동", section="AI · 에이전트", kind="admin", sort=131, admin_only=True),
     dict(code="ADMIN_AGENTS", path="/admin/agents", label="에이전트·프롬프트", section="AI · 에이전트", kind="admin", sort=132, admin_only=True),
@@ -426,3 +427,8 @@ AGENTS = [
     ("report_renderer", "범용 렌더링", "분석 명세 구성 + 계산 결과 + 판단으로 표준 보고서 조립(결정론, LLM 없음 · DAG-06)", "rule", None, ""),
     ("query_assistant", "질의 보조", "자연어 질의 → 커널 도구 호출(CALC-10)", "llm", "default", QUERY_SYSTEM),
 ]
+
+# 질문하기 통합 지식 색인 설정 (Phase D · 요구사항 §21) — 정의는 defs_knowledge.py, 설정 시드에 합친다
+from .defs_knowledge import SETTINGS as _KB_SETTINGS  # noqa: E402
+
+SETTINGS.update(_KB_SETTINGS)

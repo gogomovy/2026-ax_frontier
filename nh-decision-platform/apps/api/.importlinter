@@ -21,6 +21,7 @@ source_modules =
     nhdip.scopes
     nhdip.analysis_registry
     nhdip.analysis_agents
+    nhdip.knowledge
 forbidden_modules =
     nhdip.api
     nhdip.main
@@ -54,6 +55,7 @@ forbidden_modules =
     nhdip.reports
     nhdip.contracts
     nhdip.alerts
+    nhdip.knowledge
 
 [importlinter:contract:llm-no-workflow]
 name = LLM 연동은 워크플로우 · 화면 산출물을 가져오지 않는다
