@@ -92,6 +92,19 @@ def run_checks(session: Session) -> dict[str, Any]:
             has_key = False
         add(_item("llm", "LLM 연결", "ok" if has_key else "warn", f"{conn.name} · 모델 {prof.model}" + ("" if has_key else " · 키 없음"), "" if has_key else "관리자 [LLM 연동] 에서 키 입력"))
 
+    # 파일 저장소 (Phase C) — 업무 자료 요청 파일 · 업로드 원본 보관. 쓸 수 없으면 자료 올리기가 503
+    import os as _os
+    import tempfile
+
+    fs_dir = st.filestore_dir
+    try:
+        _os.makedirs(fs_dir, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=fs_dir, prefix=".probe-", delete=True):
+            pass
+        add(_item("filestore", "파일 저장소", "ok", f"{fs_dir} 쓰기 가능"))
+    except OSError as exc:
+        add(_item("filestore", "파일 저장소", "fail", f"{fs_dir} 에 쓸 수 없음 — {exc.__class__.__name__}", "docker compose up -d files-init (볼륨 권한 정리) 후 api · worker 재기동"))
+
     # 운영 상태
     alive = session.execute(select(func.count()).select_from(WorkerHeartbeat).where(WorkerHeartbeat.seen_at > utcnow() - timedelta(seconds=60))).scalar() or 0
     add(_item("worker", "워커", "ok" if alive else "fail", f"동작 중 {alive}개", "" if alive else "docker compose logs worker 확인 후 docker compose up -d worker"))

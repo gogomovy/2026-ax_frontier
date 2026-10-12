@@ -1656,3 +1656,28 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert not any(t["tabKey"] == tab for t in u.get("/screens/analysis/risk/tabs").json()["current"])
     assert u.get(f"/screens/analysis/risk/reports/{tab}").status_code == 200  # 산출물 이력은 남는다(목록에서만 빠짐)
     assert u.get("/analysis-agents/mine").json()[0]["status"] == "retired"
+
+
+def test_db_upload_store_unavailable(db, monkeypatch, tmp_path):
+    """Phase C · UPL — 파일 저장소에 쓸 수 없으면 요청을 받지 않고(503, 요청 없음) 운영 준비 점검에 '파일 저장소' 실패로 보인다."""
+    from nhdip.config import get_settings
+    from nhdip.models import UploadRequest
+    from nhdip.preflight import run_checks
+
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    u = _client()
+    u.post("/auth/signup", json={"emp_no": "20259095", "name": "저장소", "password": "abcd1234", "org_code": "T211"})
+    admin.post("/admin/users/20259095/approve")
+    assert _login(u, "20259095", "abcd1234").status_code == 200
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_text("x")
+    monkeypatch.setattr(get_settings(), "filestore_dir", str(blocker))
+    with db() as s:
+        before = s.execute(select(UploadRequest.id).order_by(UploadRequest.id.desc()).limit(1)).scalar()
+    r = u.post("/db/uploads/document", data={"doc_class": "gov_policy", "title": "저장소 시험", "text": "저장소 쓰기 실패 시험 본문입니다."})
+    assert r.status_code == 503 and "파일 저장소" in r.json()["detail"], r.text
+    with db() as s:
+        assert s.execute(select(UploadRequest.id).order_by(UploadRequest.id.desc()).limit(1)).scalar() == before
+        items = {i["key"]: i for i in run_checks(s)["items"]}
+    assert items["filestore"]["level"] == "fail"

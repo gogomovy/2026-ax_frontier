@@ -61,14 +61,17 @@ def _doc_classes(session: Session) -> list[dict[str, str]]:
 
 
 def _store(user: str, name: str, content: bytes) -> tuple[str, str]:
-    """요청 파일은 파일 저장소 `requests/` 에 둔다(승인 때 다시 읽음)."""
+    """요청 파일은 파일 저장소 `requests/` 에 둔다(승인 때 다시 읽음). 저장소에 쓸 수 없으면 요청을 받지 않는다(503)."""
     sha = hashlib.sha256(content).hexdigest()
     base = os.path.join(get_settings().filestore_dir, "requests")
-    os.makedirs(base, exist_ok=True)
     safe = re.sub(r"[^0-9A-Za-z가-힣._()\-]+", "_", os.path.basename(name))[:120] or "upload"
     path = os.path.join(base, f"{sha[:16]}_{user}_{safe}")
-    with open(path, "wb") as fh:
-        fh.write(content)
+    try:
+        os.makedirs(base, exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write(content)
+    except OSError as exc:
+        raise HTTPException(503, "파일 저장소에 쓸 수 없어 요청을 받지 못했습니다 — 관리자에게 알려 주세요(FILESTORE_DIR 권한, 관리자 [시스템 상태] 운영 준비 점검)") from exc
     return sha, path
 
 

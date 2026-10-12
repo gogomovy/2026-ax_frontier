@@ -141,6 +141,18 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  # 파일 저장소 권한 (Phase C) — 한 번 실행하고 끝나는 준비 단계. 예전에 root 소유로 만들어진 볼륨도
+  # api · worker 계정(uid 10001)이 쓸 수 있게 한다(업무 자료 요청 파일 · 업로드 원본 보관)
+  files-init:
+    image: nhdip/api:${IMAGE_TAG:-local}
+    pull_policy: never
+    user: "0:0"
+    entrypoint: ["sh", "-c", "mkdir -p /data/files/requests && chown -R 10001:10001 /data/files"]
+    logging: *logging
+    volumes:
+      - filestore:/data/files
+    restart: "no"
+
   api:
     build:
       context: ./apps/api
@@ -161,6 +173,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
       neo4j: {condition: service_started}
+      files-init: {condition: service_completed_successfully}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health >/dev/null || exit 1"]
       interval: 10s

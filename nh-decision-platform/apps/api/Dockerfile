@@ -24,8 +24,8 @@ COPY tests ./tests
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# 비루트 실행
-RUN useradd -m -u 10001 nhdip && chown -R nhdip:nhdip /app
+# 비루트 실행 — 파일 저장소 마운트 지점도 이 계정 소유로(새 볼륨은 이 소유권을 이어받는다 · Phase C)
+RUN useradd -m -u 10001 nhdip && mkdir -p /data/files && chown -R nhdip:nhdip /app /data/files
 USER nhdip
 
 EXPOSE 8000

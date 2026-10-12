@@ -32,6 +32,7 @@ make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트
 | postgres | (내부) | 원장 · 설정 · 계산 이력 · pgvector · 작업 큐 |
 | neo4j | http://localhost:7474 | 온톨로지 그래프(투영) |
 | (LLM) | 외부 LiteLLM | 관리자 `/admin/llm` 에서 주소 · 키 · 모델 입력. 내장 게이트웨이가 필요하면 `.env` 에 `COMPOSE_PROFILES=litellm`(선택) |
+| files-init | - | 기동 때 한 번 실행하고 끝나는 준비 단계 — 파일 저장소 볼륨을 api · worker 계정이 쓸 수 있게 권한 정리(업무 자료 요청 파일 · 업로드 원본). `make preflight` 의 '파일 저장소' 항목으로 확인 |
 
 **처음 사용 순서**
 1. 관리자 계정으로 로그인 → `/admin/llm` 의 **LiteLLM 연결 (간단 설정)** 에 외부 LiteLLM 주소 · API 키 · 모델을 넣고 [저장하고 연결 확인](모델 목록에서 골라도 됨).
