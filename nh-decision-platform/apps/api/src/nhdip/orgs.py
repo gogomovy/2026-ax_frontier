@@ -96,6 +96,24 @@ def org_chain(session: Session, org_code: str) -> list[OrgUnit]:
     return chain
 
 
+# ── 부서 데이터 책임자 범위 (UPL-04 · Q107) ─────────────────────
+STEWARD_SCOPE_TYPES = ("DEPT", "REGION")
+
+
+def steward_scope(session: Session, org_code: str) -> OrgUnit | None:
+    """책임자가 맡는 부서 — 소속 경로에서 가장 가까운 부(DEPT) · 지역본부(REGION). 없으면 경로의 맨 위 조직."""
+    chain = org_chain(session, org_code)
+    return next((o for o in chain if o.unit_type in STEWARD_SCOPE_TYPES), chain[-1] if chain else None)
+
+
+def in_steward_scope(session: Session, steward: Any, org_code: str | None) -> bool:
+    """요청자 조직이 책임자 부서 아래(그 부서 포함)인지."""
+    if not org_code or not getattr(steward, "data_steward", False):
+        return False
+    scope = steward_scope(session, steward.org_code)
+    return scope is not None and scope.code in {o.code for o in org_chain(session, org_code)}
+
+
 # ── 영업점 범위 (B.29 · Q43/Q44) ─────────────────────────────
 def office_code_of(session: Session, org_code: str) -> str:
     """조직 코드 → 사무소 코드. 기본은 조직 코드 그대로, 다르면 설정 branch.office_codes 로 매핑."""

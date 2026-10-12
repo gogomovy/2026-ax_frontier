@@ -118,7 +118,7 @@ try {
   const side = await u.evaluate(() => document.querySelector("aside nav")?.innerText ?? "");
   ok("사이드바 = 소속 부서 + 공통", side.includes("경영목표 설정") && side.includes("데이터베이스") && !side.includes("수행방안"), side.replace(/\n+/g, " | "));
   await shot(u, "03-user-overview");
-  for (const p of ["/hq/analysis", "/hq/goals", "/hq/capital", "/hq/initiatives", "/knowledge", "/knowledge/gov_policy", "/knowledge/upload", "/analysis/hq", "/analysis/builder", "/domains/loan"]) {
+  for (const p of ["/hq/analysis", "/hq/goals", "/hq/capital", "/hq/initiatives", "/knowledge", "/knowledge/gov_policy", "/knowledge/upload", "/analysis/builder", "/domains/loan"]) {
     await u.goto(BASE + p, { waitUntil: "networkidle0" });
     ok(`업무 화면 ${p}`, !u.url().includes("forbidden") && !(await text(u)).includes("찾는 화면이 없습니다"), u.url());
   }
@@ -491,8 +491,12 @@ try {
   // 9-2) 업무 자료 요청 → 관리자 승인 (Phase C · UPL-01~03)
   {
     const title = `E2E 업무 자료 ${EMP}`;
+    // 부서 데이터 책임자 지정 (UPL-04 · Q107) — 승인할 자료 화면 확인 후 해제
+    const st = await api(`/admin/users/${EMP}`, { method: "PATCH", body: JSON.stringify({ data_steward: true }) });
+    ok("관리자: 부서 데이터 책임자 지정", st.status === 200 && st.body?.dataSteward === true && st.body?.stewardScope?.code === "D100", JSON.stringify(st.body?.stewardScope));
     await u.goto(`${BASE}/knowledge`, { waitUntil: "networkidle0" });
     ok("데이터베이스: 자료 올리기 버튼(권한 있는 부서)", (await u.$("[data-upload-cta]")) !== null);
+    ok("데이터베이스: 승인할 자료 버튼(데이터 책임자)", (await u.$("[data-steward-cta]")) !== null);
     await u.goto(`${BASE}/knowledge/upload`, { waitUntil: "networkidle0" });
     await u.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.includes("문서"))?.click());
     await u.waitForFunction(() => [...document.querySelectorAll('[role="radio"]')].some((x) => x.innerText.includes("참고")), { timeout: 10000 });
@@ -505,6 +509,11 @@ try {
     const last = await u.evaluate(() => document.querySelector("[data-upload-last]")?.innerText ?? "");
     ok("자료 올리기: 검사 후 승인 대기 요청", last.includes("승인 대기") && last.includes("본문"), last.replace(/\n/g, " | "));
     await shot(u, "08-knowledge-upload");
+    await u.goto(`${BASE}/knowledge/upload?tab=review`, { waitUntil: "networkidle0" });
+    await u.waitForFunction((t) => document.querySelector("[data-steward-review]")?.innerText.includes(t), { timeout: 15000 }, title).catch(() => undefined);
+    const rv = await u.evaluate(() => document.querySelector("[data-steward-review]")?.innerText ?? "");
+    ok("승인할 자료(데이터 책임자): 부서 요청 · 본인 요청은 다른 사람이", rv.includes(title) && rv.includes("본인이 올린 자료") && rv.includes("종합기획부 데이터 책임자"), rv.slice(0, 160).replace(/\n/g, " | "));
+    await shot(u, "08c-steward-review");
     await a.goto(`${BASE}/admin/uploads`, { waitUntil: "networkidle0" });
     await a.waitForFunction((t) => document.body.innerText.includes(t), { timeout: 15000 }, title);
     const clicked = await a.evaluate((t) => {
@@ -520,12 +529,13 @@ try {
     await u.waitForSelector("[data-my-uploads]", { timeout: 15000 });
     const mine = await u.evaluate(() => document.querySelector("[data-my-uploads] li")?.innerText ?? "");
     ok("내 요청: 승인 · 반영 표시", mine.includes("승인") && mine.includes(title.slice(0, 10)), mine.replace(/\n/g, " | "));
+    await api(`/admin/users/${EMP}`, { method: "PATCH", body: JSON.stringify({ data_steward: false }) });
   }
 
   // 9-3) 분석 만들기 → 관리자 승인 → 부서 분석 탭 (Phase C · DAG-01~07)
   {
-    await u.goto(`${BASE}/analysis/hq`, { waitUntil: "networkidle0" });
-    ok("분석 보고서(종합기획부): 분석 없으면 만들기 안내", (await text(u)).includes("아직 분석이 없습니다") && (await u.$("[data-builder-link]")) !== null);
+    await u.goto(`${BASE}/hq/analysis`, { waitUntil: "networkidle0" });
+    ok("데이터 분석(종합기획부): 탭 줄에 '분석 만들기'", (await u.$("[data-custom-tabs] [data-builder-link]")) !== null);
     await u.goto(`${BASE}/analysis/builder?space=hq`, { waitUntil: "networkidle0" });
     await u.type("[data-builder-text]", "7790 상품별 충당금 자료로 상품명별 충당금 합계와 충당금이 많은 상위 상품을 보고 싶습니다.");
     await u.click("[data-builder-refine]");
@@ -546,7 +556,7 @@ try {
     await a.waitForSelector("button.row-button", { timeout: 15000 });
     await a.evaluate((title) => [...document.querySelectorAll("button.row-button")].find((b) => b.innerText.includes(title))?.click(), agent?.title ?? "");
     await a.waitForSelector("[data-analysis-review]", { timeout: 15000 });
-    ok("분석 에이전트(관리자): 명세 · 미리보기 검토 화면", (await text(a)).includes("미리보기 계산 결과") && (await text(a)).includes("지표"));
+    ok("분석 에이전트(관리자): 명세 · 미리보기 · 승인 기준(주기 · LLM)", (await text(a)).includes("미리보기 계산 결과") && (await text(a)).includes("지표") && (await a.$("[data-approval-options]")) !== null);
     await shot(a, "09b-admin-analysis-agents");
     await a.evaluate(() => [...document.querySelectorAll("[data-analysis-review] button")].find((b) => b.innerText.includes("승인하고 만들기"))?.click());
     await a.waitForFunction(() => document.body.innerText.includes("승인했습니다"), { timeout: 20000 }).catch(() => undefined);
@@ -559,9 +569,13 @@ try {
     }
     ok("분석 에이전트: 첫 실행 → 부서 분석 탭", Boolean(tab), JSON.stringify(tab));
     if (tab) {
-      await u.goto(`${BASE}/analysis/hq`, { waitUntil: "networkidle0" });
+      await u.goto(`${BASE}/hq/analysis`, { waitUntil: "networkidle0" });
+      ok("데이터 분석: 기존 탭 줄에 맞춤 분석 탭", (await u.$(`[data-custom-tab="${tab.tabKey}"]`)) !== null);
+      await Promise.all([u.waitForNavigation({ waitUntil: "networkidle0" }), u.click(`[data-custom-tab="${tab.tabKey}"]`)]);
       const t = await text(u);
-      ok("부서 분석 화면: 맞춤 탭 · 보고서(의견 · 지표 묶음)", u.url().endsWith(`/analysis/hq/${tab.tabKey}`) && t.includes("맞춤") && t.includes(tab.label) && (await u.$$("[data-report-metrics] li")).length >= 1, u.url());
+      ok("맞춤 분석 탭: 보고서(의견 · 지표 묶음) · 여신 실적 분석으로 돌아가는 탭", u.url().endsWith(`/hq/analysis/${tab.tabKey}`) && t.includes("맞춤") && t.includes("여신 실적 분석") && (await u.$$("[data-report-metrics] li")).length >= 1, u.url());
+      await u.goto(`${BASE}/analysis/hq/${tab.tabKey}`, { waitUntil: "networkidle0" });
+      ok("이전 주소 /analysis/hq/<탭> → /hq/analysis/<탭>", u.url().endsWith(`/hq/analysis/${tab.tabKey}`), u.url());
       await u.addScriptTag({ content: AXE });
       // preload: false — 외부 글꼴 CSS fetch 가 CSP(connect-src)에 막혀 콘솔 오류를 남기지 않도록 (8-5 와 같은 옵션)
       const ax = await u.evaluate(async () =>

@@ -28,7 +28,7 @@ from nhdip.events import audit
 from nhdip.models import AppUser, Dataset, OrgUnit, Setting, UploadRequest, utcnow
 
 from .admin_data import _read as read_upload
-from .deps import client_ip, require_admin, require_resource
+from .deps import client_ip, current_user, require_admin, require_resource
 
 router = APIRouter(tags=["db"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -232,7 +232,7 @@ def my_uploads(user: AppUser = Depends(require_resource("db_upload")), session: 
     return [_req_json(r, names) for r in rows]
 
 
-# ═════════════════════════ 관리자 ═════════════════════════
+# ═════════════════════════ 검토(관리자 · 부서 데이터 책임자) ═════════════════════════
 class ReviewIn(BaseModel):
     note: str | None = None
     force: bool = False
@@ -247,24 +247,25 @@ def _pending(session: Session, rid: int) -> UploadRequest:
     return r
 
 
-@admin_router.get("/uploads")
-def admin_uploads(status: str | None = None, limit: int = 100, session: Session = Depends(get_session)):
-    q = select(UploadRequest).order_by(UploadRequest.id.desc()).limit(min(max(limit, 1), 300))
-    if status:
-        q = q.where(UploadRequest.status == status)
+def _list(session: Session, q, full: bool = True) -> list[dict[str, Any]]:
     rows = session.execute(q).scalars().all()
     names = _names(session, {r.requested_by for r in rows} | {r.reviewed_by for r in rows if r.reviewed_by})
     orgs = dict(session.execute(select(OrgUnit.code, OrgUnit.name).where(OrgUnit.code.in_({r.requested_org for r in rows if r.requested_org}))).all()) if rows else {}
+    return [_req_json(r, names, orgs, full=full) for r in rows]
+
+
+def _counts(session: Session, where=None) -> dict[str, int]:
     counts = {k: 0 for k in STATUS_LABEL}
-    for st, in session.execute(select(UploadRequest.status)).all():
+    q = select(UploadRequest.status)
+    if where is not None:
+        q = q.where(where)
+    for (st,) in session.execute(q).all():
         counts[st] = counts.get(st, 0) + 1
-    return {"items": [_req_json(r, names, orgs, full=True) for r in rows], "counts": counts}
+    return counts
 
 
-@admin_router.post("/uploads/{rid}/approve")
-def approve_upload(rid: int, body: ReviewIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    r = _pending(session, rid)
-    ip = client_ip(request)
+def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewIn, ip: str | None, via: str) -> dict[str, Any]:
+    """승인 — 관리자 직접 업로드와 같은 확정 경로(저장점 안). 실패하면 요청만 failed 로 남긴다."""
     try:
         with open(r.file_path, "rb") as fh:
             content = fh.read()
@@ -273,14 +274,14 @@ def approve_upload(rid: int, body: ReviewIn, request: Request, session: Session 
     if r.file_sha256 and hashlib.sha256(content).hexdigest() != r.file_sha256:
         raise HTTPException(409, "요청 파일이 바뀌었습니다(해시 불일치) — 반려 후 다시 올려 달라고 요청하세요")
     meta = r.meta or {}
-    note = f"업무 자료 요청 #{r.id} ({r.requested_by}) 승인" + (f" — {meta.get('note')}" if meta.get("note") else "")
+    note = f"업무 자료 요청 #{r.id} ({r.requested_by}) 승인" + (" · 부서 데이터 책임자" if via == "steward" else "") + (f" — {meta.get('note')}" if meta.get("note") else "")
     sp = session.begin_nested()
     try:
         if r.kind == "dataset":
             d = session.get(Dataset, r.target)
             if d is None:
                 raise IngestError("데이터셋이 없어졌습니다")
-            v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=admin.emp_no, note=note, force=bool(body.force))
+            v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=actor.emp_no, note=note, force=bool(body.force))
             result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current}
             if v.status != "committed":
                 raise IngestError(f"품질 검사 실패로 확정되지 않았습니다(v{v.version}) — 필요하면 '품질 실패여도 확정' 으로 승인")
@@ -290,33 +291,122 @@ def approve_upload(rid: int, body: ReviewIn, request: Request, session: Session 
             doc = ingest_document(
                 session, origin=r.origin, doc_code=code, title=title, doc_class=r.target, filename=r.file_name, content=content,
                 issuer=meta.get("issuer"), published_at=meta.get("publishedAt"),
-                meta={"docType": "업무 등록 문서", "isOfficial": r.origin == "ext", "requestedBy": r.requested_by, "uploadRequest": r.id}, actor=admin.emp_no,
+                meta={"docType": "업무 등록 문서", "isOfficial": r.origin == "ext", "requestedBy": r.requested_by, "uploadRequest": r.id}, actor=actor.emp_no,
             )
             result = {"documentId": doc.id, "docCode": doc.doc_code, "version": doc.version, "origin": r.origin}
         sp.commit()
     except (IngestError, DocumentError, ValueError) as exc:
         sp.rollback()
         r.status, r.result = "failed", {"error": str(exc)[:500]}
-        r.reviewed_by, r.reviewed_at, r.review_note = admin.emp_no, utcnow(), body.note
-        audit(session, admin.emp_no, "db.upload.failed", "upload_request", str(r.id), {"error": str(exc)[:300]}, ip)
+        r.reviewed_by, r.reviewed_at, r.review_note = actor.emp_no, utcnow(), body.note
+        audit(session, actor.emp_no, "db.upload.failed", "upload_request", str(r.id), {"error": str(exc)[:300], "via": via}, ip)
         session.commit()
         raise HTTPException(422, f"반영하지 못했습니다 — {exc}") from exc
-    r.status, r.result = "approved", result
-    r.reviewed_by, r.reviewed_at, r.review_note = admin.emp_no, utcnow(), body.note
-    audit(session, admin.emp_no, "db.upload.approve", "upload_request", str(r.id), {"kind": r.kind, "target": r.target, "requestedBy": r.requested_by, "note": body.note}, ip)
-    audit(session, admin.emp_no, "db.upload.applied", "upload_request", str(r.id), result, ip)
+    r.status, r.result = "approved", {**result, "via": via}
+    r.reviewed_by, r.reviewed_at, r.review_note = actor.emp_no, utcnow(), body.note
+    audit(session, actor.emp_no, "db.upload.approve", "upload_request", str(r.id), {"kind": r.kind, "target": r.target, "requestedBy": r.requested_by, "note": body.note, "via": via}, ip)
+    audit(session, actor.emp_no, "db.upload.applied", "upload_request", str(r.id), result, ip)
     session.commit()
     return _req_json(r, full=True)
+
+
+def do_reject(session: Session, r: UploadRequest, actor: AppUser, body: ReviewIn, ip: str | None, via: str) -> dict[str, Any]:
+    note = (body.note or "").strip()
+    if not note:
+        raise HTTPException(422, "반려 사유를 적어 주세요")
+    r.status = "rejected"
+    r.reviewed_by, r.reviewed_at, r.review_note = actor.emp_no, utcnow(), note[:1000]
+    audit(session, actor.emp_no, "db.upload.reject", "upload_request", str(r.id), {"kind": r.kind, "target": r.target, "requestedBy": r.requested_by, "note": note[:300], "via": via}, ip)
+    session.commit()
+    return _req_json(r, full=True)
+
+
+# ── 관리자 — 전체 요청 ──
+@admin_router.get("/uploads")
+def admin_uploads(status: str | None = None, limit: int = 100, session: Session = Depends(get_session)):
+    q = select(UploadRequest).order_by(UploadRequest.id.desc()).limit(min(max(limit, 1), 300))
+    if status:
+        q = q.where(UploadRequest.status == status)
+    return {"items": _list(session, q), "counts": _counts(session)}
+
+
+@admin_router.post("/uploads/{rid}/approve")
+def approve_upload(rid: int, body: ReviewIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    return do_approve(session, _pending(session, rid), admin, body, client_ip(request), "admin")
 
 
 @admin_router.post("/uploads/{rid}/reject")
 def reject_upload(rid: int, body: ReviewIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    note = (body.note or "").strip()
-    if not note:
+    if not (body.note or "").strip():
         raise HTTPException(422, "반려 사유를 적어 주세요")
+    return do_reject(session, _pending(session, rid), admin, body, client_ip(request), "admin")
+
+
+# ── 부서 데이터 책임자 — 자기 부서 사용자의 요청만 · 본인 요청은 다른 책임자 · 관리자가 (UPL-04 · Q107) ──
+def _steward(user: AppUser = Depends(current_user)) -> AppUser:
+    if not user.data_steward:
+        raise HTTPException(403, "부서 데이터 책임자만 볼 수 있습니다 — 관리자 [사용자]에서 지정")
+    return user
+
+
+def _scope_orgs(session: Session, steward: AppUser) -> tuple[OrgUnit | None, set[str]]:
+    """책임자 부서와 그 아래 조직 코드 전체."""
+    from nhdip.orgs import steward_scope
+
+    scope = steward_scope(session, steward.org_code)
+    if scope is None:
+        return None, set()
+    out, frontier = {scope.code}, [scope.code]
+    while frontier:
+        kids = session.execute(select(OrgUnit.code).where(OrgUnit.parent_code.in_(frontier))).scalars().all()
+        frontier = [k for k in kids if k not in out]
+        out.update(frontier)
+    return scope, out
+
+
+@router.get("/db/uploads/review")
+def steward_review(status: str | None = "pending", session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    scope, orgs = _scope_orgs(session, user)
+    where = UploadRequest.requested_org.in_(orgs or {"-"})
+    q = select(UploadRequest).where(where).order_by(UploadRequest.id.desc()).limit(100)
+    if status:
+        q = q.where(UploadRequest.status == status)
+    items = _list(session, q)
+    for it in items:
+        it["canReview"] = it["status"] == "pending" and it["requestedBy"] != user.emp_no
+    return {"scope": {"code": scope.code, "name": scope.name} if scope else None, "items": items, "counts": _counts(session, where)}
+
+
+def _steward_pending(session: Session, rid: int, user: AppUser) -> UploadRequest:
+    from nhdip.orgs import in_steward_scope
+
     r = _pending(session, rid)
-    r.status = "rejected"
-    r.reviewed_by, r.reviewed_at, r.review_note = admin.emp_no, utcnow(), note[:1000]
-    audit(session, admin.emp_no, "db.upload.reject", "upload_request", str(r.id), {"kind": r.kind, "target": r.target, "requestedBy": r.requested_by, "note": note[:300]}, client_ip(request))
-    session.commit()
-    return _req_json(r, full=True)
+    if not in_steward_scope(session, user, r.requested_org):
+        raise HTTPException(404, "요청 없음")  # 다른 부서 요청은 없는 것처럼
+    if r.requested_by == user.emp_no:
+        raise HTTPException(409, "본인이 올린 자료는 다른 책임자나 관리자가 승인해야 합니다")
+    return r
+
+
+@router.post("/db/uploads/{rid}/approve")
+def steward_approve(rid: int, body: ReviewIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    return do_approve(session, _steward_pending(session, rid, user), user, body, client_ip(request), "steward")
+
+
+@router.post("/db/uploads/{rid}/reject")
+def steward_reject(rid: int, body: ReviewIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    if not (body.note or "").strip():
+        raise HTTPException(422, "반려 사유를 적어 주세요")
+    return do_reject(session, _steward_pending(session, rid, user), user, body, client_ip(request), "steward")
+
+
+def steward_pending_count(session: Session, user: AppUser) -> int:
+    """사이드바 건수 — 책임자 부서의 승인 대기(본인 요청 제외)."""
+    if not getattr(user, "data_steward", False):
+        return 0
+    _, orgs = _scope_orgs(session, user)
+    if not orgs:
+        return 0
+    from sqlalchemy import func
+
+    return int(session.execute(select(func.count()).select_from(UploadRequest).where(UploadRequest.status == "pending", UploadRequest.requested_org.in_(orgs), UploadRequest.requested_by != user.emp_no)).scalar() or 0)

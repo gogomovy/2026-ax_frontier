@@ -12,6 +12,7 @@ export function DynamicTabBar({
   activeKey,
   basePath = "/risk/analysis",
   query = "",
+  lead = [],
 }: {
   tabs: AnalysisTab[];
   previous: AnalysisTab[];
@@ -20,13 +21,15 @@ export function DynamicTabBar({
   basePath?: string;
   /** 탭 링크에 이어 붙일 주소 인자 (영업점 지점 선택 `?office=` — B.47) */
   query?: string;
+  /** 앞에 붙일 고정 탭 — 화면 안 탭이 있는 기존 분석(예: 종합기획부 데이터 분석)으로 돌아가는 링크 (Q109) */
+  lead?: { href: string; label: string }[];
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-md no-print">
       <PillTabLinks
         label="분석 탭"
         activeHref={`${basePath}/${activeKey}${query}`}
-        items={tabs.map((tab) => ({
+        items={[...lead.map((l) => ({ href: l.href, label: l.label })), ...tabs.map((tab) => ({
           href: `${basePath}/${tab.tabKey}${query}`,
           // 분석 에이전트 탭(Phase C) — 사용자가 만든 분석임을 글로도 알린다
           label: tab.dynamic ? (
@@ -39,11 +42,11 @@ export function DynamicTabBar({
             tab.label
           ),
           dot: tab.severity,
-        }))}
+        }))]}
       />
 
       <div className="flex items-center gap-md text-[12px] text-stone">
-        <span className="tnum">일 단위 재생성 · {formatDateTime(tabs[0]?.generatedAt ?? "")}</span>
+        {tabs[0]?.generatedAt ? <span className="tnum">일 단위 재생성 · {formatDateTime(tabs[0].generatedAt)}</span> : null}
         {previous.length > 0 ? (
           <details className="relative">
             <summary className="cursor-pointer list-none rounded-pill border border-hairline px-3 py-1.5 text-[12px] font-bold text-charcoal">

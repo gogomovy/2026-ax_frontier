@@ -27,6 +27,9 @@ export interface SessionUser {
   role: "admin" | "user";
   org: { code: string; name: string };
   orgPath: { code: string; name: string; level: number; levelLabel: string }[];
+  /** 부서 데이터 책임자 (UPL-04 · Q107) */
+  dataSteward?: boolean;
+  stewardScope?: { code: string; name: string } | null;
 }
 export interface MenuPayload {
   user: SessionUser;

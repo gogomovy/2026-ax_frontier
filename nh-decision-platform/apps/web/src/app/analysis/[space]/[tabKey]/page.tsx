@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { AnalysisReportPage } from "@/components/analysis/AnalysisReportPage";
 import { NextStep } from "@/components/ui/primitives";
 import { getSpaceReport, getSpaceTabs } from "@/lib/data";
@@ -8,8 +8,12 @@ export const dynamic = "force-dynamic";
 /** 부서 분석 보고서 (Phase C · DAG-06 · DAG-07) — 분석 레지스트리의 탭 · 보고서를 같은 표시 단계로 */
 export default async function AnalysisSpaceTabPage(props: { params: Promise<{ space: string; tabKey: string }> }) {
   const { space, tabKey } = await props.params;
-  const [tabs, report] = await Promise.all([getSpaceTabs(space), getSpaceReport(space, tabKey)]);
-  if (!tabs || !report) notFound();
+  const tabs = await getSpaceTabs(space);
+  if (!tabs) notFound();
+  // 기존 부서 분석 화면이 있는 공간(신용리스크 · 영업점 · 종합기획부)은 그 화면의 탭으로 (Q109)
+  if (tabs.space.path && tabs.space.path !== `/analysis/${space}`) redirect(`${tabs.space.path}/${encodeURIComponent(tabKey)}`);
+  const report = await getSpaceReport(space, tabKey);
+  if (!report) notFound();
   const others = tabs.current.filter((t) => t.tabKey !== tabKey);
   const builderHref = tabs.builder.allowed ? `/analysis/builder?space=${encodeURIComponent(space)}` : null;
   return (

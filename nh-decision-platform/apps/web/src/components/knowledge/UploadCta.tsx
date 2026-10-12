@@ -1,16 +1,42 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useSession } from "@/components/providers/SessionProvider";
+import { api } from "@/lib/api-client";
 
-/** [데이터베이스] 머리말의 '자료 올리기' — 화면 권한(자료 올리기)이 있는 사용자에게만 (Phase C · UPL-01) */
+/**
+ * [데이터베이스] 머리말 — '자료 올리기'(화면 권한이 있는 사용자) · '승인할 자료 N'(부서 데이터 책임자) (Phase C · UPL-01 · UPL-04)
+ */
 export function UploadCta() {
   const { menu } = useSession();
   const allowed = (menu?.sections ?? []).some((s) => [...s.flow, ...s.reference].some((i) => i.href === "/knowledge/upload"));
-  if (!allowed) return null;
+  const steward = Boolean(menu?.user.dataSteward);
+  const [pending, setPending] = useState<number | null>(null);
+  useEffect(() => {
+    if (!steward) return;
+    let alive = true;
+    api<{ counts: Record<string, number> }>("/db/uploads/review?status=pending")
+      .then((r) => alive && setPending(r.counts.pending ?? 0))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [steward]);
+  if (!allowed && !steward) return null;
   return (
-    <Link href="/knowledge/upload" className="inline-flex h-9 items-center rounded-pill bg-ink-button px-4 text-[13px] font-bold text-on-ink-button" data-upload-cta>
-      자료 올리기
-    </Link>
+    <>
+      {steward ? (
+        <Link href="/knowledge/upload?tab=review" className="inline-flex h-9 items-center gap-1.5 rounded-pill border border-hairline px-4 text-[13px] font-bold text-ink" data-steward-cta>
+          승인할 자료
+          {pending ? <span className="rounded-pill bg-attention-soft px-1.5 text-[11px] text-attention tnum">{pending}</span> : null}
+        </Link>
+      ) : null}
+      {allowed ? (
+        <Link href="/knowledge/upload" className="inline-flex h-9 items-center rounded-pill bg-ink-button px-4 text-[13px] font-bold text-on-ink-button" data-upload-cta>
+          자료 올리기
+        </Link>
+      ) : null}
+    </>
   );
 }

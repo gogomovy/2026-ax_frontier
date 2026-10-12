@@ -1511,7 +1511,8 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     → 실행(동적 수행 · 범용 렌더링 · 검증 · 게시) → 분석 레지스트리 탭 · 보고서 · 내려받기 · 권한 · 수명(중지 · 재개 · 폐기)."""
     from sqlalchemy import func
 
-    from nhdip.models import Agent, MetricValue, NodeRun, Prompt, ViewArtifact, Workflow, WorkflowNode, WorkflowRun
+    from nhdip.data.datasets import current_rows
+    from nhdip.models import Agent, Dataset, MetricValue, NodeRun, Prompt, ViewArtifact, Workflow, WorkflowNode, WorkflowRun
     from nhdip.workflow import llm_judge
 
     _drain(db)
@@ -1544,6 +1545,7 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert spec["space"] == "risk" and spec["metrics"] and all(m["formula"] in ("SUM", "VALUE") for m in spec["metrics"])
     assert {q["q"]["dataset"] for m in spec["metrics"] for q in m["args"].values()} == {"PROVISION_BY_PRODUCT"}
     assert spec["tables"] and spec["tables"][0]["group_by"] == "product_name"
+    assert "그 외 상품 합계" in spec["tables"][0].get("exclude", [])  # 집계 행은 순위 표에서 뺀다(실 LLM 시험에서 발견)
     # 허용 목록 밖 · 숫자 본문 · 없는 열은 빠지고 사유가 남는다
     bad = {**spec, "metrics": spec["metrics"] + [{"key": "x1", "label": "x", "formula": "EXEC", "args": {}}, {"key": "x2", "label": "y", "formula": "SUM", "args": {"values": {"q": {"dataset": "NOPE", "col": "a", "agg": "list"}}}}],
            "sections": spec["sections"] + [{"heading": "메모", "blocks": [{"type": "text", "text": "충당금은 123억"}, {"type": "html", "html": "<script>"}]}]}
@@ -1551,6 +1553,27 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     msgs = " | ".join(i["message"] for i in vr["validation"]["issues"])
     assert "EXEC" in msgs and "NOPE" in msgs and "숫자" in msgs and "html" in msgs, msgs
     assert [m["key"] for m in vr["spec"]["metrics"]] == [m["key"] for m in spec["metrics"]]
+    # 최댓값 지표 — 집계 행(그 외 상품 합계 · 합계)은 결정론으로 뺀다(실 LLM 시험에서 OTHERS 가 '최대 상품' 으로 잡힘)
+    top1 = {"key": "top1", "label": "최대 상품 충당금", "formula": "VALUE", "args": {"value": {"q": {"dataset": "PROVISION_BY_PRODUCT", "col": "provision", "agg": "max", "where": {"ym": "$latest"}}}}, "unit": "KRW_MN", "decimals": 0}
+    vm = u.post("/analysis-agents/validate", json={"space": "risk", "spec": {**spec, "metrics": spec["metrics"] + [top1]}}).json()
+    w = next(m for m in vm["spec"]["metrics"] if m["key"] == "top1")["args"]["value"]["q"]["where"]
+    assert {"그 외 상품 합계", "합계"} <= set(w["product_name"]["nin"]) and {"OTHERS", "TOTAL"} <= set(w["product_code"]["nin"]), w
+    assert any("집계 행" in i["message"] for i in vm["validation"]["issues"])
+    # 실행 조건이 없는 명세(실 LLM 시험에서 발견 — 승인 422) → 기본값 '자료가 바뀌면 다시 계산' 으로 두고 알린다
+    vs = u.post("/analysis-agents/validate", json={"space": "risk", "spec": {**spec, "schedule": {"cron": None, "on_data_change": False}}}).json()
+    assert vs["spec"]["schedule"] == {"cron": None, "on_data_change": True} and any(i["path"] == "schedule" for i in vs["validation"]["issues"])
+    rc = next(m for m in vm["spec"]["metrics"] if m["key"] == "row_count")["args"]["value"]["q"]["where"]
+    assert "OTHERS" in rc["product_code"]["nin"], rc  # 건수도 항목만(합계 · 그 외 행 제외)
+    with db() as s:
+        _, prov = current_rows(s, s.get(Dataset, "PROVISION_BY_PRODUCT"))
+    ym = max(str(r["ym"]) for r in prov)
+    real = max(float(r["provision"]) for r in prov if str(r["ym"]) == ym and r["product_code"] not in ("OTHERS", "TOTAL"))
+    pvm = u.post("/analysis-agents/preview", json={"space": "risk", "spec": vm["spec"]}).json()
+    got = next(f for f in pvm["report"]["figures"].values() if f["label"] == "최대 상품 충당금")["value"]
+    assert abs(float(got) - real) < 1, (got, real)
+    n_items = sum(1 for r in prov if str(r["ym"]) == ym and r["product_code"] not in ("OTHERS", "TOTAL"))
+    cnt = next(f for f in pvm["report"]["figures"].values() if f["label"].endswith("건수"))["value"]
+    assert int(float(cnt)) == n_items, (cnt, n_items)
 
     # ① 정제 — LLM 흉내: 허용 목록 밖 제안은 검증에서 빠진다
     def fake_refine(session, agent_code, task, context, **kw):
@@ -1576,6 +1599,8 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert figs and all(f["value"] is not None for f in figs.values()), figs
     assert any(b["type"] == "metrics" for s_ in pv["report"]["sections"] for b in s_["blocks"]) and any(b["type"] == "table" and b["table"]["rows"] for s_ in pv["report"]["sections"] for b in s_["blocks"])
     assert all("[[fig:" in o["statement"] for o in pv["report"]["opinions"])
+    groups = [r["group"] for s_ in pv["report"]["sections"] for b in s_["blocks"] if b["type"] == "table" for r in b["table"]["rows"]]
+    assert groups and "그 외 상품 합계" not in groups and "합계" not in groups, groups
     with db() as s:
         assert s.execute(select(func.count()).select_from(ViewArtifact)).scalar() == arts0
         assert s.execute(select(func.count()).select_from(WorkflowRun)).scalar() == runs0
@@ -1681,3 +1706,129 @@ def test_db_upload_store_unavailable(db, monkeypatch, tmp_path):
         assert s.execute(select(UploadRequest.id).order_by(UploadRequest.id.desc()).limit(1)).scalar() == before
         items = {i["key"]: i for i in run_checks(s)["items"]}
     assert items["filestore"]["level"] == "fail"
+
+
+def test_data_steward_review(db):
+    """UPL-04 · Q107 — 부서 데이터 책임자: 관리자가 지정 → 자기 부서(가장 가까운 부) 사용자 요청만 보고 승인 · 반려, 본인 요청 · 다른 부서 요청 불가."""
+    from nhdip.models import AuditLog, UploadRequest
+
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+
+    def user(emp, org):
+        c = _client()
+        c.post("/auth/signup", json={"emp_no": emp, "name": f"책임{emp[-2:]}", "password": "abcd1234", "org_code": org})
+        admin.post(f"/admin/users/{emp}/approve")
+        assert _login(c, emp, "abcd1234").status_code == 200
+        return c
+
+    req = user("20259131", "T211")  # 신용리스크관리부 사용자
+    stw = user("20259132", "T211")  # 같은 부 — 책임자로 지정
+    other = user("20259133", "T111")  # 종합기획부 — 다른 부 책임자
+    plain = user("20259134", "T211")  # 책임자 아님
+    assert stw.get("/db/uploads/review").status_code == 403
+    for emp in ("20259132", "20259133"):
+        r = admin.patch(f"/admin/users/{emp}", json={"data_steward": True})
+        assert r.status_code == 200 and r.json()["dataSteward"] is True
+    me = stw.get("/me/menu").json()["user"]
+    assert me["dataSteward"] and me["stewardScope"]["code"] == "D200", me
+    assert plain.get("/db/uploads/review").status_code == 403
+
+    d = req.post("/db/uploads/document", data={"doc_class": "reference", "title": "책임자 승인 시험 문서", "text": "부서 데이터 책임자가 승인하는 시험 문서입니다."})
+    assert d.status_code == 201, d.text
+    rid = d.json()["id"]
+    own = stw.post("/db/uploads/document", data={"doc_class": "reference", "title": "책임자 본인 문서", "text": "책임자가 직접 올린 문서입니다."}).json()["id"]
+    rv = stw.get("/db/uploads/review").json()
+    assert rv["scope"]["code"] == "D200" and {i["id"] for i in rv["items"]} >= {rid, own}
+    assert next(i for i in rv["items"] if i["id"] == own)["canReview"] is False and next(i for i in rv["items"] if i["id"] == rid)["canReview"] is True
+    # 다른 부서 책임자 — 목록에 없고 승인 불가(없는 것처럼 404)
+    assert rid not in {i["id"] for i in other.get("/db/uploads/review").json()["items"]}
+    assert other.post(f"/db/uploads/{rid}/approve", json={}).status_code == 404
+    assert plain.post(f"/db/uploads/{rid}/approve", json={}).status_code == 403
+    # 본인 요청 — 409, 반려 사유 필수
+    assert stw.post(f"/db/uploads/{own}/approve", json={}).status_code == 409
+    assert stw.post(f"/db/uploads/{rid}/reject", json={}).status_code == 422
+    ok = stw.post(f"/db/uploads/{rid}/approve", json={"note": "부서 확인"})
+    assert ok.status_code == 200 and ok.json()["status"] == "approved" and ok.json()["result"]["via"] == "steward", ok.text
+    assert any(x["title"] == "책임자 승인 시험 문서" for x in admin.get("/admin/documents").json())
+    with db() as s:
+        acts = [(a.action, a.actor, (a.detail or {}).get("via")) for a in s.execute(select(AuditLog).where(AuditLog.target_kind == "upload_request", AuditLog.target_id == str(rid)).order_by(AuditLog.id)).scalars()]
+    assert acts[1:] == [("db.upload.approve", "20259132", "steward"), ("db.upload.applied", "20259132", None)], acts
+    assert req.get("/db/uploads/mine").json()[0]["reviewedByName"] == "책임32"
+    # 본인 요청은 관리자가 처리 · 지정 해제하면 다시 403
+    assert admin.post(f"/admin/uploads/{own}/reject", json={"note": "중복"}).status_code == 200
+    admin.patch("/admin/users/20259132", json={"data_steward": False})
+    assert stw.get("/db/uploads/review").status_code == 403
+    with db() as s:
+        assert s.get(UploadRequest, own).status == "rejected"
+
+
+def test_analysis_agent_approval_options(db, monkeypatch):
+    """DAG-10 · Q108 — 관리자 승인 기준: 실행 주기(cron) · 자료 변경 실행 · LLM 의견 사용을 승인하면서 정한다."""
+    from nhdip.models import NodeRun, WorkflowRun, WorkflowTrigger
+    from nhdip.workflow import llm_judge
+
+    _drain(db)
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    u = _client()
+    u.post("/auth/signup", json={"emp_no": "20259110", "name": "기준", "password": "abcd1234", "org_code": "T211"})
+    admin.post("/admin/users/20259110/approve")
+    _login(u, "20259110", "abcd1234")
+    spec = u.post("/analysis-agents/refine", json={"space": "risk", "text": "7790 상품별 충당금 자료로 상품명별 충당금 합계를 보고 싶습니다."}).json()["spec"]
+    code = u.post("/analysis-agents", json={"space": "risk", "text": "충당금", "spec": spec}).json()["agent"]
+    base = f"/admin/analysis-agents/{code}/versions/1/approve"
+    assert admin.post(base, json={"cron": "not a cron"}).status_code == 422
+    assert admin.post(base, json={"cron": "", "on_data_change": False}).status_code == 422  # 실행 조건 없음
+    ap = admin.post(base, json={"cron": "0 7 * * 1-5", "on_data_change": False, "llm": False})
+    assert ap.status_code == 200, ap.text
+    assert ap.json()["schedule"] == {"cron": "0 7 * * 1-5", "on_data_change": False} and ap.json()["llm"] is False
+    wf = ap.json()["workflow"]
+    with db() as s:
+        trig = [(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf)).scalars()]
+    assert trig == [("cron", "0 7 * * 1-5")], trig
+    detail = admin.get(f"/admin/analysis-agents/{code}").json()
+    assert detail["versions"][0]["spec"]["llm"] is False  # 승인된 기준이 버전 기록에도 남는다
+
+    def boom(*a, **kw):  # LLM 을 쓰지 않아야 한다
+        raise AssertionError("LLM 호출됨")
+
+    monkeypatch.setattr(llm_judge, "ask_json", boom)
+    _drain(db)
+    with db() as s:
+        run = s.execute(select(WorkflowRun).where(WorkflowRun.workflow_code == wf).order_by(WorkflowRun.started_at.desc())).scalars().first()
+        task = s.execute(select(NodeRun).where(NodeRun.workflow_run_id == run.id, NodeRun.impl == "dynamic_task")).scalar()
+    assert run.status in ("succeeded", "degraded") and task.status == "succeeded" and "LLM 의견 사용 안 함" in task.output["skipped"], (run.status, task.output)
+    assert u.get(f"/screens/analysis/risk/reports/an-{code.split('_', 1)[1]}").status_code == 200
+    admin.post(f"/admin/analysis-agents/{code}/retire")
+
+
+def test_hq_custom_tabs_in_existing_screen(db):
+    """Q109 — 새 분석은 기존 부서 분석 화면의 탭으로: 종합기획부 [데이터 분석]이 맞춤 분석 탭(공간 hq)을 본다, 별도 메뉴 없음. 운영 DB 1회 보강."""
+    from nhdip.models import Screen, Setting
+    from nhdip.seed.run import analysis_spaces_upgrade
+
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    u = _client()
+    u.post("/auth/signup", json={"emp_no": "20259120", "name": "종기", "password": "abcd1234", "org_code": "T111"})
+    admin.post("/admin/users/20259120/approve")
+    _login(u, "20259120", "abcd1234")
+    tabs = u.get("/screens/analysis/hq/tabs").json()
+    assert tabs["space"]["path"] == "/hq/analysis" and tabs["builder"]["allowed"] is True
+    hrefs = {i["href"] for s in u.get("/me/menu").json()["sections"] for i in s["flow"] + s["reference"]}
+    assert "/hq/analysis" in hrefs and "/analysis/hq" not in hrefs
+    # 운영 DB 보강 — v1 에서 만든 별도 메뉴는 끄고, 데이터 분석 화면에 리소스를 더한다(관리자 편집 보존)
+    with db() as s:
+        s.add(Screen(code="ANALYSIS_HQ", path="/analysis/hq", label="분석 보고서", section="종합기획부", kind="reference", sort=16, active=True, admin_only=False))
+        res = s.get(Setting, "screen.resources")
+        res.value = {**res.value, "HQ_ANALYSIS": [r for r in res.value["HQ_ANALYSIS"] if r != "hq_reports"] + ["custom_x"]}
+        st = s.get(Setting, "seed.applied_upgrades")
+        st.value = [x for x in (st.value or []) if x != "analysis-spaces-v2"]
+        s.commit()
+        out: dict = {}
+        analysis_spaces_upgrade(s, out)
+        s.commit()
+        assert out["analysis_spaces_upgrade"] == {"HQ_ANALYSIS": ["hq_reports"], "ANALYSIS_HQ": "inactive"}
+        assert not s.get(Screen, "ANALYSIS_HQ").active
+        assert s.get(Setting, "screen.resources").value["HQ_ANALYSIS"][-2:] == ["custom_x", "hq_reports"]

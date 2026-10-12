@@ -111,6 +111,10 @@ def _match(row: dict[str, Any], where: dict[str, Any], ctx: EvalContext) -> bool
             elif "ne" in cond:
                 if val == cond["ne"]:
                     return False
+            elif "nin" in cond:
+                # 목록에 없는 값만 (분석 에이전트 — 최댓값 · 최솟값에서 합계 · 기타 같은 집계 행 빼기)
+                if val in cond["nin"]:
+                    return False
             elif "not" in cond:
                 if bool(val) == bool(cond["not"]):
                     return False

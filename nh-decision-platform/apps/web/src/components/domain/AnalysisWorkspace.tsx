@@ -8,8 +8,9 @@ import { AgentNote } from "@/components/domain/AgentNote";
 import { SegmentDetail } from "@/components/domain/SegmentDetail";
 import { OnDemandAnalysis } from "@/components/agent/AgentProgress";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { IconWarn, NextStep, PillTabs, SectionHead, SeverityBadge, TextLink } from "@/components/ui/primitives";
-import type { ComparisonView, LoanOverview } from "@/lib/types";
+import Link from "next/link";
+import { IconWarn, NextStep, PillTabs, SectionHead, SeverityBadge, StatusDot, TextLink } from "@/components/ui/primitives";
+import type { AnalysisTab, ComparisonView, LoanOverview } from "@/lib/types";
 
 type TabKey = "revenue" | "corporate" | "household" | "comparison";
 
@@ -28,11 +29,17 @@ export function AnalysisWorkspace({
   overview,
   comparison,
   workflow,
+  custom = [],
+  builderHref = null,
 }: {
   overview: LoanOverview;
   comparison: ComparisonView;
   /** 화면 산출물을 만드는 워크플로우(서버 제공) — 없으면 '분석 다시 실행' 숨김 */
   workflow?: string | null;
+  /** 맞춤 분석 탭 (분석 에이전트 · 공간 hq · Q109) — 같은 화면의 탭으로 이어 붙인다 */
+  custom?: AnalysisTab[];
+  /** 분석 만들기 (권한 있을 때만) */
+  builderHref?: string | null;
 }) {
   const [tab, setTab] = useState<TabKey>("revenue");
   const { revenue, corporate, household } = overview;
@@ -45,6 +52,7 @@ export function AnalysisWorkspace({
         description="여신 실적을 원천 데이터 기준으로 해석합니다. 수치는 원천 파일·셀까지 추적되고, 해설은 인과 단정 없이 기술됩니다."
         actions={workflow ? <OnDemandAnalysis workflow={workflow} /> : null}
       >
+        <div className="flex flex-wrap items-center gap-1.5">
         <PillTabs
           label="분석 영역"
           items={TABS.map((t) => ({
@@ -61,6 +69,31 @@ export function AnalysisWorkspace({
           value={tab}
           onChange={setTab}
         />
+        {custom.length || builderHref ? (
+          <>
+            <span aria-hidden="true" className="mx-1 h-5 w-px bg-hairline" />
+            <nav aria-label="맞춤 분석" className="flex flex-wrap items-center gap-1.5" data-custom-tabs>
+              {custom.map((t) => (
+                <Link
+                  key={t.tabKey}
+                  href={`/hq/analysis/${t.tabKey}`}
+                  className="inline-flex items-center gap-1.5 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-[12px] font-bold text-ink"
+                  data-custom-tab={t.tabKey}
+                >
+                  <StatusDot severity={t.severity} />
+                  {t.label}
+                  <span className="rounded-sm bg-canvas px-1 text-[10px] font-bold text-primary ring-1 ring-inset ring-info-line">{t.status === "paused" ? "중지" : "맞춤"}</span>
+                </Link>
+              ))}
+              {builderHref ? (
+                <Link href={builderHref} className="inline-flex items-center rounded-pill border border-dashed border-hairline px-3 py-1.5 text-[12px] font-bold text-primary" data-builder-link>
+                  + 분석 만들기
+                </Link>
+              ) : null}
+            </nav>
+          </>
+        ) : null}
+        </div>
       </PageHeader>
 
       <div className="shell flex flex-col gap-xxl">

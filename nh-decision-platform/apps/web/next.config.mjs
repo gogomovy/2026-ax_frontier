@@ -32,6 +32,8 @@ const nextConfig = {
   output: "standalone",
   reactStrictMode: true,
   poweredByHeader: false,
+  // /backend 프록시 대기 상한 — 기본 30초면 LLM 을 부르는 요청(분석 정제 · 질의)이 끊긴다(실 LLM 시험에서 발견). 백엔드가 LLM 대기 상한을 따로 둔다
+  experimental: { proxyTimeout: 180_000 },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

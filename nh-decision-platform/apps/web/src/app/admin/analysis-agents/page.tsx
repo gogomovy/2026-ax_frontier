@@ -29,6 +29,7 @@ interface Version {
     insights: { key: string; title: string; instruction: string }[];
     schedule: { cron: string | null; on_data_change: boolean };
     evidence?: { query: string };
+    llm?: boolean;
   };
   validation?: { ok: boolean; issues: { message: string }[] };
   preview?: { figures?: Record<string, { label: string; value: number | null; unit: string; stale?: boolean }>; opinions?: { id: string; severity: string; statement: string }[]; nodes?: { key: string; status: string }[] };
@@ -126,7 +127,7 @@ export default function AdminAnalysisAgents() {
         <div className="min-w-0">
           {!sel ? <EmptyState title="분석을 고르세요" description="왼쪽에서 분석을 고르면 요청 글 · 명세 · 미리보기와 승인 · 수명 관리 동작이 보입니다." /> : null}
           <Loading error={detail.error} loading={Boolean(sel) && !detail.data && detail.loading} />
-          {detail.data && detail.data.code === sel ? <Detail a={detail.data} reload={reloadAll} /> : null}
+          {detail.data && detail.data.code === sel ? <Detail key={`${detail.data.code}-${detail.data.pendingVersion ?? detail.data.version}`} a={detail.data} reload={reloadAll} /> : null}
         </div>
       </div>
     </AdminPage>
@@ -139,6 +140,10 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
   const pending = a.versions.find((v) => v.status === "pending");
   const shown = pending ?? a.versions[0];
   const spec = shown?.spec;
+  // 관리자 승인 기준 (Q108) — 실행 주기 · 자료 변경 때 실행 · LLM 의견 사용. 요청 명세 값으로 시작
+  const [cron, setCron] = useState(spec?.schedule.cron ?? "");
+  const [onData, setOnData] = useState(spec?.schedule.on_data_change ?? true);
+  const [llm, setLlm] = useState(spec?.llm !== false);
   return (
     <>
       <Card
@@ -273,12 +278,31 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
           </div>
           {pending ? (
             <div className="mt-lg flex flex-col gap-xs border-t border-hairline-soft pt-md" data-analysis-review>
+              <fieldset className="mb-xs rounded-xl border border-hairline-soft p-md" data-approval-options>
+                <legend className="px-1 text-[12px] font-bold text-charcoal">승인 기준 — 실행 주기 · 비용</legend>
+                <div className="grid grid-cols-1 gap-md md:grid-cols-[260px_1fr]">
+                  <label className="block">
+                    <span className="mb-1 block text-[11.5px] font-bold text-steel">정기 실행(cron, 비우면 없음)</span>
+                    <input className="input !h-9 font-mono text-[13px]" value={cron} placeholder="예: 0 7 * * 1-5" onChange={(e) => setCron(e.target.value)} aria-label="정기 실행 cron" />
+                  </label>
+                  <div className="flex flex-col justify-end gap-1 pb-1 text-[12.5px] text-charcoal">
+                    <label className="inline-flex items-center gap-1.5">
+                      <input type="checkbox" checked={onData} onChange={(e) => setOnData(e.target.checked)} />
+                      자료가 바뀌면 다시 계산
+                    </label>
+                    <label className="inline-flex items-center gap-1.5">
+                      <input type="checkbox" checked={llm} onChange={(e) => setLlm(e.target.checked)} />
+                      LLM 으로 의견 작성(실행마다 1회 호출 · 끄면 규칙 판정 · 기본 문장)
+                    </label>
+                  </div>
+                </div>
+              </fieldset>
               <label htmlFor={`an-note-${a.code}`} className="text-[12px] font-bold text-charcoal">
                 검토 메모(반려 시 필수)
               </label>
               <textarea id={`an-note-${a.code}`} className="input text-[12.5px]" rows={2} value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
               <div className="flex flex-wrap gap-xs">
-                <Button size="sm" variant="confirm" disabled={busy || !pending.validation?.ok} onClick={() => run(() => apiPost(`/admin/analysis-agents/${a.code}/versions/${pending.version}/approve`, { note: note || null }), "승인했습니다 — 첫 실행이 이어집니다", reload)}>
+                <Button size="sm" variant="confirm" disabled={busy || !pending.validation?.ok} onClick={() => run(() => apiPost(`/admin/analysis-agents/${a.code}/versions/${pending.version}/approve`, { note: note || null, cron: cron.trim(), on_data_change: onData, llm }), "승인했습니다 — 첫 실행이 이어집니다", reload)}>
                   승인하고 만들기
                 </Button>
                 <Button size="sm" variant="ghost" disabled={busy || !note.trim()} onClick={() => run(() => apiPost(`/admin/analysis-agents/${a.code}/versions/${pending.version}/reject`, { note }), "반려했습니다", reload)}>

@@ -2513,11 +2513,19 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 |---|---|---|
 | `POST /db/uploads/dataset` · `POST /db/uploads/document` · `GET /db/uploads/mine` · `GET /db/uploadable` | `db_upload` | 요청 · 미리 검사 · 내 요청 · 올릴 수 있는 데이터셋 · 문서 분류 |
 | `GET /admin/uploads` · `POST /admin/uploads/{id}/approve` · `POST /admin/uploads/{id}/reject` | 관리자 | 승인 대기 · 승인 · 반려 |
+| `GET /db/uploads/review` · `POST /db/uploads/{id}/approve` · `POST /db/uploads/{id}/reject` | 부서 데이터 책임자(`app_user.data_steward`) | 자기 부서(가장 가까운 부 · 지역본부 아래) 요청만 · 본인 요청 409 · 다른 부서 404 (UPL-04 · Q107) |
 | `POST /analysis-agents/refine` · `POST /analysis-agents/preview` · `POST /analysis-agents` (요청) · `GET /analysis-agents/mine` · `GET /analysis-agents/catalog` | `analysis_builder` | 정제 · 미리보기 · 요청 · 내 분석 · 허용 목록 |
 | `GET /admin/analysis-agents` · `POST /admin/analysis-agents/{code}/versions/{v}/approve|reject` · `POST /admin/analysis-agents/{code}/pause|resume|retire` | 관리자 | 승인 · 수명 |
 | `GET /admin/overview` | 관리자 | 처리할 일 · 상태 · 추이(관리자 홈) |
 | `GET /admin/monitor/overview?hours=` | 관리자 | 실행 · LLM · 이벤트 · 알림 집계(시간대별) |
 | `POST /admin/screens` | 관리자 | 화면 등록(새 분석 공간) |
+
+### 20.5.1 후속 (사용자 결정 2026-10-12 · Q107 ~ Q109)
+
+- **부서 데이터 책임자**: 마이그레이션 0013 `iam.app_user.data_steward`. 범위 = `orgs.steward_scope`(소속 경로의 가장 가까운 DEPT · REGION, 없으면 맨 위) 와 그 하위 조직. 승인 · 반려는 관리자와 같은 함수(`db_uploads.do_approve` · `do_reject`)를 쓰고 결과 · 감사에 `via`(admin · steward). 화면: [사용자] '데이터 책임자' 열, [자료 올리기] '승인할 자료' 탭(`?tab=review`), [데이터베이스] '승인할 자료 N'.
+- **분석 에이전트 승인 기준**: `POST /admin/analysis-agents/{code}/versions/{v}/approve` 본문 `cron`(빈 값 = 정기 실행 없음) · `on_data_change` · `llm` → `lifecycle.apply_options` 가 명세 `schedule` · `llm` 에 반영(버전 기록에도). `dynamic_task` 는 `llm=false` 면 LLM 을 부르지 않고 규칙 판정(succeeded). 실행 조건 없음 · 잘못된 cron 은 422.
+- **기존 부서 분석 화면의 탭**: 공간 `hq` 의 경로 = `/hq/analysis`. [데이터 분석] 탭 줄(화면 안 영역 탭) 뒤에 맞춤 분석 링크 탭(`AnalysisWorkspace.custom`), 보고서는 `/hq/analysis/[tabKey]`(`AnalysisReportPage` · 앞 탭 '여신 실적 분석'). 화면 `HQ_ANALYSIS` 리소스에 `hq_reports`, 별도 메뉴 `ANALYSIS_HQ` 는 없앰(1회 보강 `analysis-spaces-v2` 가 기존 DB 에서 끔). `/analysis/[space](/[tabKey])` 는 공간 경로가 따로 있으면 그쪽으로 이동.
+- **실 LLM 시험**(`apps/e2e/analysis-agents-llm.mjs`): 정제 · 검증 · 미리보기 · 승인 · 동적 수행 · critic · 게시 의견을 사례 3건(신용리스크 충당금 · 종합기획부 여신 · 인젝션)으로 판정. 시험에서 `/backend` 프록시 기본 30초 대기에 정제가 끊겨 `experimental.proxyTimeout` 180초 · 정제 출력 상한 6000 으로 고침.
 
 ### 20.6 관리자 정보 구조 (Q104)
 

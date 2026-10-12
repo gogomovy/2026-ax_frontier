@@ -850,11 +850,31 @@ def upload_request_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["upload_request_upgrade"] = _merge_screen_resources(s, {"KNOWLEDGE_UPLOAD"})
 
 
+def _add_screen_resources(s: Session, code: str, resources: list[str]) -> list[str]:
+    """기존 화면의 리소스 목록에 새 리소스를 더한다(없는 것만 · 관리자 편집 보존)."""
+    res = s.get(Setting, "screen.resources")
+    if res is None:
+        return []
+    cur = dict(res.value or {})
+    have = list(cur.get(code) or [])
+    add = [r for r in resources if r not in have]
+    if add and code in cur:
+        cur[code] = have + add
+        res.value = cur
+    return add if code in cur else []
+
+
 def analysis_spaces_upgrade(s: Session, out: dict[str, Any]) -> None:
-    """분석 레지스트리(Phase C · DAG-07) — 1회. 종합기획부 분석 공간 화면(분석 보고서)의 리소스 hq_reports 를 더한다."""
-    if _applied(s, "analysis-spaces-v1"):
+    """분석 레지스트리(Phase C · DAG-07) — 1회. (v2 · Q109) 새 분석은 기존 부서 분석 화면의 탭으로 — 종합기획부 [데이터 분석]이 맞춤 분석 탭을 보도록 리소스 hq_reports 를 더하고,
+    v1 에서 만든 별도 메뉴 [분석 보고서](ANALYSIS_HQ)는 끈다(/analysis/hq 주소는 /hq/analysis 로 이동)."""
+    if _applied(s, "analysis-spaces-v2"):
         return
-    out["analysis_spaces_upgrade"] = _merge_screen_resources(s, {"ANALYSIS_HQ"})
+    done: dict[str, Any] = {"HQ_ANALYSIS": _add_screen_resources(s, "HQ_ANALYSIS", ["hq_reports"])}
+    old = s.get(Screen, "ANALYSIS_HQ")
+    if old is not None and old.active:
+        old.active = False
+        done["ANALYSIS_HQ"] = "inactive"
+    out["analysis_spaces_upgrade"] = done
 
 
 def analysis_agents_upgrade(s: Session, out: dict[str, Any]) -> None:

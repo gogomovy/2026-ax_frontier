@@ -58,12 +58,11 @@ ORGS = [
 # resources: 이 화면이 호출하는 화면 API 리소스 키 — API 권한 판정 기준(AUTH-08)
 SCREENS = [
     dict(code="HQ_OVERVIEW", path="/hq/overview", label="현황·목표", section="종합기획부", kind="flow", step=1, sort=10, resources=["changes", "hq_dashboard", "attentions", "report_requests", "goals", "proposals", "domains", "loan_overview", "cascade", "insights", "goal_state", "plan_state", "action_plans"]),
-    dict(code="HQ_ANALYSIS", path="/hq/analysis", label="데이터 분석", section="종합기획부", kind="flow", step=2, sort=11, resources=["loan_overview", "comparison_view", "insights"]),
+    # 데이터 분석 — 여신 실적 분석 + 맞춤 분석 탭(분석 에이전트 · 공간 hq · Phase C 후속 Q109)
+    dict(code="HQ_ANALYSIS", path="/hq/analysis", label="데이터 분석", section="종합기획부", kind="flow", step=2, sort=11, resources=["loan_overview", "comparison_view", "insights", "hq_reports"]),
     dict(code="HQ_GOALS", path="/hq/goals", label="경영목표 설정", section="종합기획부", kind="flow", step=3, count_key="goalProposals", sort=12, resources=["attentions", "goals", "proposals", "review_queue", "report_requests", "cascade", "insights", "goal_state", "goal_actions", "plan_state", "action_plans"]),
     dict(code="HQ_INITIATIVES", path="/hq/initiatives", label="사업부서 진행 사업", section="종합기획부", kind="reference", sort=13, resources=["action_plans", "plan_state", "analysis_tabs"]),
     dict(code="HQ_CAPITAL", path="/hq/capital", label="총자산·수익성 기준", section="종합기획부", kind="reference", sort=14, resources=["capital_view", "profitability"]),
-    # 부서 분석 보고서 (Phase C · DAG-07) — 종합기획부 분석 공간(분석 에이전트 탭). 공간 정의는 설정 analysis.spaces
-    dict(code="ANALYSIS_HQ", path="/analysis/hq", label="분석 보고서", section="종합기획부", kind="reference", sort=16, match="/analysis/hq", resources=["hq_reports"]),
     dict(code="DOMAINS", path="/domains", label="사업부문 상세", section="종합기획부", kind="hidden", sort=15, resources=["domains"]),
     dict(code="RISK_HOME", path="/risk", label="현황", section="신용리스크관리부", kind="flow", step=1, match="=/risk", sort=20, resources=["changes", "risk_dashboard", "analysis_tabs", "default_rate_trend", "insights", "action_plans", "plan_state"]),
     dict(code="RISK_ANALYSIS", path="/risk/analysis", label="분석 결과", section="신용리스크관리부", kind="flow", step=2, count_key="analyses", match="/risk/analysis", sort=21, resources=["analysis_tabs", "reports", "inclusive", "insights", "action_plans", "plan_state", "plan_actions"]),
@@ -106,7 +105,7 @@ SCREENS = [
 
 # 조직 → 화면 (하위 조직은 상속)
 GRANTS = {
-    "D100": ["HQ_OVERVIEW", "HQ_ANALYSIS", "HQ_GOALS", "HQ_INITIATIVES", "HQ_CAPITAL", "DOMAINS", "KNOWLEDGE", "KNOWLEDGE_UPLOAD", "ANALYSIS_HQ", "ANALYSIS_BUILDER"],
+    "D100": ["HQ_OVERVIEW", "HQ_ANALYSIS", "HQ_GOALS", "HQ_INITIATIVES", "HQ_CAPITAL", "DOMAINS", "KNOWLEDGE", "KNOWLEDGE_UPLOAD", "ANALYSIS_BUILDER"],
     "D200": ["RISK_HOME", "RISK_ANALYSIS", "RISK_GUIDES", "KNOWLEDGE", "KNOWLEDGE_UPLOAD", "ANALYSIS_BUILDER"],
     "D300": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
     "D400": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],

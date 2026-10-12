@@ -35,6 +35,8 @@ class AppUser(Base):
     org_code: Mapped[str] = mapped_column(ForeignKey("iam.org_unit.code"))
     position: Mapped[str | None] = mapped_column(String(30), nullable=True)
     role: Mapped[str] = mapped_column(String(10), default="user")  # admin | user
+    # 부서 데이터 책임자 (UPL-04 · Q107) — 자기 부서(가장 가까운 부 · 지역본부) 사용자의 자료 요청을 승인 · 반려
+    data_steward: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)  # pending|active|locked|disabled
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
     last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)

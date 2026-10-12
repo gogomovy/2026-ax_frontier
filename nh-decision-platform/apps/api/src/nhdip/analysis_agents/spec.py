@@ -86,6 +86,23 @@ def dataset_catalog(session: Session, codes: list[str] | None = None) -> list[di
     return out
 
 
+AGG_ROW_RE = re.compile(r"^(others?|total|subtotal|etc|합계|소계|총계|기타|전체)$|합계|소계|그\s*외", re.I)
+
+
+def aggregate_values(session: Session, ds: Dataset, col: str, max_distinct: int = 300) -> list[str]:
+    """묶음 열의 집계 행 값(합계 · 소계 · 기타 · 그 외 · OTHERS · TOTAL) — 현재 버전 기준. 값 종류가 너무 많으면 보지 않는다."""
+    from nhdip.data.datasets import current_rows
+
+    try:
+        _, rows = current_rows(session, ds)
+    except Exception:  # noqa: BLE001
+        return []
+    vals = list(dict.fromkeys(str(r.get(col)) for r in rows if r.get(col) not in (None, "")))
+    if len(vals) > max_distinct:
+        return []
+    return [x for x in vals if AGG_ROW_RE.search(x.strip())][:10]
+
+
 def formula_catalog() -> list[dict[str, Any]]:
     out = []
     for fid in ALLOWED_FORMULAS:
@@ -172,6 +189,10 @@ class _V:
                     out[k] = {"in": [(_s(x, 60) if isinstance(x, str) else x) for x in vals]}
             elif isinstance(v, dict) and isinstance(v.get("ne"), (str, int, float, bool)):
                 out[k] = {"ne": v["ne"]}
+            elif isinstance(v, dict) and isinstance(v.get("nin"), list):
+                vals = [x for x in v["nin"] if isinstance(x, (str, int, float, bool))][: LIMITS["in"]]
+                if vals:
+                    out[k] = {"nin": [(_s(x, 60) if isinstance(x, str) else x) for x in vals]}
             else:
                 self.issue(f"{path}.{k}", "지원하지 않는 조건 값이라 뺐습니다(값 · $latest · {in: [...]} · {ne: 값})")
         return out
@@ -199,6 +220,19 @@ class _V:
         q = {"dataset": ds.code, "agg": agg, "where": where}
         if col in cols:
             q["col"] = col
+        if agg in ("max", "min", "count"):
+            # 최댓값 · 최솟값 · 건수는 항목 가운데서 — 합계 · 기타 같은 집계 행(예: OTHERS · 그 외 상품 합계)은 뺀다(실 LLM 시험에서 발견:
+            # '최대 상품' 이 그 외 상품 합계, '상품 수' 에 합계 행 포함). 합계(SUM)는 집계 행이 상세의 나머지라 그대로 둔다
+            dropped = []
+            for cname, c in cols.items():
+                if cname in where or (c.get("type") or "str") != "str":
+                    continue
+                agg_vals = aggregate_values(self.session, ds, cname)
+                if agg_vals:
+                    where[cname] = {"nin": agg_vals}
+                    dropped += agg_vals
+            if dropped:
+                self.issue(path, f"{({'max': '최댓값', 'min': '최솟값'}).get(agg, '건수')}에서 집계 행({', '.join(dict.fromkeys(dropped))[:80]})을 뺐습니다")
         return q
 
 
@@ -308,7 +342,14 @@ def validate_spec(session: Session, raw: Any, space: str) -> tuple[dict[str, Any
         top = t.get("top")
         top = int(top) if isinstance(top, (int, float)) and not isinstance(top, bool) and 1 <= int(top) <= 30 else 10
         unit = str(t.get("unit") or "NONE")
+        # 항목별 순위 표에 합계 · 기타 같은 집계 행이 섞이면 '상위 항목' 이 집계 행이 된다(실 LLM 시험) — 결정론으로 뺀다
+        excl = [str(x)[:60] for x in (t.get("exclude") or []) if isinstance(x, (str, int, float))][:20]
+        agg_vals = [x for x in aggregate_values(session, ds, t["group_by"]) if x not in excl]
+        if agg_vals:
+            excl += agg_vals
+            v.issue(p, f"표 '{_s(t.get('caption') or key, 40)}' 의 묶음 열에 집계 행({', '.join(agg_vals[:3])})이 있어 순위에서 뺐습니다")
         tables.append({
+            **({"exclude": excl} if excl else {}),
             "key": key, "caption": _s(t.get("caption") or key, 80), "dataset": ds.code, "where": where, "group_by": t["group_by"],
             **({"value": t["value"]} if agg != "count" else {}), "agg": agg, "top": top, "sort": "asc" if t.get("sort") == "asc" else "desc",
             "group_label": _s(t.get("group_label") or (cols[t["group_by"]].get("label") or t["group_by"]), 40),
@@ -386,6 +427,10 @@ def validate_spec(session: Session, raw: Any, space: str) -> tuple[dict[str, Any
         v.issue("schedule.cron", f"cron 식이 올바르지 않아 정기 실행을 뺐습니다: {cron}")
         cron = None
     spec["schedule"] = {"cron": cron, "on_data_change": sch.get("on_data_change", True) is not False}
+    if not cron and not spec["schedule"]["on_data_change"]:
+        # 실행 조건이 하나도 없으면 승인할 수 없다(실 LLM 시험에서 발견) — 기본값(자료가 바뀌면 다시 계산)으로 두고 관리자가 승인 때 바꾼다
+        spec["schedule"]["on_data_change"] = True
+        v.issue("schedule", "실행 조건(정기 실행 · 자료 변경)이 없어 '자료가 바뀌면 다시 계산' 으로 두었습니다 — 승인 때 바꿀 수 있습니다")
     if not metrics:
         v.issue("metrics", "계산할 지표가 하나도 없습니다 — 데이터셋 · 열을 구체적으로 적어 주세요")
     ok = bool(metrics) and bool(spec["sections"])

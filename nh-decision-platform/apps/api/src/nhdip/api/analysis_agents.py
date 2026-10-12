@@ -179,6 +179,14 @@ class ReviewIn(BaseModel):
     note: str | None = None
 
 
+class ApproveIn(ReviewIn):
+    """관리자 승인 기준 (DAG-10 · Q108) — 비우면 요청 명세 그대로. cron 은 빈 문자열이면 정기 실행 없음."""
+
+    cron: str | None = None
+    on_data_change: bool | None = None
+    llm: bool | None = None
+
+
 def _dual(session: Session) -> bool:
     st = session.get(Setting, "governance.dual_control")
     v = st.value if st and isinstance(st.value, dict) else {}
@@ -223,13 +231,14 @@ def admin_one(code: str, session: Session = Depends(get_session)):
 
 
 @admin_router.post("/{code}/versions/{version}/approve")
-def admin_approve(code: str, version: int, body: ReviewIn, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+def admin_approve(code: str, version: int, body: ApproveIn, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     a, v = _get(session, code, version)
     assert v is not None
     if _dual(session) and v.requested_by == admin.emp_no:
         raise HTTPException(409, "이중 승인 — 직접 요청한 분석은 다른 관리자가 승인해야 합니다")
+    options = {k: val for k, val in body.model_dump(exclude_unset=True).items() if k in ("cron", "on_data_change", "llm")}
     try:
-        out = approve(session, a, v, admin.emp_no, body.note)
+        out = approve(session, a, v, admin.emp_no, body.note, options)
     except LifecycleError as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc

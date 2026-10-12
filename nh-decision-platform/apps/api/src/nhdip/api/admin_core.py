@@ -94,6 +94,8 @@ class UserPatch(BaseModel):
     org_code: str | None = None
     role: str | None = None
     position: str | None = None
+    # 부서 데이터 책임자 지정 (UPL-04 · Q107)
+    data_steward: bool | None = None
 
 
 class PasswordReset(BaseModel):

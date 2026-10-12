@@ -152,4 +152,15 @@ def user_json(session: Session, user: AppUser) -> dict[str, Any]:
         "org": {"code": user.org_code, "name": chain[0].name if chain else user.org_code},
         "orgPath": [{"code": o.code, "name": o.name, "level": o.level, "unitType": o.unit_type, "levelLabel": labels.get(o.unit_type or "", "조직")} for o in reversed(chain)],
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at else None,
+        **_steward_json(session, user),
     }
+
+
+def _steward_json(session: Session, user: AppUser) -> dict[str, Any]:
+    """부서 데이터 책임자 (UPL-04 · Q107) — 맡은 부서."""
+    if not getattr(user, "data_steward", False):
+        return {"dataSteward": False}
+    from nhdip.orgs import steward_scope
+
+    sc = steward_scope(session, user.org_code)
+    return {"dataSteward": True, "stewardScope": {"code": sc.code, "name": sc.name} if sc else None}

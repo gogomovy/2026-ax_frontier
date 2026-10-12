@@ -118,13 +118,37 @@ def _preview_summary(pv: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: str, note: str | None = None) -> dict[str, Any]:
+def apply_options(spec: dict[str, Any], options: dict[str, Any] | None) -> dict[str, Any]:
+    """관리자 승인 기준 (DAG-10 · Q108) — 실행 주기(cron) · 자료 변경 때 실행 · LLM 의견 사용을 승인하면서 정한다."""
+    from nhdip.workflow.scheduler import is_valid as cron_ok
+
+    if not options:
+        return spec
+    spec = dict(spec)
+    sch = dict(spec.get("schedule") or {"cron": None, "on_data_change": True})
+    if "cron" in options:
+        cron = (str(options["cron"]).strip() if options["cron"] else "") or None
+        if cron and not cron_ok(cron):
+            raise LifecycleError(f"정기 실행 cron 식이 올바르지 않습니다: {cron}")
+        sch["cron"] = cron
+    if options.get("on_data_change") is not None:
+        sch["on_data_change"] = bool(options["on_data_change"])
+    spec["schedule"] = sch
+    if options.get("llm") is not None:
+        spec["llm"] = bool(options["llm"])
+    if not sch.get("cron") and not sch.get("on_data_change"):
+        raise LifecycleError("실행 조건이 없습니다 — 정기 실행(cron) 이나 '자료가 바뀌면 다시 계산' 중 하나는 있어야 합니다")
+    return spec
+
+
+def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: str, note: str | None = None, options: dict[str, Any] | None = None) -> dict[str, Any]:
     if v.status != "pending":
         raise LifecycleError("승인 대기 상태가 아닙니다")
     sp = get_space(session, a.space)
     if sp is None:
         raise LifecycleError(f"분석 공간이 없습니다: {a.space}")
-    spec = dict(v.spec)
+    spec = apply_options(dict(v.spec), options)
+    v.spec = spec  # 승인된 기준을 그 버전 기록에도 남긴다
     token = token_of(a.code)
     i = ids(token)
     wf_code = i["workflow"]
@@ -185,8 +209,8 @@ def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: 
     a.approved_by, a.approved_at, a.updated_at = actor, utcnow(), utcnow()
     session.flush()
     emit(session, "manual", {"workflow": wf_code, "reason": f"분석 에이전트 승인(v{v.version}) 후 첫 실행"}, actor)
-    audit(session, actor, "analysis_agent.approve", "analysis_agent", a.code, {"version": v.version, "workflow": wf_code, "metrics": len(rows), "note": note})
-    return {"workflow": wf_code, "metrics": len(rows), "agent": a.code, "tab": a.tab_key, "promptVersion": last_p + 1}
+    audit(session, actor, "analysis_agent.approve", "analysis_agent", a.code, {"version": v.version, "workflow": wf_code, "metrics": len(rows), "note": note, "schedule": spec.get("schedule"), "llm": spec.get("llm", True)})
+    return {"workflow": wf_code, "metrics": len(rows), "agent": a.code, "tab": a.tab_key, "promptVersion": last_p + 1, "schedule": spec.get("schedule"), "llm": spec.get("llm", True)}
 
 
 def reject(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: str, note: str) -> None:

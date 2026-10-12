@@ -53,6 +53,9 @@ def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     rule_out = {"verdicts": an["verdicts"], "figures": {k: v.get("value") for k, v in figs.items()}}
     if ctx.state.get("preview"):
         return NodeResult({"skipped": "미리보기 — 의견 문장은 승인 후 실행에서 분석 에이전트가 작성(규칙 판정만)", **rule_out})
+    if spec.get("llm") is False:
+        # 관리자 승인 기준(Q108) — 이 분석은 LLM 의견을 쓰지 않는다(규칙 판정 · 기본 문장, 의도한 생략이라 축소 아님)
+        return NodeResult({"skipped": "관리자 승인 기준 — LLM 의견 사용 안 함(규칙 판정 · 기본 문장)", **rule_out})
     if ctx.llm_off:
         return NodeResult({"skipped": ctx.llm_off, **rule_out})
     if not node.agent_code:
@@ -66,10 +69,15 @@ def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         "insights": [{"key": i["key"], "title": i["title"], "figures": [figure_id(token, m) for m in i.get("metrics") or []], "instruction": i.get("instruction") or ""} for i in spec.get("insights") or []],
         "evidence": [{"title": e.get("title"), "page": e.get("page"), "text": str(e.get("text") or "")[:300]} for e in ev],
     }
+    from .nodes import _rule_body
+
+    # 검증(critic)이 막는 표현을 미리 알려 준다 — 실 LLM 시험에서 '원인은 …' 같은 문장이 막혀 기본 문장으로 남았다
+    banned = [str(p) for p in (_rule_body(ctx.session, "CRITIC_RULES").get("causal_phrases") or [])][:30]
     task = (
         "insights 의 의견 대상마다 확정 수치(figures) · 판정(verdicts) · 집계표(tables) · 근거(evidence)로 판단하고 의견 문장을 써라.\n"
         "출력: {\"findings\": [{\"insight\": 의견 key, \"severity\": \"info\"|\"watch\"|\"caution\"|\"critical\", \"statement\": \"2~4문장\"}], \"summary\": \"한 문장\"}\n"
         "규칙: 숫자를 직접 쓰지 말고 수치는 그 의견의 figures 에 있는 [[fig:ID]] 마커로만 참조한다(마커 뒤에 단위를 붙이지 않는다). 집계표 값은 '상위 항목' 처럼 말로만 언급한다. 인과를 단정하지 않는다."
+        + (f"\n다음 표현은 쓰지 않는다(검증에서 막힌다): {', '.join(banned)}" if banned else "")
     )
     data, meta = ask_json(ctx.session, node.agent_code, task, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("findings",), shrink=("tables", "evidence"))
     if data is None:

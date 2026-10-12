@@ -24,6 +24,7 @@ export function AnalysisReportPage({
   office,
   builderHref,
   next,
+  lead,
 }: {
   eyebrow?: string;
   crumbs?: { label: string; href?: string }[];
@@ -39,6 +40,8 @@ export function AnalysisReportPage({
   /** 분석 만들기 (권한 있을 때만) */
   builderHref?: string | null;
   next?: ReactNode;
+  /** 앞에 붙일 고정 탭(기존 분석 화면으로 돌아가는 링크 · Q109) */
+  lead?: { href: string; label: string }[];
 }) {
   const agent = report.analysisAgent;
   return (
@@ -59,7 +62,7 @@ export function AnalysisReportPage({
           </>
         }
       >
-        <DynamicTabBar tabs={tabs} previous={previous} activeKey={activeKey} basePath={basePath} query={query} />
+        <DynamicTabBar tabs={tabs} previous={previous} activeKey={activeKey} basePath={basePath} query={query} lead={lead} />
       </PageHeader>
 
       {agent && agent.status === "paused" ? (

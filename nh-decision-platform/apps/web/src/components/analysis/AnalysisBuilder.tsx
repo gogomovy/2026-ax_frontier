@@ -266,7 +266,7 @@ export function AnalysisBuilder({ catalog, mine: initialMine, editing }: { catal
               <Button variant="confirm" disabled={text.trim().length < 10 || busy !== ""} onClick={doRefine} data-builder-refine>
                 {busy === "refine" ? "정제 중…" : spec ? "다시 정제" : "정제하기"}
               </Button>
-              <span className="ml-xs text-[11.5px] text-stone">분석 에이전트가 글을 데이터 · 지표 · 보고서 구성으로 정리합니다.</span>
+              <span className="ml-xs text-[11.5px] text-stone">분석 에이전트가 글을 데이터 · 지표 · 보고서 구성으로 정리합니다(LLM 연결 시 30초 ~ 1분).</span>
             </div>
           </div>
         </Step>
@@ -282,17 +282,18 @@ export function AnalysisBuilder({ catalog, mine: initialMine, editing }: { catal
                   {meta.reason ? ` — ${meta.reason}` : ""}
                 </p>
               ) : null}
+              {validation?.ok ? (
+                <Notice tone="success" title="검증 통과">
+                  허용된 데이터 · 계산식만 쓰는 명세입니다.
+                </Notice>
+              ) : null}
               {validation && validation.issues.length ? (
-                <Notice tone={validation.ok ? "attention" : "critical"} title={validation.ok ? `확인할 점 ${validation.issues.length}개 — 빠진 항목이 있습니다` : "이대로는 실행할 수 없습니다"}>
+                <Notice tone={validation.ok ? "attention" : "critical"} title={validation.ok ? `확인할 점 ${validation.issues.length}개 — 정리하면서 빼거나 고친 항목` : "이대로는 실행할 수 없습니다"}>
                   <ul className="list-disc pl-4">
                     {validation.issues.slice(0, 12).map((i, k) => (
                       <li key={k}>{i.message}</li>
                     ))}
                   </ul>
-                </Notice>
-              ) : validation?.ok ? (
-                <Notice tone="success" title="검증 통과">
-                  허용된 데이터 · 계산식만 쓰는 명세입니다.
                 </Notice>
               ) : null}
               <div className="grid grid-cols-1 gap-md md:grid-cols-2">

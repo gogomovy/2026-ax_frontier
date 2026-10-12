@@ -17,7 +17,8 @@ from nhdip.views.store import get_current, get_current_row
 DEFAULT_SPACES: dict[str, dict[str, Any]] = {
     "risk": {"label": "신용리스크관리부", "path": "/risk/analysis", "tabs": "analysis_tabs", "tabsResource": "analysis_tabs", "resource": "reports", "reportPrefix": "report.", "builder": True, "domain": "RISK", "persona": "P2"},
     "branch": {"label": "영업점", "path": "/branch/analysis", "tabs": "branch_tabs", "tabsResource": "branch_tabs", "resource": "branch_reports", "reportPrefix": "report.branch-", "scoped": "office", "builder": False, "domain": "BRANCH", "persona": "P3"},
-    "hq": {"label": "종합기획부", "path": "/analysis/hq", "tabs": None, "tabsResource": "hq_reports", "resource": "hq_reports", "reportPrefix": "report.", "builder": True, "domain": "HQ", "persona": "P1"},
+    # 종합기획부 — 기존 [데이터 분석] 화면의 탭으로 (Q109). 기존 탭(여신 실적)은 화면 안 탭이라 산출물 탭 목록은 없음
+    "hq": {"label": "종합기획부", "path": "/hq/analysis", "tabs": None, "tabsResource": "hq_reports", "resource": "hq_reports", "reportPrefix": "report.", "builder": True, "domain": "HQ", "persona": "P1"},
 }
 SEV_ORDER = {"info": 0, "watch": 1, "caution": 2, "critical": 3}
 LIVE = ("active", "paused")

@@ -23,7 +23,7 @@ import {
   REPORTS,
   RISK_DASHBOARD,
 } from "@/mock/risk";
-import { apiGet } from "./api-server";
+import { apiGet, apiTry } from "./api-server";
 import { API_MODE } from "./config";
 import type {
   ActionPlan,
@@ -126,6 +126,10 @@ export async function getSpaceTabs(space: string, office?: string | null): Promi
   if (!label) return null;
   const base = space === "risk" ? { current: ANALYSIS_TABS, previous: PREVIOUS_TABS } : BRANCH_TABS;
   return { ...base, space: { key: space, label, path: space === "risk" ? "/risk/analysis" : "/branch/analysis" }, builder: { allowed: false } };
+}
+/** 화면 안에 맞춤 분석 탭을 붙일 때 — 권한이 없거나 실패하면 null (화면 자체는 그대로 · Q109) */
+export async function getSpaceTabsOptional(space: string): Promise<AnalysisSpaceTabs | null> {
+  return API_MODE ? apiTry<AnalysisSpaceTabs>(`/screens/analysis/${encodeURIComponent(space)}/tabs`) : null;
 }
 export async function getSpaceReport(space: string, tabKey: string, office?: string | null): Promise<ReportDoc | null> {
   if (API_MODE) return api(`/screens/analysis/${encodeURIComponent(space)}/reports/${encodeURIComponent(tabKey)}${officeQs(office)}`);

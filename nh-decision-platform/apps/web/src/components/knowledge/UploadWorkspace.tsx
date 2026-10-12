@@ -53,7 +53,9 @@ export interface UploadReq {
   reviewedByName?: string | null;
   reviewedAt: string | null;
   reviewNote: string | null;
-  result: { version?: number; rows?: number; docCode?: string; error?: string; isCurrent?: boolean };
+  result: { version?: number; rows?: number; docCode?: string; error?: string; isCurrent?: boolean; via?: "admin" | "steward" };
+  /** 부서 데이터 책임자 검토 목록 — 이 사람이 처리할 수 있는지(본인 요청 제외) */
+  canReview?: boolean;
   createdAt: string;
 }
 

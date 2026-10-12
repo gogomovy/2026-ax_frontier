@@ -28,7 +28,7 @@ const PAGES = (process.env.A11Y_PAGES ?? "").split(",").filter(Boolean).length
       "/admin", "/admin/users", "/admin/datasets", "/admin/rules", "/admin/llm", "/admin/monitor/agents", "/admin/pipeline", "/admin/contracts",
       // Phase C — 관리자 홈 · 운영 개요 · 설정 · 자료 승인 · 분석 에이전트 · 실행 상세, 업무 자료 올리기 · 분석 만들기 · 부서 분석 공간
       "/admin/monitor", "/admin/settings", "/admin/uploads", "/admin/analysis-agents", "/admin/monitor/runs", "/admin/workflows", "/admin/ontology",
-      "/knowledge/upload", "/analysis/builder?space=risk", "/analysis/hq",
+      "/knowledge/upload", "/analysis/builder?space=risk",
     ];
 if (!ADMIN || !ADMIN_PW) {
   console.error("E2E_ADMIN_EMP · E2E_ADMIN_PW 가 필요합니다 (make a11y 는 .env 의 BOOTSTRAP_ADMIN_* 를 사용)");

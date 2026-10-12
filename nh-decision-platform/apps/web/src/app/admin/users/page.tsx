@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AdminPage, C, Card, Loading, Select, StatusBadge, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { AdminPage, C, Card, Check, Loading, Select, StatusBadge, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { Button } from "@/components/ui/primitives";
 import { apiPatch, apiPost } from "@/lib/api-client";
 
@@ -17,6 +17,9 @@ interface UserRow {
   createdAt: string;
   lastLoginAt: string | null;
   approvedBy: string | null;
+  /** 부서 데이터 책임자 (UPL-04 · Q107) */
+  dataSteward?: boolean;
+  stewardScope?: { code: string; name: string } | null;
 }
 interface OrgRow {
   code: string;
@@ -41,7 +44,10 @@ export default function UsersAdmin() {
   const act = (emp: string, action: string, msg: string) => run(() => apiPost(`/admin/users/${emp}/${action}`), msg, users.reload);
 
   return (
-    <AdminPage title="사용자" description="사번(8자리)으로 가입한 사용자를 승인하고, 소속(부 > 국 > 팀)과 역할을 관리합니다. 화면 권한은 소속 조직 기준으로 상속됩니다.">
+    <AdminPage
+      title="사용자"
+      description="사번(8자리)으로 가입한 사용자를 승인하고, 소속(부 > 국 > 팀)과 역할을 관리합니다. 화면 권한은 소속 조직 기준으로 상속됩니다. '데이터 책임자' 로 지정하면 자기 부서 사용자가 올린 자료를 [자료 올리기 > 승인할 자료]에서 승인 · 반려합니다."
+    >
       <Tabs
         active={tab}
         onChange={setTab}
@@ -55,7 +61,7 @@ export default function UsersAdmin() {
       />
       <Card>
         <Loading error={users.error} loading={!users.data && users.loading} />
-        <Table head={["사번", "이름 · 직급", "소속", "역할", "상태", "가입 · 최근 로그인", "작업"]}>
+        <Table head={["사번", "이름 · 직급", "소속", "역할", "데이터 책임자", "상태", "가입 · 최근 로그인", "작업"]}>
           {list.map((u) => (
             <tr key={u.empNo}>
               <C mono>{u.empNo}</C>
@@ -68,6 +74,15 @@ export default function UsersAdmin() {
               </C>
               <C className="w-[110px]">
                 <Select value={u.role} options={[{ value: "user", label: "사용자" }, { value: "admin", label: "관리자" }]} onChange={(v) => run(() => apiPatch(`/admin/users/${u.empNo}`, { role: v }), "역할을 바꿨습니다", users.reload)} />
+              </C>
+              <C className="min-w-[120px]">
+                <Check
+                  label={u.dataSteward ? "지정" : ""}
+                  ariaLabel={`${u.name} 부서 데이터 책임자`}
+                  checked={Boolean(u.dataSteward)}
+                  onChange={(v) => run(() => apiPatch(`/admin/users/${u.empNo}`, { data_steward: v }), v ? "부서 데이터 책임자로 지정했습니다" : "데이터 책임자 지정을 해제했습니다", users.reload)}
+                />
+                {u.dataSteward && u.stewardScope ? <p className="mt-0.5 text-[10.5px] text-stone">{u.stewardScope.name} 자료 승인</p> : null}
               </C>
               <C>
                 <StatusBadge status={u.status} label={STATUS_LABEL[u.status]} />

@@ -68,7 +68,8 @@ def tables(ctx: EvalContext, spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
         try:
             _, rows, _ = ctx.dataset(t["dataset"])
             where = resolve_where(ctx, rows, t.get("where"))
-            sel = [r for r in rows if _match(r, where, ctx)]
+            excl = {str(x) for x in t.get("exclude") or []}
+            sel = [r for r in rows if _match(r, where, ctx) and str(r.get(t["group_by"])) not in excl]
             groups: dict[str, list[Decimal]] = {}
             for r in sel:
                 g = r.get(t["group_by"])
