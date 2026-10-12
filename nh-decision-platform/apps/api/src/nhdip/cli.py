@@ -7,6 +7,7 @@
   python -m nhdip.cli preflight                    운영 준비 점검 (fail 이 있으면 종료 코드 1, --json 이면 JSON)
   python -m nhdip.cli record-backup <폴더> <바이트>  백업 기록 남기기 (make backup 이 호출 — 운영 준비 점검의 '백업' 항목)
   python -m nhdip.cli wait-idle [--timeout 300]    미처리 이벤트 · 대기 · 실행 중 작업이 없을 때까지 대기 (CI · 기동 직후 점검)
+  python -m nhdip.cli kb-hnsw --dim N              질문하기 분석 결과 색인에 부분 HNSW 인덱스 생성 + 검색 설정(knowledge.search.hnsw_dim) 반영 (임베딩 모델 확정 후)
 """
 from __future__ import annotations
 
@@ -37,8 +38,20 @@ def main(argv: list[str] | None = None) -> int:
     ap_wait.add_argument("--timeout", type=int, default=300)
     ap_wait.add_argument("--settle", type=int, default=5, help="연속으로 비어 있어야 하는 초")
     ap_wait.add_argument("--strict", action="store_true", help="시간 초과면 종료 코드 1")
+    ap_hn = sub.add_parser("kb-hnsw")
+    ap_hn.add_argument("--dim", type=int, required=True, help="임베딩 차원(모델 확정 후, 2~2000)")
     args = ap.parse_args(argv)
 
+    if args.cmd == "kb-hnsw":
+        from nhdip.knowledge.maintenance import ensure_hnsw
+
+        try:
+            with SessionLocal() as s:
+                print(json.dumps(ensure_hnsw(s, args.dim), ensure_ascii=False))
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        return 0
     if args.cmd == "seed":
         from nhdip.seed.run import run_seed
 

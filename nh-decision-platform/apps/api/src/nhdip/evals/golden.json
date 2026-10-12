@@ -7,7 +7,8 @@
   "artifacts": 1.0,
   "narration": 1.0,
   "retrieval": 0.75,
-  "assist": 0.75
+  "assist": 0.75,
+  "knowledge": 1.0
  },
  "metrics": [
   {
@@ -402,6 +403,34 @@
   {
    "question": "기업과 가계 수익률 차이는 얼마인가요?",
    "expect_metric": "ros_gap"
+  }
+ ],
+ "knowledge": [
+  {
+   "label": "신용리스크 팀 — 포용금융 충당금은 신용리스크 분석 결과에서",
+   "org": "T211",
+   "query": "포용금융 충당금 비중 인사이트",
+   "expect_collection": "analysis.risk",
+   "forbid_collections": ["analysis.hq", "analysis.branch", "admin.contracts", "analysis.unassigned"]
+  },
+  {
+   "label": "종합기획부 — 같은 질문에 신용리스크 분석 결과가 나오지 않음",
+   "org": "T111",
+   "query": "포용금융 충당금 비중 인사이트",
+   "forbid_collections": ["analysis.risk", "analysis.branch", "admin.contracts", "analysis.unassigned"]
+  },
+  {
+   "label": "종합기획부 — 기업여신 목표는 종합기획부 분석 결과에서",
+   "org": "T111",
+   "query": "기업여신 증가율 목표 대비 이탈",
+   "expect_collection": "analysis.hq",
+   "forbid_collections": ["analysis.risk", "analysis.branch", "admin.contracts", "analysis.unassigned"]
+  },
+  {
+   "label": "영업점 — 본부 · 신용리스크 분석 결과와 관리자 전용 컬렉션이 나오지 않음 (영업점이 화면 권한을 가진 '본부 전파 목표'는 예외라 그 낱말은 쓰지 않음)",
+   "org": "001068",
+   "query": "포용금융 충당금 비중 인사이트",
+   "forbid_collections": ["analysis.risk", "analysis.hq", "admin.contracts", "analysis.unassigned"]
   }
  ]
 }

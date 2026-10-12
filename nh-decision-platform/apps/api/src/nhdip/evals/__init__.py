@@ -65,7 +65,7 @@ def _case(name: str, ok: bool, **detail: Any) -> dict[str, Any]:
 
 def run(session: Session, golden: dict[str, Any] | None = None) -> dict[str, Any]:
     g = golden or load()
-    cats: dict[str, list[dict[str, Any]]] = {k: [] for k in ("metrics", "verdicts", "artifacts", "narration", "retrieval", "assist")}
+    cats: dict[str, list[dict[str, Any]]] = {k: [] for k in ("metrics", "verdicts", "artifacts", "narration", "retrieval", "assist", "knowledge")}
     for c in g.get("metrics", []):
         v = _metric(session, c["code"])
         cats["metrics"].append(_case(c["code"], v is not None and _close(v, c["expected"], c.get("tol", 0)), actual=None if v is None else float(v), expected=c["expected"]))
@@ -117,6 +117,20 @@ def run(session: Session, golden: dict[str, Any] | None = None) -> dict[str, Any
     for c in g.get("assist", []):
         got = [m["code"] for m in metrics_for(session, admin, c["question"], concepts_of(session, c["question"]))] if admin else []
         cats["assist"].append(_case(c["question"], c["expect_metric"] in got, expected=c["expect_metric"], top=got[:8]))
+    # 팀별 질문하기 범위 (Phase D · 설계 §21) — 같은 질문이 팀마다 다른 컬렉션에서 답을 가져오는지, 권한 밖 컬렉션이 새지 않는지.
+    # 가상의 일반 사용자(저장하지 않음)를 조직으로만 정해, 화면 권한 부여(ScreenGrant)에서 리소스가 정해지는 실제 경로를 그대로 쓴다.
+    from nhdip.api.assist import access_context
+    from nhdip.knowledge.access import resolve_scope
+    from nhdip.knowledge.search import retrieve
+
+    for c in g.get("knowledge", []):
+        who = AppUser(emp_no="golden-eval", name="골든셋", password_hash="-", org_code=c["org"], role="user", status="active")
+        scope = resolve_scope(session, access_context(session, who))
+        ret = retrieve(session, scope, c["query"], user=who, concepts=concepts_of(session, c["query"]))
+        got_cols = sorted({h["collection"] for h in [*ret.analysis, *ret.documents] if h.get("collection")})
+        want, forbid = c.get("expect_collection"), c.get("forbid_collections", [])
+        ok = (want is None or want in got_cols) and not (set(forbid) & set(got_cols))
+        cats["knowledge"].append(_case(c.get("label") or f"{c['org']}:{c['query']}", ok, expected=want, forbidden=forbid, top=got_cols))
     th = g.get("thresholds", {})
     summary = {}
     for name, cases in cats.items():

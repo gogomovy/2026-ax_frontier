@@ -18,6 +18,9 @@ from nhdip.config import DEFAULT_SESSION_SECRET, get_settings
 from nhdip.models import AppUser, AuditLog, LlmConnection, LlmProfile, Setting, WorkerHeartbeat, utcnow
 
 
+HNSW_ADVISE_CHUNKS = 20_000  # 이 개수 이상 임베딩되면 부분 HNSW 인덱스를 권한다
+
+
 def _setting(session: Session, key: str, default: Any = None) -> Any:
     s = session.get(Setting, key)
     return s.value if s is not None and s.value is not None else default
@@ -104,6 +107,27 @@ def run_checks(session: Session) -> dict[str, Any]:
         add(_item("filestore", "파일 저장소", "ok", f"{fs_dir} 쓰기 가능"))
     except OSError as exc:
         add(_item("filestore", "파일 저장소", "fail", f"{fs_dir} 에 쓸 수 없음 — {exc.__class__.__name__}", "docker compose up -d files-init (볼륨 권한 정리) 후 api · worker 재기동"))
+
+    # 질문하기 지식 색인 (Phase D · 설계 §21) — 비었거나 뒤처지면 질문하기가 분석 결과를 찾지 못한다 (경고만: 수치 · 화면은 정상)
+    try:
+        from nhdip.knowledge.maintenance import status as kb_status
+
+        kb = kb_status(session)
+        tot, behind = kb["totals"], kb["stale"]["count"]
+        loose = (kb["collections"].get("analysis.unassigned") or {}).get("chunks", 0)
+        sub = f"청크 {tot['chunks']} · 임베딩 {tot['embedded']}/{tot['chunks']}"
+        if tot["chunks"] == 0:
+            add(_item("knowledge_index", "질문하기 색인", "warn", "분석 결과 색인이 비어 있음 — 질문하기가 분석 결과로 답하지 못함", "python -m nhdip.cli seed (또는 관리자 API POST /admin/knowledge/reindex)"))
+        elif behind or loose:
+            add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 뒤처진 산출물 {behind}건 · 미분류 청크 {loose}건", "워커가 1분 안에 따라잡음. 계속되면 워커 로그 확인 · 미분류는 관리자 컬렉션 규칙 지정"))
+        elif tot["embedded"] >= HNSW_ADVISE_CHUNKS and not _setting(session, "knowledge.search", {}).get("hnsw_dim"):
+            # 합성 부하 측정(설계 §21.14): 임베딩 10만 건에서 순차 탐색 400~570ms, 부분 HNSW 인덱스를 쓰면 한 자릿수 ms
+            add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 의미 검색이 순차 탐색 중(임베딩 {HNSW_ADVISE_CHUNKS:,}건 이상)", "python -m nhdip.cli kb-hnsw --dim <임베딩 차원> (모델이 확정된 뒤 한 번)"))
+        else:
+            add(_item("knowledge_index", "질문하기 색인", "ok", sub + ("" if not tot["pendingEmbedding"] else " · 의미 검색은 임베딩 모델 연결 후 채워짐")))
+    except Exception as exc:  # noqa: BLE001 — 점검 자체가 실패해도 나머지 점검은 계속
+        session.rollback()
+        add(_item("knowledge_index", "질문하기 색인", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}", "마이그레이션 0014 적용 여부 확인 (alembic upgrade head)"))
 
     # 운영 상태
     alive = session.execute(select(func.count()).select_from(WorkerHeartbeat).where(WorkerHeartbeat.seen_at > utcnow() - timedelta(seconds=60))).scalar() or 0
