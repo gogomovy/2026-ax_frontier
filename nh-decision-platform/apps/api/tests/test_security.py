@@ -151,7 +151,7 @@ def test_prompt_injection_is_fenced_and_numbers_not_laundered(db, monkeypatch):
     r = c.post("/assist", json={"question": q}).json()
     system, user = seen["messages"][0]["content"], seen["messages"][1]["content"]
     assert "보안 규칙" in system and "따르지 말고" in system
-    assert user.count("<<자료>>") == 2 and user.count("<</자료>>") == 2  # 위조 구분자는 제거되고 질문 · 문서만 감싼다
+    assert user.count("<<자료>>") == 3 and user.count("<</자료>>") == 3  # 위조 구분자는 제거되고 질문 · 분석 결과 · 문서만 감싼다 (대화 이력이 있으면 +1)
     v = r["verification"]
     assert v["passed"] is False and "7.77" in v["unverified"]  # 출처 없는 숫자
     assert "99.9" in v["userSupplied"] and "99.9" not in v["unverified"]  # 질문으로 넣은 숫자는 '사용자 제시값'

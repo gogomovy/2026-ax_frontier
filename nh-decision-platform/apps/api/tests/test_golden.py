@@ -28,6 +28,7 @@ def test_golden_set(db):
     bad = {k: v["failures"] for k, v in rep["categories"].items() if not v["ok"]}
     assert rep["passed"], bad
     assert rep["categories"]["metrics"]["total"] >= 25 and rep["categories"]["narration"]["total"] >= 10
+    assert rep["categories"]["knowledge"]["total"] >= 4  # 팀별 질문하기 범위 사례가 실제로 평가된다
 
 
 def test_golden_admin_api(db):
@@ -38,5 +39,5 @@ def test_golden_admin_api(db):
     c = TestClient(app)
     c.post("/auth/login", json={"emp_no": "00000001", "password": "Admin1234!"})
     r = c.post("/admin/evals/run").json()
-    assert r["passed"] and set(r["categories"]) == {"metrics", "verdicts", "artifacts", "narration", "retrieval", "assist"}
+    assert r["passed"] and set(r["categories"]) == {"metrics", "verdicts", "artifacts", "narration", "retrieval", "assist", "knowledge"}
     assert c.get("/admin/evals/latest").json()["at"] == r["at"]
