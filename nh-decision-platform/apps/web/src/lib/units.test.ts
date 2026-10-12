@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nextFocusIndex } from "@/lib/a11y";
-import { officeParam, withOffice } from "@/lib/branchOffice";
+import { navHrefWithOffice, officeFromSearch, officeParam, withOffice } from "@/lib/branchOffice";
 import { buildCsp, newNonce } from "@/lib/csp";
 import { formatFigure, formatKstDateTime, formatSigned, toneOfDelta } from "@/lib/format";
 import { safeNext } from "@/lib/safe-next";
@@ -98,5 +98,13 @@ describe("영업점 지점 인자(B.47)", () => {
     expect(withOffice("/branch", null)).toBe("/branch");
     expect(withOffice("/branch/analysis", "001234")).toBe("/branch/analysis?office=001234");
     expect(withOffice("/branch?x=1", "A B")).toBe("/branch?x=1&office=A%20B");
+  });
+  it("사이드바 — 주소의 지점을 영업점 메뉴에만", () => {
+    expect(officeFromSearch("?office=001234&x=1")).toBe("001234");
+    expect(officeFromSearch("?office=%3Cx%3E")).toBeNull();
+    expect(officeFromSearch("")).toBeNull();
+    expect(navHrefWithOffice("/branch/analysis", "001234")).toBe("/branch/analysis?office=001234");
+    expect(navHrefWithOffice("/knowledge", "001234")).toBe("/knowledge");
+    expect(navHrefWithOffice("/branch", null)).toBe("/branch");
   });
 });

@@ -7,8 +7,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import puppeteer from "puppeteer";
 
+const require = createRequire(import.meta.url);
+const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 const BASE = process.env.E2E_BASE ?? "http://localhost:3000";
 const ADMIN = process.env.E2E_ADMIN_EMP;
 const ADMIN_PW = process.env.E2E_ADMIN_PW;
@@ -336,6 +339,116 @@ try {
     await a.waitForSelector("[data-trace-spans] li", { timeout: 15000 }).catch(() => undefined);
     ok("요청 추적 화면", (await a.evaluate(() => document.querySelectorAll("[data-trace-spans] li").length)) >= 3);
     await shot(a, "10-admin-trace");
+  }
+
+  // 8-5) 다지점 영업점 (B.47) — 가상 지점 자료 업로드 + 규칙 목록 추가 → 지점 선택 상자 · ?office= 화면 · 접근성, 끝나면 원상 복구
+  {
+    const dsAll = (await api("/admin/datasets")).body;
+    const cur = (code) =>
+      dsAll
+        .find((d) => d.code === code)
+        .versions.filter((v) => v.isCurrent)
+        .sort((x, y) => String(y.asOf ?? "").localeCompare(String(x.asOf ?? "")))[0];
+    const rowsOf = async (code) => (await api(`/admin/datasets/${code}/versions/${cur(code).id}/rows?limit=2000`)).body.rows;
+    // 차주 명세에 있는 다른 사무소 하나 — 시드 기업 · 소매 명세는 같은 지점 목록이라 계산이 된다
+    const X = (await rowsOf("OBLG_GRD_DEF")).map((r) => String(r.SUVMN_BRC)).find((c) => c !== "001068");
+    const NAME = "E2E가상지점";
+    const scope = (await api("/admin/rules")).body.find((r) => r.code === "BRANCH_SCOPE");
+    const body0 = scope.versions.find((v) => v.version === scope.activeVersion).body;
+    const debounce0 = (await api("/admin/settings")).body.find((s) => s.key === "workflow.debounce_default_sec")?.value ?? 60;
+    await api("/admin/settings/workflow.debounce_default_sec", { method: "PUT", body: JSON.stringify({ value: 3 }) });
+    const prev = {};
+    const upload = (code, rows) =>
+      a.evaluate(
+        async (code, rows) => {
+          const fd = new FormData();
+          fd.append("file", new File([JSON.stringify(rows)], `${code}_e2e_multi_office.json`, { type: "application/json" }));
+          fd.append("origin", "bank");
+          fd.append("data_origin", "simulated");
+          fd.append("note", "E2E 다지점(B.47) — 끝나면 되돌림");
+          const r = await fetch(`/backend/admin/datasets/${code}/upload`, { method: "POST", body: fd });
+          return { status: r.status, body: await r.json().catch(() => null) };
+        },
+        code,
+        rows,
+      );
+    const offices = async () => (await api("/screens/branch/offices")).body ?? { offices: [] };
+    const restoreOffices = async () => {
+      await api("/admin/rules/BRANCH_SCOPE/versions", { method: "POST", body: JSON.stringify({ body: body0, note: "E2E 다지점 복원" }) });
+      for (const [code, vid] of Object.entries(prev)) await api(`/admin/datasets/${code}/versions/${vid}/rollback`, { method: "POST" });
+      await sleep(8000); // 되돌리기 · 규칙 이벤트가 짧은 디바운스로 디스패치된 뒤에 설정을 원복
+      for (let i = 0; i < 45; i++) {
+        const runs = (await api("/admin/monitor/runs?workflow=wf_branch_kpi&limit=3")).body ?? [];
+        if (!runs.some((x) => x.status === "running")) break;
+        await sleep(2000);
+      }
+      await api("/admin/settings/workflow.debounce_default_sec", { method: "PUT", body: JSON.stringify({ value: debounce0 }) });
+    };
+    restore = restoreOffices;
+    const add = {
+      BRANCH_OFFICE_MASTER: (r) => [{ ...r, office_cd: X, office_nm: NAME, org_code: "" }],
+      BRANCH_KPI_SCORE: (r) => [{ ...r, office_cd: X, score: r.score == null ? r.score : Math.round(Number(r.score) * 9) / 10 }],
+      BRANCH_BIZ_BALANCE: (r) => [{ ...r, office_cd: X, amount: Math.round(Number(r.amount) / 2) }],
+    };
+    const ups = [];
+    for (const code of Object.keys(add)) {
+      prev[code] = cur(code).id;
+      const all = (await rowsOf(code)).filter((r) => String(r.office_cd) !== X); // 같은 구획의 다른 지점 행은 그대로
+      const res = await upload(code, [...all, ...all.filter((r) => String(r.office_cd) === "001068").flatMap(add[code])]);
+      ups.push(`${code}:${res.status}/${res.body?.status ?? res.body?.detail ?? ""}`);
+    }
+    ok("다지점: 가상 지점 자료 업로드(마스터 · 득점 · 잔액)", ups.every((u) => u.includes(":201/committed")), ups.join(", "));
+    const r = await api("/admin/rules/BRANCH_SCOPE/versions", { method: "POST", body: JSON.stringify({ body: { ...body0, office_codes: ["001068", X] }, note: "E2E 다지점(B.47)" }) });
+    let ready = false;
+    for (let i = 0; i < 60 && !ready && r.status === 201; i++) {
+      await sleep(2000);
+      ready = (await offices()).offices.some((o) => o.code === X && o.available);
+    }
+    ok("다지점: 규칙 목록 추가 → 같은 워크플로우가 지점 x 계산", ready, `${X} · 규칙 ${r.status}`);
+
+    await a.goto(`${BASE}/branch`, { waitUntil: "networkidle0" });
+    const opts = await a.$$eval("#branch_office option", (os) => os.map((o) => o.value)).catch(() => []);
+    ok("다지점: 지점 선택 상자(볼 수 있는 지점 2곳)", JSON.stringify(opts) === JSON.stringify(["001068", X]), opts.join(", "));
+    const h0 = await a.evaluate(() => document.querySelector("h1")?.innerText ?? "");
+    await a.select("#branch_office", X).catch(() => undefined);
+    await Promise.all([a.waitForNavigation({ waitUntil: "networkidle0" }).catch(() => undefined), a.evaluate(() => document.querySelector("[data-office-picker] button[type=submit]")?.click())]);
+    const h1 = await a.evaluate(() => document.querySelector("h1")?.innerText ?? "");
+    const bx = await text(a);
+    ok("다지점: 지점 바꾸기 → 같은 화면 구조 · 그 지점 산출물", a.url().endsWith(`/branch?office=${X}`) && h1.includes(NAME) && h0.includes("수원영통지점") && bx.includes("업적평가 득점 현황") && bx.includes("사업부문"), `${a.url()} · ${h0} → ${h1}`);
+    const next = `/branch/analysis?office=${X}`;
+    await a.waitForFunction((n) => document.querySelector(`aside a[href="${n}"]`), { timeout: 10000 }, next).catch(() => undefined);
+    const links = await a.evaluate(() => [...document.querySelectorAll("a")].map((x) => ({ href: x.getAttribute("href") ?? "", side: !!x.closest("aside") })).filter((x) => x.href.startsWith("/branch")));
+    const step = links.filter((x) => !x.side && x.href.startsWith("/branch/analysis")).map((x) => x.href);
+    const side = links.filter((x) => x.side).map((x) => x.href);
+    const keep = (hs) => hs.every((h) => h.endsWith(`?office=${X}`));
+    ok("다지점: 화면 이동(다음 단계 · 득점표 알림 · 사이드바)에 지점 인자 유지", step.includes(next) && keep(step) && side.length >= 2 && keep(side), `${[...new Set(step)].join(" ")} | ${side.join(" ")}`);
+    await shot(a, "05d-branch-multi-office");
+    const axeRun = async () => {
+      await a.evaluate(AXE);
+      return a.evaluate(async () => {
+        // eslint-disable-next-line no-undef
+        // preload: false — axe 가 외부 글꼴 CSS 를 fetch 하려다 CSP(connect-src 'self')에 막혀 콘솔 오류를 남기지 않도록(어차피 막혀 결과는 같다)
+        const r = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] }, resultTypes: ["violations"], preload: false });
+        return r.violations.filter((v) => ["serious", "critical"].includes(v.impact)).map((v) => `${v.id}(${v.impact}×${v.nodes.length})`);
+      });
+    };
+    const v1 = await axeRun();
+    ok("다지점 접근성: 지점 선택 화면 serious · critical 위반 0", v1.length === 0, v1.join(", "));
+    await a.goto(`${BASE}${next}`, { waitUntil: "networkidle0" });
+    await a.waitForFunction(() => location.pathname.startsWith("/branch/analysis/"), { timeout: 15000 }).catch(() => undefined);
+    const rp = await text(a);
+    const tabs = await a.evaluate(() => [...document.querySelectorAll("a")].map((x) => x.getAttribute("href") ?? "").filter((h) => /^\/branch\/analysis\/[a-z-]+/.test(h)));
+    ok("다지점: 지점 x 분석 보고서 · 탭 주소에 지점 인자", a.url().includes(`office=${X}`) && rp.includes("마케팅 후보") && rp.includes(NAME) && tabs.length > 0 && tabs.every((h) => h.endsWith(`?office=${X}`)), `${a.url()} · ${tabs.join(" ")}`);
+    const v2 = await axeRun();
+    ok("다지점 접근성: 지점 x 분석 보고서 serious · critical 위반 0", v2.length === 0, v2.join(", "));
+    const ex = await a.evaluate(async (x) => (await fetch(`/backend/reports/branch-prime-corp/export?format=html&office=${x}`)).status, X);
+    ok("다지점: 지점 x 보고서 내려받기", ex === 200, String(ex));
+
+    await restoreOffices();
+    restore = async () => {};
+    const back = await offices();
+    const d0 = (await api("/screens/branch/dashboard")).body;
+    ok("다지점: 원상 복구(규칙 · 자료) → 지점 1곳 · 001068 그대로", back.offices.length === 1 && d0?.available && d0.office?.code === "001068", `${back.offices.map((o) => o.code).join(", ")} · ${d0?.office?.code}`);
   }
 
   // 9) 관리자 화면

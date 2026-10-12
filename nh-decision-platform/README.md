@@ -5,7 +5,7 @@
 | 구분 | 현재 상태 |
 |---|---|
 | 스펙 | `.kiro/specs/nh-decision-ai-platform/` — `requirements.md`(§16) · `design.md`(§19) · `tasks.md`(Phase B) |
-| 프론트엔드 | Next.js 16 · React 19 — 업무 화면 3개 부서(종합기획부 · 신용리스크관리부 · 영업점) + 로그인·가입 + 관리자 화면 15종 |
+| 프론트엔드 | Next.js 16 · React 19 — 업무 화면 3개 부서(종합기획부 · 신용리스크관리부 · 영업점) + 로그인·가입 + 관리자 화면 21종 |
 | 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), pgvector 검색, 외부 LiteLLM 연동, 변경 기반 워크플로우 |
 | 데이터 | 목데이터(시뮬레이션 버전)로 시드 — 실데이터는 관리자 화면에서 같은 데이터셋 정의로 업로드 |
 
@@ -104,7 +104,9 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 - 정기 실행: 워크플로우별 cron 트리거(기본 06:00 · 06:10 · 06:20 KST, `/admin/workflows`)가 데이터 변경과 같은 경로로 재계산합니다.
 - 질의: 업무 화면 우측 하단 `질문하기` — 권한 범위의 확정 수치(커널)와 근거 문서로만 답하고, 답변 숫자의 출처를 검증합니다. LLM 미연결 시 수치·근거만 보여줍니다.
 - 판단 에이전트(LLM): 오케스트레이터(이벤트마다 영향받는 워크플로우 추가 · 실행 순서 보장) · 변화 감지(커널이 계산한 변화의 업무상 중요도 판단 → '최근 감지된 변화') · 플래너(서술 대상 · 근거 검색어 · 후속 워크플로우 결정). LLM 판단은 허용 목록으로 검증하고 미연결 · 실패 시 규칙(`CHANGE_SIGNIFICANCE` · `PLANNER_POLICY` · `orchestrator.policy`)으로 대체. 결정 · 판단 주체 · 근거는 `/admin/monitor/agents`, 프롬프트는 `/admin/agents`.
-- 모니터링: `/admin/monitor/flow`(이벤트 → 매칭 사유 → 실행 → 게시) · `/admin/monitor/runs`(노드 입출력 · LLM 원문 · 계산) · `/admin/monitor/calc`(지표 값 · 추이 · 산출물 세대).
+- 모니터링: `/admin/monitor/flow`(이벤트 → 매칭 사유 → 실행 → 게시) · `/admin/monitor/runs`(노드 입출력 · LLM 원문 · 계산) · `/admin/monitor/calc`(지표 값 · 추이 · 산출물 세대) · `/admin/monitor/agents`(에이전트 결정) · `/admin/monitor/trace`(요청 추적) · `/admin/monitor/evals`(골든셋) · `/admin/monitor/alerts`(운영 알림 · LLM 비용).
+- 파이프라인: `/admin/pipeline` — 원천(데이터셋 · 문서 · 규칙) → 워크플로 노드 · 에이전트 → 산출물 → 화면 연결을 DB 정의에서 그린 지도와 이벤트 흐름.
+- 다지점 영업점: 규칙 `BRANCH_SCOPE.office_codes`(`/admin/rules`)에 사무소 코드를 더하고 그 지점 자료(`BRANCH_OFFICE_MASTER` · `BRANCH_KPI_SCORE` · `BRANCH_BIZ_BALANCE`)를 올리면 같은 지표 정의로 지점마다 계산합니다. 지역본부 · 관리자 화면에는 지점 선택 상자가 나오고(`/branch?office=<코드>`), 영업점 직원은 자기 지점만 봅니다. 자료가 없는 지점은 '준비 중', 지점 수 상한 · LLM 을 쓸 지점 수는 설정 `workflow.scopes`(`max` · `narrate_max`).
 
 ---
 

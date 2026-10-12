@@ -10,3 +10,13 @@ export function withOffice(href: string, office: string | null | undefined): str
   if (!office) return href;
   return `${href}${href.includes("?") ? "&" : "?"}office=${encodeURIComponent(office)}`;
 }
+
+/** 주소 검색 문자열(`?office=…`)의 지점 인자 */
+export function officeFromSearch(search: string): string | null {
+  return officeParam(Object.fromEntries(new URLSearchParams(search)));
+}
+
+/** 사이드바 메뉴 주소 — 영업점 화면(`/branch…`)일 때만 고른 지점을 이어 붙인다 */
+export function navHrefWithOffice(href: string, office: string | null): string {
+  return office && href.startsWith("/branch") ? withOffice(href, office) : href;
+}

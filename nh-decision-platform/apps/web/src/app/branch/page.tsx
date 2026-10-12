@@ -41,10 +41,10 @@ export default async function BranchHomePage(props: { searchParams: Promise<Reco
       <div className="shell flex flex-col gap-xxl">
         <section>
           <SectionHead title="업적평가 득점 현황" hint={`리테일 배점표 · ${dashboard.asOfLabel}`} right={<EvidenceChips items={dashboard.evidence} title="업적평가 기준 근거" />} />
-          <BranchKpiBoard dashboard={dashboard} />
+          <BranchKpiBoard dashboard={dashboard} office={office} />
         </section>
 
-        <BranchSegments dashboard={dashboard} />
+        <BranchSegments dashboard={dashboard} office={office} />
 
         <ChangeFeedPanel feed={changes} />
 

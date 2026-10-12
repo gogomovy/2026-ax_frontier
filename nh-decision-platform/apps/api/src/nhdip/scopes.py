@@ -40,6 +40,36 @@ def scope_values(session: Session, spec: dict[str, Any], *, limit: bool = True) 
     return primary, (extras[: scope_cap(spec)] if limit else extras)
 
 
+def llm_scopes(session: Session, workflow_code: str, values: list[str], limit: Any) -> list[str]:
+    """이번 실행에서 LLM(변화 판단 · 플래너 · 서술)을 쓸 추가 범위 (BRM-07 · 지점 수에 따른 비용 한도).
+
+    설정 `narrate_max` 곳까지 — 그 범위의 서술이 없거나 가장 오래된 범위부터 돌아가며 고른다(실행마다 다른 지점이 차례로 갱신).
+    나머지 범위는 규칙 판단 · 기존 문장 유지. 음수 · 없음 = 제한 없음, 0 = 추가 범위는 LLM 을 쓰지 않음.
+    """
+    from sqlalchemy import func
+
+    from nhdip.models import AgentDecision
+
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        return list(values)
+    if n < 0:
+        return list(values)
+    if n == 0 or not values:
+        return []
+    ins = AgentDecision.detail["insight"].astext
+    last: dict[str, Any] = {}
+    for insight, at in session.execute(
+        select(ins, func.max(AgentDecision.at)).where(AgentDecision.workflow_code == workflow_code, AgentDecision.decision == "narrated", ins.like("%@%")).group_by(ins)
+    ).all():
+        v = str(insight).rsplit("@", 1)[1]
+        if v not in last or at > last[v]:
+            last[v] = at
+    order = sorted(range(len(values)), key=lambda i: (values[i] in last, last.get(values[i]) or 0, i))
+    return [values[i] for i in order[:n]]
+
+
 def scope_cap(spec: dict[str, Any]) -> int:
     """추가 범위 상한 — 설정 `max` 는 기본 범위를 포함한 수."""
     try:

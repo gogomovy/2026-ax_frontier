@@ -5,6 +5,7 @@ import { useState } from "react";
 import { FigureText } from "@/components/data/FigureText";
 import { MetricStrip } from "@/components/data/MetricStrip";
 import { SectionHead, TextLink } from "@/components/ui/primitives";
+import { withOffice } from "@/lib/branchOffice";
 import { formatFigure } from "@/lib/format";
 import type { BranchDashboard } from "@/lib/types";
 
@@ -12,7 +13,7 @@ import type { BranchDashboard } from "@/lib/types";
  * 영업점 사업부문 (시나리오 1화면 (2)) — 종합기획부 현황 화면과 같은 부문 선택 형태, 값은 영업점 기준.
  * 여신 값은 2화면(기업 익스포저) · 3화면(소매 익스포저)과 같은 계산 결과를 쓴다.
  */
-export function BranchSegments({ dashboard }: { dashboard: BranchDashboard }) {
+export function BranchSegments({ dashboard, office }: { dashboard: BranchDashboard; office?: string | null }) {
   const { segments, loan } = dashboard;
   const [selected, setSelected] = useState("loan");
   const active = segments.find((s) => s.domainCode === selected);
@@ -50,7 +51,7 @@ export function BranchSegments({ dashboard }: { dashboard: BranchDashboard }) {
 
       {ready ? (
         <div>
-          <SectionHead title="여신 부문 현황" hint={`${dashboard.asOfLabel}`} right={<TextLink href="/branch/analysis">상세 분석</TextLink>} />
+          <SectionHead title="여신 부문 현황" hint={`${dashboard.asOfLabel}`} right={<TextLink href={withOffice("/branch/analysis", office)}>상세 분석</TextLink>} />
           <MetricStrip
             items={[
               { label: "여신 잔액(기업 + 소매)", figure: loan.total },

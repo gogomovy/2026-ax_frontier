@@ -174,10 +174,11 @@ SETTINGS = {
     "alerts.policy": ({"enabled": False, "channels": ["webhook", "email"], "min_severity": "warning", "lookback_min": 30, "rules": {"workflow_failed": {"enabled": True, "severity": "critical"}, "quality_failed": {"enabled": True, "severity": "warning"}, "auth_failures": {"enabled": True, "severity": "warning", "threshold": 10, "window_min": 10}, "llm_budget": {"enabled": True, "severity": "warning", "levels": [80, 100]}, "golden_failed": {"enabled": True, "severity": "warning"}}}, "운영 알림 — 켜기 · 채널 · 최소 심각도 · 조건별 기준. 채널 주소 · 계정은 배포 환경변수(ALERT_WEBHOOK_URL · ALERT_SMTP_*)"),
     "assist.synonyms": ({"차이": ["초과 폭", "격차", "이탈", "증감"], "초과": ["초과 폭"], "변화": ["증감", "증가율"], "비중": ["구성비"]}, "질의 패널 지표 찾기 — 질문어 → 같은 뜻의 지표명 표현(질문어가 지표명에 없을 때 보강) (B.40)"),
     "workflow.scopes": ({
-        "wf_branch_kpi": {"rule": "BRANCH_SCOPE", "key": "office_code", "list": "office_codes", "name": "office", "max": 20, "shared_keys": ["change_feed"],
+        "wf_branch_kpi": {"rule": "BRANCH_SCOPE", "key": "office_code", "list": "office_codes", "name": "office", "max": 20, "narrate_max": 5, "shared_keys": ["change_feed"],
                           "requires": [{"dataset": "BRANCH_OFFICE_MASTER", "column": "office_cd"}, {"dataset": "BRANCH_KPI_SCORE", "column": "office_cd"}],
                           "placeholder": "이 지점의 영업 가이드 의견은 다음 서술 실행(LLM) 후 표시됩니다."},
-    }, "범위 실행(다지점 · B.47) — 워크플로우별 범위 규칙 · 기본 범위 키 · 추가 범위 목록 키 · 필수 자료 · 상한 · 공유 산출물. 추가 범위 산출물은 '<키>@<값>' 으로 게시"),
+    }, "범위 실행(다지점 · B.47) — 워크플로우별 범위 규칙 · 기본 범위 키 · 추가 범위 목록 키 · 필수 자료 · 상한(max, 기본 범위 포함) · "
+       "LLM 을 쓸 추가 범위 수(narrate_max, 실행마다 서술이 오래된 지점부터 · 0 = 쓰지 않음 · -1 = 제한 없음) · 공유 산출물. 추가 범위 산출물은 '<키>@<값>' 으로 게시"),
     "assist.metric_synonyms": ({
         "breach_gap_6b": ["대표값 차이", "대표 PD 차이", "PD 차이", "부도율 차이", "초과폭", "대표값을 넘은 폭"],
         "dr_6b": ["6B 부도율", "6B 실제부도율"],

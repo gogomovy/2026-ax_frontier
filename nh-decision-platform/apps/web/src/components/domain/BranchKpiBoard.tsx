@@ -3,6 +3,7 @@ import Link from "next/link";
 import { FigureText } from "@/components/data/FigureText";
 import { RichText } from "@/components/data/RichText";
 import { Badge, IconArrowRight, SeverityBadge } from "@/components/ui/primitives";
+import { withOffice } from "@/lib/branchOffice";
 import type { BranchDashboard, KpiGroup, KpiItem } from "@/lib/types";
 
 const pts = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
@@ -22,7 +23,7 @@ function ScoreBar({ score, max, highlight }: { score: number | null; max: number
   );
 }
 
-function GroupCard({ group, tabOf }: { group: KpiGroup; tabOf: (code: string) => string | undefined }) {
+function GroupCard({ group, tabOf, office }: { group: KpiGroup; tabOf: (code: string) => string | undefined; office?: string | null }) {
   return (
     <section aria-label={`${group.label} 득점`} className="flex flex-col gap-base rounded-2xl border border-hairline-soft p-lg">
       <header className="flex items-baseline justify-between gap-2">
@@ -63,7 +64,7 @@ function GroupCard({ group, tabOf }: { group: KpiGroup; tabOf: (code: string) =>
                     </>
                   );
                   return tab ? (
-                    <Link key={d.code} href={`/branch/analysis/${tab}`} className="flex items-center justify-between gap-2 rounded-lg bg-[rgba(0,100,224,0.05)] px-2.5 py-1.5 text-[12px] text-primary">
+                    <Link key={d.code} href={withOffice(`/branch/analysis/${tab}`, office)} className="flex items-center justify-between gap-2 rounded-lg bg-[rgba(0,100,224,0.05)] px-2.5 py-1.5 text-[12px] text-primary">
                       {body}
                     </Link>
                   ) : (
@@ -81,7 +82,7 @@ function GroupCard({ group, tabOf }: { group: KpiGroup; tabOf: (code: string) =>
 }
 
 /** 영업점 1화면 상단 — 업적평가 평가항목별 득점 · 가/감점 요약 + 기준 변경 알림 (시나리오 1화면 (1)) */
-export function BranchKpiBoard({ dashboard }: { dashboard: BranchDashboard }) {
+export function BranchKpiBoard({ dashboard, office }: { dashboard: BranchDashboard; office?: string | null }) {
   const { scorecard, alerts } = dashboard;
   const kpis = scorecard.groups.filter((g) => g.kind === "kpi");
   const adj = scorecard.groups.find((g) => g.kind === "adjustment");
@@ -128,7 +129,7 @@ export function BranchKpiBoard({ dashboard }: { dashboard: BranchDashboard }) {
 
       <div className="grid grid-cols-1 gap-md lg:grid-cols-3">
         {kpis.map((g) => (
-          <GroupCard key={g.code} group={g} tabOf={tabOf} />
+          <GroupCard key={g.code} group={g} tabOf={tabOf} office={office} />
         ))}
       </div>
 
@@ -148,14 +149,14 @@ export function BranchKpiBoard({ dashboard }: { dashboard: BranchDashboard }) {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[11.5px] font-bold text-steel">{a.path}</span>
-                  <Link href={`/branch/analysis/${a.tabKey}`} className="block text-[13.5px] font-bold text-ink-deep after:absolute after:inset-0 after:content-['']">
+                  <Link href={withOffice(`/branch/analysis/${a.tabKey}`, office)} className="block text-[13.5px] font-bold text-ink-deep after:absolute after:inset-0 after:content-['']">
                     {a.title}
                   </Link>
                   <RichText as="span" text={a.summary} figures={dashboard.figures} className="relative z-10 mt-0.5 block text-[12.5px] leading-relaxed text-charcoal" />
                 </span>
                 <span className="relative z-10 inline-flex shrink-0 items-center gap-1 text-[12.5px] font-bold text-primary">
                   예상 <FigureText figure={a.uplift} signed />점
-                  <Link href={`/branch/analysis/${a.tabKey}`} aria-label={`의견 보기 — ${a.title} 분석 결과`} className="inline-flex items-center gap-1">
+                  <Link href={withOffice(`/branch/analysis/${a.tabKey}`, office)} aria-label={`의견 보기 — ${a.title} 분석 결과`} className="inline-flex items-center gap-1">
                     의견 보기 <IconArrowRight />
                   </Link>
                 </span>

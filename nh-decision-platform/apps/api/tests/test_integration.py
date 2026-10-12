@@ -1316,12 +1316,20 @@ def test_branch_multi_office_scope(db):
 
             sp = s.get(Setting, "workflow.scopes")
             spec0 = dict(sp.value)
-            sp.value = {**spec0, "wf_branch_kpi": {**spec0["wf_branch_kpi"], "max": 2}}
+            sp.value = {**spec0, "wf_branch_kpi": {**spec0["wf_branch_kpi"], "max": 2, "narrate_max": 0}}
             s.commit()
             try:
                 r2 = run_workflow(s, "wf_branch_kpi", [{"type": "manual"}])
                 assert [v["value"] for v in r2.summary["scopes"]] == [x] and r2.summary["scopes_dropped"] == ["009999"]
                 assert s.execute(select(Alert).where(Alert.kind == "scope_limit")).scalars().first().detail["dropped"] == ["009999"]
+                # 범위 서술 상한 0 — 추가 지점은 LLM 을 쓰지 않음(플래너 규칙 · 서술 생략, 축소 아님)
+                from nhdip.models import AgentDecision, NodeRun
+
+                assert r2.summary["scopes"][0]["llm"] is False and "범위 서술 상한" in r2.summary["scopes"][0]["llmOff"]
+                nr = {n.node_key: n for n in s.execute(select(NodeRun).where(NodeRun.workflow_run_id == r2.id)).scalars()}
+                assert nr[f"narrate@{x}"].status == "succeeded" and "범위 서술 상한" in nr[f"narrate@{x}"].output["skipped"]
+                plans = s.execute(select(AgentDecision).where(AgentDecision.workflow_run_id == r2.id, AgentDecision.decision == "plan")).scalars().all()
+                assert len(plans) == 2 and any("범위 서술 상한" in (p.detail.get("llmReason") or "") for p in plans)
             finally:
                 s.get(Setting, "workflow.scopes").value = spec0
                 s.commit()
@@ -1338,3 +1346,24 @@ def test_branch_multi_office_scope(db):
                 s.execute(sql(f"DELETE FROM mart.{t} WHERE brc = :x"), {"x": x})
             s.commit()
         _drain(db, 40)
+
+
+def test_scope_llm_rotation(db):
+    """B.47 · BRM-07 — LLM 을 쓸 추가 범위는 상한까지, 서술 이력이 없거나 가장 오래된 범위부터 차례로."""
+    from datetime import timedelta
+
+    from nhdip.models import AgentDecision, utcnow
+    from nhdip.scopes import llm_scopes
+
+    wf = "wf_test_rotation"
+    with db() as s:
+        now = utcnow()
+        for ins, ago in (("ins-x@A", 3), ("ins-y@A", 2), ("ins-x@B", 1), ("ins-x", 0)):
+            s.add(AgentDecision(agent_code="narrator_branch", workflow_code=wf, decision="narrated", summary="test", detail={"insight": ins}, at=now - timedelta(days=ago)))
+        s.commit()
+        assert llm_scopes(s, wf, ["B", "A", "C"], 2) == ["C", "A"]  # C 는 이력 없음 → 먼저, A 의 최근 서술(2일 전)이 B(1일 전)보다 오래됨
+        assert llm_scopes(s, wf, ["B", "A", "C"], 5) == ["C", "A", "B"]
+        assert llm_scopes(s, wf, ["B", "A"], 0) == []
+        assert llm_scopes(s, wf, ["B", "A"], -1) == ["B", "A"] and llm_scopes(s, wf, ["B"], None) == ["B"]
+        s.query(AgentDecision).filter(AgentDecision.workflow_code == wf).delete()
+        s.commit()

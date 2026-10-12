@@ -242,6 +242,9 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         targets = [t for t in targets if t["insight_id"] in allowed]
         if not targets:
             return NodeResult({"plan": "서술 대상 없음 — 기존 서술 유지", "results": results})
+    if ctx.llm_off:
+        # 범위 서술 상한 밖 지점(B.47 · BRM-07) — 의도한 생략이라 축소가 아님. 기존 문장(또는 안내 문구) 유지
+        return NodeResult({"skipped": ctx.llm_off, "targets": [t["insight_id"] for t in targets], "results": results})
     try:
         llm = resolve(ctx.session, node.agent_code)
     except LlmUnavailable as exc:

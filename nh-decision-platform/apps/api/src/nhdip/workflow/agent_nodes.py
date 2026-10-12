@@ -146,7 +146,10 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ask_items = ranked[:cap] if cap else ranked
         context = {"workflow": {"code": ctx.workflow.code, "name": ctx.workflow.name, "description": ctx.workflow.description}, "guidance": pol.get("llm_guidance"),
                    "candidates": [{k: i.get(k) for k in ("kind", "code", "label", "unit", "before", "after", "delta", "deltaPct", "direction", "ruleLevel", "files")} for i in ask_items]}
-        data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",), shrink=("candidates",))
+        if ctx.llm_off:  # 범위 서술 상한 밖 지점(B.47 · BRM-07) — LLM 을 부르지 않고 규칙 판단
+            data, meta = None, {"by": "rule", "reason": ctx.llm_off}
+        else:
+            data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",), shrink=("candidates",))
         # 입력 글자 상한으로 뒤쪽 후보를 덜어 냈으면(B.43) 실제로 보낸 후보만 LLM 판단을 받는다 — 나머지는 규칙
         sent = ask_items[: len(ask_items) - int((meta.get("contextTrimmed") or {}).get("candidates", 0))]
         if len(sent) < len(items):
@@ -274,7 +277,10 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                "insights": info, "forced": forced, "ruleSuggestion": {"narrate": rule_choice, "skip": rule_skip},
                "evidence": {"available": ev is not None, "baseQuery": (ev.config or {}).get("query") if ev else None}, "followupCandidates": follow_cands, "chain": chain,
                "limits": {"max_targets": int(pol.get("max_targets") or 0), "max_followups": int(pol.get("max_followups", 2))}, "guidance": pol.get("llm_guidance")}
-    data, meta = ask_json(ctx.session, node.agent_code or PLANNER, PLAN_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("narrate",))
+    if ctx.llm_off:  # 범위 서술 상한 밖 지점(B.47 · BRM-07) — 규칙 계획, 서술은 아래에서 막는다
+        data, meta = None, {"by": "rule", "reason": ctx.llm_off}
+    else:
+        data, meta = ask_json(ctx.session, node.agent_code or PLANNER, PLAN_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("narrate",))
     by = "rule"
     chosen, skip, followups, ev_query = list(rule_choice), dict(rule_skip), [], ""
     run_evidence = None
@@ -315,6 +321,8 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         resolve(ctx.session, nar.agent_code)
     except LlmUnavailable as exc:
         llm_ok, llm_reason = False, str(exc)
+    if ctx.llm_off:
+        llm_ok, llm_reason = False, ctx.llm_off
     evidence = bool(chosen) and llm_ok and ev is not None and (run_evidence if run_evidence is not None else True)
     plan = {"by": by, "meta": meta, "narrate": chosen if llm_ok else [], "candidates": chosen, "why": {k: v for k, v in why.items() if k in chosen}, "skip": skip, "evidence": evidence,
             "evidenceQuery": ev_query, "followups": followups, "llm": llm_ok, "llmReason": llm_reason, "causes": sorted(set(types)), "changedFigures": sorted(changed_figs)[:30],

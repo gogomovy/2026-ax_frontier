@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from nhdip.calc.metrics import EvalContext
 from nhdip.models import NodeRun, Workflow, WorkflowNode, WorkflowRun, new_id, utcnow
-from nhdip.scopes import scope_cap, scope_spec, scope_values
+from nhdip.scopes import llm_scopes, scope_cap, scope_spec, scope_values
 from nhdip.views.store import all_current
 
 
@@ -38,6 +38,8 @@ class RunContext:
     deferred: list[tuple[str, dict[str, Any], str | None]] = field(default_factory=list)  # 실행 성공 후 낼 이벤트
     # 범위 산출물('<키>@<범위>', B.47) — 노드가 보는 산출물에서는 빼 둔다(기본 범위 수치 · 서술이 다른 지점 산출물을 덮지 않게)
     scoped_artifacts: dict[str, Any] = field(default_factory=dict)
+    # 이 범위 실행에서 LLM 을 쓰지 않는 사유(BRM-07 · 범위 서술 상한) — 변화 판단 · 플래너는 규칙, 서술은 기존 문장 유지
+    llm_off: str | None = None
 
     def load_artifacts(self) -> dict[str, Any]:
         if not self.artifacts:
@@ -163,8 +165,9 @@ def _missing_scope_data(ctx: RunContext, spec: dict[str, Any], value: str) -> st
     return None
 
 
-def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any], value: str, summary: dict[str, Any]) -> dict[str, Any]:
-    """추가 범위 한 번 — 게시 전 노드만. 결과 산출물은 ctx(기본 범위)의 '<키>@<값>' 로 옮긴다. 실패해도 실행 전체는 멈추지 않는다."""
+def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any], value: str, summary: dict[str, Any], llm_off: str | None = None) -> dict[str, Any]:
+    """추가 범위 한 번 — 게시 전 노드만. 결과 산출물은 ctx(기본 범위)의 '<키>@<값>' 로 옮긴다. 실패해도 실행 전체는 멈추지 않는다.
+    llm_off 가 있으면 이 범위는 LLM 을 쓰지 않는다(범위 서술 상한 — 다음 실행에서 차례가 온다)."""
     suffix = f"@{value}"
     reason = _missing_scope_data(ctx, spec, value)
     if reason:
@@ -188,6 +191,7 @@ def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any],
     ctx.eval = EvalContext(session=ctx.session, workflow_run_id=ctx.run.id, rows=saved[0].rows, used_versions=saved[0].used_versions,
                            rule_overrides={spec["rule"]: {spec["key"]: value}}, scope_suffix=suffix)
     ctx.artifacts, ctx.changed, ctx.changes, ctx.state, ctx.base = sa, set(), [], {}, {}
+    ctx.llm_off = llm_off
     status, err = "succeeded", None
     try:
         if _run_nodes(ctx, nodes, summary, key_suffix=suffix):
@@ -197,9 +201,10 @@ def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any],
         status, err = "failed", str(exc)[:500]
     scoped_changed, scoped_changes = ctx.changed, ctx.changes
     ctx.eval, ctx.artifacts, ctx.changed, ctx.changes, ctx.state, ctx.base = saved
+    ctx.llm_off = None
     if status == "failed":
         del ctx.deferred[n_deferred:]  # 실패한 범위의 변화 이벤트는 내지 않는다
-        return {"value": value, "status": status, "error": err}
+        return {"value": value, "status": status, "error": err, "llm": llm_off is None}
     moved = []
     for k in sorted(scoped_changed):
         dst = k if k in shared else k + suffix
@@ -210,7 +215,7 @@ def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any],
         if c.get("artifact") not in shared:
             c["artifact"] = f"{c.get('artifact')}{suffix}"
     ctx.changes += scoped_changes
-    return {"value": value, "status": status, "artifacts": moved}
+    return {"value": value, "status": status, "artifacts": moved, "llm": llm_off is None, **({"llmOff": llm_off} if llm_off else {})}
 
 
 def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id: int | None = None) -> WorkflowRun:
@@ -242,7 +247,11 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
             session.commit()
         if extras:
             # 추가 범위(다지점) — 게시 전 노드를 범위마다 다시 돌리고, 게시는 아래에서 한 번에
-            scopes = [_run_scope(ctx, nodes[:pub], spec, v, summary) for v in extras]
+            # LLM 을 쓸 범위는 상한(narrate_max)까지 — 서술이 오래된 범위부터 차례로 (BRM-07)
+            n_llm = spec.get("narrate_max", 5)
+            with_llm = set(llm_scopes(session, wf.code, extras, n_llm))
+            off = f"범위 서술 상한({n_llm}곳/실행) 밖 — 규칙 판단 · 기존 문장 유지, 다음 실행에서 차례로 갱신"
+            scopes = [_run_scope(ctx, nodes[:pub], spec, v, summary, None if v in with_llm else off) for v in extras]
             summary["scopes"] = scopes
             degraded = degraded or any(s["status"] in ("failed", "degraded") for s in scopes)
             degraded = _run_nodes(ctx, nodes[pub:], summary) or degraded

@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import clsx from "clsx";
 import { AssistPanel } from "@/components/assist/AssistPanel";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { usePlanState } from "@/components/providers/PlanStateProvider";
 import { useSession, type MenuPayload } from "@/components/providers/SessionProvider";
 import { apiPost } from "@/lib/api-client";
+import { navHrefWithOffice, officeFromSearch } from "@/lib/branchOffice";
 import { API_MODE } from "@/lib/config";
 import { IconChevron, IconClose, IconMenu } from "@/components/ui/primitives";
 import { formatDate, formatKstDateTime } from "@/lib/format";
@@ -176,6 +177,9 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
         ];
   const asOf = API_MODE ? (menu?.asOf ?? AS_OF) : AS_OF;
   const genAt = API_MODE ? generatedAt : GENERATED_AT;
+  // 영업점 화면에서 고른 지점(?office=, B.47) — 사이드바 이동에도 유지. 서버 렌더 · 하이드레이션은 인자 없이(같은 글자) 그리고 그 뒤 주소에서 읽는다
+  const search = useSyncExternalStore(subscribeLocation, readSearch, emptySearch);
+  const office = pathname.startsWith("/branch") ? officeFromSearch(search) : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -192,6 +196,7 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
               <NavLink
                 key={item.href}
                 item={item}
+                href={navHrefWithOffice(item.href, office)}
                 active={isActive(item, pathname)}
                 count={g.withCounts && item.countKey ? counts[item.countKey] : undefined}
               />
@@ -228,11 +233,18 @@ function NavGroup({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function NavLink({ item, active, count }: { item: NavItem; active: boolean; count?: number }) {
+function subscribeLocation(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+const readSearch = () => window.location.search;
+const emptySearch = () => "";
+
+function NavLink({ item, href, active, count }: { item: NavItem; href: string; active: boolean; count?: number }) {
   return (
     <li>
       <Link
-        href={item.href}
+        href={href}
         aria-current={active ? "page" : undefined}
         className={clsx(
           "flex items-center gap-2.5 rounded-xl px-md py-2.5 text-[13.5px] transition-colors",
