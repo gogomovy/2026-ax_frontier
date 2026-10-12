@@ -107,7 +107,8 @@ BRANCH_T02 = {
     **_rows(["BASE_YM", "BRC", "GROUP_KIND_CD", "MODEL_SEGMENT_CD", "GRADE_CD", "SAMPLE_FILTER_TXT", "BRC_BORROWER_CNT", "BRC_EXPOSURE_AMT", "BRC_COUNT_SHARE_RT", "BRC_AMOUNT_SHARE_RT",
              "BRC_AVG_GRADE_ORD", "BRC_WEIGHTED_GRADE_ORD", "BANK_BORROWER_CNT", "BANK_EXPOSURE_AMT", "BANK_COUNT_SHARE_RT", "BANK_AMOUNT_SHARE_RT", "BANK_AVG_GRADE_ORD",
              "BANK_WEIGHTED_GRADE_ORD", "SMALL_CORP_SHARE_GAP_PP", "GRADE_GAP_ORD"]),
-    "PROPOSAL_VER_NO": _um("다행 표의 제안 버전은 분석결과 식별자(ANALYSIS_ID)로 대신 추적"),
+    # 제안 버전(B.46 · Q96) — 같은 기준월 · 지점의 이전 적재와 수치 · 코드 열이 같으면 유지, 다르면 +1 (서술 · 분석 ID 는 비교 제외)
+    "PROPOSAL_VER_NO": {"version": True},
     "CANDIDATE_CNT": {"metric": "br_prospect_pick", "rows_where": _ALL},
     "PROPOSED_NEW_LOAN_AMT": {"metric": "br_prospect_amt", "rows_where": _ALL},
     "CANDIDATE_FIN_GRADE_AVG": {"metric": "br_prospect_avg_grade", "rows_where": _ALL},
@@ -160,6 +161,7 @@ BRANCH_S03 = {
 BINDING_UPGRADES: dict[str, list[dict[str, Any]]] = {
     **{f"{t}.{c}": [{"row": c.lower()}] for t in ("RISK_S99", "BRANCH_S99") for c in ("ORIGINAL_FILE_URI", "VALID_TO_DT", "PRINTED_PAGE_NO")},
     **{f"BRANCH_T02.{k}": [{x: y for x, y in v.items() if x != "rows_where"}] for k, v in BRANCH_T02.items() if k.startswith(("REPORT_", "AGENT_", "RISK_", "EVIDENCE_", "TAB_"))},
+    "BRANCH_T02.PROPOSAL_VER_NO": [_um("다행 표의 제안 버전은 분석결과 식별자(ANALYSIS_ID)로 대신 추적")],  # B.46 — 이전 기본값(미연결)일 때만 버전 연결로
 }
 
 BINDINGS: dict[str, dict[str, Any]] = {

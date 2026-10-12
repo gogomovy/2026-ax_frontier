@@ -65,3 +65,22 @@ def test_dept_default_bindings_are_valid_kinds():
     assert all(v["builder"] in IMPLS for v in ROW_BUILDERS.values())
     assert set(ROW_BUILDERS) <= {t for ts in WORKFLOW_TABLES.values() for t in ts}
     assert all(k in BINDINGS for k in BINDING_UPGRADES)
+
+
+def test_rows_version_multi_row_proposal():
+    """B.46 — 다행 표 제안 버전: 처음 1, 행 집합이 같으면(순서 · 소수 표기 무관) 유지, 값이 바뀌거나 행이 늘면 +1. 서술 등 비교 제외 열은 무시."""
+    from decimal import Decimal
+
+    from nhdip.contracts.materialize import rows_version
+
+    cols = ["base_ym", "brc", "grade_cd", "brc_borrower_cnt", "brc_exposure_amt"]
+    a = [{"base_ym": "202608", "brc": "001068", "grade_cd": "2A", "brc_borrower_cnt": 3, "brc_exposure_amt": Decimal("1500.000000"), "agent_summary": "문장 A", "proposal_ver_no": 2},
+         {"base_ym": "202608", "brc": "001068", "grade_cd": "3B", "brc_borrower_cnt": 1, "brc_exposure_amt": Decimal("200"), "agent_summary": "문장 A", "proposal_ver_no": 2}]
+    same = [{**a[1], "brc_exposure_amt": Decimal("200.00"), "agent_summary": "문장 B", "proposal_ver_no": None},
+            {**a[0], "brc_exposure_amt": Decimal("1500"), "agent_summary": "문장 B", "proposal_ver_no": None}]
+    assert rows_version([], same, cols, "proposal_ver_no") == 1  # 이전 적재 없음
+    assert rows_version([{**r, "proposal_ver_no": None} for r in a], same, cols, "proposal_ver_no") == 1  # 이전 적재에 버전이 비어 있음(기존 DB)
+    assert rows_version(a, same, cols, "proposal_ver_no") == 2  # 수치 같음 → 유지 (서술 변경 · 행 순서 · 소수 표기 무시)
+    changed = [same[0], {**same[1], "brc_borrower_cnt": 4}]
+    assert rows_version(a, changed, cols, "proposal_ver_no") == 3
+    assert rows_version(a, [*same, {**same[0], "grade_cd": "4A"}], cols, "proposal_ver_no") == 3  # 행 추가

@@ -501,6 +501,25 @@ def test_dept_contracts_rows_and_sources(db):
     assert allrow["brc_borrower_cnt"] > 0 and allrow["candidate_cnt"] is not None
     assert prod["n"] == 21 and prod["d"] is not None
     assert docs["n"] > 0 and docs["hidden"] == 0  # 영업점 S99 는 영업점 노출 허용 문서만
+    # B.46 — 영업점 T02(다행) 제안 버전: 모든 행 같은 버전, 같은 자료로 다시 돌리면 유지, 이전 적재와 수치가 다르면 +1
+    t2 = {c["column"]: c for c in tables["BRANCH_T02"]["report"]["columns"]}
+    assert t2["PROPOSAL_VER_NO"]["verdict"] == "derived" and t2["PROPOSAL_VER_NO"]["kind"] == "version"
+
+    def _vers():
+        with db() as s:
+            return [r[0] for r in s.execute(sql("SELECT DISTINCT proposal_ver_no FROM mart.branch_t02")).all()]
+
+    v0 = _vers()
+    assert len(v0) == 1 and v0[0] is not None and int(v0[0]) >= 1
+    assert admin.post("/admin/workflows/wf_branch_kpi/run").status_code == 200
+    _drain(db, 20)
+    assert _vers() == v0  # 같은 자료 → 유지(서술 · 분석 ID 는 비교 제외)
+    with db() as s:  # 이전 적재 값이 지금과 달랐던 것처럼 바꿔 두면 다음 적재는 새 버전
+        s.execute(sql("UPDATE mart.branch_t02 SET brc_borrower_cnt = brc_borrower_cnt + 1 WHERE group_kind_cd = 'ALL'"))
+        s.commit()
+    assert admin.post("/admin/workflows/wf_branch_kpi/run").status_code == 200
+    _drain(db, 20)
+    assert _vers() == [int(v0[0]) + 1]
     # 계보 — 사업부서 표 연결 변경은 그 표를 적재하는 워크플로우를 깨운다
     from nhdip.models import ColumnContract, OutboxEvent
     from nhdip.workflow.dispatcher import match_event

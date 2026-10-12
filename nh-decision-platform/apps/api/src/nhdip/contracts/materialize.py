@@ -417,12 +417,19 @@ def _materialize_rows(session: Session, ctx: EvalContext, artifacts: dict[str, A
                 err = f"행 생성 실패: {type(exc).__name__}: {exc}"
     common: dict[str, Any] = {}
     checks: list[dict[str, Any]] = []
+    version_col: str | None = None
+    data_cols: set[str] = set()  # 제안 버전 비교 대상 — 수치 · 코드 열(서술 · 분석 ID · 분석 일자는 실행마다 달라 제외)
     for c in cols:
         r = resolve_binding(ctx, c, artifacts, run)
         col = c.column_name.lower()
         kind = r["kind"]
+        if kind in ("row", "metric", "base_ym", "const"):
+            data_cols.add(col)
         verdict, note, val, disp = "unmapped", r.get("reason") or r.get("error") or "", None, None
-        if kind == "source":
+        if kind == "version":
+            version_col = col
+            verdict, note = "derived", "제안 버전 — 같은 기준월 · 지점의 이전 적재와 수치가 같으면 유지, 다르면 +1"
+        elif kind == "source":
             verdict, note = ("mapped" if r["ok"] else "error"), (r["ref"] if r["ok"] else r["reason"])
         elif kind == "row":
             key = r["col"]
@@ -479,11 +486,48 @@ def _materialize_rows(session: Session, ctx: EvalContext, artifacts: dict[str, A
 
     full = [{k: v for k, v in {**_common_for(x), **x}.items() if k in names} for x in rows]
     rep["baseYm"] = full[0].get("base_ym") if full else common.get("base_ym")
+    scope: dict[str, Any] = {}
+    where = ""
+    old: list[dict[str, Any]] = []
     if full and full[0].get("base_ym"):
         # 같은 기준월 · 같은 범위(사무소 등)의 이전 적재는 지우고 다시 넣는다 — 빠진 행이 남지 않도록
         scope = {k: full[0][k] for k in ("base_ym", "brc") if k in full[0]}
         where = " AND ".join(f'"{k}" = :{k}' for k in scope)
+        if version_col:
+            old = [dict(m) for m in session.execute(text(f'SELECT * FROM mart."{table}" WHERE {where}'), scope).mappings()]
         session.execute(text(f'DELETE FROM mart."{table}" WHERE {where}'), scope)
     for x in full:
         _upsert(session, table, cols, x, run_id)
+    if version_col and scope:
+        # 다행 표의 제안 버전(B.46 · Q96) — 저장된 값(열 정밀도로 반올림된 값)끼리 비교하려고 다시 읽어서 판단한다
+        new = [dict(m) for m in session.execute(text(f'SELECT * FROM mart."{table}" WHERE {where}'), scope).mappings()]
+        ver = rows_version(old, new, sorted(data_cols - {version_col}), version_col)
+        session.execute(text(f'UPDATE mart."{table}" SET "{version_col}" = :_ver WHERE {where}'), {**scope, "_ver": ver})
+        rep["version"] = ver
+        for ch in checks:
+            if ch["column"].lower() == version_col:
+                ch["value"] = str(ver)
     return rep
+
+
+def _norm_cell(v: Any) -> Any:
+    if v is None or isinstance(v, bool):
+        return v
+    try:
+        return str(Decimal(str(v)).normalize())
+    except Exception:  # noqa: BLE001
+        return str(v)
+
+
+def rows_version(old: list[dict[str, Any]], new: list[dict[str, Any]], cols: list[str], version_col: str) -> int:
+    """다행 표 제안 버전 — 이전 적재가 없거나 버전이 비어 있으면 1, 행 집합(비교 열 기준)이 같으면 이전 버전 유지, 다르면 +1.
+    행 순서와 무관하게 비교한다. 서술 · 분석 ID · 분석 일자 같은 실행마다 바뀌는 열은 cols 에 넣지 않는다."""
+    prev = max((int(r[version_col]) for r in old if r.get(version_col) is not None), default=None)
+    if prev is None:
+        return 1
+    import json as _json
+
+    def sig(rows: list[dict[str, Any]]) -> list[str]:
+        return sorted(_json.dumps([_norm_cell(r.get(c)) for c in cols], ensure_ascii=False, default=str) for r in rows)
+
+    return prev if sig(old) == sig(new) else prev + 1

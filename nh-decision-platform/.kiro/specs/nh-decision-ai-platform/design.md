@@ -2419,7 +2419,7 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 미거래 | `calc/formulas.PROSPECT_SELECT(existing)` · `seed/defs_branch.PROSPECT_EXISTING` | 지역 조건 다음 기존 차주명 제외(`excluded.existing`) |
 | 단위 중복 | `contracts/materialize.render_markers` · `web components/data/RichText.renderRich` · 서술 지시문 | 마커 바로 뒤 같은 단위는 생략 |
 
-### 19.24 남은 기술 과제 보완 (B.41 ~ B.45 · Q90 ~ Q95)
+### 19.24 남은 기술 과제 보완 (B.41 ~ B.46 · Q90 ~ Q96)
 
 | 영역 | 위치 | 동작 |
 |---|---|---|
@@ -2430,6 +2430,7 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 판단 입력 상한 | `workflow/llm_judge.fit_context` · `ask_json(shrink=)` · `agent_nodes.n_detect` | 상한 초과 시 `shrink` 키 → 큰 목록 순으로 뒤쪽 항목을 덜어 냄(넘친 글자 ÷ 항목 평균 길이만큼 한 번에), `_omitted` 기록. 불가하면 `None` → 규칙. 변화 감지는 실제로 보낸 후보만 LLM 판단 반영 |
 | 질의 지표 순위 | `api/assist.rank_metrics` · `metric_score` · `_question_forms` · 설정 `assist.metric_synonyms` | 점수 = max(지표명 점수, 별칭 점수 + 별칭 문구가 질문(공백 제거 · 조사 뗀 형태)에 있으면 길이 + 8). 권한 · 값 유무 필터는 `metrics_for` 가 그대로 |
 | 탭 접근성 | `apps/e2e/a11y.mjs scanTabs` · `A11Y_TAB_PAGES` | 첫 점검 후 `aria-selected` 가 아닌 `role=tab` 을 차례로 눌러 선택 상태 확인 → axe 재실행. 결과 행 `<경로> [탭: 이름]` |
+| 다행 제안 버전(B.46) | `contracts/materialize._materialize_rows` · `rows_version` · `seed/defs_dept_contracts`(`BRANCH_T02.PROPOSAL_VER_NO`) | 범위(기준월 · 지점) 이전 행을 읽어 둔 뒤 지우고 새 행 적재 → 다시 읽어 비교 열(행 · 지표 · 기준월 · 상수 연결) 서명 비교 → 같으면 이전 최대 버전, 다르면 +1, 이전 없음 · 비어 있음이면 1 → 범위 전체 `UPDATE` |
 | 업로드 시험 모드 | `apps/e2e/upload-agents.mjs`(`LLM_MODE` · `EMBED_MODE` · `E2E_EXPECT_LLM`) · CI `upload` 잡(workflow_dispatch) | LLM 모드: 기존 판정. LLM 없는 모드: 판단 결정이 규칙으로 남는지 · 서술 실패 없음 · 청크만 · 규칙 추출 · 질의 `fallback`. 공통: '차이' 질의에 `breach_gap_6b` 포함 |
 
 ### 19.9 배포 (DEP-01~04)
