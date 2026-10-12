@@ -86,7 +86,7 @@ export default function AgentDecisionsAdmin() {
                 <ol className="flex flex-wrap items-center gap-1 text-[11.5px]">
                   {w.nodes.map((n, i) => (
                     <li key={n.key} className="flex items-center gap-1">
-                      <span className={`rounded-lg px-2 py-1 ${!n.enabled ? "bg-surface-soft text-stone line-through" : AGENT_NODE.has(n.impl) ? "bg-[rgba(0,100,224,0.08)] font-bold text-primary" : "bg-surface-soft text-charcoal"}`} title={n.agent ? `에이전트 ${n.agent}` : n.impl}>
+                      <span className={`rounded-lg px-2 py-1 ${!n.enabled ? "bg-surface-soft text-stone line-through" : AGENT_NODE.has(n.impl) ? "bg-info-soft font-bold text-primary" : "bg-surface-soft text-charcoal"}`} title={n.agent ? `에이전트 ${n.agent}` : n.impl}>
                         {n.name}
                       </span>
                       {i < w.nodes.length - 1 ? <span className="text-stone">→</span> : null}

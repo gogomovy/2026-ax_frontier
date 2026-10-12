@@ -37,6 +37,39 @@
   --color-primary-text: #0052bd;
   --color-success-text: #1c7434;
   --color-critical-text: #c4162f;
+  --color-attention-text: #8a5d00;
+  --color-warning-text: #7a5600;
+
+  /* Color — 상태 옅은 배경 · 선 (C.1 · Q106 — 구성 요소의 rgba 하드코딩을 대체). faint < soft, line = 테두리 */
+  --color-info-faint: rgba(0, 100, 224, 0.05);
+  --color-info-soft: rgba(0, 100, 224, 0.1);
+  --color-info-line-soft: rgba(0, 100, 224, 0.12);
+  --color-info-line: rgba(0, 100, 224, 0.22);
+  --color-success-faint: rgba(49, 162, 76, 0.06);
+  --color-success-soft: rgba(49, 162, 76, 0.12);
+  --color-success-line: rgba(49, 162, 76, 0.3);
+  --color-attention-faint: rgba(242, 169, 24, 0.1);
+  --color-attention-soft: rgba(242, 169, 24, 0.18);
+  --color-warning-soft: rgba(247, 185, 40, 0.18);
+  --color-critical-faint: rgba(228, 30, 63, 0.06);
+  --color-critical-soft: rgba(228, 30, 63, 0.1);
+  --color-critical-line: rgba(228, 30, 63, 0.3);
+  --color-highlight: rgba(242, 169, 24, 0.32);   /* 본문 인용 강조(mark) */
+  --color-line-strong: rgba(10, 19, 23, 0.12);   /* ghost 버튼 테두리 */
+  --color-scrim: rgba(10, 19, 23, 0.32);         /* 시트 · 메뉴 뒤 어둡게 */
+
+  /* Chart — 계열 팔레트(primary · attention · success · stone · purple · teal), 격자 · 축 */
+  --chart-1: #0064e0;
+  --chart-2: #f2a918;
+  --chart-3: #31a24c;
+  --chart-4: #8595a4;
+  --chart-5: #a121ce;
+  --chart-6: #0f8a8a;
+  --chart-grid: #e4e9ee;
+  --chart-axis: #b8c3cf;
+
+  /* Layout */
+  --shell-max: 1280px;
 
   /* Radius */
   --radius-xs: 2px;

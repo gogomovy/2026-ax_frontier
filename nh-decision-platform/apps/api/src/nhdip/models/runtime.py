@@ -282,3 +282,28 @@ class AgentDecision(Base):
     summary: Mapped[str] = mapped_column(String(500), default="")
     detail: Mapped[Any] = mapped_column(JSONB, default=dict)
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, default=_trace)
+
+
+class UploadRequest(Base):
+    """업무 사용자 자료 등록 요청 (Phase C · UPL · Q99) — 관리자 승인 때 기존 확정 경로(ingest_file · ingest_document)를 탄다."""
+
+    __tablename__ = "upload_request"
+    __table_args__ = (Index("ix_ops_upload_request_status_at", "status", "created_at"), {"schema": "ops"})
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(12))  # dataset | document
+    target: Mapped[str] = mapped_column(String(80))  # 데이터셋 코드 · 문서 분류
+    origin: Mapped[str] = mapped_column(String(10))  # bank | ext
+    file_name: Mapped[str] = mapped_column(String(300))
+    file_path: Mapped[str] = mapped_column(String(500))
+    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    meta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    preview: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="pending")  # pending | approved | rejected | failed
+    requested_by: Mapped[str] = mapped_column(String(40))
+    requested_org: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

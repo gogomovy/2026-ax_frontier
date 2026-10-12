@@ -48,7 +48,7 @@ export function renderRich(text: string, figures?: Record<string, Figure>): Reac
         return (
           <span
             key={index}
-            className="rounded-sm bg-[rgba(228,30,63,0.1)] px-1 text-[11px] font-bold text-critical"
+            className="rounded-sm bg-critical-soft px-1 text-[11px] font-bold text-critical"
             title="참조된 수치를 찾을 수 없습니다(검증 실패 대상)"
           >
             수치 참조 누락: {figMatch[1]}

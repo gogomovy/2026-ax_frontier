@@ -1,8 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AdminPage, C, Card, JsonEditor, JsonView, Loading, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { AdminPage, C, Card, JsonEditor, JsonView, Loading, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { ValueView } from "@/components/admin/ValueView";
+import { BarList } from "@/components/charts/Bars";
+import { Advanced, EmptyState, Notice } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
+import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { apiPatch, apiPost, apiPut } from "@/lib/api-client";
 
 interface Onto {
@@ -36,6 +40,7 @@ export default function OntologyAdmin() {
   const { run, busy } = useAction();
   const d = data.data;
 
+  const openTotal = Object.values(d?.openIssues ?? {}).reduce((n, v) => n + v, 0);
   const nodeName = useMemo(() => Object.fromEntries((graph.data?.nodes ?? []).map((n) => [n.id, `${n.name}`])), [graph.data]);
 
   return (
@@ -50,36 +55,37 @@ export default function OntologyAdmin() {
     >
       <Loading error={data.error} loading={!d && data.loading} />
       {d ? (
-        <div className="mb-lg grid grid-cols-1 gap-md md:grid-cols-3">
-          <Card title={`스키마 v${d.schema?.version ?? "-"}`} className="!mb-0">
-            <p className="text-[12px] text-steel">
-              클래스 {d.schema?.classes.length ?? 0} · 관계 {d.schema?.relations.length ?? 0}
-            </p>
-            <p className="mt-1 text-[11px] text-stone">{d.schema?.note}</p>
-          </Card>
-          <Card title="그래프" className="!mb-0">
-            {d.graph.ok ? (
-              <div className="flex flex-wrap gap-1">
-                {(d.graph.labels ?? []).map((l) => (
-                  <button key={l.label} type="button" onClick={() => setLabel(label === l.label ? "" : l.label)}>
-                    <Badge tone={label === l.label ? "dark" : "neutral"}>
-                      {l.label} {l.n}
-                    </Badge>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <StatusBadge status="error" label={d.graph.error ?? "그래프 장애"} />
-            )}
-          </Card>
-          <Card title="검토 대기" className="!mb-0">
-            <p className="text-[12px] text-steel">
-              {Object.entries(d.openIssues)
-                .map(([k, v]) => `${k} ${v}`)
-                .join(" · ") || "없음"}
-            </p>
-          </Card>
-        </div>
+        <>
+          <div className="mb-lg">
+            <StatGrid columns={4} label="온톨로지 요약">
+              <StatCard label="스키마" value={`v${d.schema?.version ?? "-"}`} hint={`클래스 ${d.schema?.classes.length ?? 0} · 관계 ${d.schema?.relations.length ?? 0}`} />
+              <StatCard
+                label="그래프 노드"
+                value={d.graph.ok ? (d.graph.labels ?? []).reduce((n, l) => n + l.n, 0).toLocaleString("ko-KR") : "연결 안 됨"}
+                tone={d.graph.ok ? "default" : "attention"}
+                hint={d.graph.ok ? `종류 ${(d.graph.labels ?? []).length}가지` : "그래프 없이 축소 동작 — 화면 수치에는 영향 없음"}
+              />
+              <StatCard label="그래프 관계" value={d.graph.ok ? (d.graph.relationships ?? []).reduce((n, r) => n + r.n, 0).toLocaleString("ko-KR") : "-"} hint={d.graph.ok ? `종류 ${(d.graph.relationships ?? []).length}가지` : undefined} />
+              <StatCard label="추출 검토 대기" value={openTotal} unit="건" tone={openTotal ? "attention" : "success"} hint={openTotal ? "문서 구조화 결과 중 스키마 검증 실패분" : "검토할 것 없음"} />
+            </StatGrid>
+          </div>
+          {d.graph.ok ? (
+            <div className="mb-lg grid grid-cols-1 gap-lg lg:grid-cols-2">
+              <Card className="!mb-0">
+                <BarList title="노드 종류별 개수" items={(d.graph.labels ?? []).slice(0, 10).map((l) => ({ label: l.label, value: l.n }))} />
+              </Card>
+              <Card className="!mb-0">
+                <BarList title="관계 종류별 개수" items={(d.graph.relationships ?? []).slice(0, 10).map((r) => ({ label: r.type, value: r.n, tone: "neutral" as const }))} />
+              </Card>
+            </div>
+          ) : (
+            <div className="mb-lg">
+              <Notice tone="attention" title="그래프에 연결되지 않았습니다">
+                {d.graph.error ?? "그래프 장애"} — 근거 탐색 · 계보 미리보기가 축소되어 동작합니다.
+              </Notice>
+            </div>
+          )}
+        </>
       ) : null}
       <Tabs
         active={tab}
@@ -92,6 +98,18 @@ export default function OntologyAdmin() {
       />
       {tab === "graph" ? (
         <Card title={label ? `${label} 관련 관계` : "관계 (최대 300)"}>
+          {d?.graph.ok ? (
+            <div className="mb-md flex flex-wrap items-center gap-1" role="group" aria-label="노드 종류로 거르기">
+              <span className="mr-1 text-[11.5px] font-bold text-steel">노드 종류</span>
+              {(d.graph.labels ?? []).map((l) => (
+                <button key={l.label} type="button" aria-pressed={label === l.label} onClick={() => setLabel(label === l.label ? "" : l.label)}>
+                  <Badge tone={label === l.label ? "dark" : "neutral"}>
+                    {l.label} {l.n}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <Loading error={graph.error} loading={!graph.data && graph.loading} />
           <Table head={["시작", "관계", "끝", "추출"]}>
             {(graph.data?.edges ?? []).map((e, i) => (
@@ -127,7 +145,12 @@ export default function OntologyAdmin() {
                 </C>
                 <C className="max-w-[280px]">{i.reason}</C>
                 <C className="max-w-[360px]">
-                  <JsonView value={i.raw} maxHeight={120} />
+                  <ValueView value={i.raw} depth={1} />
+                  <div className="mt-xs">
+                    <Advanced label="원문(JSON)">
+                      <JsonView value={i.raw} maxHeight={120} />
+                    </Advanced>
+                  </div>
                 </C>
                 <C className="text-[11px]">
                   {i.origin}#{i.documentId}
@@ -147,7 +170,7 @@ export default function OntologyAdmin() {
               </tr>
             ))}
           </Table>
-          {issues.data && !issues.data.length ? <p className="py-lg text-center text-[12.5px] text-stone">검토 대기 항목이 없습니다.</p> : null}
+          {issues.data && !issues.data.length ? <EmptyState compact title="검토 대기 항목이 없습니다" description="문서 구조화 결과가 모두 스키마 검증을 통과했습니다." /> : null}
         </Card>
       ) : null}
     </AdminPage>
@@ -157,11 +180,21 @@ export default function OntologyAdmin() {
 function SchemaEditor({ schema, busy, onSave }: { schema: NonNullable<Onto["schema"]>; busy: boolean; onSave: (v: unknown) => void }) {
   const [note, setNote] = useState("");
   return (
-    <div>
-      <TextInput label="변경 메모" value={note} onChange={setNote} />
-      <div className="mt-md">
-        <JsonEditor value={{ classes: schema.classes, relations: schema.relations, aliases: schema.aliases }} rows={26} disabled={busy} label="새 버전으로 저장" onSave={(v) => onSave({ ...(v as object), note: note || null })} />
+    <div className="flex flex-col gap-md">
+      <div>
+        <p className="mb-xs text-[12.5px] font-bold text-ink-deep">클래스 {schema.classes.length}</p>
+        <ValueView value={schema.classes} />
       </div>
+      <div>
+        <p className="mb-xs text-[12.5px] font-bold text-ink-deep">관계 {schema.relations.length}</p>
+        <ValueView value={schema.relations} />
+      </div>
+      <Advanced label="고급 — 스키마 JSON 편집(새 버전으로 저장)">
+        <TextInput label="변경 메모" value={note} onChange={setNote} />
+        <div className="mt-md">
+          <JsonEditor value={{ classes: schema.classes, relations: schema.relations, aliases: schema.aliases }} rows={26} disabled={busy} label="새 버전으로 저장" onSave={(v) => onSave({ ...(v as object), note: note || null })} />
+        </div>
+      </Advanced>
     </div>
   );
 }

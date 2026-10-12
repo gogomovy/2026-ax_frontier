@@ -1,6 +1,8 @@
 from .base import Base, new_id, utcnow
 from .cfg import (
     Agent,
+    AnalysisAgent,
+    AnalysisAgentVersion,
     ColumnContract,
     Dataset,
     LlmConnection,
@@ -28,6 +30,7 @@ from .runtime import (
     NodeRun,
     OutboxEvent,
     RequestLog,
+    UploadRequest,
     UserState,
     ViewArtifact,
     WorkerHeartbeat,

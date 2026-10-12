@@ -2457,3 +2457,83 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).
 - 볼륨: `pgdata` · `neo4jdata` · `filestore`. 이미지는 비루트 사용자로 실행.
 - `.env` 필수 키: `POSTGRES_PASSWORD` · `NEO4J_PASSWORD` · `SESSION_SECRET` · `CONFIG_ENC_KEY` · `LITELLM_MASTER_KEY` · `BOOTSTRAP_ADMIN_EMP_NO` · `BOOTSTRAP_ADMIN_PASSWORD`.
+
+
+---
+
+## 20. Phase C 설계 — 업무 자료 등록 · 분석 에이전트 · 관리자/모니터링 · UI/UX (요구사항 §20 · Q99~Q106)
+
+### 20.1 데이터 모델 (마이그레이션 0012)
+
+| 테이블 | 열 | 용도 |
+|---|---|---|
+| `ops.upload_request` | `id` · `kind`(dataset · document) · `target`(데이터셋 코드 · 문서 분류) · `origin` · `file_name` · `file_path` · `file_sha256` · `meta`(JSONB: 제목 · 발행처 · 기준일 · 메모) · `preview`(JSONB: 행 수 · 품질 · 열 매핑) · `status`(pending · approved · rejected · failed) · `requested_by` · `requested_org` · `reviewed_by` · `reviewed_at` · `review_note` · `result`(JSONB: 버전 · 문서 ID · 오류) · `created_at` | 사용자 업로드 요청(Q99). 파일은 파일 저장소(`FILESTORE_DIR/requests/`) |
+| `cfg.analysis_agent` | `code`(PK `an_<slug>`) · `space` · `title` · `status`(draft · pending · active · paused · retired · rejected) · `version` · `spec`(JSONB, 승인된 명세) · `workflow_code` · `tab_key` · `requested_by` · `approved_by` · `approved_at` · `created_at` · `updated_at` | 분석 에이전트(Q100) |
+| `cfg.analysis_agent_version` | `id` · `agent_code` · `version` · `source_text` · `spec` · `validation`(JSONB) · `preview`(JSONB 요약) · `status`(draft · pending · approved · rejected) · `requested_by` · `reviewed_by` · `reviewed_at` · `review_note` · `created_at` | 요청 · 명세 버전 이력 |
+
+### 20.2 분석 명세 (AnalysisSpec)
+
+```json
+{"title": "…", "space": "risk", "purpose": "…", "domain_knowledge": "…(정제 요약)", "task": "…(수행 지시)",
+ "inputs": [{"dataset": "PROVISION_BY_PRODUCT", "columns": ["ym", "provision"], "where": {"ym": "$latest"}}],
+ "metrics": [{"key": "prov_total", "label": "충당금 합계", "formula": "SUM", "args": {"values": {"q": {"dataset": "PROVISION_BY_PRODUCT", "where": {"ym": "$latest", "is_total": false}, "col": "provision", "agg": "list"}}}, "unit": "KRW_MN", "decimals": 0,
+              "rule": {"op": ">", "value": 1000, "severity": "caution"}}],
+ "tables": [{"key": "by_product", "caption": "상품별 충당금", "dataset": "PROVISION_BY_PRODUCT", "where": {"ym": "$latest"}, "group_by": "product_name", "value": "provision", "agg": "sum", "top": 10}],
+ "sections": [{"heading": "요약", "blocks": [{"type": "metrics", "metrics": ["prov_total"]}, {"type": "table", "table": "by_product"}, {"type": "chart", "table": "by_product", "kind": "bar"}, {"type": "text", "text": "…"}]}],
+ "insights": [{"key": "main", "title": "…", "metrics": ["prov_total"], "instruction": "…"}],
+ "evidence": {"query": "…", "doc_classes": ["model_method"], "k": 4},
+ "schedule": {"cron": "0 7 * * *", "on_data_change": true}}
+```
+
+- 검증(`nhdip.analysis_agents.spec.validate_spec`) — 데이터셋 활성 · 열 존재 · 개인정보 열 제외(`Dataset.mapping.pii` · 이름 규칙), 수식은 커널 레지스트리 · 인자 이름 일치, 참조 종류는 `q`(데이터셋 조회) · `metric`(명세 안 지표) · `const` 만, 단위 · 블록 종류 · 심각도 허용 목록, 개수 상한(지표 30 · 표 10 · 섹션 12), 문자열 길이. 고칠 수 없는 항목은 빼고 `issues[]` 에 사유.
+- 지표 코드 = `dyn_<agent 슬러그>_<key>`, 그림 ID = `fig-<agent>-<key>`, 인사이트 ID = `ins-<agent>-<key>`, 탭 키 = `an-<slug>`, 산출물 = `report.an-<slug>`.
+
+### 20.3 에이전트 3단계
+
+| 단계 | 구현 | 입력 → 출력 | 대체 |
+|---|---|---|---|
+| ① 정제 (`analysis_refiner`, LLM) | `analysis_agents.refine.refine(session, text, space, hints)` — `llm_judge.ask_json` + 카탈로그(데이터셋 · 열 · 설명, 커널 수식 · 인자, 문서 분류, 단위, 블록 종류)를 펜스 안 자료로 | 글 → 명세 초안 → `validate_spec` | 규칙 정제: 데이터셋 이름 · 코드 · 열 별칭 매칭 → 숫자 열 합계 · 건수 지표, 상위 표 · 막대 그래프, 의견 1건 |
+| ② 동적 수행 (`an_<slug>`, LLM, 노드 `dynamic_task`) | 실행 시점에 명세의 도메인 지식 · 수행 지시를 시스템 프롬프트로 가진 그 분석 전용 에이전트(프롬프트 버전 관리 · 관리자 [에이전트]에서 조정). 입력 = 커널 확정 수치(그림 ID) · 집계표 · 근거 · 규칙 판정 | → `{"findings": [{"insight": key, "severity": …, "statement": "…[[fig:ID]]…"}], "summary": …}` → `ctx.state.narratives` | 명세의 지표 규칙(op · value · severity)으로 심각도, 기본 문장(지표 라벨 + 마커) |
+| ③ 렌더링 (`report_renderer`, 규칙형, 노드 `render_report`) | 명세 섹션 · 블록 + 계산 결과 + 판단으로 `report.<tabKey>` ReportDoc 조립(목차 · 의견 · 지표 묶음 블록 · 표 · 그래프 · 근거) | → 산출물 + `analysis.<space>` 목록 항목 | - |
+
+워크플로 `wf_an_<slug>`: `load_inputs` → `compute`(명세 지표) → `evidence`(선택) → `dynamic_task` → `render_report` → `critic`(마커 · 숫자 · 인과 표현) → `publish`. 트리거: 입력 데이터셋 · 정기 실행 · 규칙 없음. 출력: `report.an-<slug>`.
+
+미리보기(`POST /analysis-agents/preview`): 같은 노드를 한 트랜잭션에서 돌리고 렌더링 결과를 돌려준 뒤 **롤백**(지표 값 · 계산 기록 · 산출물 · 결정 기록이 남지 않음, LLM 호출 기록만 별도 세션으로 남음).
+
+### 20.4 분석 레지스트리 · 화면
+
+- 설정 `analysis.spaces` = `{risk: {label: "신용리스크관리부", tabs: "analysis_tabs", resource: "reports", path: "/risk/analysis"}, branch: {label: "영업점", tabs: "branch_tabs", resource: "branch_reports", path: "/branch/analysis", scoped: "office"}, hq: {…}}`.
+- `GET /screens/analysis/{space}/tabs` = 공간 탭 산출물 + 활성 분석 에이전트(`report.an-*` 가 있을 때) → `{current, previous, builder: {allowed}}`. `GET /screens/analysis/{space}/reports/{tab}` = 공간 리소스 검사 후 산출물.
+- 웹: `/analysis/[space]` · `/analysis/[space]/[tabKey]` 범용 화면(`components/analysis/AnalysisReportPage`), 기존 `/risk/analysis/[tabKey]` 는 같은 구성 요소를 공간 `risk` 로 사용. 새 공간 = 화면 등록(`POST /admin/screens`) + 설정.
+- 보고서 블록 확장: `metrics`(지표 묶음 — 그림 ID 목록), 표 열 `format`(number · percent · krw), 그래프 `stacked-share` 유지.
+
+### 20.5 API
+
+| 경로 | 권한 | 내용 |
+|---|---|---|
+| `POST /db/uploads/dataset` · `POST /db/uploads/document` · `GET /db/uploads/mine` · `GET /db/uploadable` | `db_upload` | 요청 · 미리 검사 · 내 요청 · 올릴 수 있는 데이터셋 · 문서 분류 |
+| `GET /admin/uploads` · `POST /admin/uploads/{id}/approve` · `POST /admin/uploads/{id}/reject` | 관리자 | 승인 대기 · 승인 · 반려 |
+| `POST /analysis-agents/refine` · `POST /analysis-agents/preview` · `POST /analysis-agents` (요청) · `GET /analysis-agents/mine` · `GET /analysis-agents/catalog` | `analysis_builder` | 정제 · 미리보기 · 요청 · 내 분석 · 허용 목록 |
+| `GET /admin/analysis-agents` · `POST /admin/analysis-agents/{code}/versions/{v}/approve|reject` · `POST /admin/analysis-agents/{code}/pause|resume|retire` | 관리자 | 승인 · 수명 |
+| `GET /admin/overview` | 관리자 | 처리할 일 · 상태 · 추이(관리자 홈) |
+| `GET /admin/monitor/overview?hours=` | 관리자 | 실행 · LLM · 이벤트 · 알림 집계(시간대별) |
+| `POST /admin/screens` | 관리자 | 화면 등록(새 분석 공간) |
+
+### 20.6 관리자 정보 구조 (Q104)
+
+| 묶음 | 화면 |
+|---|---|
+| 관리 홈 | 관리자 홈(처리할 일 · 상태) |
+| 사용자와 권한 | 사용자 · 조직 · 화면 권한 · 감사 로그 |
+| 데이터와 지식 | 자료 승인 · 데이터셋·문서 · 컬럼 정의서 · 온톨로지 |
+| AI 와 에이전트 | 분석 에이전트 · LLM 연동 · 에이전트(프롬프트) · 워크플로 |
+| 계산과 규칙 | 지표·계산 · 판정 규칙 · 시스템 설정 |
+| 운영 모니터링 | 운영 개요 · 파이프라인 · 데이터 흐름 · 에이전트 실행 · 에이전트 결정 · 수치 · 요청 추적 · 골든셋 · 알림·비용 |
+
+기존 화면 코드 · 경로 유지, 묶음(`section`) · 정렬만 1회 보강(관리자가 바꾸지 않은 경우). 화면 머리말: 위치(묶음 > 화면) · 목적 한 줄 · 요약 수치 · 동작. JSON 편집은 `Advanced`(접기).
+
+### 20.7 디자인 시스템 보강 (Q106)
+
+- 토큰 추가: `--color-{info|success|attention|warning|critical}-soft`(옅은 배경) · `--color-attention-text` · `--color-warning-text` · `--chart-1..6`(차트 팔레트) · `--shell-max`.
+- 구성 요소: `StatCard`(값 · 변화 · 보조) · `EmptyState` · `Breadcrumbs` · `PageHeader`(위치 · 요약) · `Advanced`(접기) · `KeyValueList` · `BarList`(가로 막대 순위) · `Timeline`(노드 소요) · `StackedBars`(시간대별 상태) · `StatusPill`.
+- 셸: 모바일 메뉴를 `role=dialog` · 포커스 가두기 · Esc, 사이드바 묶음 접기, 현재 위치 강조.

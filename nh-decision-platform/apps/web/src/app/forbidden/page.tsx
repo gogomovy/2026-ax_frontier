@@ -13,7 +13,7 @@ export default function ForbiddenPage() {
         <Link href="/" className="rounded-pill bg-ink-button px-6 py-2.5 text-[13px] font-bold text-white">
           내 첫 화면으로
         </Link>
-        <Link href="/login" className="rounded-pill border-2 border-[rgba(10,19,23,0.12)] px-6 py-2.5 text-[13px] font-bold text-ink-deep">
+        <Link href="/login" className="rounded-pill border-2 border-line-strong px-6 py-2.5 text-[13px] font-bold text-ink-deep">
           다른 계정으로 로그인
         </Link>
       </div>

@@ -42,10 +42,10 @@ export function AgentProgress({ progress }: { progress: Progress }) {
             aria-hidden
             className={clsx(
               "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px]",
-              s.status === "succeeded" && "bg-[rgba(49,162,76,0.15)] text-success",
-              s.status === "degraded" && "bg-[rgba(242,169,24,0.2)] text-[#7a5600]",
-              s.status === "failed" && "bg-[rgba(228,30,63,0.12)] text-critical",
-              s.status === "running" && "animate-pulse bg-[rgba(0,100,224,0.15)] text-primary",
+              s.status === "succeeded" && "bg-success-soft text-success",
+              s.status === "degraded" && "bg-attention-soft text-warning",
+              s.status === "failed" && "bg-critical-soft text-critical",
+              s.status === "running" && "animate-pulse bg-info-soft text-primary",
               (s.status === "pending" || s.status === "skipped") && "bg-surface-soft text-stone",
             )}
           >

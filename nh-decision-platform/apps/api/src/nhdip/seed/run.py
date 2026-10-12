@@ -801,6 +801,32 @@ def ontology_extraction_upgrade(s: Session, out: dict[str, Any]) -> None:
         out["ontology_extraction_upgrade"] = done
 
 
+# 이전 관리자 메뉴 기본값(묶음 · 이름) — 관리자가 바꾸지 않은 화면만 새 묶음으로 옮긴다 (Phase C · Q104)
+_OLD_ADMIN_SECTIONS = {"관리자", "관리자 · 모니터링"}
+_OLD_ADMIN_LABELS = {"ADMIN_HOME": "시스템 상태", "ADMIN_AGENTS": "에이전트", "ADMIN_WORKFLOWS": "워크플로우"}
+
+
+def admin_ia_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """관리자 정보 구조(Phase C · ADM-01) — 1회. 관리자 화면을 묶음 6개로(이전 기본 묶음인 화면만), 이전 기본 이름만 새 이름으로.
+    새 화면(운영 개요 · 운영 설정 등)은 seed_iam 이 없을 때 추가한다. 되돌리기: 관리자 [화면 권한]에서 묶음 · 이름 편집."""
+    if _applied(s, "admin-ia-v1"):
+        return
+    moved = 0
+    for spec in C.SCREENS:
+        if spec.get("kind") != "admin":
+            continue
+        sc = s.get(Screen, spec["code"])
+        if sc is None or sc.section not in _OLD_ADMIN_SECTIONS:
+            continue
+        sc.section, sc.sort = spec["section"], spec["sort"]
+        if spec.get("match") is not None:
+            sc.match = spec["match"]
+        if _OLD_ADMIN_LABELS.get(sc.code) == sc.label:
+            sc.label = spec["label"]
+        moved += 1
+    out["admin_ia_upgrade"] = moved
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -825,6 +851,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     dept_contracts_upgrade(s, out, first)
     score_snapshot_upgrade(s, out)
     ontology_extraction_upgrade(s, out)
+    admin_ia_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

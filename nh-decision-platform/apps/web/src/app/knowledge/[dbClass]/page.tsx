@@ -90,7 +90,7 @@ export default async function KnowledgeDbPage(props: { params: Promise<{ dbClass
                 <Td>
                   {doc.issuer}
                   {doc.isOfficial ? (
-                    <span className="ml-1 rounded-pill bg-[rgba(49,162,76,0.12)] px-1.5 py-0.5 text-[10px] font-bold text-success">
+                    <span className="ml-1 rounded-pill bg-success-soft px-1.5 py-0.5 text-[10px] font-bold text-success">
                       공식
                     </span>
                   ) : null}

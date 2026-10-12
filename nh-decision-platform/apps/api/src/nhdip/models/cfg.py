@@ -272,3 +272,45 @@ class ColumnContract(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     workbook: Mapped[str | None] = mapped_column(String(200), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class AnalysisAgent(Base):
+    """분석 에이전트 (Phase C · DAG · Q100) — 사용자 글을 정제한 분석 명세로 만든 분석. 승인되면 지표 · 워크플로 · 전용 에이전트가 생긴다."""
+
+    __tablename__ = "analysis_agent"
+    __table_args__ = S
+
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)  # an_<slug>
+    space: Mapped[str] = mapped_column(String(40))  # 분석 공간(부서) — 설정 analysis.spaces 의 키
+    title: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(12), default="draft")  # draft | pending | active | paused | retired | rejected
+    version: Mapped[int] = mapped_column(Integer, default=0)  # 승인된 명세 버전(0 = 아직 없음)
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    workflow_code: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    tab_key: Mapped[str] = mapped_column(String(60))
+    requested_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+class AnalysisAgentVersion(Base):
+    """분석 에이전트 명세 버전 — 요청 글 · 정제된 명세 · 검증 · 미리보기 요약 · 승인 기록."""
+
+    __tablename__ = "analysis_agent_version"
+    __table_args__ = (UniqueConstraint("agent_code", "version"), S)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_code: Mapped[str] = mapped_column(ForeignKey("cfg.analysis_agent.code", ondelete="CASCADE"))
+    version: Mapped[int] = mapped_column(Integer)
+    source_text: Mapped[str] = mapped_column(Text, default="")
+    spec: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    validation: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    preview: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    status: Mapped[str] = mapped_column(String(12), default="pending")  # pending | approved | rejected | superseded
+    requested_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)

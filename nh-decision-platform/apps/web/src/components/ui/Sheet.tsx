@@ -70,7 +70,7 @@ export function Sheet({
         aria-label="닫기"
         tabIndex={-1}
         onClick={onClose}
-        className="flex-1 bg-[rgba(10,19,23,0.28)]"
+        className="flex-1 bg-scrim"
       />
       <section
         ref={panelRef}

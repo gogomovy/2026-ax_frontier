@@ -26,7 +26,7 @@ export function VerificationRow({ items }: { items: Verification[] }) {
         onClick={() => setOpen((v) => !v)}
         className={clsx(
           "inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[11px] font-bold",
-          allPassed ? "bg-[rgba(49,162,76,0.12)] text-success" : "bg-[rgba(228,30,63,0.1)] text-critical",
+          allPassed ? "bg-success-soft text-success" : "bg-critical-soft text-critical",
         )}
         aria-expanded={open}
       >
@@ -80,8 +80,8 @@ export function AlignmentPanel({
     <div
       className={clsx(
         "rounded-xl border px-base py-3",
-        verdict === "aligned" && "border-[rgba(49,162,76,0.3)] bg-[rgba(49,162,76,0.05)]",
-        verdict === "conflict" && "border-[rgba(228,30,63,0.3)] bg-[rgba(228,30,63,0.04)]",
+        verdict === "aligned" && "border-success-line bg-success-faint",
+        verdict === "conflict" && "border-critical-line bg-critical-faint",
         verdict === "unknown" && "border-hairline bg-surface-soft",
       )}
     >

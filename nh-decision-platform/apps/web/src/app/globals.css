@@ -30,13 +30,13 @@
     border-radius: var(--radius-sm);
   }
   ::selection {
-    background: rgba(0, 100, 224, 0.14);
+    background: var(--color-info-soft);
   }
 }
 
 @layer components {
   .shell {
-    max-width: 1280px;
+    max-width: var(--shell-max);
     margin-inline: auto;
     padding-inline: var(--space-lg);
   }
@@ -80,7 +80,7 @@
     background: var(--color-surface-soft);
   }
   .row-button[aria-current="true"] {
-    background: rgba(0, 100, 224, 0.05);
+    background: var(--color-info-faint);
   }
   .card {
     background: var(--color-canvas);
@@ -142,7 +142,7 @@
     color: var(--color-charcoal);
   }
   .report-body section[data-highlight="true"] {
-    background: rgba(242, 169, 24, 0.09);
+    background: var(--color-attention-faint);
     box-shadow: inset 3px 0 0 var(--color-attention);
     border-radius: var(--radius-md);
     padding: var(--space-sm) var(--space-base);

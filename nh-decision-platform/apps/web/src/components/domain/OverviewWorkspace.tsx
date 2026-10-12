@@ -46,7 +46,7 @@ export function OverviewWorkspace({
       {openProposals + pending.attentions > 0 ? (
         <Link
           href="/hq/goals"
-          className="flex flex-wrap items-center gap-x-lg gap-y-2 rounded-2xl border border-[rgba(0,100,224,0.22)] bg-[rgba(0,100,224,0.04)] px-lg py-base"
+          className="flex flex-wrap items-center gap-x-lg gap-y-2 rounded-2xl border border-info-line bg-info-faint px-lg py-base"
         >
           <span className="text-[14px] font-bold text-ink-deep">경영목표 검토가 필요한 사항이 있습니다</span>
           <span className="flex flex-wrap items-center gap-x-md gap-y-1 text-[12.5px] text-charcoal">

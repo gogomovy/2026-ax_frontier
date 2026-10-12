@@ -64,7 +64,7 @@ function GroupCard({ group, tabOf, office }: { group: KpiGroup; tabOf: (code: st
                     </>
                   );
                   return tab ? (
-                    <Link key={d.code} href={withOffice(`/branch/analysis/${tab}`, office)} className="flex items-center justify-between gap-2 rounded-lg bg-[rgba(0,100,224,0.05)] px-2.5 py-1.5 text-[12px] text-primary">
+                    <Link key={d.code} href={withOffice(`/branch/analysis/${tab}`, office)} className="flex items-center justify-between gap-2 rounded-lg bg-info-faint px-2.5 py-1.5 text-[12px] text-primary">
                       {body}
                     </Link>
                   ) : (
@@ -134,12 +134,12 @@ export function BranchKpiBoard({ dashboard, office }: { dashboard: BranchDashboa
       </div>
 
       {alerts.length > 0 ? (
-        <section aria-label="업적평가 기준 변경과 Agent 영업 가이드" className="overflow-hidden rounded-2xl border border-[rgba(0,100,224,0.22)] bg-[rgba(0,100,224,0.04)]">
+        <section aria-label="업적평가 기준 변경과 Agent 영업 가이드" className="overflow-hidden rounded-2xl border border-info-line bg-info-faint">
           <div className="flex flex-wrap items-baseline gap-x-md gap-y-1 px-lg pt-base">
             <p className="text-[14px] font-bold text-ink-deep">하반기 업적평가 기준 변경 {alerts.length}건 · Agent 영업 가이드</p>
             <p className="text-[12px] text-steel">상반기 대비 신설 · 변경 항목을 분석했습니다 · 선택하면 분석 결과로 이동합니다</p>
           </div>
-          <ul className="mt-2 divide-y divide-[rgba(0,100,224,0.12)] border-t border-[rgba(0,100,224,0.12)]">
+          <ul className="mt-2 divide-y divide-info-line-soft border-t border-info-line-soft">
             {/* 행 전체가 분석 탭 링크(stretched link) — 수치(계산 추적 버튼)는 링크 위로 올려 따로 누를 수 있게 한다 */}
             {alerts.map((a) => (
               <li key={a.id} className="row-button relative flex flex-col gap-1.5 px-lg py-3 md:flex-row md:items-center md:gap-md">

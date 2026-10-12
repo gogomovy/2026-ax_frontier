@@ -276,10 +276,10 @@ function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
         <div
           className={clsx(
             "my-md rounded-xl px-base py-3 text-[13.5px] leading-relaxed text-charcoal",
-            tone === "info" && "bg-[rgba(0,100,224,0.05)]",
-            tone === "attention" && "bg-[rgba(242,169,24,0.1)]",
-            tone === "critical" && "bg-[rgba(228,30,63,0.06)]",
-            tone === "success" && "bg-[rgba(49,162,76,0.07)]",
+            tone === "info" && "bg-info-faint",
+            tone === "attention" && "bg-attention-faint",
+            tone === "critical" && "bg-critical-faint",
+            tone === "success" && "bg-success-faint",
           )}
         >
           {renderRich(block.text ?? "", report.figures)}
@@ -333,7 +333,7 @@ function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
                 t.highlightRowKey && String(row[t.highlightRowKey]) === String(t.highlightRowValue),
               );
               return (
-                <tr key={i} className={clsx(highlight && "bg-[rgba(242,169,24,0.12)]")}>
+                <tr key={i} className={clsx(highlight && "bg-attention-faint")}>
                   {t.columns.map((c, ci) => (
                     <Td key={c.key} align={c.align} strong={ci === 0 || highlight}>
                       {row[c.key] ?? "-"}

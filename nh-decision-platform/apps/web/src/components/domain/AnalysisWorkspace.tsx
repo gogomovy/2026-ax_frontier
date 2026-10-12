@@ -172,7 +172,7 @@ export function AnalysisWorkspace({
             </section>
 
             <p className="flex items-start gap-2 text-[12px] leading-relaxed text-steel">
-              <IconWarn className="mt-0.5 shrink-0 text-[#8a5d00]" />
+              <IconWarn className="mt-0.5 shrink-0 text-attention" />
               {comparison.proxyNote}
             </p>
           </>

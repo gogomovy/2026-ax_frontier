@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { AdminPage, Card, Collapse, JsonView, Loading, StatusBadge, duration, fmtTime, useApiData } from "@/components/admin/kit";
+import { useState } from "react";
+import { AdminPage, Card, JsonView, Loading, Select, StatusBadge, duration, fmtTime, useApiData } from "@/components/admin/kit";
+import { BarList } from "@/components/charts/Bars";
+import { Advanced, EmptyState } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
+import { StatCard, StatGrid } from "@/components/ui/StatCard";
 
 interface FlowEvent {
   id: number;
@@ -30,15 +34,50 @@ const TYPE_LABEL: Record<string, string> = {
 /** 데이터 흐름 — 변경 이벤트 → 매칭 워크플로우(사유) → 대기 작업 → 실행 → 게시 산출물 (ADM-11) */
 export default function FlowMonitor() {
   const data = useApiData<FlowEvent[]>("/admin/monitor/flow?limit=80", { refreshMs: 4000 });
+  const [type, setType] = useState("");
+  const all = data.data ?? [];
+  const byType = Object.entries(all.reduce<Record<string, number>>((m, e) => ((m[e.type] = (m[e.type] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
+  const waiting = all.filter((e) => !e.dispatchedAt).length;
+  const noMatch = all.filter((e) => e.dispatchedAt && !e.matched.some((m) => m.workflow)).length;
+  const runCount = all.reduce((n, e) => n + e.runs.length, 0);
+  const rows = all.filter((e) => !type || e.type === type);
   return (
     <AdminPage
       title="데이터 흐름"
-      description="데이터·문서·규칙·목표가 바뀔 때마다 어떤 워크플로우가 왜 실행됐는지(트리거 또는 계보) 보여줍니다. 매칭되지 않은 워크플로우는 실행되지 않습니다. 4초마다 갱신됩니다."
-      actions={<Button size="sm" variant="quiet" onClick={data.reload}>새로고침</Button>}
+      description="데이터 · 문서 · 규칙 · 목표가 바뀔 때마다 어떤 워크플로가 왜 실행됐는지(트리거 또는 계보) 보여 줍니다. 관련 없는 워크플로는 실행되지 않습니다. 4초마다 갱신됩니다."
+      actions={
+        <Button size="sm" variant="quiet" onClick={data.reload}>
+          새로고침
+        </Button>
+      }
+      summary={
+        <div className="grid grid-cols-1 gap-lg xl:grid-cols-[1fr_1fr]">
+          <StatGrid columns={2} label="흐름 요약">
+            <StatCard label="최근 변경 이벤트" value={all.length} unit="건" hint="최근 80건 기준" />
+            <StatCard label="이어진 실행" value={runCount} unit="건" hint="이벤트로 시작된 워크플로 실행" />
+            <StatCard label="디스패치 대기" value={waiting} unit="건" tone={waiting ? "attention" : "default"} hint={waiting ? "워커가 아직 처리하지 않음" : "모두 처리됨"} />
+            <StatCard label="관련 워크플로 없음" value={noMatch} unit="건" hint="트리거 · 계보에 맞는 워크플로가 없어 실행 안 함" />
+          </StatGrid>
+          <Card className="!mb-0">
+            <BarList title="이벤트 종류별 건수" items={byType.map(([k, v]) => ({ label: TYPE_LABEL[k] ?? k, value: v, display: `${v}건` }))} />
+          </Card>
+        </div>
+      }
     >
       <Loading error={data.error} loading={!data.data && data.loading} />
+      <div className="mb-md flex flex-wrap items-center gap-xs">
+        <Select
+          className="w-[220px]"
+          ariaLabel="이벤트 종류 고르기"
+          value={type}
+          onChange={setType}
+          options={[{ value: "", label: "종류 전체" }, ...byType.map(([k]) => ({ value: k, label: TYPE_LABEL[k] ?? k }))]}
+        />
+        <span className="text-[12px] text-stone">{rows.length}건 표시</span>
+      </div>
+      {data.data && !rows.length ? <EmptyState title="변경 이벤트가 없습니다" description="자료를 반영하거나 규칙 · 문서를 바꾸면 여기에 흐름이 나타납니다." /> : null}
       <div className="flex flex-col gap-md">
-        {(data.data ?? []).map((e) => (
+        {rows.map((e) => (
           <Card key={e.id} className="!mb-0 !p-base">
             <div className="flex flex-wrap items-center gap-xs">
               <span className="font-mono text-[11px] text-stone">#{e.id}</span>
@@ -93,9 +132,9 @@ export default function FlowMonitor() {
               </div>
             </div>
             <div className="mt-xs">
-              <Collapse label="이벤트 내용">
+              <Advanced label="이벤트 원본(JSON)">
                 <JsonView value={e.payload} maxHeight={160} />
-              </Collapse>
+              </Advanced>
             </div>
           </Card>
         ))}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import clsx from "clsx";
 import { AssistPanel } from "@/components/assist/AssistPanel";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
@@ -88,6 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const config = PERSONAS[persona];
   const orgLabel = API_MODE ? (menu?.user.org.name ?? "") : config.org;
+  const closeMenu = useCallback(() => setMobileOpen(false), []);
 
   if (bare) {
     return (
@@ -119,8 +120,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {mobileOpen ? (
-        <div className="fixed inset-0 z-50 flex lg:hidden no-print">
-          <aside className="relative h-full w-[280px] bg-canvas shadow-pop">
+        <MobileMenu onClose={closeMenu}>
+          <aside className="relative h-full w-[280px] overflow-y-auto bg-canvas shadow-pop">
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
@@ -134,10 +135,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             aria-label="메뉴 닫기"
+            tabIndex={-1}
             onClick={() => setMobileOpen(false)}
-            className="flex-1 bg-[rgba(10,19,23,0.32)]"
+            className="flex-1 bg-scrim"
           />
-        </div>
+        </MobileMenu>
       ) : null}
 
       <div className="lg:pl-[248px]">
@@ -146,6 +148,46 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       {API_MODE && menu ? <AssistPanel /> : null}
+    </div>
+  );
+}
+
+/** 모바일 메뉴 — 대화상자(포커스 가두기 · Esc 닫기 · 닫으면 여는 버튼으로 포커스 복귀) (C.1 · UX-21) */
+function MobileMenu({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const root = ref.current;
+    const focusables = () => (root ? [...root.querySelectorAll<HTMLElement>('a[href], button:not([disabled]):not([tabindex="-1"]), select, input, [tabindex="0"]')] : []);
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const list = focusables();
+      if (!list.length) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      opener?.focus?.();
+    };
+  }, [onClose]);
+  return (
+    <div ref={ref} role="dialog" aria-modal="true" aria-label="주요 메뉴" className="fixed inset-0 z-50 flex lg:hidden no-print">
+      {children}
     </div>
   );
 }
@@ -215,7 +257,7 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
             {API_MODE ? `최근 계산 ${formatKstDateTime(genAt)}` : `일배치 분석 완료 ${genAt.slice(11, 16)}`}
           </p>
         ) : null}
-        <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-[#8a5d00]">
+        <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-attention">
           <span className="h-1.5 w-1.5 rounded-circle bg-warning" aria-hidden="true" />
           시뮬레이션 데이터
         </p>

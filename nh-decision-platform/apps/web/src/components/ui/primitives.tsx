@@ -9,11 +9,11 @@ type BadgeTone = "neutral" | "info" | "success" | "attention" | "warning" | "cri
 
 const BADGE_TONE: Record<BadgeTone, string> = {
   neutral: "bg-surface-soft text-steel",
-  info: "bg-[rgba(0,100,224,0.1)] text-primary",
-  success: "bg-[rgba(49,162,76,0.12)] text-success",
-  attention: "bg-[rgba(242,169,24,0.16)] text-[#8a5d00]",
-  warning: "bg-[rgba(247,185,40,0.2)] text-[#7a5600]",
-  critical: "bg-[rgba(228,30,63,0.1)] text-critical",
+  info: "bg-info-soft text-primary",
+  success: "bg-success-soft text-success",
+  attention: "bg-attention-soft text-attention",
+  warning: "bg-warning-soft text-warning",
+  critical: "bg-critical-soft text-critical",
   primary: "bg-primary text-white",
   dark: "bg-ink-deep text-white",
 };
@@ -70,7 +70,7 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   // commerce CTA(코발트) → 확정·승인 액션
   confirm: "bg-primary text-white active:bg-primary-deep",
   secondary: "bg-transparent text-ink-deep border-2 border-ink-deep",
-  ghost: "bg-transparent text-ink-deep border-2 border-[rgba(10,19,23,0.12)]",
+  ghost: "bg-transparent text-ink-deep border-2 border-line-strong",
   quiet: "bg-surface-soft text-charcoal",
 };
 

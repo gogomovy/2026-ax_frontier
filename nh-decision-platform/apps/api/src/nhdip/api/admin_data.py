@@ -758,7 +758,7 @@ def monitor_run(rid: str, session: Session = Depends(get_session)):
     calcs = session.execute(select(CalcRun).where(CalcRun.workflow_run_id == rid).order_by(CalcRun.created_at)).scalars().all()
     return {
         "run": {"id": r.id, "workflow": r.workflow_code, "status": r.status, "startedAt": _iso(r.started_at), "finishedAt": _iso(r.finished_at), "causes": r.causes, "summary": r.summary, "error": r.error, "traceId": r.trace_id},
-        "nodes": [{"id": n.id, "seq": n.seq, "key": n.node_key, "impl": n.impl, "agent": n.agent_code, "status": n.status, "input": n.input, "output": n.output, "error": n.error, "durationMs": n.duration_ms} for n in nodes],
+        "nodes": [{"id": n.id, "seq": n.seq, "key": n.node_key, "impl": n.impl, "agent": n.agent_code, "status": n.status, "input": n.input, "output": n.output, "error": n.error, "durationMs": n.duration_ms, "startedAt": _iso(n.started_at)} for n in nodes],
         "llmCalls": [_call_json(c, full=False) for c in calls],
         "calcRuns": [_calc_json(c) for c in calcs],
     }

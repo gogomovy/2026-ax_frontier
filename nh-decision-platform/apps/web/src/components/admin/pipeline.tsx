@@ -95,7 +95,7 @@ export function AgentBadge({ agent }: { agent: PipeAgent | null }) {
   if (!agent) return null;
   if (agent.kind === "llm")
     return (
-      <span className="inline-flex items-center gap-1 rounded-md bg-[rgba(0,100,224,0.08)] px-1.5 py-0.5 text-[10.5px] font-bold text-primary-text" title={`에이전트 ${agent.name}`}>
+      <span className="inline-flex items-center gap-1 rounded-md bg-info-soft px-1.5 py-0.5 text-[10.5px] font-bold text-primary-text" title={`에이전트 ${agent.name}`}>
         <span aria-hidden="true">✦</span> LLM · {agent.model ?? "미연결"}
       </span>
     );
@@ -226,7 +226,7 @@ export function PipelineMap({ data, onOpenWorkflow }: { data: PipelineData; onOp
       <div ref={wrap} className="relative" data-pipeline-map>
         <svg aria-hidden="true" className="pointer-events-none absolute left-0 top-0" width={size.w} height={size.h}>
           {paths.map((p) => (
-            <path key={p.key} d={p.d} fill="none" strokeWidth={p.on && rel ? 2 : 1.2} strokeDasharray={p.dashed ? "4 3" : undefined} className={p.on ? (rel ? "stroke-primary" : "stroke-[#b8c3cf]") : "stroke-[#e4e9ee]"} />
+            <path key={p.key} d={p.d} fill="none" strokeWidth={p.on && rel ? 2 : 1.2} strokeDasharray={p.dashed ? "4 3" : undefined} className={p.on ? (rel ? "stroke-primary" : "stroke-chart-axis") : "stroke-chart-grid"} />
           ))}
         </svg>
         <div className="relative grid grid-cols-1 gap-lg lg:grid-cols-[1.1fr_1.2fr_1.1fr_0.8fr] lg:gap-[56px]">
@@ -561,7 +561,7 @@ function NodeCard({ n, current, live, selected, onClick }: { n: PipeNode; curren
           <span className="shrink-0 text-[10px] text-stone">{ms(t)}</span>
         </span>
         <span className="mt-0.5 flex flex-wrap items-center gap-1">
-          <span className={`text-[10.5px] font-bold ${st === "failed" ? "text-critical-text" : st === "degraded" ? "text-[#8a5d00]" : st === "succeeded" ? "text-success-text" : "text-steel"}`}>{!n.enabled ? "꺼짐" : (STATUS_KO[st ?? ""] ?? "실행 없음")}</span>
+          <span className={`text-[10.5px] font-bold ${st === "failed" ? "text-critical-text" : st === "degraded" ? "text-attention" : st === "succeeded" ? "text-success-text" : "text-steel"}`}>{!n.enabled ? "꺼짐" : (STATUS_KO[st ?? ""] ?? "실행 없음")}</span>
           <AgentBadge agent={n.agent} />
         </span>
         {n.last?.summary && !live ? <span className="mt-0.5 block text-[10.5px] leading-snug text-charcoal">{n.last.summary}</span> : null}

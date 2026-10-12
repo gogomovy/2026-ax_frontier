@@ -285,7 +285,7 @@ export function GoalSheet({
       }
     >
       {pending ? (
-        <div className="mb-lg rounded-xl border border-[rgba(0,100,224,0.22)] bg-[rgba(0,100,224,0.04)] px-base py-3">
+        <div className="mb-lg rounded-xl border border-info-line bg-info-faint px-base py-3">
           <p className="text-[13px] font-bold text-ink-deep">이 목표에 대한 AI 수정 제안이 있습니다</p>
           <p className="mt-0.5 text-[12px] text-charcoal">추천 {proposalRange(proposal)}</p>
         </div>

@@ -35,7 +35,7 @@ export function Field({ label, htmlFor, hint, children }: { label: string; htmlF
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded-lg bg-[rgba(228,30,63,0.06)] px-md py-2.5 text-[12.5px] font-medium text-critical">
+    <p role="alert" className="rounded-lg bg-critical-faint px-md py-2.5 text-[12.5px] font-medium text-critical">
       {message}
     </p>
   );

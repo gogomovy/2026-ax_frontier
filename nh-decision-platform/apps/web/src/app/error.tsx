@@ -20,7 +20,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
         <button type="button" onClick={reset} className="rounded-pill bg-ink-button px-6 py-2.5 text-[13px] font-bold text-white">
           다시 시도
         </button>
-        <Link href="/" className="rounded-pill border-2 border-[rgba(10,19,23,0.12)] px-6 py-2.5 text-[13px] font-bold text-ink-deep">
+        <Link href="/" className="rounded-pill border-2 border-line-strong px-6 py-2.5 text-[13px] font-bold text-ink-deep">
           처음 화면으로
         </Link>
       </div>

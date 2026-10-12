@@ -45,7 +45,7 @@ export function TermText({
         >
           <span className="flex items-center gap-1.5">
             <span className="text-[12px] font-bold text-ink-deep">{term.prefLabel}</span>
-            <span className="rounded-pill bg-[rgba(0,100,224,0.1)] px-1.5 py-0.5 text-[9.5px] font-bold text-primary">
+            <span className="rounded-pill bg-info-soft px-1.5 py-0.5 text-[9.5px] font-bold text-primary">
               용어집
             </span>
           </span>

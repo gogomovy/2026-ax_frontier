@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, Select, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { ValueView } from "@/components/admin/ValueView";
+import { Advanced, EmptyState } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
+import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { apiPatch, apiPost } from "@/lib/api-client";
 
 interface Metric {
@@ -48,12 +51,24 @@ export default function MetricsAdmin() {
   const { run, busy } = useAction();
   const [preview, setPreview] = useState<Record<string, unknown>>({});
   const wfs = useMemo(() => Array.from(new Set((data.data?.metrics ?? []).map((m) => m.workflow_code))), [data.data]);
-  const list = (data.data?.metrics ?? []).filter((m) => wf === "all" || m.workflow_code === wf);
+  const [q, setQ] = useState("");
+  const all = data.data?.metrics ?? [];
+  const list = all.filter((m) => (wf === "all" || m.workflow_code === wf) && (!q || `${m.code} ${m.label} ${m.formula} ${m.figure_ids.join(" ")}`.toLowerCase().includes(q.toLowerCase())));
+  const noValue = all.filter((m) => m.enabled && m.latest.display === null).length;
+  const changed = all.filter((m) => m.latest.previous !== null && m.latest.previous !== m.latest.display).length;
 
   return (
     <AdminPage
       title="지표 · 계산"
       description="화면의 모든 수치는 이 정의로 계산됩니다. 입력은 데이터셋 조회(q) · 다른 지표 · 규칙 · 설정 참조이고, 계산은 커널 수식(decimal · numpy · scipy · scikit-learn)이 합니다. LLM 은 계산하지 않습니다."
+      summary={
+        <StatGrid columns={4} label="지표 요약">
+          <StatCard label="지표" value={all.length || "-"} unit="개" hint={`사용 ${all.filter((m) => m.enabled).length} · 워크플로 ${wfs.length}`} />
+          <StatCard label="값 없음" value={noValue} unit="개" tone={noValue ? "critical" : "success"} hint={noValue ? "필요한 자료가 없거나 계산 오류" : "사용 중인 지표 모두 값 있음"} />
+          <StatCard label="최근 변경" value={changed} unit="개" tone={changed ? "attention" : "default"} hint="직전 계산과 값이 다름" />
+          <StatCard label="수식 · 바인딩" value={`${data.data?.formulas.length ?? "-"} · ${data.data?.bindings.length ?? "-"}`} hint="커널 수식 · 표/차트 바인딩" />
+        </StatGrid>
+      }
     >
       <Tabs
         active={tab}
@@ -67,16 +82,15 @@ export default function MetricsAdmin() {
       <Loading error={data.error} loading={!data.data && data.loading} />
       {tab === "metrics" ? (
         <Card
+          title={`지표 ${list.length}개`}
           actions={
-            <div className="flex flex-wrap gap-1">
-              {["all", ...wfs].map((w) => (
-                <button key={w} type="button" onClick={() => setWf(w)} className={`rounded-pill px-3 py-1 text-[11.5px] font-bold ${wf === w ? "bg-ink-deep text-white" : "bg-surface-soft text-charcoal"}`}>
-                  {w === "all" ? "전체" : w}
-                </button>
-              ))}
-            </div>
+            <>
+              <TextInput ariaLabel="지표 찾기" placeholder="코드 · 이름 · 수식 · 화면 수치" value={q} onChange={setQ} className="w-[240px]" />
+              <Select ariaLabel="워크플로 고르기" value={wf} onChange={setWf} options={[{ value: "all", label: "워크플로 전체" }, ...wfs.map((w) => ({ value: w, label: w }))]} className="w-[220px]" />
+            </>
           }
         >
+          {data.data && !list.length ? <EmptyState compact title="맞는 지표가 없습니다" description="찾는 말이나 워크플로를 바꿔 보세요." /> : null}
           <Table head={["지표", "수식", "표시", "최근 값", "사용", "정의"]}>
             {list.map((m) => (
               <tr key={m.code} className={m.enabled ? "" : "opacity-60"}>
@@ -85,7 +99,7 @@ export default function MetricsAdmin() {
                   <p className="font-mono text-[10.5px] text-stone">
                     {m.code} → {m.figure_ids.join(", ") || "(화면 수치 없음)"}
                   </p>
-                  {m.description ? <p className="text-[10.5px] text-[#8a5d00]">{m.description}</p> : null}
+                  {m.description ? <p className="text-[10.5px] text-attention">{m.description}</p> : null}
                 </C>
                 <C>
                   <Badge tone="info">{m.formula}</Badge>
@@ -96,19 +110,29 @@ export default function MetricsAdmin() {
                 </C>
                 <C right>
                   <span className="font-bold text-ink-deep">{m.latest.display ?? "-"}</span>
-                  {m.latest.previous !== null && m.latest.previous !== m.latest.display ? <p className="text-[10.5px] text-[#8a5d00]">이전 {m.latest.previous}</p> : null}
+                  {m.latest.previous !== null && m.latest.previous !== m.latest.display ? <p className="text-[10.5px] text-attention">이전 {m.latest.previous}</p> : null}
                   <p className="text-[10px] text-stone">{fmtTime(m.latest.at)}</p>
                 </C>
                 <C>
                   <Check label="" checked={m.enabled} onChange={(v) => run(() => apiPatch(`/admin/metrics/${m.code}`, { enabled: v }), "저장했습니다", data.reload)} />
                 </C>
                 <C className="min-w-[360px]">
-                  <Collapse label="정의 편집 · 미리 계산">
+                  <Collapse label="입력 · 정의 편집 · 미리 계산">
+                    <div className="mb-xs rounded-lg border border-hairline-soft p-xs">
+                      <ValueView value={m.args} />
+                    </div>
                     <JsonEditor value={{ formula: m.formula, args: m.args, unit: m.unit, decimals: m.decimals, rounding: m.rounding, scale: m.scale, figure_ids: m.figure_ids, label: m.label }} rows={12} disabled={busy} onSave={(v) => run(() => apiPatch(`/admin/metrics/${m.code}`, v), "지표 정의를 저장했습니다 — 다음 실행부터 적용", data.reload)} />
                     <Button size="sm" variant="quiet" className="mt-xs" disabled={busy} onClick={() => run(() => apiPost(`/admin/metrics/${m.code}/preview`), undefined).then((r) => r && setPreview({ ...preview, [m.code]: r }))}>
                       현재 데이터로 미리 계산(기록 안 함)
                     </Button>
-                    {preview[m.code] ? <JsonView value={preview[m.code]} maxHeight={260} /> : null}
+                    {preview[m.code] ? (
+                      <div className="mt-xs flex flex-col gap-xs">
+                        <ValueView value={preview[m.code]} />
+                        <Advanced label="미리 계산 원본(JSON)">
+                          <JsonView value={preview[m.code]} maxHeight={260} />
+                        </Advanced>
+                      </div>
+                    ) : null}
                   </Collapse>
                 </C>
               </tr>

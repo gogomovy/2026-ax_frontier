@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { AdminPage, C, Card, JsonView, Loading, Sparkline, Table, Tabs, fmtTime, useApiData } from "@/components/admin/kit";
+import { Advanced, KeyValueList } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
+import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { apiGetC } from "@/lib/api-client";
 
 interface MetricMon {
@@ -54,9 +56,22 @@ export default function CalcMonitor() {
   const runs = useApiData<CalcRun[]>(sel ? `/admin/monitor/calc?metric=${encodeURIComponent(sel)}&limit=20` : null);
   const [art, setArt] = useState<unknown>(null);
   const list = (metrics.data ?? []).filter((m) => !onlyChanged || m.changed);
+  const changed = (metrics.data ?? []).filter((m) => m.changed).length;
+  const missing = (metrics.data ?? []).filter((m) => m.display === null).length;
 
   return (
-    <AdminPage title="수치 모니터링" description="모든 지표의 최근 값 · 직전 값 · 추이와 계산 입력(데이터셋 버전 · 행 · 규칙 버전)을 봅니다. 화면에 나간 산출물이 몇 번째 세대인지, 어떤 실행이 만들었는지도 확인합니다.">
+    <AdminPage
+      title="수치 모니터링"
+      description="모든 지표의 최근 값 · 직전 값 · 추이와 계산 입력(데이터셋 버전 · 행 · 규칙 버전)을 봅니다. 화면에 나간 산출물이 몇 번째 세대인지, 어떤 실행이 만들었는지도 확인합니다."
+      summary={
+        <StatGrid columns={4} label="수치 요약">
+          <StatCard label="지표" value={metrics.data?.length ?? "-"} unit="개" hint="계산 커널로 산출되는 지표" />
+          <StatCard label="최근 변경" value={changed} unit="개" tone={changed ? "attention" : "default"} hint="직전 계산과 값이 다른 지표" />
+          <StatCard label="값 없음" value={missing} unit="개" tone={missing ? "critical" : "default"} hint={missing ? "필요한 자료가 없거나 계산 오류" : "모든 지표에 값이 있음"} />
+          <StatCard label="화면 산출물" value={artifacts.data?.length ?? "-"} unit="개" hint="화면에 게시된 결과 묶음" />
+        </StatGrid>
+      }
+    >
       <Tabs active={tab} onChange={setTab} tabs={[{ key: "metrics", label: "지표", count: metrics.data?.length }, { key: "artifacts", label: "화면 산출물", count: artifacts.data?.length }]} />
       {tab === "metrics" ? (
         <div className="grid grid-cols-1 gap-lg xl:grid-cols-[1.3fr_1fr]">
@@ -104,8 +119,16 @@ export default function CalcMonitor() {
                     <span className="ml-auto text-[10.5px] text-stone">{fmtTime(r.createdAt)}</span>
                   </div>
                   {r.error ? <p className="mt-xs text-[11px] text-critical">{r.error}</p> : null}
+                  {Object.keys(r.inputs ?? {}).length ? (
+                    <div className="mt-xs">
+                      <KeyValueList dense columns={1} items={Object.entries(r.inputs).slice(0, 12).map(([k, v]) => ({ label: <span className="font-mono text-[11px]">{k}</span>, value: typeof v === "object" ? JSON.stringify(v).slice(0, 120) : String(v) }))} />
+                    </div>
+                  ) : null}
+                  <p className="mt-xs text-[11px] text-stone">출처 {Array.isArray(r.sources) ? r.sources.length : 0}건{r.runId ? ` · 실행 ${r.runId.slice(0, 8)}` : ""}</p>
                   <div className="mt-xs">
-                    <JsonView value={{ inputs: r.inputs, sources: r.sources, result: r.result }} maxHeight={220} />
+                    <Advanced label="계산 입력 · 출처 · 결과 원본(JSON)">
+                      <JsonView value={{ inputs: r.inputs, sources: r.sources, result: r.result }} maxHeight={220} />
+                    </Advanced>
                   </div>
                 </div>
               ))}
@@ -133,7 +156,9 @@ export default function CalcMonitor() {
           </Table>
           {art ? (
             <div className="mt-md">
-              <JsonView value={art} maxHeight={420} />
+              <Advanced label="세대 이력 원본(JSON)" defaultOpen>
+                <JsonView value={art} maxHeight={420} />
+              </Advanced>
             </div>
           ) : null}
         </Card>

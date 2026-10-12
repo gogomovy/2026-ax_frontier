@@ -118,7 +118,7 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
                 type="button"
                 onClick={() => set({ model: m })}
                 aria-pressed={form.model === m}
-                className={`rounded-pill border px-2.5 py-1 font-mono text-[11.5px] ${form.model === m ? "border-primary bg-[rgba(0,100,224,0.08)] text-primary" : "border-hairline-soft text-charcoal"}`}
+                className={`rounded-pill border px-2.5 py-1 font-mono text-[11.5px] ${form.model === m ? "border-primary bg-info-soft text-primary" : "border-hairline-soft text-charcoal"}`}
               >
                 {m}
               </button>

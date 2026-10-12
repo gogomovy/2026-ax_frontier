@@ -2,8 +2,90 @@
 
 import { useState } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, OriginBadge, Select, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
-import { Badge, Button } from "@/components/ui/primitives";
+import { ValueView } from "@/components/admin/ValueView";
+import { Advanced, EmptyState, KeyValueList } from "@/components/ui/Layout";
+import { Badge, Button, PillTabs } from "@/components/ui/primitives";
+import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { api, apiGetC, apiPatch, apiPost } from "@/lib/api-client";
+
+interface UploadResult {
+  status?: string;
+  version?: number;
+  rows?: number;
+  quality?: { status?: string; checks?: { rule: string; passed: boolean; detail: string; severity: string }[]; source?: { adapter?: string | null } };
+  message?: string;
+}
+
+/** 미리보기 · 업로드 결과 — 상태 · 행 수 · 품질 검증을 먼저, 원본은 고급에 */
+function UploadResultView({ r }: { r: UploadResult }) {
+  const checks = r.quality?.checks ?? [];
+  const failed = checks.filter((c) => !c.passed);
+  return (
+    <div className="mt-md flex flex-col gap-md" data-upload-result>
+      <KeyValueList
+        items={[
+          { label: "처리 상태", value: r.status ? <StatusBadge status={r.status} /> : "미리보기" },
+          { label: "품질", value: <StatusBadge status={r.quality?.status} />, hint: checks.length ? `검증 ${checks.length}개 중 실패 ${failed.length}` : undefined },
+          { label: "행", value: r.rows !== undefined ? `${r.rows.toLocaleString("ko-KR")}행` : "-" },
+          ...(r.version !== undefined ? [{ label: "버전", value: `v${r.version}` }] : []),
+          ...(r.quality?.source?.adapter ? [{ label: "읽은 방식", value: r.quality.source.adapter }] : []),
+        ]}
+      />
+      {failed.length ? (
+        <ul className="flex flex-col gap-0.5 text-[12px]">
+          {failed.map((c, i) => (
+            <li key={i} className={c.severity === "error" ? "text-critical" : "text-attention"}>
+              ✕ {c.rule} — {c.detail}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Advanced label="결과 원본(JSON)">
+        <JsonView value={r} maxHeight={300} />
+      </Advanced>
+    </div>
+  );
+}
+
+type ColumnDef = { name?: string; type?: string; aliases?: string[]; required?: boolean; description?: string; label?: string };
+
+/** 데이터셋 정의 요약 — 컬럼 · 키 · 품질 규칙 · 파서 */
+function DefinitionView({ ds }: { ds: Ds }) {
+  const cols = (ds.columns as ColumnDef[]).filter((c) => c && typeof c === "object");
+  return (
+    <div className="flex flex-col gap-md">
+      <KeyValueList
+        items={[
+          { label: "파일명 규칙", value: ds.file_pattern ?? "-" },
+          { label: "갱신 주기", value: ds.refresh_cycle ?? "-" },
+          { label: "키 컬럼", value: ds.key_columns.length ? ds.key_columns.join(", ") : "-" },
+          { label: "기준일 컬럼", value: ds.as_of_column ?? "-" },
+          { label: "품질 규칙", value: `${ds.quality_rules.length}개` },
+          { label: "사용 지표", value: ds.usedByMetrics.length ? ds.usedByMetrics.slice(0, 8).join(", ") + (ds.usedByMetrics.length > 8 ? ` 외 ${ds.usedByMetrics.length - 8}` : "") : "없음" },
+        ]}
+      />
+      {cols.length ? (
+        <Table head={["컬럼", "형식", "원본 헤더 별칭", "필수", "설명"]}>
+          {cols.slice(0, 80).map((c, i) => (
+            <tr key={`${c.name}-${i}`}>
+              <C mono>{c.name}</C>
+              <C>{c.type ?? "-"}</C>
+              <C className="text-[11px]">{(c.aliases ?? []).join(", ") || "-"}</C>
+              <C>{c.required ? "예" : ""}</C>
+              <C className="text-[11px]">{c.label ?? c.description ?? ""}</C>
+            </tr>
+          ))}
+        </Table>
+      ) : null}
+      {Object.keys(ds.parser ?? {}).length ? (
+        <div>
+          <p className="mb-xs text-[11.5px] font-bold text-steel">파서</p>
+          <ValueView value={ds.parser} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 interface Version {
   id: number;
@@ -73,13 +155,37 @@ export default function DatasetsAdmin() {
 function Datasets() {
   const data = useApiData<Ds[]>("/admin/datasets");
   const [sel, setSel] = useState<string | null>(null);
-  const cur = data.data?.find((d) => d.code === sel) ?? null;
+  const [q, setQ] = useState("");
+  const [org, setOrg] = useState<"all" | "bank" | "ext">("all");
+  const all = data.data ?? [];
+  const cur = all.find((d) => d.code === sel) ?? null;
+  const list = all.filter((d) => (org === "all" || d.origin === org) && (!q || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(q.toLowerCase())));
+  const warn = all.filter((d) => d.versions.some((v) => v.isCurrent && v.quality.status && !["passed", "ok"].includes(v.quality.status))).length;
+  const empty = all.filter((d) => !d.versions.some((v) => v.isCurrent)).length;
+  const sim = all.filter((d) => d.versions.some((v) => v.isCurrent && v.dataOrigin !== "actual")).length;
   return (
     <>
+      <div className="mb-lg">
+        <StatGrid columns={4} label="데이터셋 요약">
+          <StatCard label="데이터셋" value={all.length || "-"} unit="개" hint={`당행 ${all.filter((d) => d.origin === "bank").length} · 외부 ${all.filter((d) => d.origin === "ext").length}`} />
+          <StatCard label="자료 없음" value={empty} unit="개" tone={empty ? "attention" : "success"} hint={empty ? "현재 버전이 없어 계산에서 빠짐" : "모두 현재 버전 있음"} />
+          <StatCard label="품질 경고" value={warn} unit="개" tone={warn ? "attention" : "default"} hint="현재 버전의 품질 검증이 통과가 아님" />
+          <StatCard label="시뮬레이션 자료" value={sim} unit="개" tone={sim ? "info" : "default"} hint="실데이터로 바꿔야 할 자료" />
+        </StatGrid>
+      </div>
       <Loading error={data.error} loading={!data.data && data.loading} />
-      <Card>
+      <Card
+        title={`데이터셋 ${list.length}개`}
+        actions={
+          <>
+            <TextInput ariaLabel="데이터셋 찾기" placeholder="코드 · 이름 · 설명" value={q} onChange={setQ} className="w-[240px]" />
+            <PillTabs size="sm" label="출처" value={org} onChange={setOrg} items={[{ key: "all", label: "전체" }, { key: "bank", label: "당행" }, { key: "ext", label: "외부" }]} />
+          </>
+        }
+      >
+        {data.data && !list.length ? <EmptyState compact title="맞는 데이터셋이 없습니다" description="찾는 말이나 출처를 바꿔 보세요." /> : null}
         <Table head={["출처", "데이터셋", "종류", "저장", "현재 버전", "사용 지표", ""]}>
-          {(data.data ?? []).map((d) => {
+          {list.map((d) => {
             const curV = d.versions.filter((v) => v.isCurrent);
             return (
               <tr key={d.code} className={sel === d.code ? "bg-surface-soft" : ""}>
@@ -123,7 +229,7 @@ function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
   const [dataOrigin, setDataOrigin] = useState("actual");
   const [asOf, setAsOf] = useState("");
   const [force, setForce] = useState(false);
-  const [preview, setPreview] = useState<unknown>(null);
+  const [preview, setPreview] = useState<UploadResult | null>(null);
   const [rows, setRows] = useState<{ columns: string[]; rows: Record<string, unknown>[] } | null>(null);
 
   const form = () => {
@@ -152,25 +258,21 @@ function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
             <Check label="품질 실패 시에도 확정" checked={force} onChange={setForce} />
           </div>
           <div className="flex items-end gap-xs">
-            <Button size="sm" variant="quiet" disabled={busy || !file} onClick={() => run(() => api(`/admin/datasets/${ds.code}/preview`, { method: "POST", body: form() }), undefined).then((r) => r && setPreview(r))}>
+            <Button size="sm" variant="quiet" disabled={busy || !file} onClick={() => run(() => api<UploadResult>(`/admin/datasets/${ds.code}/preview`, { method: "POST", body: form() }), undefined).then((r) => r && setPreview(r))}>
               미리보기
             </Button>
-            <Button size="sm" variant="confirm" disabled={busy || !file} onClick={() => run(() => api(`/admin/datasets/${ds.code}/upload`, { method: "POST", body: form() }), "업로드했습니다 — 관련 워크플로우가 대기열에 올라갑니다", reload).then((r) => r && setPreview(r))}>
+            <Button size="sm" variant="confirm" disabled={busy || !file} onClick={() => run(() => api<UploadResult>(`/admin/datasets/${ds.code}/upload`, { method: "POST", body: form() }), "업로드했습니다 — 관련 워크플로가 대기열에 올라갑니다", reload).then((r) => r && setPreview(r))}>
               업로드
             </Button>
           </div>
         </div>
-        {preview ? (
-          <div className="mt-md">
-            <JsonView value={preview} maxHeight={300} />
-          </div>
-        ) : null}
+        {preview ? <UploadResultView r={preview} /> : null}
       </Card>
 
       <Card title="버전">
         <Table head={["버전", "기준일", "상태", "성격", "파일", "행", "품질", "업로드", ""]}>
           {ds.versions.map((v) => (
-            <tr key={v.id} className={v.isCurrent ? "bg-[rgba(49,162,76,0.05)]" : ""}>
+            <tr key={v.id} className={v.isCurrent ? "bg-success-faint" : ""}>
               <C>
                 v{v.version} {v.isCurrent ? <Badge tone="success">현재</Badge> : null}
               </C>
@@ -189,7 +291,7 @@ function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
                 <Collapse label="검증 항목">
                   <ul className="text-[11px]">
                     {(v.quality.checks ?? []).map((c, i) => (
-                      <li key={i} className={c.passed ? "text-steel" : c.severity === "error" ? "text-critical" : "text-[#8a5d00]"}>
+                      <li key={i} className={c.passed ? "text-steel" : c.severity === "error" ? "text-critical" : "text-attention"}>
                         {c.passed ? "✓" : "✕"} {c.rule} — {c.detail}
                       </li>
                     ))}
@@ -235,12 +337,17 @@ function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
 
       <Card title="정의 (컬럼 · 별칭 · 키 · 품질 규칙 · 온톨로지 매핑 · 파서)">
         <p className="mb-md text-[12px] text-steel">실데이터 형식이 다르면 코드를 바꾸지 않고 여기서 컬럼 별칭(원본 헤더명)과 파서 설정을 고칩니다. 매핑은 그래프 투영(결정론)에 쓰입니다.</p>
-        <JsonEditor
-          rows={22}
-          disabled={busy}
-          value={{ name: ds.name, description: ds.description, file_pattern: ds.file_pattern, refresh_cycle: ds.refresh_cycle, columns: ds.columns, key_columns: ds.key_columns, as_of_column: ds.as_of_column, quality_rules: ds.quality_rules, mapping: ds.mapping, parser: ds.parser }}
-          onSave={(v) => run(() => apiPatch(`/admin/datasets/${ds.code}`, v), "정의를 저장했습니다", reload)}
-        />
+        <DefinitionView ds={ds} />
+        <div className="mt-md">
+          <Advanced label="고급 — 정의 JSON 편집">
+            <JsonEditor
+              rows={22}
+              disabled={busy}
+              value={{ name: ds.name, description: ds.description, file_pattern: ds.file_pattern, refresh_cycle: ds.refresh_cycle, columns: ds.columns, key_columns: ds.key_columns, as_of_column: ds.as_of_column, quality_rules: ds.quality_rules, mapping: ds.mapping, parser: ds.parser }}
+              onSave={(v) => run(() => apiPatch(`/admin/datasets/${ds.code}`, v), "정의를 저장했습니다", reload)}
+            />
+          </Advanced>
+        </div>
       </Card>
     </>
   );
@@ -327,7 +434,9 @@ function Documents() {
         </Table>
         {detail ? (
           <div className="mt-md">
-            <JsonView value={detail} maxHeight={420} />
+            <Advanced label="문서 상세 원본(JSON)" defaultOpen>
+              <JsonView value={detail} maxHeight={420} />
+            </Advanced>
           </div>
         ) : null}
       </Card>

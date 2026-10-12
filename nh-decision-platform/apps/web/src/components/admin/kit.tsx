@@ -1,8 +1,11 @@
 "use client";
 
 import clsx from "clsx";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useSession } from "@/components/providers/SessionProvider";
 import { useUi } from "@/components/providers/UiProvider";
+import { Breadcrumbs } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
 import { ScrollRegion } from "@/components/ui/ScrollRegion";
@@ -77,17 +80,37 @@ export function useAction() {
 }
 
 /* ── 레이아웃 ───────────────────────────────────────────────── */
-export function AdminPage({ title, description, actions, children }: { title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+/** 현재 관리자 화면의 묶음(메뉴 section) — 위치 표시용 (Phase C · ADM-01) */
+function useAdminSection(): string | null {
+  const pathname = usePathname() ?? "";
+  const { menu } = useSession();
+  for (const sec of menu?.sections ?? []) {
+    if (!sec.admin) continue;
+    for (const item of [...sec.flow, ...sec.reference]) {
+      if (item.href === pathname) return sec.section;
+    }
+  }
+  return null;
+}
+
+/**
+ * 관리자 화면 틀 — 위치(관리자 > 묶음 > 화면) · 제목 · 목적 한 줄 · 동작 · 요약(summary: 통계 카드 등).
+ * description 은 '이 화면에서 무엇을 하는지' 한두 문장으로 쓴다.
+ */
+export function AdminPage({ title, description, actions, summary, children }: { title: string; description?: ReactNode; actions?: ReactNode; summary?: ReactNode; children: ReactNode }) {
+  const section = useAdminSection();
+  const crumbs = [{ label: "관리자", href: "/admin" }, ...(section && section !== "관리자 홈" ? [{ label: section }] : []), { label: title }];
   return (
     <div className="shell pb-section pt-xl">
       <div className="mb-lg flex flex-wrap items-end justify-between gap-base">
-        <div>
-          <p className="mb-1 text-[12px] font-bold text-primary">관리자</p>
+        <div className="min-w-0">
+          <Breadcrumbs items={title === "관리자 홈" ? [{ label: "관리자" }] : crumbs} className="mb-1.5" />
           <h1 className="text-[24px] font-bold text-ink-deep">{title}</h1>
           {description ? <p className="mt-1.5 max-w-[820px] text-[13px] leading-relaxed text-steel">{description}</p> : null}
         </div>
         {actions ? <div className="flex flex-wrap items-center gap-xs">{actions}</div> : null}
       </div>
+      {summary ? <div className="mb-lg">{summary}</div> : null}
       {children}
     </div>
   );
@@ -108,7 +131,7 @@ export function Card({ title, actions, children, className }: { title?: ReactNod
 }
 
 export function Loading({ error, loading }: { error?: string | null; loading?: boolean }) {
-  if (error) return <p className="rounded-lg bg-[rgba(228,30,63,0.06)] px-md py-2.5 text-[12.5px] text-critical">{error}</p>;
+  if (error) return <p className="rounded-lg bg-critical-faint px-md py-2.5 text-[12.5px] text-critical">{error}</p>;
   if (loading) return <p className="text-[12.5px] text-stone">불러오는 중…</p>;
   return null;
 }

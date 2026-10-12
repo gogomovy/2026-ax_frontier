@@ -23,13 +23,13 @@ export function AnalysisAlertStrip({
   return (
     <section
       aria-label="새 분석 결과"
-      className="overflow-hidden rounded-2xl border border-[rgba(0,100,224,0.22)] bg-[rgba(0,100,224,0.04)]"
+      className="overflow-hidden rounded-2xl border border-info-line bg-info-faint"
     >
       <div className="flex flex-wrap items-baseline gap-x-md gap-y-1 px-lg pt-base">
         <p className="text-[14px] font-bold text-ink-deep">새 분석 결과 {opinions.length}건</p>
         <p className="text-[12px] text-steel">오늘 {generatedAt.slice(11, 16)} 일배치 · 선택하면 해당 분석으로 이동합니다</p>
       </div>
-      <ul className="mt-2 divide-y divide-[rgba(0,100,224,0.12)] border-t border-[rgba(0,100,224,0.12)]">
+      <ul className="mt-2 divide-y divide-info-line-soft border-t border-info-line-soft">
         {opinions.map((insight) => {
           const tabKey = tabOf(insight);
           return (

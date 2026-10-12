@@ -54,7 +54,7 @@ export function SourceDrawer() {
         aria-label="닫기"
         tabIndex={-1}
         onClick={closeDrawer}
-        className="flex-1 bg-[rgba(10,19,23,0.32)]"
+        className="flex-1 bg-scrim"
       />
       <aside
         ref={panelRef}
@@ -140,7 +140,7 @@ function EvidenceBody({
                     className={clsx(
                       "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
                       active?.id === item.id
-                        ? "border-primary bg-[rgba(0,100,224,0.04)]"
+                        ? "border-primary bg-info-faint"
                         : "border-hairline-soft bg-canvas",
                     )}
                   >
@@ -219,7 +219,7 @@ function EvidenceDetail({ item }: { item: Evidence }) {
             target="_blank"
             rel="noopener noreferrer"
             data-doc-open
-            className="rounded-pill border-2 border-[rgba(10,19,23,0.12)] px-3 py-1.5 text-[11px] font-bold text-ink-deep"
+            className="rounded-pill border-2 border-line-strong px-3 py-1.5 text-[11px] font-bold text-ink-deep"
           >
             원본 열기 · {item.doc.fileName ?? "파일"}
           </a>
@@ -283,14 +283,14 @@ function CalcBody({ payload }: { payload: Extract<import("@/components/providers
           </div>
 
           {trace.warnings?.length ? (
-            <ul className="flex flex-col gap-1 rounded-lg bg-[rgba(224,130,0,0.08)] px-3 py-2 text-[11.5px] text-charcoal">
+            <ul className="flex flex-col gap-1 rounded-lg bg-attention-faint px-3 py-2 text-[11.5px] text-charcoal">
               {trace.warnings.map((w) => (
                 <li key={w}>확인 필요 · {w}</li>
               ))}
             </ul>
           ) : null}
           {trace.note ? (
-            <p className="rounded-lg bg-[rgba(0,100,224,0.05)] px-3 py-2 text-[11.5px] text-charcoal">{trace.note}</p>
+            <p className="rounded-lg bg-info-faint px-3 py-2 text-[11.5px] text-charcoal">{trace.note}</p>
           ) : null}
           <p className="text-[11px] text-stone">계산 시각 {trace.executedAt}</p>
         </>
@@ -303,9 +303,9 @@ function CalcBody({ payload }: { payload: Extract<import("@/components/providers
           </p>
         </div>
       ) : (
-        <div className="flex items-start gap-2 rounded-lg bg-[rgba(247,185,40,0.14)] px-3 py-2.5">
-          <IconWarn className="mt-0.5 text-[#7a5600]" />
-          <p className="text-[12px] text-[#7a5600]">
+        <div className="flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2.5">
+          <IconWarn className="mt-0.5 text-warning" />
+          <p className="text-[12px] text-warning">
             이 값은 계산 추적 정보가 연결되지 않았습니다. 실제 시스템에서는 렌더링 단계에서 차단됩니다.
           </p>
         </div>
@@ -350,7 +350,7 @@ function TermBody({ payload }: { payload: Extract<import("@/components/providers
       {term.example ? (
         <div>
           <p className="mb-1 text-[12px] font-bold text-charcoal">예시</p>
-          <p className="rounded-lg bg-[rgba(0,100,224,0.05)] px-3 py-2.5 text-[12.5px] text-charcoal">{term.example}</p>
+          <p className="rounded-lg bg-info-faint px-3 py-2.5 text-[12.5px] text-charcoal">{term.example}</p>
         </div>
       ) : null}
 

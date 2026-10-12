@@ -1367,3 +1367,51 @@ def test_scope_llm_rotation(db):
         assert llm_scopes(s, wf, ["B", "A"], -1) == ["B", "A"] and llm_scopes(s, wf, ["B"], None) == ["B"]
         s.query(AgentDecision).filter(AgentDecision.workflow_code == wf).delete()
         s.commit()
+
+
+def test_admin_home_and_monitor_overview(db):
+    """Phase C · ADM-01 · ADM-02 · MON-01 — 관리자 메뉴 묶음 6개, 관리자 홈(처리할 일 · 상태 · 24시간 실행), 운영 개요(시간대별 집계)."""
+    from nhdip.models import Screen
+
+    _drain(db)
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    menu = admin.get("/me/menu").json()
+    admin_secs = [s["section"] for s in menu["sections"] if s["admin"]]
+    assert admin_secs == ["관리자 홈", "사용자와 권한", "데이터와 지식", "AI · 에이전트", "계산과 규칙", "운영 모니터링"], admin_secs
+    hrefs = {i["href"] for s in menu["sections"] if s["admin"] for i in s["flow"] + s["reference"]}
+    assert {"/admin", "/admin/settings", "/admin/monitor", "/admin/monitor/runs", "/admin/pipeline"} <= hrefs
+    ov = admin.get("/admin/overview").json()
+    keys = [t["key"] for t in ov["tasks"]]
+    assert keys == ["users", "uploads", "analyses", "jobs", "alerts", "issues"] and all(t["href"].startswith("/admin") for t in ov["tasks"])
+    assert {s["key"] for s in ov["status"]} == {"db", "graph", "llm", "workers"}
+    assert ov["runs24h"]["total"] >= 1 and len(ov["runs24h"]["buckets"]) == 24 and ov["recentRuns"]
+    assert sum(sum(b["values"].values()) for b in ov["runs24h"]["buckets"]) == ov["runs24h"]["total"]
+    mo = admin.get("/admin/monitor/overview", params={"hours": 24}).json()
+    assert mo["kpi"]["runs"] >= 1 and len(mo["runs"]) == 24 and mo["stepHours"] == 1
+    assert any(w["workflow"] == "wf_model_monitoring" and w["runs"] >= 1 for w in mo["workflows"]) and mo["slowNodes"]
+    week = admin.get("/admin/monitor/overview", params={"hours": 168}).json()
+    assert len(week["runs"]) == 28 and week["stepHours"] == 6
+    # 일반 사용자는 관리자 집계를 볼 수 없다
+    u = _client()
+    u.post("/auth/signup", json={"emp_no": "20259070", "name": "일반", "password": "abcd1234", "org_code": "T111"})
+    admin.post("/admin/users/20259070/approve")
+    _login(u, "20259070", "abcd1234")
+    assert u.get("/admin/overview").status_code == 403 and u.get("/admin/monitor/overview").status_code == 403
+    # 운영 DB 보강 — 이전 기본 묶음('관리자')이면 새 묶음으로, 관리자가 바꾼 이름은 유지
+    with db() as s:
+        from nhdip.seed.run import admin_ia_upgrade
+        from nhdip.models import Setting
+
+        home, rules = s.get(Screen, "ADMIN_HOME"), s.get(Screen, "ADMIN_RULES")
+        home.section, home.label, rules.section, rules.label = "관리자", "시스템 상태", "관리자", "규칙(사용자 지정)"
+        st = s.get(Setting, "seed.applied_upgrades")
+        st.value = [x for x in (st.value or []) if x != "admin-ia-v1"]
+        s.commit()
+        out: dict = {}
+        admin_ia_upgrade(s, out)
+        s.commit()
+        assert out["admin_ia_upgrade"] == 2
+        assert (home.section, home.label) == ("관리자 홈", "관리자 홈") and (rules.section, rules.label) == ("계산과 규칙", "규칙(사용자 지정)")
+        rules.label = "판정 규칙"
+        s.commit()

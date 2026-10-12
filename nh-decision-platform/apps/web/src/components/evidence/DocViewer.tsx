@@ -22,7 +22,7 @@ function PageText({ page }: { page: DocumentViewPage }) {
     <div className="whitespace-pre-wrap break-words text-[14px] leading-[1.85] text-ink" data-doc-page={page.page}>
       {parts.map((p, i) =>
         p.mark ? (
-          <mark key={i} data-highlight className="rounded-sm bg-[rgba(242,169,24,0.32)] px-0.5 text-ink-deep">
+          <mark key={i} data-highlight className="rounded-sm bg-highlight px-0.5 text-ink-deep">
             {p.text}
           </mark>
         ) : (
@@ -80,7 +80,7 @@ export function DocViewer({ view }: { view: DocumentView }) {
                   <span
                     className={clsx(
                       "rounded-pill px-1.5 text-[10.5px] font-bold",
-                      i === index ? "bg-white/20 text-white" : "bg-[rgba(242,169,24,0.25)] text-[#7a5600]",
+                      i === index ? "bg-white/20 text-white" : "bg-attention-soft text-warning",
                     )}
                   >
                     인용 {p.highlights.length}
@@ -122,7 +122,7 @@ export function DocViewer({ view }: { view: DocumentView }) {
         </header>
 
         {view.query && !view.matched ? (
-          <p className="mx-xl mt-base flex items-start gap-2 rounded-lg bg-[rgba(247,185,40,0.14)] px-3 py-2 text-[12px] text-[#7a5600]">
+          <p className="mx-xl mt-base flex items-start gap-2 rounded-lg bg-warning-soft px-3 py-2 text-[12px] text-warning">
             <IconWarn className="mt-0.5" />
             인용문과 일치하는 위치를 본문에서 찾지 못했습니다. 근거가 요약 인용이거나 문서 버전이 바뀌었을 수 있습니다.
           </p>

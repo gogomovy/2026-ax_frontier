@@ -128,7 +128,7 @@ export default async function CapitalPage() {
 
           {/* 대리지표 한계 (AST-04 / CMP-04) — 문구는 유지하고 표현만 낮춘다 */}
           <p className="mt-base flex items-start gap-2 rounded-xl bg-surface-soft px-base py-3 text-[12px] leading-relaxed text-charcoal">
-            <IconWarn className="mt-0.5 shrink-0 text-[#8a5d00]" />
+            <IconWarn className="mt-0.5 shrink-0 text-attention" />
             {capital.proxyNote}
           </p>
         </section>

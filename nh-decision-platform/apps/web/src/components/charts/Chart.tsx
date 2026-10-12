@@ -6,8 +6,8 @@ import { DataTable, Td } from "@/components/ui/primitives";
 import { UNIT_LABEL, defaultDecimals } from "@/lib/format";
 import type { Figure, SeriesPoint } from "@/lib/types";
 
-/** 디자인 토큰 primary · attention · success · stone · oculus-purple 순 */
-export const PALETTE = ["#0064e0", "#f2a918", "#31a24c", "#8595a4", "#a121ce"];
+/** 차트 계열 색 — 토큰 `--chart-1..6`(primary · attention · success · stone · purple · teal 순, C.1 · Q106). SVG 에서는 style 로 칠한다 */
+export const PALETTE = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
 
 interface ChartProps {
   title?: string;
@@ -111,22 +111,22 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label={ariaLabel}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#0064e0" stopOpacity="0.16" />
-              <stop offset="100%" stopColor="#0064e0" stopOpacity="0" />
+              <stop offset="0%" style={{ stopColor: "var(--chart-1)", stopOpacity: 0.16 }} />
+              <stop offset="100%" style={{ stopColor: "var(--chart-1)", stopOpacity: 0 }} />
             </linearGradient>
           </defs>
 
           {ticks.map((t, i) => (
             <g key={i}>
-              <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="#dee3e9" strokeWidth="1" />
-              <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" fill="#616f7f">
+              <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} className="stroke-hairline-soft" strokeWidth="1" />
+              <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" className="fill-stone">
                 {fmt(t, unit, decimals)}
               </text>
             </g>
           ))}
 
           {categories.map((label, i) => (
-            <text key={label} x={x(i)} y={H - 12} textAnchor="middle" fontSize="10.5" fill="#5d6c7b">
+            <text key={label} x={x(i)} y={H - 12} textAnchor="middle" fontSize="10.5" className="fill-steel">
               {label}
             </text>
           ))}
@@ -149,7 +149,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                           width={barW}
                           height={Math.max(1, y(min) - top)}
                           rx="3"
-                          fill={s.color ?? PALETTE[si % PALETTE.length]}
+                          style={{ fill: s.color ?? PALETTE[si % PALETTE.length] }}
                           opacity={si === 0 ? 0.92 : 0.78}
                         />
                       );
@@ -172,7 +172,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                     <polyline
                       points={pts.join(" ")}
                       fill="none"
-                      stroke={s.color ?? PALETTE[si % PALETTE.length]}
+                      style={{ stroke: s.color ?? PALETTE[si % PALETTE.length] }}
                       strokeWidth="2.2"
                       strokeLinejoin="round"
                       strokeLinecap="round"
@@ -185,8 +185,8 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                           cx={x(i)}
                           cy={y(p.value)}
                           r="3.2"
-                          fill="#ffffff"
-                          stroke={s.color ?? PALETTE[si % PALETTE.length]}
+                          className="fill-canvas"
+                          style={{ stroke: s.color ?? PALETTE[si % PALETTE.length] }}
                           strokeWidth="2"
                         />
                       ),
@@ -195,7 +195,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                 );
               })}
 
-          <line x1={padL} x2={W - padR} y1={y(min)} y2={y(min)} stroke="#ced0d4" strokeWidth="1" />
+          <line x1={padL} x2={W - padR} y1={y(min)} y2={y(min)} className="stroke-hairline" strokeWidth="1" />
         </svg>
       )}
 

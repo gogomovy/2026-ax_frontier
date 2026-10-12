@@ -161,7 +161,7 @@ export default function ContractsAdmin() {
                 </button>
               ))}
             </div>
-            {t.report?.notes?.length ? <p className="mb-md text-[11.5px] text-[#8a5d00]">{t.report.notes.join(" · ")}</p> : null}
+            {t.report?.notes?.length ? <p className="mb-md text-[11.5px] text-attention">{t.report.notes.join(" · ")}</p> : null}
             <Table head={["컬럼", "원천 · 산식(정의서)", "연결", "계산값", "정의서 화면값", "대조", ""]}>
               {list.map((c) => {
                 const ch = checks[c.column];
