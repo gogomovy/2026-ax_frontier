@@ -2433,6 +2433,25 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 다행 제안 버전(B.46) | `contracts/materialize._materialize_rows` · `rows_version` · `seed/defs_dept_contracts`(`BRANCH_T02.PROPOSAL_VER_NO`) | 범위(기준월 · 지점) 이전 행을 읽어 둔 뒤 지우고 새 행 적재 → 다시 읽어 비교 열(행 · 지표 · 기준월 · 상수 연결) 서명 비교 → 같으면 이전 최대 버전, 다르면 +1, 이전 없음 · 비어 있음이면 1 → 범위 전체 `UPDATE` |
 | 업로드 시험 모드 | `apps/e2e/upload-agents.mjs`(`LLM_MODE` · `EMBED_MODE` · `E2E_EXPECT_LLM`) · CI `upload` 잡(workflow_dispatch) | LLM 모드: 기존 판정. LLM 없는 모드: 판단 결정이 규칙으로 남는지 · 서술 실패 없음 · 청크만 · 규칙 추출 · 질의 `fallback`. 공통: '차이' 질의에 `breach_gap_6b` 포함 |
 
+### 19.25 다지점 영업점 설계 (요구사항 §19 BRM-01~08 · Q97 · B.47 — 착수 대기)
+
+현재 단일 지점 가정이 걸린 곳(2026-10-12 조사):
+
+| 경로 | 위치 | 지금 동작 | 바꿀 점 |
+|---|---|---|---|
+| 지점 참조 | `seed/defs_branch.OFF`(`{"ref": {"rule": "BRANCH_SCOPE", "path": "office_code"}}`) — 영업점 지표 `br_*` 의 조건 · 바인딩 파라미터 · `PROSPECT_EXISTING` | 규칙 한 값 | `{"param": "office"}` 로 1회 보강(규칙 참조가 이전 기본값일 때만) |
+| 지표 평가 | `calc/metrics.EvalContext` · `resolve_ref`(const · q · metric · rule · setting) | 매개변수 없음. `metric` 참조는 실행 결과가 없으면 지표 코드의 최근 값으로 대체(지점 구분 없음) | `EvalContext.params` · 참조 `param` 추가, 지점 실행은 결과 캐시를 지점마다 분리, 대체 조회도 범위 조건 |
+| 지표 값 저장 | `models/runtime.MetricValue`(지표 코드 · 기준일 · 값 · 직전 값) | 범위 없음 | 범위 열(`scope`, 기본 빈 값) — 마이그레이션 0012, 직전 값 · 이력 조회에 범위 조건 |
+| 화면 산출물 | `ViewArtifact.key` — `branch_dashboard` · `branch_tabs` · `report.branch-prime-corp` · `report.branch-seomin`, 서술 인사이트 ID `ins-br-*` | 키 하나 | `<키>@<지점>`(기본 지점은 기존 키), 게시 · 3방향 병합 · 탭 동기화(`sync_analysis_tabs`)가 키를 받도록 |
+| 행 생성기 | `contracts/rows._office`(`p.office_cd` → 규칙 → `"001068"` 고정 대체값) · `branch_status_rows` · `branch_corp_rows` · `branch_retail_rows` | 한 지점 행 | 고정 대체값 제거, 지점 매개변수로 |
+| 정의서 적재 | `contracts/materialize._materialize_rows` — 범위 삭제 · 제안 버전(B.46)이 `base_ym` + `brc` | 범위는 이미 지점 단위 | 지점마다 한 번씩 호출(공통 지표 · 서술 열이 그 지점 값이 되도록) |
+| 변화 감지 | 규칙 `CHANGE_SIGNIFICANCE.scope.wf_branch_kpi`(규칙 참조) · `workflow/agent_nodes._scope` | 한 지점 | 지점 실행마다 범위 · 직전 값 비교 |
+| 화면 API | `api/screens._branch_artifact` · `/screens/branch/*` · `api/reports` 내려받기 · `api/menu_counts` | 키 하나 + `can_view_office` | 선택 인자 `office`(없으면 사용자 소속 지점 → 기본 지점), 검사는 기존 `can_view_office` |
+| 화면 | `apps/web/src/lib/data.ts` `getBranchDashboard()` 등 · `app/branch/*` | 지점 인자 없음(지점 이름은 응답에서 읽음) | 지점 선택 상자(볼 수 있는 지점이 둘 이상일 때) · 주소 `?office=` |
+| 시드 자료 | `BRANCH_OFFICE_MASTER`(1행) · `BRANCH_KPI_SCORE` · `BRANCH_BIZ_BALANCE` · `PROSPECTS_SUWON`(001068 만) | 한 지점 | 다지점 자료 수령 후. 그전에는 자료 없는 지점 = '준비 중' (BRM-06) |
+
+실행 흐름(착수 시): `load_inputs` → 전행 지표 `compute_metrics`(1회) → **지점 반복**[`compute_metrics(scope=office)` → `detect_changes(scope)` → `build_views(키@지점)` → `plan_run` → `narrate` → `critic` → `materialize_contracts(지점)`] → `publish`. 지점 반복은 노드 설정 `per_scope: "office"` 로 표시하고 엔진이 `BRANCH_SCOPE.office_codes`(상한 설정 `branch.max_offices`)를 돌린다. 시험: 지점 2곳(001068 + 자료 있는 가상 지점)으로 지표 · 산출물 · 변화 피드 · mart · 열람 범위 · 호환(001068 수치 동일).
+
 ### 19.9 배포 (DEP-01~04)
 
 - `make up` = `docker compose up -d --build` (6개 서비스). `make seed` 는 최초 기동 시 자동 수행되며 수동 재실행 가능(멱등).
