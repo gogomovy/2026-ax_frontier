@@ -452,7 +452,7 @@ try {
   }
 
   // 9) 관리자 화면
-  for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/rules", "/admin/settings", "/admin/audit", "/admin/monitor", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts", "/admin/uploads", "/admin/analysis-agents"]) {
+  for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/knowledge", "/admin/rules", "/admin/settings", "/admin/audit", "/admin/monitor", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts", "/admin/uploads", "/admin/analysis-agents"]) {
     await a.goto(BASE + p, { waitUntil: "networkidle0" });
     await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
     const t = await text(a);
