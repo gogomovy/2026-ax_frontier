@@ -306,6 +306,7 @@
   - [x] 화면 API `?office=`(대시보드 · 탭 · 보고서 · 내려받기) · `GET /screens/branch/offices` · 메뉴 건수 · 질의 답변 지표 값 범위(영업점 직원은 자기 지점만)
   - [x] 웹 — 지점 선택 상자(볼 수 있는 지점 2곳 이상일 때) · `?office=` 유지(이동 · 탭 · 내려받기) · vitest(`officeParam` · `withOffice`)
   - [x] 통합 시험 `test_branch_multi_office_scope`(001068 + 가상 지점 + 자료 없는 지점 · 열람 범위 · 001068 수치 동일)
+  - 결과: 로컬 pytest 169 중 168(`test_antivirus_hook` Windows 셸) · 커버리지 95.56% · 계약 4/4 · vitest 24 · tsc · eslint, 커밋 gogomovy `ff1a10b` · janlight `5f4f83d` + `4187348`(대괄호 경로 파일 1개 복사 누락 보완), CI run 38212554128 frontend · backend · e2e 성공
   - [ ] 실자료 반영 · 지점 2곳 이상 E2E · 접근성(지점 선택 상자) — 시드는 지점 1곳이라 E2E 에서는 선택 상자가 나오지 않음
 - [x] B.46 영업점 T02 제안 버전 (Q96 · 남은작업 8.1(8)) — 다행 표에 `version` 연결 지원: 같은 기준월 · 지점의 이전 적재와 수치 · 코드 열(행 집합)이 같으면 유지, 다르면 +1(서술 · 분석 ID · 분석 일자 제외, 저장된 값끼리 비교). `BRANCH_T02.PROPOSAL_VER_NO` 미연결 → 버전, 운영 DB 는 이전 기본값일 때만 연결 갱신 · 단위 시험 1 · 통합 시험(유지 · 증가) 보강
   - 결과: 로컬 pytest 168 중 167(`test_antivirus_hook` Windows 셸) · 커버리지 95.56% · 계약 4/4, 커밋 gogomovy `447f022` · janlight `88c52d3`, CI run 38195692743 frontend · backend · e2e 성공
