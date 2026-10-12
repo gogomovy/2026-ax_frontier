@@ -132,7 +132,17 @@ def _producer(session: Session, key: str) -> str | None:
 
 
 @router.get("/reports/{tab_key}")
-def report(tab_key: str, session: Session = Depends(get_session), _: AppUser = Depends(require_resource("reports"))):
+def report(tab_key: str, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("reports"))):
+    from nhdip.analysis_registry import space_for_report
+
+    from .deps import user_resources
+
+    sp = space_for_report(session, tab_key)
+    if sp is not None:
+        # 분석 에이전트 보고서(an-*) — 그 분석 공간의 열람 리소스도 있어야 한다 (다른 부서 분석 비노출 · DAG-09)
+        allowed = user_resources(session, user)
+        if allowed is not None and sp.get("resource") not in allowed:
+            raise HTTPException(404, "보고서 없음")
     row = get_current_row(session, f"report.{tab_key}")
     if not row:
         raise HTTPException(404, "보고서 없음")

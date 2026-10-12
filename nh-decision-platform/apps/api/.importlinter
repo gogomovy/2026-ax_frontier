@@ -19,6 +19,8 @@ source_modules =
     nhdip.alerts
     nhdip.orgs
     nhdip.scopes
+    nhdip.analysis_registry
+    nhdip.analysis_agents
 forbidden_modules =
     nhdip.api
     nhdip.main

@@ -26,7 +26,9 @@ def _allowed(session: Session, user: AppUser, *resources: str) -> bool:
 @router.get("/formats")
 def formats(session: Session = Depends(get_session), user: AppUser = Depends(current_user)):
     """관리자 설정 `report.export_formats` 로 켠 형식 목록 (부서 보고서 · 영업점 보고서 공용)."""
-    if not _allowed(session, user, "reports", "branch_reports"):
+    from nhdip.analysis_registry import spaces
+
+    if not _allowed(session, user, "reports", "branch_reports", *{str(sp.get("resource")) for sp in spaces(session).values() if sp.get("resource")}):
         raise HTTPException(403, "이 화면에 대한 권한이 없습니다 (reports)")
     return enabled_formats(session)
 
@@ -40,10 +42,14 @@ def export_report(
     session: Session = Depends(get_session),
     user: AppUser = Depends(current_user),
 ):
-    # 영업점 보고서(report.branch-*)는 branch_reports 권한 + 영업점 열람 범위(Q44), 그 외는 reports 권한
+    # 영업점 보고서(report.branch-*)는 branch_reports 권한 + 영업점 열람 범위(Q44), 분석 에이전트 보고서(an-*)는 그 공간 리소스, 그 외는 reports 권한
+    from nhdip.analysis_registry import space_for_report
+
     branch = tab_key.startswith("branch-")
-    if not _allowed(session, user, "branch_reports" if branch else "reports"):
-        raise HTTPException(403, f"이 화면에 대한 권한이 없습니다 ({'branch_reports' if branch else 'reports'})")
+    sp = space_for_report(session, tab_key)
+    need = "branch_reports" if branch else (sp.get("resource") or "reports") if sp is not None else "reports"
+    if not _allowed(session, user, need):
+        raise HTTPException(403, f"이 화면에 대한 권한이 없습니다 ({need})")
     if format not in enabled_formats(session):
         raise HTTPException(422, f"사용하지 않는 형식입니다: {format}")
     key, target = f"report.{tab_key}", None

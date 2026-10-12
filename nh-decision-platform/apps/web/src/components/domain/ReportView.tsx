@@ -301,6 +301,19 @@ function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
         </dl>
       );
 
+    case "metrics":
+      // 지표 묶음 (Phase C · 분석 에이전트 보고서) — 확정 수치 카드
+      return (
+        <ul className="my-md grid grid-cols-1 gap-md sm:grid-cols-2 xl:grid-cols-3" data-report-metrics>
+          {(block.figures ?? []).map((id) => (
+            <li key={id} className="rounded-xl border border-hairline-soft px-base py-3">
+              <p className="text-[12px] font-bold text-steel">{report.figures[id]?.label ?? id}</p>
+              <p className="mt-1 text-[18px] font-bold text-ink-deep">{renderRich(`[[fig:${id}]]`, report.figures)}</p>
+            </li>
+          ))}
+        </ul>
+      );
+
     case "chart":
       return block.chart ? (
         <div className="my-lg rounded-2xl border border-hairline-soft p-lg">

@@ -118,7 +118,7 @@ try {
   const side = await u.evaluate(() => document.querySelector("aside nav")?.innerText ?? "");
   ok("사이드바 = 소속 부서 + 공통", side.includes("경영목표 설정") && side.includes("데이터베이스") && !side.includes("수행방안"), side.replace(/\n+/g, " | "));
   await shot(u, "03-user-overview");
-  for (const p of ["/hq/analysis", "/hq/goals", "/hq/capital", "/hq/initiatives", "/knowledge", "/knowledge/gov_policy", "/domains/loan"]) {
+  for (const p of ["/hq/analysis", "/hq/goals", "/hq/capital", "/hq/initiatives", "/knowledge", "/knowledge/gov_policy", "/knowledge/upload", "/analysis/hq", "/analysis/builder", "/domains/loan"]) {
     await u.goto(BASE + p, { waitUntil: "networkidle0" });
     ok(`업무 화면 ${p}`, !u.url().includes("forbidden") && !(await text(u)).includes("찾는 화면이 없습니다"), u.url());
   }
@@ -452,7 +452,7 @@ try {
   }
 
   // 9) 관리자 화면
-  for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/rules", "/admin/audit", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts"]) {
+  for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/rules", "/admin/settings", "/admin/audit", "/admin/monitor", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts", "/admin/uploads", "/admin/analysis-agents"]) {
     await a.goto(BASE + p, { waitUntil: "networkidle0" });
     await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
     const t = await text(a);
@@ -463,6 +463,116 @@ try {
     if (p === "/admin/contracts") {
       ok("컬럼 정의서: T01~T03 대조 결과", t.includes("T01 현황") && t.includes("T03 목표설정") && t.includes("mart.hq_t01") && t.includes("일치"));
       await shot(a, "07-admin-contracts");
+    }
+  }
+
+  // 9-1) 관리자 홈 · 운영 개요 (Phase C · ADM-02 · MON-01) — 처리할 일 · 시스템 상태 · 시간대별 그래프(표로 보기)
+  {
+    await a.goto(`${BASE}/admin`, { waitUntil: "networkidle0" });
+    await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
+    const t = await text(a);
+    ok("관리자 홈: 처리할 일 · 시스템 상태", t.includes("처리할 일") && t.includes("시스템 상태") && t.includes("워커") && t.includes("데이터베이스"), t.slice(0, 200).replace(/\n/g, " | "));
+    const crumbs = await a.evaluate(() => document.querySelector('nav[aria-label="현재 위치"]')?.innerText ?? "");
+    ok("관리자 홈: 위치 표시", crumbs.includes("관리자"), crumbs);
+    await a.goto(`${BASE}/admin/monitor`, { waitUntil: "networkidle0" });
+    await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
+    const toggled = await a.evaluate(() => {
+      const b = [...document.querySelectorAll("button")].find((x) => x.innerText.trim() === "표로 보기");
+      b?.click();
+      return Boolean(b);
+    });
+    await sleep(300);
+    ok("운영 개요: 그래프 → 표로 보기", toggled && (await a.$$("figure table")).length >= 1);
+    const crumbM = await a.evaluate(() => document.querySelector('nav[aria-label="현재 위치"]')?.innerText ?? "");
+    ok("운영 개요: 위치(관리자 > 운영 모니터링 > 운영 개요)", crumbM.includes("운영 모니터링") && crumbM.includes("운영 개요"), crumbM.replace(/\n/g, " "));
+    await shot(a, "07b-admin-monitor");
+  }
+
+  // 9-2) 업무 자료 요청 → 관리자 승인 (Phase C · UPL-01~03)
+  {
+    const title = `E2E 업무 자료 ${EMP}`;
+    await u.goto(`${BASE}/knowledge`, { waitUntil: "networkidle0" });
+    ok("데이터베이스: 자료 올리기 버튼(권한 있는 부서)", (await u.$("[data-upload-cta]")) !== null);
+    await u.goto(`${BASE}/knowledge/upload`, { waitUntil: "networkidle0" });
+    await u.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.includes("문서"))?.click());
+    await u.waitForFunction(() => [...document.querySelectorAll('[role="radio"]')].some((x) => x.innerText.includes("참고")), { timeout: 10000 });
+    await u.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((x) => x.innerText.includes("참고"))?.click());
+    await u.waitForSelector("#up-title");
+    await u.type("#up-title", title);
+    await u.type("#up-text", "E2E 시험 문서 — 업무 부서가 올린 참고 자료입니다.");
+    await u.click("[data-upload-submit]");
+    await u.waitForSelector("[data-upload-last]", { timeout: 20000 });
+    const last = await u.evaluate(() => document.querySelector("[data-upload-last]")?.innerText ?? "");
+    ok("자료 올리기: 검사 후 승인 대기 요청", last.includes("승인 대기") && last.includes("본문"), last.replace(/\n/g, " | "));
+    await shot(u, "08-knowledge-upload");
+    await a.goto(`${BASE}/admin/uploads`, { waitUntil: "networkidle0" });
+    await a.waitForFunction((t) => document.body.innerText.includes(t), { timeout: 15000 }, title);
+    const clicked = await a.evaluate((t) => {
+      const card = [...document.querySelectorAll("section")].find((s) => s.innerText.includes(t) && s.querySelector("[data-upload-review]"));
+      const btn = card && [...card.querySelectorAll("button")].find((b) => b.innerText.includes("승인하고 반영"));
+      btn?.click();
+      return Boolean(btn);
+    }, title);
+    await a.waitForFunction(() => document.body.innerText.includes("승인했습니다"), { timeout: 20000 }).catch(() => undefined);
+    ok("자료 승인: 관리자 승인 → 반영", clicked && (await text(a)).includes("승인했습니다"));
+    await shot(a, "08b-admin-uploads");
+    await u.goto(`${BASE}/knowledge/upload`, { waitUntil: "networkidle0" });
+    await u.waitForSelector("[data-my-uploads]", { timeout: 15000 });
+    const mine = await u.evaluate(() => document.querySelector("[data-my-uploads] li")?.innerText ?? "");
+    ok("내 요청: 승인 · 반영 표시", mine.includes("승인") && mine.includes(title.slice(0, 10)), mine.replace(/\n/g, " | "));
+  }
+
+  // 9-3) 분석 만들기 → 관리자 승인 → 부서 분석 탭 (Phase C · DAG-01~07)
+  {
+    await u.goto(`${BASE}/analysis/hq`, { waitUntil: "networkidle0" });
+    ok("분석 보고서(종합기획부): 분석 없으면 만들기 안내", (await text(u)).includes("아직 분석이 없습니다") && (await u.$("[data-builder-link]")) !== null);
+    await u.goto(`${BASE}/analysis/builder?space=hq`, { waitUntil: "networkidle0" });
+    await u.type("[data-builder-text]", "7790 상품별 충당금 자료로 상품명별 충당금 합계와 충당금이 많은 상위 상품을 보고 싶습니다.");
+    await u.click("[data-builder-refine]");
+    await u.waitForSelector("[data-builder-spec]", { timeout: 60000 });
+    const specText = await u.evaluate(() => document.querySelector("[data-builder-spec]")?.innerText ?? "");
+    ok("분석 만들기: 정제 → 명세(지표 · 표 · 의견)", specText.includes("지표") && specText.includes("SUM") && specText.includes("검증 통과"), specText.slice(0, 200).replace(/\n/g, " | "));
+    await u.click("[data-builder-preview]");
+    await u.waitForSelector("[data-builder-report]", { timeout: 60000 });
+    const pv = await u.evaluate(() => document.querySelector("[data-builder-report]")?.innerText ?? "");
+    ok("분석 만들기: 미리보기(계산 · 표 · 기본 의견)", pv.includes("저장되지 않았습니다") && (await u.$$("[data-builder-report] [data-report-metrics] li")).length >= 1, pv.slice(0, 160).replace(/\n/g, " | "));
+    await shot(u, "09-analysis-builder");
+    await u.click("[data-builder-request]");
+    await u.waitForFunction(() => document.body.innerText.includes("승인 요청을 보냈습니다"), { timeout: 30000 });
+    ok("분석 만들기: 승인 요청", (await text(u)).includes("승인 요청을 보냈습니다"));
+    const pend = (await api("/admin/analysis-agents?status=pending")).body?.items ?? [];
+    const agent = pend.find((x) => x.space === "hq");
+    await a.goto(`${BASE}/admin/analysis-agents`, { waitUntil: "networkidle0" });
+    await a.waitForSelector("button.row-button", { timeout: 15000 });
+    await a.evaluate((title) => [...document.querySelectorAll("button.row-button")].find((b) => b.innerText.includes(title))?.click(), agent?.title ?? "");
+    await a.waitForSelector("[data-analysis-review]", { timeout: 15000 });
+    ok("분석 에이전트(관리자): 명세 · 미리보기 검토 화면", (await text(a)).includes("미리보기 계산 결과") && (await text(a)).includes("지표"));
+    await shot(a, "09b-admin-analysis-agents");
+    await a.evaluate(() => [...document.querySelectorAll("[data-analysis-review] button")].find((b) => b.innerText.includes("승인하고 만들기"))?.click());
+    await a.waitForFunction(() => document.body.innerText.includes("승인했습니다"), { timeout: 20000 }).catch(() => undefined);
+    ok("분석 에이전트: 승인 → 생성", (await text(a)).includes("승인했습니다"));
+    let tab = null;
+    for (let i = 0; i < 60 && !tab; i++) {
+      const tabs = await u.evaluate(async () => (await (await fetch("/backend/screens/analysis/hq/tabs")).json()).current ?? []);
+      tab = tabs.find((t) => t.dynamic) ?? null;
+      if (!tab) await sleep(2000);
+    }
+    ok("분석 에이전트: 첫 실행 → 부서 분석 탭", Boolean(tab), JSON.stringify(tab));
+    if (tab) {
+      await u.goto(`${BASE}/analysis/hq`, { waitUntil: "networkidle0" });
+      const t = await text(u);
+      ok("부서 분석 화면: 맞춤 탭 · 보고서(의견 · 지표 묶음)", u.url().endsWith(`/analysis/hq/${tab.tabKey}`) && t.includes("맞춤") && t.includes(tab.label) && (await u.$$("[data-report-metrics] li")).length >= 1, u.url());
+      await u.addScriptTag({ content: AXE });
+      // preload: false — 외부 글꼴 CSS fetch 가 CSP(connect-src)에 막혀 콘솔 오류를 남기지 않도록 (8-5 와 같은 옵션)
+      const ax = await u.evaluate(async () =>
+        (await window.axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] }, resultTypes: ["violations"], preload: false })).violations
+          .filter((v) => ["serious", "critical"].includes(v.impact))
+          .map((v) => `${v.id}(${v.nodes.map((n) => n.target.join(" ")).slice(0, 3).join(" ; ")})`),
+      );
+      ok("부서 분석 화면: 접근성(axe serious · critical 0)", ax.length === 0, ax.join(","));
+      await shot(u, "09c-analysis-hq");
+      const code = tab.agent;
+      if (code) await api(`/admin/analysis-agents/${code}/retire`, { method: "POST" });
     }
   }
 

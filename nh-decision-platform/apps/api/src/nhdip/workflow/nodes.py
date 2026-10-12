@@ -711,3 +711,5 @@ def n_select_guides(ctx: RunContext, node: WorkflowNode) -> NodeResult:
 
 # 판단 에이전트 노드(변화 감지 · 플래너) 등록 — B.30
 from . import agent_nodes as _agent_nodes  # noqa: E402,F401
+# 분석 에이전트 노드(동적 수행 · 범용 렌더링) 등록 — Phase C
+from . import analysis_nodes as _analysis_nodes  # noqa: E402,F401

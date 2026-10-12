@@ -850,6 +850,20 @@ def upload_request_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["upload_request_upgrade"] = _merge_screen_resources(s, {"KNOWLEDGE_UPLOAD"})
 
 
+def analysis_spaces_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """분석 레지스트리(Phase C · DAG-07) — 1회. 종합기획부 분석 공간 화면(분석 보고서)의 리소스 hq_reports 를 더한다."""
+    if _applied(s, "analysis-spaces-v1"):
+        return
+    out["analysis_spaces_upgrade"] = _merge_screen_resources(s, {"ANALYSIS_HQ"})
+
+
+def analysis_agents_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """분석 에이전트(Phase C · DAG) — 1회. 분석 만들기 화면의 리소스 analysis_builder 를 더한다(정제 · 렌더링 에이전트는 seed_cfg 가 없을 때 추가)."""
+    if _applied(s, "analysis-agents-v1"):
+        return
+    out["analysis_agents_upgrade"] = _merge_screen_resources(s, {"ANALYSIS_BUILDER"})
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -876,6 +890,8 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     ontology_extraction_upgrade(s, out)
     admin_ia_upgrade(s, out)
     upload_request_upgrade(s, out)
+    analysis_spaces_upgrade(s, out)
+    analysis_agents_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

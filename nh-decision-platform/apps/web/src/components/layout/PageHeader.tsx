@@ -1,6 +1,5 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { IconChevron } from "@/components/ui/primitives";
+import { Breadcrumbs } from "@/components/ui/Layout";
 
 export interface Crumb {
   label: string;
@@ -29,22 +28,8 @@ export function PageHeader({
 }) {
   return (
     <div className="shell pb-lg pt-xl">
-      {crumbs && crumbs.length > 0 ? (
-        <nav aria-label="경로" className="mb-2.5 flex flex-wrap items-center gap-1.5 text-[12px] text-steel">
-          {crumbs.map((c, i) => (
-            <span key={`${c.label}-${i}`} className="flex items-center gap-1.5">
-              {c.href ? (
-                <Link href={c.href} className="font-medium">
-                  {c.label}
-                </Link>
-              ) : (
-                <span className="text-charcoal">{c.label}</span>
-              )}
-              {i < crumbs.length - 1 ? <IconChevron className="text-hairline" /> : null}
-            </span>
-          ))}
-        </nav>
-      ) : null}
+      {/* 위치 표시 — 관리자 화면과 같은 구성 요소 (C.9 · UX-21) */}
+      {crumbs && crumbs.length > 0 ? <Breadcrumbs items={crumbs} className="mb-2.5" /> : null}
 
       <div className="flex flex-wrap items-end justify-between gap-base">
         <div className="min-w-0">

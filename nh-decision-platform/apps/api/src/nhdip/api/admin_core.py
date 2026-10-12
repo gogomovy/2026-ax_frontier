@@ -292,6 +292,67 @@ def set_grant(body: GrantIn, request: Request, session: Session = Depends(get_se
     return {"ok": True}
 
 
+class ScreenIn(BaseModel):
+    code: str
+    path: str
+    label: str
+    section: str
+    kind: str = "reference"
+    sort: int = 90
+    resources: list[str] = []
+    grant_orgs: list[str] = []
+    # 새 부서 분석 공간(Phase C · DAG-07) — 주면 설정 analysis.spaces 에 등록(경로 /analysis/<key>)
+    analysis_space: dict[str, Any] | None = None
+
+
+@router.post("/screens", status_code=201)
+def screen_create(body: ScreenIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """화면 등록 (Phase C · DAG-07) — 새 부서 분석 공간처럼 코드 변경 없이 화면 · 권한 · 리소스를 더한다."""
+    import re
+
+    code = body.code.strip().upper()
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,39}", code):
+        raise HTTPException(422, "화면 코드는 영문 대문자 · 숫자 · _ 3~40자")
+    if not re.fullmatch(r"/[a-z0-9\-/\[\]]{1,80}", body.path) or ".." in body.path:
+        raise HTTPException(422, "경로 형식이 올바르지 않습니다 (예: /analysis/consumer)")
+    if body.kind not in ("flow", "reference", "hidden"):
+        raise HTTPException(422, "kind 는 flow | reference | hidden")
+    if session.get(Screen, code) or session.execute(select(Screen).where(Screen.path == body.path)).first():
+        raise HTTPException(409, "같은 코드나 경로의 화면이 있습니다")
+    if not all(re.fullmatch(r"[a-z][a-z0-9_]{1,40}", r) for r in body.resources):
+        raise HTTPException(422, "리소스 키는 영문 소문자 · 숫자 · _")
+    session.add(Screen(code=code, path=body.path, label=body.label.strip()[:60], section=body.section.strip()[:60], kind=body.kind, sort=body.sort, active=True, admin_only=False))
+    session.flush()
+    st = session.get(Setting, "screen.resources")
+    value = dict(st.value) if st else {}
+    value[code] = list(dict.fromkeys(body.resources))
+    if st:
+        st.value = value
+    else:
+        session.add(Setting(key="screen.resources", value=value, description="화면 → 화면 API 리소스 (권한 판정)"))
+    for org in body.grant_orgs:
+        if session.get(OrgUnit, org) and not session.get(ScreenGrant, (org, code)):
+            session.add(ScreenGrant(org_code=org, screen_code=code, granted_by=admin.emp_no))
+    if body.analysis_space:
+        sp = dict(body.analysis_space)
+        key = str(sp.get("key") or "").strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{1,30}", key):
+            raise HTTPException(422, "분석 공간 키는 영문 소문자 · 숫자 · _")
+        res = sp.get("resource") or (body.resources[0] if body.resources else None)
+        if not res:
+            raise HTTPException(422, "분석 공간 열람 리소스가 필요합니다(resources 첫 항목)")
+        cur = session.get(Setting, "analysis.spaces")
+        spaces_v = dict(cur.value) if cur and isinstance(cur.value, dict) else {}
+        spaces_v[key] = {"label": str(sp.get("label") or body.label)[:60], "path": body.path, "tabs": None, "tabsResource": res, "resource": res, "reportPrefix": "report.", "builder": bool(sp.get("builder", True)), "domain": str(sp.get("domain") or key.upper())[:20], "persona": str(sp.get("persona") or "P1")[:4]}
+        if cur:
+            cur.value = spaces_v
+        else:
+            session.add(Setting(key="analysis.spaces", value=spaces_v, description="부서 분석 공간"))
+    audit(session, admin.emp_no, "admin.screen.create", "screen", code, body.model_dump(), client_ip(request))
+    session.commit()
+    return screens(session)
+
+
 @router.patch("/screens/{code}")
 def screen_patch(code: str, body: ScreenPatch, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     s = session.get(Screen, code)

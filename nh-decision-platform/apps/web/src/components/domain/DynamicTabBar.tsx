@@ -26,7 +26,20 @@ export function DynamicTabBar({
       <PillTabLinks
         label="분석 탭"
         activeHref={`${basePath}/${activeKey}${query}`}
-        items={tabs.map((tab) => ({ href: `${basePath}/${tab.tabKey}${query}`, label: tab.label, dot: tab.severity }))}
+        items={tabs.map((tab) => ({
+          href: `${basePath}/${tab.tabKey}${query}`,
+          // 분석 에이전트 탭(Phase C) — 사용자가 만든 분석임을 글로도 알린다
+          label: tab.dynamic ? (
+            <>
+              {tab.label}
+              {/* 활성 탭(어두운 바탕)에서도 대비가 유지되도록 흰 바탕 배지 */}
+              <span className="ml-1 rounded-sm bg-canvas px-1 text-[10px] font-bold text-primary ring-1 ring-inset ring-info-line">{tab.status === "paused" ? "중지" : "맞춤"}</span>
+            </>
+          ) : (
+            tab.label
+          ),
+          dot: tab.severity,
+        }))}
       />
 
       <div className="flex items-center gap-md text-[12px] text-stone">

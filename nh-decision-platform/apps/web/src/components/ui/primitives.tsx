@@ -83,6 +83,10 @@ type ButtonProps = {
   onClick?: () => void;
   type?: "button" | "submit";
   title?: string;
+  /** 접근성 이름 · 시험용 식별자 (aria-* · data-*) 는 그대로 넘긴다 (Phase C) */
+  "aria-label"?: string;
+  "aria-pressed"?: boolean;
+  [data: `data-${string}`]: string | number | boolean | undefined;
 };
 
 export function Button({
@@ -94,9 +98,11 @@ export function Button({
   onClick,
   type = "button",
   title,
+  ...rest
 }: ButtonProps) {
   return (
     <button
+      {...rest}
       type={type}
       title={title}
       disabled={disabled}

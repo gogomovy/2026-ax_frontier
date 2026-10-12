@@ -28,6 +28,8 @@ interface NavGroupSpec {
   label: string;
   items: NavItem[];
   withCounts?: boolean;
+  /** 관리자 묶음 — 사이드바에서 접을 수 있다(현재 화면이 든 묶음은 펼침 · C.9 · UX-21) */
+  admin?: boolean;
 }
 
 /** 서버 메뉴 → 사이드바 그룹 (부서 섹션마다 업무 흐름 / 참고) */
@@ -44,10 +46,10 @@ function groupsFromMenu(menu: MenuPayload): NavGroupSpec[] {
       exact: i.match.some((m) => m.startsWith("=")),
     });
     if (sec.flow.length) {
-      out.push({ label: multi || sec.admin ? sec.section : sec.flow.length > 1 ? "업무 흐름" : "업무", items: sec.flow.map(toItem), withCounts: true });
+      out.push({ label: multi || sec.admin ? sec.section : sec.flow.length > 1 ? "업무 흐름" : "업무", items: sec.flow.map(toItem), withCounts: true, admin: sec.admin });
     }
     if (sec.reference.length) {
-      out.push({ label: sec.admin ? sec.section : sec.section === "공통" || !multi ? "참고" : `${sec.section} · 참고`, items: sec.reference.map(toItem) });
+      out.push({ label: sec.admin ? sec.section : sec.section === "공통" || !multi ? "참고" : `${sec.section} · 참고`, items: sec.reference.map(toItem), admin: sec.admin });
     }
   }
   // 같은 이름의 그룹(예: 부서 참고 + 공통 참고)은 하나로 합친다
@@ -222,6 +224,8 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
   // 영업점 화면에서 고른 지점(?office=, B.47) — 사이드바 이동에도 유지. 서버 렌더 · 하이드레이션은 인자 없이(같은 글자) 그리고 그 뒤 주소에서 읽는다
   const search = useSyncExternalStore(subscribeLocation, readSearch, emptySearch);
   const office = pathname.startsWith("/branch") ? officeFromSearch(search) : null;
+  // 관리자 묶음 접기 — 기본은 현재 화면이 든 묶음만 펼침(관리자 화면이 아니면 모두 접힘), 사용자가 누른 상태가 우선
+  const [toggled, setToggled] = useState<Record<string, boolean>>({});
 
   return (
     <div className="flex h-full flex-col">
@@ -233,7 +237,14 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
 
       <nav aria-label="주요 메뉴" className="mt-lg flex-1 overflow-y-auto px-md">
         {groups.map((g) => (
-          <NavGroup key={g.label} label={g.label}>
+          <NavGroup
+            key={g.label}
+            label={g.label}
+            collapsible={Boolean(g.admin)}
+            open={!g.admin || (toggled[g.label] ?? g.items.some((item) => isActive(item, pathname)))}
+            onToggle={() => setToggled((t) => ({ ...t, [g.label]: !(t[g.label] ?? g.items.some((item) => isActive(item, pathname))) }))}
+            activeInside={g.items.some((item) => isActive(item, pathname))}
+          >
             {g.items.map((item) => (
               <NavLink
                 key={item.href}
@@ -266,11 +277,34 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
   );
 }
 
-function NavGroup({ label, children }: { label: string; children: ReactNode }) {
+function NavGroup({ label, children, collapsible, open = true, onToggle, activeInside }: { label: string; children: ReactNode; collapsible?: boolean; open?: boolean; onToggle?: () => void; activeInside?: boolean }) {
+  const id = `nav-${label.replace(/[^0-9A-Za-z가-힣]+/g, "-")}`;
+  if (!collapsible) {
+    return (
+      <div className="mb-lg">
+        <p className="mb-1.5 px-md text-[11px] font-bold text-stone">{label}</p>
+        <ul className="flex flex-col gap-0.5">{children}</ul>
+      </div>
+    );
+  }
   return (
-    <div className="mb-lg">
-      <p className="mb-1.5 px-md text-[11px] font-bold text-stone">{label}</p>
-      <ul className="flex flex-col gap-0.5">{children}</ul>
+    <div className="mb-xs">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={onToggle}
+        className="flex w-full items-center gap-1.5 rounded-lg px-md py-1.5 text-left text-[11.5px] font-bold text-steel hover:bg-surface-soft"
+      >
+        <IconChevron className={clsx("h-3 w-3 transition-transform", open && "rotate-90")} />
+        <span className="flex-1">{label}</span>
+        {activeInside && !open ? <span aria-hidden="true" className="h-1.5 w-1.5 rounded-circle bg-primary" /> : null}
+      </button>
+      {open ? (
+        <ul id={id} className="mb-md mt-0.5 flex flex-col gap-0.5">
+          {children}
+        </ul>
+      ) : null}
     </div>
   );
 }

@@ -270,12 +270,12 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
               <div className="mt-md">
                 <input className="input !h-9 mb-xs w-full max-w-[360px] text-[13px]" placeholder="자료 이름 · 코드로 찾기" aria-label="자료 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
                 {datasets.length ? (
-                  <ul className="grid max-h-[340px] grid-cols-1 gap-xs overflow-y-auto pr-1 md:grid-cols-2" role="radiogroup" aria-label="올릴 자료">
+                  <div className="grid max-h-[340px] grid-cols-1 gap-xs overflow-y-auto pr-1 md:grid-cols-2" role="radiogroup" aria-label="올릴 자료">
                     {datasets.map((d) => {
                       const on = d.code === target;
                       return (
-                        <li key={d.code}>
                           <button
+                            key={d.code}
                             type="button"
                             role="radio"
                             aria-checked={on}
@@ -293,10 +293,9 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
                               {d.refreshCycle ? ` · ${d.refreshCycle} 갱신` : ""}
                             </span>
                           </button>
-                        </li>
                       );
                     })}
-                  </ul>
+                  </div>
                 ) : (
                   <EmptyState compact title="맞는 자료가 없습니다" description="찾는 말을 바꾸거나, 새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요." />
                 )}

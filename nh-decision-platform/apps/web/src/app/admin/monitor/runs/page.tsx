@@ -124,7 +124,7 @@ function RunsMonitor() {
                     setSel(r.id);
                     setCall(null);
                   }}
-                  className={`row-button w-full border-b border-hairline-soft px-xs py-2 text-left ${sel === r.id ? "bg-highlight" : ""}`}
+                  className={`row-button w-full border-b border-hairline-soft px-xs py-2 text-left ${sel === r.id ? "bg-surface-soft" : ""}`}
                 >
                   <div className="flex items-center gap-xs">
                     <StatusBadge status={r.status} label={STATUS_LABEL[r.status] ?? r.status} />

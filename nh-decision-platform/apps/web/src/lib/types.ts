@@ -383,7 +383,7 @@ export interface InclusiveAnalysis {
 }
 
 /* ── 보고서 ───────────────────────────────────────────────── */
-export type ReportKind = "model_monitoring" | "inclusive_risk" | "goal_review" | "branch_prime_corp" | "branch_seomin";
+export type ReportKind = "model_monitoring" | "inclusive_risk" | "goal_review" | "branch_prime_corp" | "branch_seomin" | "dynamic";
 
 export interface ReportTableBlock {
   caption?: string;
@@ -395,7 +395,9 @@ export interface ReportTableBlock {
 }
 
 export interface ReportBlock {
-  type: "p" | "ul" | "callout" | "chart" | "table" | "kv";
+  type: "p" | "ul" | "callout" | "chart" | "table" | "kv" | "metrics";
+  /** metrics: 지표 묶음 — 그림 ID 목록 (Phase C) */
+  figures?: string[];
   /** p/callout: 인라인 마커 지원 */
   text?: string;
   items?: string[];
@@ -435,6 +437,8 @@ export interface ReportDoc {
   office?: BranchOffice;
   /** 이 보고서를 만드는 워크플로우 (서버가 산출물 정의에서 찾아 붙인다) */
   workflow?: string | null;
+  /** 분석 에이전트 보고서 (Phase C) — 상태 · 버전 */
+  analysisAgent?: { code: string; status: string; version: number };
 }
 
 export interface AnalysisTab {
@@ -448,6 +452,27 @@ export interface AnalysisTab {
   generatedAt: string;
   /** 보고서 산출물 키 (기본 report.{tabKey}) */
   reportKey?: string;
+  /** 분석 에이전트 탭 (Phase C · DAG-07) — 사용자가 만들고 관리자가 승인한 분석 */
+  dynamic?: boolean;
+  agent?: string;
+  status?: "active" | "paused";
+}
+
+/** 부서 분석 공간 (Phase C · DAG-07 · Q101) — 기존 탭 + 분석 에이전트 탭 */
+export interface AnalysisSpaceTabs {
+  current: AnalysisTab[];
+  previous: AnalysisTab[];
+  space: { key: string; label: string; path: string; scoped?: string | null };
+  builder: { allowed: boolean };
+  office?: BranchOffice;
+}
+export interface AnalysisSpaceInfo {
+  key: string;
+  label: string;
+  path: string;
+  tabs: number;
+  dynamic: number;
+  builder: boolean;
 }
 
 /* ── 영업점 (B.29) — 업적평가 기반 영업 가이드 ─────────────── */

@@ -138,6 +138,9 @@ def _block(b: dict[str, Any], figures: dict[str, Any], units: dict[str, str]) ->
         return [Callout(resolve(b.get("text"), figures, units), b.get("tone") or "info")]
     if t == "kv":
         return [KeyValues([(i.get("label", ""), str(i.get("value", ""))) for i in b.get("kv") or []])]
+    if t == "metrics":
+        # 지표 묶음 (Phase C · 분석 에이전트 보고서) — 그림 ID 목록 → 이름 : 확정 수치
+        return [KeyValues([((figures.get(f) or {}).get("label", f), resolve(f"[[fig:{f}]]", figures, units)) for f in b.get("figures") or []])]
     if t == "table" and b.get("table"):
         tb = b["table"]
         cols = tb.get("columns") or []

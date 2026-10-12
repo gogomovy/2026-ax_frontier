@@ -27,6 +27,8 @@ import { apiGet } from "./api-server";
 import { API_MODE } from "./config";
 import type {
   ActionPlan,
+  AnalysisSpaceInfo,
+  AnalysisSpaceTabs,
   AnalysisTab,
   BranchDashboard,
   BranchOfficeList,
@@ -109,8 +111,25 @@ export async function getCascade(): Promise<CascadeNode[]> {
 export async function getRiskDashboard(): Promise<RiskDashboard> {
   return API_MODE ? api("/screens/risk-dashboard") : RISK_DASHBOARD;
 }
-export async function getAnalysisTabs(): Promise<{ current: AnalysisTab[]; previous: AnalysisTab[] }> {
-  return API_MODE ? api("/screens/analysis-tabs") : { current: ANALYSIS_TABS, previous: PREVIOUS_TABS };
+export async function getAnalysisTabs(): Promise<{ current: AnalysisTab[]; previous: AnalysisTab[]; builder?: { allowed: boolean } }> {
+  // API 모드 — 분석 레지스트리(기존 탭 + 분석 에이전트 탭 · Phase C)
+  return API_MODE ? api("/screens/analysis/risk/tabs") : { current: ANALYSIS_TABS, previous: PREVIOUS_TABS };
+}
+
+/* ── 부서 분석 공간 (Phase C · DAG-07) — 목데이터 모드는 신용리스크 · 영업점 탭만 ── */
+export async function getAnalysisSpaces(): Promise<AnalysisSpaceInfo[]> {
+  return API_MODE ? api("/screens/analysis/spaces") : [];
+}
+export async function getSpaceTabs(space: string, office?: string | null): Promise<AnalysisSpaceTabs | null> {
+  if (API_MODE) return api(`/screens/analysis/${encodeURIComponent(space)}/tabs${officeQs(office)}`);
+  const label = space === "risk" ? "신용리스크관리부" : space === "branch" ? "영업점" : null;
+  if (!label) return null;
+  const base = space === "risk" ? { current: ANALYSIS_TABS, previous: PREVIOUS_TABS } : BRANCH_TABS;
+  return { ...base, space: { key: space, label, path: space === "risk" ? "/risk/analysis" : "/branch/analysis" }, builder: { allowed: false } };
+}
+export async function getSpaceReport(space: string, tabKey: string, office?: string | null): Promise<ReportDoc | null> {
+  if (API_MODE) return api(`/screens/analysis/${encodeURIComponent(space)}/reports/${encodeURIComponent(tabKey)}${officeQs(office)}`);
+  return space === "risk" ? (REPORTS[tabKey] ?? null) : space === "branch" ? (BRANCH_REPORTS[tabKey] ?? null) : null;
 }
 export async function getReport(tabKey: string): Promise<ReportDoc | null> {
   return API_MODE ? api(`/screens/reports/${encodeURIComponent(tabKey)}`) : (REPORTS[tabKey] ?? null);
