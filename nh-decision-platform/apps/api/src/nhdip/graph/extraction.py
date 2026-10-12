@@ -201,13 +201,30 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
         if spec["from"] not in (from_label, "*") or spec["to"] not in (to[0], "*"):
             issues.append({"kind": "schema_violation", "reason": f"{rtype} 방향 위반: {from_label}→{to[0]} (허용 {spec['from']}→{spec['to']})", "raw": r})
             continue
-        props = {k: v for k, v in (r.get("props") or {}).items() if k in (spec.get("props") or [])}
+        props = {k: _norm_prop(spec, k, v) for k, v in (r.get("props") or {}).items() if k in (spec.get("props") or [])}
         allowed_values = spec.get("allowed") or {}
         if any(k in allowed_values and v not in allowed_values[k] for k, v in props.items()):
             issues.append({"kind": "schema_violation", "reason": f"{rtype} 속성값 허용 외: {props}", "raw": r})
             continue
         rels_ok.append({"type": rtype, "from": "$doc" if frm == "$doc" else frm[1], "from_label": from_label, "to": to[1], "to_label": to[0], "props": props, "evidence_span": span, **({"span_source": "title"} if rsrc == "title" else {})})
     return ents_ok, rels_ok, issues
+
+
+def _norm_prop(spec: dict[str, Any], key: str, value: Any) -> Any:
+    """관계 속성값을 허용 코드로 — 모델이 코드 대신 한글 표현('확대')이나 대소문자만 다른 값('Expand')으로 답해도
+    같은 뜻이면 허용 코드로 바꾼다(관계 정의 `rule_keywords` = {코드: [표현]}). 2026-10-12 LLM 모드 업로드 시험에서
+    STATES_STANCE direction '확대' 가 '허용 외' 로 버려져 문서가 partial 로 남은 문제."""
+    allowed = (spec.get("allowed") or {}).get(key)
+    if not allowed or value in allowed or not isinstance(value, str):
+        return value
+    s = value.strip()
+    for a in allowed:
+        if s.lower() == str(a).lower():
+            return a
+    for code, words in (spec.get("rule_keywords") or {}).items():
+        if code in allowed and any(s == w for w in words or []):
+            return code
+    return value
 
 
 def rule_extract(schema: OntologySchema, resolver: Resolver, text: str, doc_class: str) -> tuple[list[dict], list[dict]]:

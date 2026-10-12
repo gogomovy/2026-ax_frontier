@@ -98,11 +98,13 @@ def _cooling(session: Session, agent_code: str, sec: float) -> bool:
     return last == "error"
 
 
-def ask_json(session: Session, agent_code: str, task: str, context: dict[str, Any], *, workflow_run_id: str | None = None, node_run_id: str | None = None, required: tuple[str, ...] = (), shrink: tuple[str, ...] = ()) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+def ask_json(session: Session, agent_code: str, task: str, context: dict[str, Any], *, workflow_run_id: str | None = None, node_run_id: str | None = None, required: tuple[str, ...] = (), shrink: tuple[str, ...] = (), min_tokens: int = 0) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     """(결정 JSON 또는 None, 메타{by, reason, llm_call_id, model, contextTrimmed?})
 
     입력 자료가 `max_context_chars` 를 넘으면 목록 뒤쪽을 덜어 낸다(`fit_context`, 우선 줄일 키 = `shrink`).
-    덜어 낸 항목 수는 메타 `contextTrimmed` — 호출자는 그 항목을 규칙으로 판단한다."""
+    덜어 낸 항목 수는 메타 `contextTrimmed` — 호출자는 그 항목을 규칙으로 판단한다.
+    `min_tokens` — 출력이 후보 수에 비례하는 판단(변화 감지 등)은 처음부터 그만큼 출력 상한을 둔다(잘려서 다시 부르는 시간을 줄임,
+    설정 `llm.max_tokens_cap` 이내). 대기 시간은 출력 상한에 맞춰 늘어난다(`llm.client._timeout_for`)."""
     pol = policy(session)
     if not pol.get("enabled", True):
         return None, {"by": "rule", "reason": "LLM 판단 꺼짐(설정 agents.llm_judge)"}
@@ -116,6 +118,14 @@ def ask_json(session: Session, agent_code: str, task: str, context: dict[str, An
     import dataclasses
 
     llm = dataclasses.replace(llm, timeout=min(llm.timeout, float(pol.get("timeout_sec", 30))), retries=min(llm.retries, int(pol.get("retries", 1))))
+    cur_max = (getattr(llm, "params", None) or {}).get("max_tokens")
+    if min_tokens and (not isinstance(cur_max, int) or cur_max < min_tokens):
+        from nhdip.llm.client import _max_tokens_cap
+
+        cap = _max_tokens_cap(session)
+        want = min(int(min_tokens), cap) if cap > 0 else int(min_tokens)
+        if not isinstance(cur_max, int) or want > cur_max:
+            llm = dataclasses.replace(llm, params={**llm.params, "max_tokens": want})
     # 상한을 넘으면 JSON 을 중간에서 자르지 않고(이전 동작: 잘린 JSON 이 들어가 판단이 흔들림) 목록 항목을 덜어 낸다 — B.43
     ctx_text, trimmed = fit_context(context, int(pol.get("max_context_chars", 14000)), shrink)
     trim_meta = {"contextTrimmed": trimmed} if trimmed else {}

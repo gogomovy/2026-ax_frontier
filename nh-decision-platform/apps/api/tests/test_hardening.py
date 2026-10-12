@@ -701,3 +701,29 @@ def test_chat_expands_max_tokens_when_truncated(db, monkeypatch):
     with db() as s:
         r = chat(s, cfg, [{"role": "user", "content": "x"}])
     assert r.text == '{"changes": []}' and [b["max_tokens"] for b in sent] == [1500, 3000]
+
+
+def test_judge_output_budget_and_timeout(db, monkeypatch):
+    """2026-10-12 LLM 모드 업로드 시험 — 출력 상한을 늘리면 대기 시간도 늘고(고정 30초에 끊기지 않게),
+    후보 수에 비례하는 판단은 처음부터 그만큼 출력 상한을 둔다(설정 llm.max_tokens_cap 이내)."""
+    import types
+
+    from nhdip.llm.client import ResolvedLlm, _timeout_for
+    from nhdip.workflow import llm_judge
+
+    assert _timeout_for(30, 1500) == 30 and _timeout_for(30, 6000) == 120 and _timeout_for(30, None) == 30 and _timeout_for(60, 1000) == 60
+    cfg = ResolvedLlm(agent_code="judge_t", connection_id=1, connection_name="gw", base_url="http://gw", api_key="", model="m", params={"max_tokens": 1500}, timeout=60, retries=2, tools_enabled=False)
+    seen = []
+
+    def fake_chat(session, llm, messages, **kw):
+        seen.append(llm)
+        return types.SimpleNamespace(text='{"changes": []}', call_id="c1")
+
+    monkeypatch.setattr(llm_judge, "resolve", lambda s, a: cfg)
+    monkeypatch.setattr(llm_judge, "chat", fake_chat)
+    llm_judge.reset_cooldown()
+    with db() as s:
+        for want, got in ((3350, 3350), (20000, 8000), (0, 1500), (1000, 1500)):
+            data, meta = llm_judge.ask_json(s, "judge_t", "task", {"candidates": [1]}, required=("changes",), min_tokens=want)
+            assert data == {"changes": []} and meta["by"] == "llm"
+            assert seen[-1].params["max_tokens"] == got and seen[-1].timeout == 30 and seen[-1].retries == 1

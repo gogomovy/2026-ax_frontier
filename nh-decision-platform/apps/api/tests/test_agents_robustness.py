@@ -217,3 +217,19 @@ def test_ask_json_reports_trimmed_candidates(monkeypatch):
     data, meta = J.ask_json(None, "change_detector", "과제", {"candidates": cands}, required=("changes",), shrink=("candidates",))
     assert meta["by"] == "llm" and 0 < meta["contextTrimmed"]["candidates"] < 80
     assert '"_omitted"' in sent[0] and "_omitted 는 글자 상한" in sent[0]
+
+
+def test_relation_prop_values_normalized_to_codes():
+    """2026-10-12 LLM 모드 업로드 시험 — 허용값이 코드(expand · manage · maintain)인데 모델이 '확대' · 'Expand' 로 답하면
+    관계 정의의 rule_keywords 로 코드에 맞춘다. 뜻을 알 수 없는 값은 이전처럼 '허용 외'."""
+    s = SimpleNamespace(
+        classes=[{"label": "PolicyTheme", "resolve": "master"}],
+        relations=[{"type": "STATES_STANCE", "from": "Document", "to": "PolicyTheme", "props": ["direction"], "allowed": {"direction": ["expand", "manage", "maintain"]},
+                    "rule_keywords": {"expand": ["확대", "공급 확대"], "manage": ["관리"], "maintain": ["유지"]}}],
+        aliases={"PolicyTheme": {"포용금융": ["포용금융", "서민금융"]}},
+    )
+    text = "서민금융 공급을 확대한다."
+    rel = lambda d: {"type": "STATES_STANCE", "from": "$doc", "to": "포용금융", "props": {"direction": d}, "evidence_span": "서민금융 공급을 확대한다"}  # noqa: E731
+    _, rels, issues = validate(s, Resolver(s), text, {"entities": [], "relations": [rel("확대"), rel("Expand"), rel("공급 확대"), rel("줄임")]})
+    assert [r["props"]["direction"] for r in rels] == ["expand", "expand", "expand"]
+    assert [i["kind"] for i in issues] == ["schema_violation"] and "줄임" in issues[0]["reason"]

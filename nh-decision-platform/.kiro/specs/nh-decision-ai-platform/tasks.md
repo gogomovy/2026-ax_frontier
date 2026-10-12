@@ -298,7 +298,7 @@
   - 결과(B.41~B.45, Windows · Docker 없이 — api · worker 는 Windows Python 3.11, DB 는 WSL1 PostgreSQL 18.6 + pgvector 0.8.1, Neo4j 없음): pytest 통합 포함 167 중 166 passed(`test_antivirus_hook` 1건은 Windows 에 `sh` 가 없어 실패 · 코드 변경과 무관) · 커버리지 95.56% · 골든셋(`test_golden`, 질의 6건) · 계층 계약 4/4 · vitest 22 · tsc · eslint · next build(API 모드) · 브라우저 E2E 68/68 · 접근성 28행 위반 0(파이프라인 탭 2개 포함) · 업로드 시험 LLM 없는 모드 33/33
   - #418 비교 시험(최근 계산 시각을 KST 0시대로 · 웹 서버 Node 20): 수정 전 서버 글자 `10. 13. 24:11` → 6개 화면 모두 #418, 수정 후 `10. 13. 00:11` → 0건
   - CI(janlight `c3c2565`, run 38193624279): frontend · backend(PostgreSQL 16 · Python 3.12) · e2e(Docker compose · Neo4j · 브라우저 E2E · 접근성 · 골든셋) 성공
-  - **미확인**: LLM 모드 업로드 시험(키 필요) · 운영(EC2) DB 반영
+  - LLM 모드 업로드 시험(2026-10-12, 사용자 키 · claude-sonnet-5 · titan 임베딩, 로컬 스택) → **B.48** 참고. **미확인**: 운영(EC2) DB 반영
 - [x] B.47 다지점 영업점 구조 (요구사항 §19 BRM-01~08 · 설계 §19.25 · Q97) — 사용자 지시로 자료 없이 구조 먼저. **실자료(다른 지점 득점 · 잔액 · 후보 명세) 수령 시 업로드 + 규칙 목록 추가만으로 동작**
   - [x] 범위 실행 — 설정 `workflow.scopes` · `nhdip/scopes.py`, 규칙 덮어쓰기(`EvalContext.rule_overrides` · `scope_suffix`), `BRANCH_SCOPE.office_codes = ["001068"]`(기존 지점 참조 · 지표 정의 그대로, 마이그레이션 없음)
   - [x] 지표 값 범위 코드 `<지표>@<지점>` · 직전 값 · 대체 조회 범위 우선, `$latest` 빈 선택(조건에 맞는 행이 없는 지점)
@@ -311,6 +311,12 @@
   - [x] 지점 2곳 이상 E2E · 접근성 — `e2e.mjs` 8-5: 가상 지점 자료 업로드(JSON 3종) + 규칙 목록 → 지점 선택 상자 · 지점 바꾸기 · 화면 이동(다음 단계 · 득점표 알림 · 사이드바)에 `?office=` 유지 · 분석 보고서 · 탭 · 내려받기 · axe(WCAG 2.1 A/AA serious · critical 0) → 원상 복구. 사이드바(`AppShell`) · 득점표(`BranchKpiBoard`) · 사업부문(`BranchSegments`) 링크가 고른 지점을 유지하도록 보완
   - 결과(LLM 상한 · E2E): 로컬 pytest 170 중 169(`test_antivirus_hook` Windows 셸) · 커버리지 95.56% · 계약 4/4 · vitest 25 · tsc · eslint · next build, 로컬 스택(WSL1 PostgreSQL 18 · Windows api/worker · standalone 웹) 브라우저 E2E 78/78(다지점 10항목 포함) · 접근성 28행 위반 0, 커밋 gogomovy `e82c821` · janlight `cdd644b`, CI run 38219131655 frontend · backend · e2e(Docker compose · Neo4j) 성공
   - [ ] 실자료 반영(다른 지점 득점 · 잔액 · 후보 명세 수령 시 업로드 + 규칙 목록 추가)
+- [x] B.48 LLM 모드 업로드 시험 · 판단 호출 보정 (남은작업 0.1 ① · 사용자 키 수령 2026-10-12)
+  - 1차 34/34 통과했지만 영업점 변화 감지(후보 25건)가 규칙으로 대체됨: 출력이 1,500 → 3,000 토큰에서 잘려 6,000 으로 늘린 뒤 판단 대기 30초(고정)에 두 번 끊김(ReadTimeout) → 이어서 모형 모니터링 감지도 '쉬는 시간' 으로 규칙
+  - 보정 ① 대기 시간 = max(설정 대기, 출력 상한 ÷ 50 토큰/초)(`llm.client._timeout_for`) ② 후보 수에 비례하는 판단은 처음부터 출력 상한을 둔다 — `ask_json(min_tokens)`, 변화 감지 = 600 + 후보당 240(규칙 `CHANGE_SIGNIFICANCE.llm_tokens_per_candidate`, 설정 `llm.max_tokens_cap` 이내)
+  - 보정 ③ 문서 1건(`doc-sim-seomin-2026h2`)이 partial — 모델이 기조 `direction` 을 코드(expand) 대신 '확대' 로 답해 '허용 외' 로 버려짐 → 관계 정의 `rule_keywords` · 대소문자로 허용 코드에 맞춤(`graph/extraction._norm_prop`)
+  - 시험: `test_judge_output_budget_and_timeout` · `test_relation_prop_values_normalized_to_codes`
+  - 결과(로컬 스택 · Windows api/worker · WSL1 PostgreSQL 18 · Neo4j 없음): 업로드 시험 LLM 모드 **34/34**(보정 전 1차도 34/34) · 흐름 327초 · LLM 호출 24회 · 약 6.4만 토큰, 변화 감지 LLM 3 / 규칙 2(규칙 2건은 '후보 없음') · 플래너 LLM 5/5 · 서술 claude-sonnet-5 4건 · 문서 2건 모두 `extracted` · 질의 LLM 답변 수치 출처 검증 통과. 영업점 감지 호출: 출력 상한 6,600 으로 한 번에 끝남(39초 · 4,654 토큰). pytest 표적 42 · 23 통과
 - [x] B.46 영업점 T02 제안 버전 (Q96 · 남은작업 8.1(8)) — 다행 표에 `version` 연결 지원: 같은 기준월 · 지점의 이전 적재와 수치 · 코드 열(행 집합)이 같으면 유지, 다르면 +1(서술 · 분석 ID · 분석 일자 제외, 저장된 값끼리 비교). `BRANCH_T02.PROPOSAL_VER_NO` 미연결 → 버전, 운영 DB 는 이전 기본값일 때만 연결 갱신 · 단위 시험 1 · 통합 시험(유지 · 증가) 보강
   - 결과: 로컬 pytest 168 중 167(`test_antivirus_hook` Windows 셸) · 커버리지 95.56% · 계약 4/4, 커밋 gogomovy `447f022` · janlight `88c52d3`, CI run 38195692743 frontend · backend · e2e 성공
 - [ ] B.35 운영 확정 (운영 입력 필요)

@@ -149,7 +149,11 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         if ctx.llm_off:  # 범위 서술 상한 밖 지점(B.47 · BRM-07) — LLM 을 부르지 않고 규칙 판단
             data, meta = None, {"by": "rule", "reason": ctx.llm_off}
         else:
-            data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",), shrink=("candidates",))
+            # 출력은 후보마다 한 줄(코드 · 수준 · 사유 · 묶음) — 후보 수만큼 출력 상한을 처음부터 둔다(규칙 CHANGE_SIGNIFICANCE.llm_tokens_per_candidate)
+            # 2026-10-12 LLM 모드 업로드 시험: 후보 25건에 출력 약 6,500 토큰(생각 토큰 포함) — 후보당 240 이면 처음 상한(6,600)으로 대개 끝난다
+            per = int(pol.get("llm_tokens_per_candidate", 240) or 0)
+            data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",), shrink=("candidates",),
+                                  min_tokens=(600 + per * len(ask_items)) if per else 0)
         # 입력 글자 상한으로 뒤쪽 후보를 덜어 냈으면(B.43) 실제로 보낸 후보만 LLM 판단을 받는다 — 나머지는 규칙
         sent = ask_items[: len(ask_items) - int((meta.get("contextTrimmed") or {}).get("candidates", 0))]
         if len(sent) < len(items):

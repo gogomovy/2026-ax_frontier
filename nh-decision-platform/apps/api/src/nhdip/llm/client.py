@@ -174,6 +174,15 @@ def _save_call(call: LlmCall) -> None:
         logging.getLogger("nhdip.llm").warning("llm_call 기록 실패", exc_info=True)
 
 
+# 출력 상한(max_tokens)을 늘리면 응답 시간도 늘어난다 — 대기 시간은 최소 '상한 ÷ 초당 토큰' 으로 (2026-10-12 LLM 모드 업로드 시험:
+# 판단 호출이 6000 토큰으로 늘어난 뒤 고정 30초에 두 번 끊겨 규칙으로 대체됨). 1500 토큰이면 30초 — 기존 판단 대기와 같다.
+MIN_TOKENS_PER_SEC = 50
+
+
+def _timeout_for(base: float, max_tokens: Any) -> float:
+    return max(float(base), float(max_tokens) / MIN_TOKENS_PER_SEC) if isinstance(max_tokens, int) and max_tokens > 0 else float(base)
+
+
 def _max_tokens_cap(session: Session) -> int:
     """출력 잘림 시 늘릴 수 있는 max_tokens 상한 — 설정 llm.max_tokens_cap (기본 8000, 0 = 늘리지 않음)."""
     try:
@@ -230,7 +239,7 @@ def chat(
             break
         attempts += 1
         try:
-            resp = httpx.post(_url(cfg.base_url, "/chat/completions"), headers=_headers(cfg.api_key), json=body, timeout=cfg.timeout)
+            resp = httpx.post(_url(cfg.base_url, "/chat/completions"), headers=_headers(cfg.api_key), json=body, timeout=_timeout_for(cfg.timeout, body.get("max_tokens")))
             bad = _unsupported_param(resp.text, body) if resp.status_code == 400 else None
             if bad:
                 # 모델이 받지 않는 파라미터(예: temperature 고정 모델) — 빼고 다시 보낸다(재시도 횟수에 넣지 않음)
