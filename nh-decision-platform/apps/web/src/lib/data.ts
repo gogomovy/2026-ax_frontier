@@ -29,6 +29,7 @@ import type {
   ActionPlan,
   AnalysisTab,
   BranchDashboard,
+  BranchOfficeList,
   BranchTabs,
   BranchTarget,
   CapitalView,
@@ -128,14 +129,21 @@ export async function getBranchTargets(): Promise<BranchTarget[]> {
 }
 
 /* ── 영업점 (B.29) — 서버가 사용자 영업점과 산출물 영업점을 대조한다 ─────────── */
-export async function getBranchDashboard(): Promise<BranchDashboard> {
-  return API_MODE ? api("/screens/branch/dashboard") : { ...BRANCH_DASHBOARD, available: true, viewer: null };
+/** 지점 인자(B.47 · 다지점) — 비우면 서버가 사용자 소속 영업점 → 기본 지점으로 고른다 */
+const officeQs = (office?: string | null) => (office ? `?office=${encodeURIComponent(office)}` : "");
+export async function getBranchOffices(): Promise<BranchOfficeList> {
+  return API_MODE
+    ? api("/screens/branch/offices")
+    : { offices: [{ code: BRANCH_DASHBOARD.office.code, name: BRANCH_DASHBOARD.office.name, available: true, primary: true }], default: BRANCH_DASHBOARD.office.code };
 }
-export async function getBranchTabs(): Promise<BranchTabs> {
-  return API_MODE ? api("/screens/branch/tabs") : BRANCH_TABS;
+export async function getBranchDashboard(office?: string | null): Promise<BranchDashboard> {
+  return API_MODE ? api(`/screens/branch/dashboard${officeQs(office)}`) : { ...BRANCH_DASHBOARD, available: true, viewer: null };
 }
-export async function getBranchReport(tabKey: string): Promise<ReportDoc | null> {
-  return API_MODE ? api(`/screens/branch/reports/${encodeURIComponent(tabKey)}`) : (BRANCH_REPORTS[tabKey] ?? null);
+export async function getBranchTabs(office?: string | null): Promise<BranchTabs> {
+  return API_MODE ? api(`/screens/branch/tabs${officeQs(office)}`) : BRANCH_TABS;
+}
+export async function getBranchReport(tabKey: string, office?: string | null): Promise<ReportDoc | null> {
+  return API_MODE ? api(`/screens/branch/reports/${encodeURIComponent(tabKey)}${officeQs(office)}`) : (BRANCH_REPORTS[tabKey] ?? null);
 }
 
 /* ── 지식 ───────────────────────────────────────────────── */

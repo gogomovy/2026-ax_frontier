@@ -22,7 +22,7 @@ import type { ReportBlock, ReportDoc } from "@/lib/types";
  *  - API 모드: 서버 변환(F.17) — 관리자 설정 `report.export_formats` 로 켠 형식만 메뉴에 보인다
  */
 
-export function ReportActions({ report, tabKey }: { report: ReportDoc; tabKey?: string }) {
+export function ReportActions({ report, tabKey, office }: { report: ReportDoc; tabKey?: string; office?: string | null }) {
   const { showToast } = useUi();
   const [formats, setFormats] = useState<string[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -58,7 +58,7 @@ export function ReportActions({ report, tabKey }: { report: ReportDoc; tabKey?: 
     if (!tabKey) return;
     setOpen(false);
     setBusy(true);
-    downloadServerReport(tabKey, format)
+    downloadServerReport(tabKey, format, office)
       .then((fileName) => showToast(`보고서를 내려받았습니다 — ${fileName}`))
       .catch((e: Error) => showToast(`보고서를 내려받지 못했습니다 — ${e.message}`))
       .finally(() => setBusy(false));

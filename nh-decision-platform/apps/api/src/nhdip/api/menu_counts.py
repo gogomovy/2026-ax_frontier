@@ -18,10 +18,13 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
     plans = merged_plans(session)
     # 영업점 분석 탭 — 사용자 영업점 산출물일 때만 센다 (Q44)
     from nhdip.orgs import can_view_office
+    from nhdip.scopes import office_scope, resolve_office, scoped_key
 
-    btabs = get_current(session, "branch_tabs") or {}
+    # 다지점(B.47) — 사용자 소속 영업점(없으면 기본 지점)의 분석 탭
+    target = resolve_office(session, user, None)
+    btabs = get_current(session, scoped_key("branch_tabs", target, office_scope(session)[0])) or {}
     code = (btabs.get("office") or {}).get("code")
-    branch_n = len(btabs.get("current") or []) if code and can_view_office(session, user, code) else 0
+    branch_n = len(btabs.get("current") or []) if code and (not target or str(code) == str(target)) and can_view_office(session, user, code) else 0
     # 볼 수 있는 화면의 건수만 (B.32 — 다른 부서 업무량 비노출)
     from .deps import user_resources
 

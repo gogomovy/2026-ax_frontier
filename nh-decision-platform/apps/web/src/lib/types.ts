@@ -529,6 +529,13 @@ export interface BranchTabs {
   previous: AnalysisTab[];
 }
 
+/** 볼 수 있는 계산 대상 지점 (B.47 · 다지점) — 둘 이상이면 영업점 화면에 지점 선택 상자 */
+export interface BranchOfficeList {
+  offices: { code: string; name: string; available: boolean; primary: boolean }[];
+  /** 지점 인자가 없을 때 보이는 지점(사용자 소속 영업점 → 기본 지점) */
+  default: string | null;
+}
+
 /* ── 부도율 추이 (신용리스크관리부 1화면) ───────────────────── */
 export interface DefaultRateSeries {
   /** 세그먼트 또는 풀 코드 */

@@ -347,8 +347,9 @@ def dataset_versions() -> list[dict[str, Any]]:
 # ═════════════════════════ 규칙 (시뮬레이션 가정) ═════════════════════════
 RULES = [
     ("BRANCH_SCOPE", "영업점 분석 대상 · 평가 기간", "threshold",
-     "Q44 추천안 — 영업점 워크플로우가 계산할 사무소 · 업적평가 기간. 다른 영업점으로 바꾸려면 office_code 를 바꾸고 해당 사무소 데이터를 올린다(산출물은 1개 영업점 기준)",
-     {"office_code": OFFICE, "period": PERIOD, "prev_period": PREV_PERIOD, "period_label": "2026년 하반기", "as_of_label": "2026.08.31 (하반기 2개월 경과)"}),
+     "Q44 추천안 — 영업점 워크플로우가 계산할 사무소 · 업적평가 기간. office_code 는 기본 지점(기존 산출물 키), office_codes 에 지점을 더하면 "
+     "같은 정의로 지점마다 계산해 '<산출물>@<지점>' 으로 게시한다(B.47 · 설정 workflow.scopes — 그 지점의 사무소 · 득점 자료가 있어야 계산)",
+     {"office_code": OFFICE, "office_codes": [OFFICE], "period": PERIOD, "prev_period": PREV_PERIOD, "period_label": "2026년 하반기", "as_of_label": "2026.08.31 (하반기 2개월 경과)"}),
     ("CORP_GRADE_SCALE", "기업 신용등급 체계 · 규모 구분", "threshold",
      "기업 신용등급 16단계(1~8등급) — 데이터 값 1~16 을 순서대로 매핑, 그 외 값은 분석 제외. 신용평가모형구분코드 → 규모 라벨",
      {"labels": GRADE_LABELS,

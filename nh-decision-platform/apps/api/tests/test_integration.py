@@ -1165,3 +1165,176 @@ def test_llm_judged_agents_dynamic_flow(db, monkeypatch):
     assert any(d["decision"] == "route" and d["detail"]["by"] == "llm" and [a["workflow"] for a in d["detail"]["add"]] == ["wf_inclusive_risk"] for d in route)
     _drain(db)
     llm_judge.reset_cooldown()
+
+
+def test_branch_multi_office_scope(db):
+    """B.47 — 다지점: BRANCH_SCOPE.office_codes 에 지점을 더하면 같은 워크플로우가 지점마다 계산 · 게시('<키>@<지점>'),
+    기본 지점(001068)은 그대로(BRM-08), 자료 없는 지점은 건너뜀(BRM-06), 열람 범위는 지점별(BRM-04 · Q44)."""
+    import json as _json
+
+    from sqlalchemy import text as sql
+
+    from nhdip.data.datasets import current_rows, ingest_rows, quality_check
+    from nhdip.models import Dataset, MetricValue, Rule, RuleVersion, Setting, WorkflowRun
+    from nhdip.views.store import get_current
+
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+    admin.post("/admin/workflows/wf_branch_kpi/run")
+    _drain(db)
+
+    def vals(o, p: str = "") -> dict:
+        """숫자 값만 경로별로 — 계산 기록(calc: ID · 시각 · 원천 버전)은 실행마다 달라지므로 뺀다."""
+        if isinstance(o, dict):
+            return {k2: v2 for k, v in o.items() if k != "calc" for k2, v2 in vals(v, f"{p}.{k}").items()}
+        if isinstance(o, list):
+            return {k2: v2 for i, v in enumerate(o) for k2, v2 in vals(v, f"{p}[{i}]").items()}
+        return {p: o} if isinstance(o, (int, float)) and not isinstance(o, bool) else {}
+
+    before = admin.get("/screens/branch/dashboard").json()
+    before_fig = vals(admin.get("/screens/branch/reports/prime-corp").json()["figures"])
+    assert before["available"] and before["office"]["code"] == "001068"
+
+    def clean(r: dict) -> dict:
+        return {k: v for k, v in r.items() if not k.startswith("__")}
+
+    with db() as s:
+        _, corp = current_rows(s, s.get(Dataset, "OBLG_GRD_DEF"))
+        _, retail = current_rows(s, s.get(Dataset, "RETAIL_EXPOSURE"))
+        x = sorted({str(r["SUVMN_BRC"]) for r in corp} & {str(r["office_cd"]) for r in retail} - {"001068"})[0]
+        # 가상 지점 x — 마스터 · 득점 현황 · 사업부문 잔액(기존 001068 행 + x 행, 같은 기준일 구획은 통째로 교체되므로 함께 올린다)
+        ds = s.get(Dataset, "BRANCH_OFFICE_MASTER")
+        _, rows = current_rows(s, ds)
+        rows = [clean(r) for r in rows if str(r.get("office_cd")) != x] + [{"office_cd": x, "office_nm": "가상지점", "region": "경기", "sigungu": "수원시", "region_hq": "수도권1지역본부", "org_code": "BR303"}]
+        ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="영업점 사무소 마스터(다지점).xlsx", data_origin="simulated", actor="test", note="B.47", force=True)
+        ds = s.get(Dataset, "BRANCH_KPI_SCORE")
+        _, rows = current_rows(s, ds)
+        latest = max(str(r["as_of"]) for r in rows if str(r.get("office_cd")) == "001068")
+        base = [clean(r) for r in rows if str(r["as_of"]) == latest and str(r.get("office_cd")) == "001068"]
+        mine = [{**r, "office_cd": x, "score": None if r.get("score") is None else round(float(r["score"]) * 0.9, 1)} for r in base]
+        ingest_rows(s, ds, base + mine, quality=quality_check(ds, base + mine, []), file_name="영업점 업적평가 득점 현황(다지점).xlsx", data_origin="simulated", actor="test", note="B.47", force=True)
+        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
+        _, rows = current_rows(s, ds)
+        ym = max(str(r["ym"]) for r in rows if str(r.get("office_cd")) == "001068")
+        base = [clean(r) for r in rows if str(r["ym"]) == ym and str(r.get("office_cd")) == "001068"]
+        mine = [{**r, "office_cd": x, "amount": round(float(r["amount"]) * 0.5)} for r in base]
+        ingest_rows(s, ds, base + mine, quality=quality_check(ds, base + mine, []), file_name="영업점 사업부문별 잔액(다지점).xlsx", data_origin="simulated", actor="test", note="B.47", force=True)
+        # 지점 x 의 조직 — 기존 영업점 BR303(수도권1지역본부 아래)을 사무소 코드 x 로 매핑
+        st = s.get(Setting, "branch.office_codes")
+        old_map = dict(st.value) if st is not None and isinstance(st.value, dict) else None
+        if st is None:
+            st = Setting(key="branch.office_codes", value={})
+            s.add(st)
+        st.value = {**(old_map or {}), "BR303": x}
+        rule = s.get(Rule, "BRANCH_SCOPE")
+        body0 = dict(s.execute(select(RuleVersion.body).where(RuleVersion.rule_code == "BRANCH_SCOPE", RuleVersion.version == rule.active_version)).scalar_one())
+        s.commit()
+    assert body0.get("office_codes") == ["001068"]
+    r = admin.post("/admin/rules/BRANCH_SCOPE/versions", json={"body": {**body0, "office_codes": ["001068", x, "009999"]}, "note": "다지점 시험"})
+    assert r.status_code == 201
+    _drain(db, 40)
+    try:
+        with db() as s:
+            run = s.execute(select(WorkflowRun).where(WorkflowRun.workflow_code == "wf_branch_kpi").order_by(WorkflowRun.started_at.desc())).scalars().first()
+            assert run.status in ("succeeded", "degraded"), (run.status, run.error)
+            sc = {v["value"]: v for v in (run.summary or {}).get("scopes") or []}
+            st_nodes = {n["key"]: n["status"] for n in run.summary["nodes"]}
+            # LLM 미연결이라 서술 노드만 축소(기본 지점과 같음) — 계산 · 정의서 적재 등 나머지는 정상
+            assert sc[x]["status"] in ("succeeded", "degraded") and {k for k, v in st_nodes.items() if k.endswith(f"@{x}") and v != "succeeded"} <= {f"narrate@{x}"}, st_nodes
+            assert sc["009999"]["status"] == "skipped" and "009999" in sc["009999"]["reason"]
+            assert any(n["key"].endswith(f"@{x}") for n in run.summary["nodes"])
+            assert "branch_dashboard@" + x in run.summary["published"] and "branch_dashboard@009999" not in run.summary["published"]
+            # 지표 값 — 범위 코드로 따로 저장, 기본 지점 코드는 그대로
+            got = s.execute(select(MetricValue).where(MetricValue.metric_code == f"br_kpi_total@{x}", MetricValue.workflow_run_id == run.id)).scalars().first()
+            own_v = s.execute(select(MetricValue).where(MetricValue.metric_code == "br_kpi_total", MetricValue.workflow_run_id == run.id)).scalars().first()
+            assert got is not None and own_v is not None and float(got.value) != float(own_v.value)
+            # 정의서 mart 적재 — 지점별 행(기준월 · 사무소 범위로 지우고 다시 넣음), 추가 지점은 목업값 대조 생략
+            brcs = {r[0] for r in s.execute(sql("SELECT DISTINCT brc FROM mart.branch_t02")).all()}
+            html = s.execute(sql("SELECT brc, count(*) FROM mart.branch_t02 WHERE report_html IS NOT NULL GROUP BY brc")).all()
+            assert {"001068", x} <= brcs and dict(html) == {"001068": 1, x: 1}
+            rep_x = get_current(s, f"contract.BRANCH_T02@{x}")
+            assert rep_x and not rep_x["summary"].get("mismatch") and not rep_x["summary"].get("error"), rep_x["summary"]
+            feed = get_current(s, "change_feed") or {}
+            ids = [i["id"] for i in feed.get("items") or []]
+            assert len(ids) == len(set(ids))
+            assert get_current(s, "branch_dashboard@001068") is None  # 기본 지점은 기존 키
+        # 기본 지점 화면 — 수치 그대로(BRM-08)
+        after = admin.get("/screens/branch/dashboard").json()
+        assert after["office"]["code"] == "001068" and vals(after["loan"]) == vals(before["loan"])
+        assert vals(after["scorecard"]) == vals(before["scorecard"]) and vals(after["segments"]) == vals(before["segments"])
+        assert vals(admin.get("/screens/branch/reports/prime-corp").json()["figures"]) == before_fig
+        tables = {t["code"]: t for t in admin.get("/admin/contracts").json()["tables"]}
+        assert not tables["BRANCH_T02"]["report"]["summary"].get("mismatch")
+        # 추가 지점 화면 — 같은 구조 · 다른 수치 · 서술은 안내 문구(LLM 서술 전)
+        dx = admin.get("/screens/branch/dashboard", params={"office": x}).json()
+        assert dx["available"] and dx["office"]["code"] == x and dx["office"]["name"] == "가상지점"
+        assert vals(dx["loan"]) != vals(before["loan"])
+        assert admin.get("/screens/branch/dashboard", params={"office": "009999"}).json()["available"] is False
+        assert admin.get("/screens/branch/dashboard", params={"office": "../x"}).status_code == 422
+        tx = admin.get("/screens/branch/tabs", params={"office": x}).json()
+        assert [t["tabKey"] for t in tx["current"]] == ["prime-corp", "seomin"]
+        rx = admin.get("/screens/branch/reports/prime-corp", params={"office": x})
+        assert rx.status_code == 200 and "다음 서술 실행(LLM) 후 표시" in rx.text
+        assert rx.json()["figures"]["br_prospect_cnt"]["calc"]["formulaId"] == "PROSPECT_SELECT"
+        e = admin.get("/reports/branch-prime-corp/export", params={"format": "html", "office": x})
+        assert e.status_code == 200 and "다음 서술 실행(LLM) 후 표시" in e.text  # 지점 x 산출물(서술 전 안내 문구)로 만든 보고서
+        assert "다음 서술 실행(LLM) 후 표시" not in admin.get("/reports/branch-prime-corp/export", params={"format": "html"}).text
+        offs = admin.get("/screens/branch/offices").json()
+        assert [(o["code"], o["available"], o["primary"]) for o in offs["offices"]] == [("001068", True, True), (x, True, False), ("009999", False, False)]
+        assert offs["default"] == "001068"
+
+        # 열람 범위 — 영업점 직원은 자기 지점만, 지역본부는 소속 지점들
+        def user(emp: str, org: str):
+            c = _client()
+            c.post("/auth/signup", json={"emp_no": emp, "name": "다지점", "password": "abcd1234", "org_code": org})
+            admin.post(f"/admin/users/{emp}/approve")
+            assert _login(c, emp, "abcd1234").status_code == 200
+            return c
+
+        own, xs, region = user("20259060", "001068"), user("20259061", "BR303"), user("20259062", "T311")
+        assert own.get("/screens/branch/dashboard", params={"office": x}).json()["available"] is False
+        assert own.get("/screens/branch/reports/prime-corp", params={"office": x}).status_code == 404
+        assert own.get("/reports/branch-prime-corp/export", params={"format": "html", "office": x}).status_code == 404
+        assert [o["code"] for o in own.get("/screens/branch/offices").json()["offices"]] == ["001068"]
+        with db() as s:  # 범위 밖 지점 요청은 감사 기록(BRM-04)
+            from nhdip.models import AuditLog
+
+            denied = s.execute(select(AuditLog).where(AuditLog.actor == "20259060", AuditLog.action == "branch.office_denied")).scalars().all()
+            assert len(denied) == 3 and {d.target_id for d in denied} == {x}
+        mx = xs.get("/screens/branch/dashboard").json()  # 소속 지점(BR303 → x)이 기본
+        assert mx["available"] and mx["office"]["code"] == x
+        assert xs.get("/screens/branch/dashboard", params={"office": "001068"}).json()["available"] is False
+        assert [t["tabKey"] for t in xs.get("/screens/branch/tabs").json()["current"]] == ["prime-corp", "seomin"]
+        assert xs.get("/me/menu").json()["counts"]["branchAnalyses"] == 2
+        ro = region.get("/screens/branch/offices").json()["offices"]
+        assert [o["code"] for o in ro] == ["001068", x]
+        assert region.get("/screens/branch/dashboard", params={"office": x}).json()["available"] is True
+        # 상한(BRM-07) — 기본 지점 포함 2곳까지만 계산, 나머지는 실행 요약 · 운영 알림
+        with db() as s:
+            from nhdip.models.runtime import Alert
+            from nhdip.workflow.engine import run_workflow
+
+            sp = s.get(Setting, "workflow.scopes")
+            spec0 = dict(sp.value)
+            sp.value = {**spec0, "wf_branch_kpi": {**spec0["wf_branch_kpi"], "max": 2}}
+            s.commit()
+            try:
+                r2 = run_workflow(s, "wf_branch_kpi", [{"type": "manual"}])
+                assert [v["value"] for v in r2.summary["scopes"]] == [x] and r2.summary["scopes_dropped"] == ["009999"]
+                assert s.execute(select(Alert).where(Alert.kind == "scope_limit")).scalars().first().detail["dropped"] == ["009999"]
+            finally:
+                s.get(Setting, "workflow.scopes").value = spec0
+                s.commit()
+    finally:
+        # 다른 시험에 영향이 없도록 되돌린다 — 규칙 · 매핑 · 추가 지점 mart 행
+        admin.post("/admin/rules/BRANCH_SCOPE/versions", json={"body": body0, "note": "다지점 시험 복원"})
+        with db() as s:
+            st = s.get(Setting, "branch.office_codes")
+            if old_map is None:
+                s.delete(st)
+            else:
+                st.value = old_map
+            for t in ("branch_t01", "branch_t02", "branch_t03"):
+                s.execute(sql(f"DELETE FROM mart.{t} WHERE brc = :x"), {"x": x})
+            s.commit()
+        _drain(db, 40)

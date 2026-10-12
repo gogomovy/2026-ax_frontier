@@ -317,7 +317,9 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                     ctx.changed.add(key)
             from .agent_nodes import record
 
-            record(ctx, nar.get("agent") or "narrator", "narrated", f"{insight_id} 서술 갱신(검증 통과)", {"insight": insight_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why")})
+            # 범위 실행(다지점 · B.47)은 서술 이력을 범위별로 — 다른 지점 서술 이력 때문에 '최초 1회' 서술을 건너뛰지 않게
+            scoped_id = f"{insight_id}{ctx.eval.scope_suffix}"
+            record(ctx, nar.get("agent") or "narrator", "narrated", f"{scoped_id} 서술 갱신(검증 통과)", {"insight": scoped_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why")})
         else:
             degraded = True
         out.append({"insight": insight_id, "passed": passed, "checks": checks})

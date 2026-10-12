@@ -2433,24 +2433,23 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 | 다행 제안 버전(B.46) | `contracts/materialize._materialize_rows` · `rows_version` · `seed/defs_dept_contracts`(`BRANCH_T02.PROPOSAL_VER_NO`) | 범위(기준월 · 지점) 이전 행을 읽어 둔 뒤 지우고 새 행 적재 → 다시 읽어 비교 열(행 · 지표 · 기준월 · 상수 연결) 서명 비교 → 같으면 이전 최대 버전, 다르면 +1, 이전 없음 · 비어 있음이면 1 → 범위 전체 `UPDATE` |
 | 업로드 시험 모드 | `apps/e2e/upload-agents.mjs`(`LLM_MODE` · `EMBED_MODE` · `E2E_EXPECT_LLM`) · CI `upload` 잡(workflow_dispatch) | LLM 모드: 기존 판정. LLM 없는 모드: 판단 결정이 규칙으로 남는지 · 서술 실패 없음 · 청크만 · 규칙 추출 · 질의 `fallback`. 공통: '차이' 질의에 `breach_gap_6b` 포함 |
 
-### 19.25 다지점 영업점 설계 (요구사항 §19 BRM-01~08 · Q97 · B.47 — 착수 대기)
+### 19.25 다지점 영업점 설계 (요구사항 §19 BRM-01~08 · Q97 · B.47 — 구조 구현 2026-10-12, 실자료 대기)
 
-현재 단일 지점 가정이 걸린 곳(2026-10-12 조사):
+방식(Q97 · 구현): 지표 · 워크플로우 정의는 하나로 두고 **범위 실행**으로 지점마다 다시 계산한다. 지점 참조(`{"ref": {"rule": "BRANCH_SCOPE", "path": "office_code"}}`)는 그대로 두고, 추가 지점을 돌 때만 평가 문맥이 규칙 값을 덮어쓴다(`EvalContext.rule_overrides`). 지표 정의 이전 · 마이그레이션은 없다. 처음 계획(참조 종류 `param` · 지표 값 범위 열 0012)은 버렸다. 덮어쓰기만으로 같은 효과가 나고, 지표 · 행 생성기 · 화면 조립기가 모두 `resolve_ref` 를 거치므로 바꿀 곳이 한 군데다.
 
-| 경로 | 위치 | 지금 동작 | 바꿀 점 |
-|---|---|---|---|
-| 지점 참조 | `seed/defs_branch.OFF`(`{"ref": {"rule": "BRANCH_SCOPE", "path": "office_code"}}`) — 영업점 지표 `br_*` 의 조건 · 바인딩 파라미터 · `PROSPECT_EXISTING` | 규칙 한 값 | `{"param": "office"}` 로 1회 보강(규칙 참조가 이전 기본값일 때만) |
-| 지표 평가 | `calc/metrics.EvalContext` · `resolve_ref`(const · q · metric · rule · setting) | 매개변수 없음. `metric` 참조는 실행 결과가 없으면 지표 코드의 최근 값으로 대체(지점 구분 없음) | `EvalContext.params` · 참조 `param` 추가, 지점 실행은 결과 캐시를 지점마다 분리, 대체 조회도 범위 조건 |
-| 지표 값 저장 | `models/runtime.MetricValue`(지표 코드 · 기준일 · 값 · 직전 값) | 범위 없음 | 범위 열(`scope`, 기본 빈 값) — 마이그레이션 0012, 직전 값 · 이력 조회에 범위 조건 |
-| 화면 산출물 | `ViewArtifact.key` — `branch_dashboard` · `branch_tabs` · `report.branch-prime-corp` · `report.branch-seomin`, 서술 인사이트 ID `ins-br-*` | 키 하나 | `<키>@<지점>`(기본 지점은 기존 키), 게시 · 3방향 병합 · 탭 동기화(`sync_analysis_tabs`)가 키를 받도록 |
-| 행 생성기 | `contracts/rows._office`(`p.office_cd` → 규칙 → `"001068"` 고정 대체값) · `branch_status_rows` · `branch_corp_rows` · `branch_retail_rows` | 한 지점 행 | 고정 대체값 제거, 지점 매개변수로 |
-| 정의서 적재 | `contracts/materialize._materialize_rows` — 범위 삭제 · 제안 버전(B.46)이 `base_ym` + `brc` | 범위는 이미 지점 단위 | 지점마다 한 번씩 호출(공통 지표 · 서술 열이 그 지점 값이 되도록) |
-| 변화 감지 | 규칙 `CHANGE_SIGNIFICANCE.scope.wf_branch_kpi`(규칙 참조) · `workflow/agent_nodes._scope` | 한 지점 | 지점 실행마다 범위 · 직전 값 비교 |
-| 화면 API | `api/screens._branch_artifact` · `/screens/branch/*` · `api/reports` 내려받기 · `api/menu_counts` | 키 하나 + `can_view_office` | 선택 인자 `office`(없으면 사용자 소속 지점 → 기본 지점), 검사는 기존 `can_view_office` |
-| 화면 | `apps/web/src/lib/data.ts` `getBranchDashboard()` 등 · `app/branch/*` | 지점 인자 없음(지점 이름은 응답에서 읽음) | 지점 선택 상자(볼 수 있는 지점이 둘 이상일 때) · 주소 `?office=` |
-| 시드 자료 | `BRANCH_OFFICE_MASTER`(1행) · `BRANCH_KPI_SCORE` · `BRANCH_BIZ_BALANCE` · `PROSPECTS_SUWON`(001068 만) | 한 지점 | 다지점 자료 수령 후. 그전에는 자료 없는 지점 = '준비 중' (BRM-06) |
+| 경로 | 위치 | 동작 |
+|---|---|---|
+| 범위 설정 | 설정 `workflow.scopes`(`wf_branch_kpi`: `rule` BRANCH_SCOPE · `key` office_code · `list` office_codes · `name` office · `requires` BRANCH_OFFICE_MASTER/BRANCH_KPI_SCORE 의 office_cd · `max` 20 · `shared_keys` change_feed · `placeholder`) · `nhdip/scopes.py` | 기본 지점 = 규칙 `office_code`(001068), 추가 지점 = `office_codes` 에서 기본 지점을 뺀 값(형식 `^[A-Za-z0-9_-]{1,20}$` 만, 상한 `max`) |
+| 지표 평가 | `calc/metrics.EvalContext`(`rule_overrides` · `scope_suffix` · `scoped()`) · `resolve_ref` | `rule` 참조는 덮어쓰기 값을 본문에 합친다. `metric` 참조 대체 조회 · 직전 값 · 저장은 범위 코드 `<지표>@<지점>`(기본 지점은 기존 코드 — `MetricValue` 는 FK 없음, `#band` 접미사 선례). `$latest` 는 자료가 있는데 다른 조건에 맞는 행이 없으면 빈 선택(연체 차주가 없는 지점 → 합계 0) |
+| 워크플로우 | `workflow/engine.run_workflow` · `_run_scope` · `_run_nodes(key_suffix)` | 추가 지점이 있으면 첫 게시 노드 앞에서 나눈다. 기본 지점 그대로 실행 → 지점마다 게시 전 노드 재실행(노드 기록 키 `<노드>@<지점>`) → 게시 1회. 필수 자료에 그 지점 행이 없으면 건너뜀(`summary.scopes[].status = skipped`, 실행 축소 아님 · BRM-06). 한 지점 실패는 그 지점 이벤트만 버리고 나머지는 계속 |
+| 화면 산출물 | `RunContext.scoped_artifacts` · `_scope_template` | 산출물 키 `<키>@<지점>`(기본 지점은 기존 키). 기본 지점 실행 노드에는 '@' 키를 숨겨 001068 수치 · 서술이 다른 지점 산출물을 덮지 않는다. 처음 만드는 지점은 기본 산출물을 본떠 서술 문장(`ins-*`)만 안내 문구로 바꾼 뒤 다시 계산 · 조립 |
+| 변화 감지 · 서술 | `workflow/agent_nodes`(변화 피드 항목 ID · 서술 이력) · `nodes.critic` | 변화 피드는 공유 산출물(키 그대로) — 항목 ID 와 범위(`scope.office`)가 지점별. 플래너의 서술 이력 · Critic 의 `narrated` 기록은 `ins-*@<지점>` |
+| 정의서 적재 | `contracts/materialize`(범위 삭제 `base_ym` + `brc`) · `contracts/rows._office` | 지점마다 적재(행 생성기는 덮어쓴 규칙 값을 읽음). 추가 지점 보고는 `contract.<표>@<지점>`, 정의서 목업값(001068 기준) 대조는 생략(`scoped`) |
+| 화면 API | `api/screens.branch_artifact` · `GET /screens/branch/offices` · `?office=`(대시보드 · 탭 · 보고서) · `api/reports` 내려받기 `office` · `api/menu_counts` · `api/assist._scope_suffixes` | 볼 지점 = 주소 인자 → 사용자 소속 영업점 → 기본 지점. 산출물의 `office.code` 일치 + `can_view_office` 검사. 영업점 직원의 질의 답변은 자기 지점 지표 값만(이전에는 001068 값이 보일 수 있었음) |
+| 화면 | `lib/data.ts`(`getBranchOffices` · `office` 인자) · `lib/branchOffice.ts`(`officeParam` · `withOffice`) · `components/domain/BranchOfficePicker` · `app/branch/*` | 볼 수 있는 지점이 둘 이상일 때만 지점 선택 상자(스크립트 없는 GET 양식), 화면 사이 이동 · 탭 · 내려받기에 `?office=` 유지. 자료 없는 지점은 '준비 중' |
+| 시드 자료 | `BRANCH_SCOPE.office_codes = ["001068"]` | 추가 지점 없음 → 실행 · 화면 · 수치가 이전과 같다(BRM-08). 실자료를 올리고 규칙 목록에 지점을 더하면 동작 |
 
-실행 흐름(착수 시): `load_inputs` → 전행 지표 `compute_metrics`(1회) → **지점 반복**[`compute_metrics(scope=office)` → `detect_changes(scope)` → `build_views(키@지점)` → `plan_run` → `narrate` → `critic` → `materialize_contracts(지점)`] → `publish`. 지점 반복은 노드 설정 `per_scope: "office"` 로 표시하고 엔진이 `BRANCH_SCOPE.office_codes`(상한 설정 `branch.max_offices`)를 돌린다. 시험: 지점 2곳(001068 + 자료 있는 가상 지점)으로 지표 · 산출물 · 변화 피드 · mart · 열람 범위 · 호환(001068 수치 동일).
+시험(`test_branch_multi_office_scope`): 001068 + 가상 지점(차주 · 소매 명세에 있는 사무소, 득점 · 잔액은 001068 을 본떠 조정) + 자료 없는 지점(009999). 범위 실행(지점 x 계산 정상 · 009999 건너뜀) · 범위 지표 값 · mart 지점별 행(보고서 HTML 지점당 1) · 범위 정의서 보고 · 변화 피드 ID 유일 · 001068 화면 수치 동일 · 지점 x 화면 · 탭 · 보고서 · 내려받기 · 지점 목록 · 열람 범위(001068 직원 · BR303→x 매핑 직원 · 지역본부) · 잘못된 인자 422.
 
 ### 19.9 배포 (DEP-01~04)
 

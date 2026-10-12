@@ -73,6 +73,14 @@ class EvalContext:
     rows: dict[str, tuple[Any, list[dict[str, Any]], Dataset]] = field(default_factory=dict)
     outcomes: dict[str, MetricOutcome] = field(default_factory=dict)
     used_versions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # 범위 실행(B.47 · 다지점) — 규칙 값 덮어쓰기 {규칙 코드: {키: 값}} 와 지표 값 저장 접미사(예: "@BR301").
+    # 기본 범위(덮어쓰기 없음)는 이전과 똑같이 동작한다.
+    rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
+    scope_suffix: str = ""
+
+    def scoped(self, code: str) -> str:
+        """지표 값 · 이력에 쓰는 코드 — 범위 실행이면 '<코드>@<범위>'."""
+        return f"{code}{self.scope_suffix}" if self.scope_suffix else code
 
     def dataset(self, code: str):
         if code not in self.rows:
@@ -155,6 +163,10 @@ def resolve_where(ctx: "EvalContext", rows: list[dict[str, Any]], where: dict[st
     base_rows = [r for r in rows if _match(r, fixed, ctx)]
     for k, v in where.items():
         if isinstance(v, str) and TOKEN_RE.match(v):
+            if rows and not base_rows:
+                # 자료는 있는데 다른 조건에 맞는 행이 없음(예: 연체 차주가 없는 지점 · B.47) — 토큰은 그대로 두어
+                # 빈 선택(list → [], count → 0)이 되게 한다. 자료 자체가 없으면 아래에서 '값 없음' 오류 그대로.
+                continue
             where[k] = resolve_token(base_rows, k, v)
     return where
 
@@ -222,7 +234,7 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
         if refs and len(refs) <= 3:
             src += f"!{'/'.join(refs)}"
         src += f" · {_fmt_where(q.get('where') or {})}" + (f" · {col}" if col else "") + (f" ({agg} {len(sel)}행)" if agg in ("sum", "list", "count") else "")
-        latest = {k: q["where"][k] for k, t in (ref["q"].get("where") or {}).items() if t == "$latest" and k in (q.get("where") or {})}
+        latest = {k: q["where"][k] for k, t in (ref["q"].get("where") or {}).items() if t == "$latest" and k in (q.get("where") or {}) and q["where"][k] != t}
         return value, src, {"dataset": ds.code, "version": v.version, "rows": len(sel), **({"latest": latest} if latest else {})}
     if "metric" in ref:
         code = ref["metric"]
@@ -233,10 +245,15 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
                 raise ResolveError(f"선행 지표 오류: {code}")
             val = oc.value if field_ == "value" else (oc.display if field_ == "display" else oc.extra.get(field_))
             return val, oc.calc_run_id, {"metric": code}
-        last = ctx.session.execute(select(MetricValue).where(MetricValue.metric_code == code).order_by(MetricValue.created_at.desc()).limit(1)).scalar()
+        # 이 실행에서 계산하지 않은 지표 — 저장된 최근 값(범위 실행이면 그 범위 값 먼저)
+        last = None
+        for c in dict.fromkeys([ctx.scoped(code), code]):
+            last = ctx.session.execute(select(MetricValue).where(MetricValue.metric_code == c).order_by(MetricValue.created_at.desc()).limit(1)).scalar()
+            if last is not None:
+                break
         if last is None or field_ != "value":
             raise ResolveError(f"지표 값 없음: {code}")
-        return last.value, f"calc.metric_value({code})", {"metric": code}
+        return last.value, f"calc.metric_value({last.metric_code})", {"metric": code}
     if "rule" in ref:
         rule = ctx.session.get(Rule, ref["rule"])
         if not rule:
@@ -244,7 +261,12 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
         rv = ctx.session.execute(select(RuleVersion).where(RuleVersion.rule_code == rule.code, RuleVersion.version == rule.active_version)).scalar()
         if not rv:
             raise ResolveError(f"규칙 버전 없음: {rule.code} v{rule.active_version}")
-        return _get_path(rv.body, ref.get("path")), f"rule.{rule.code} v{rv.version}", {"rule": rule.code, "version": rv.version}
+        body = rv.body
+        over = ctx.rule_overrides.get(rule.code)
+        if over and isinstance(body, dict):
+            body = {**body, **over}  # 범위 실행 — 예: BRANCH_SCOPE.office_code 를 이번 범위 지점으로 (B.47)
+        src = f"rule.{rule.code} v{rv.version}" + (f" · 범위 {over}" if over else "")
+        return _get_path(body, ref.get("path")), src, {"rule": rule.code, "version": rv.version, **({"override": over} if over else {})}
     if "setting" in ref:
         s = ctx.session.get(Setting, ref["setting"])
         if not s:
@@ -408,8 +430,9 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
         if error is None and run.error:
             error = run.error
         spec = formulas.REGISTRY.get(m.formula)
+        # 직전 값 — 같은 범위끼리만 비교(다지점이면 지점마다 따로 · B.47)
         prev = ctx.session.execute(
-            select(MetricValue.display_value).where(MetricValue.metric_code == m.code).order_by(MetricValue.created_at.desc()).limit(1)
+            select(MetricValue.display_value).where(MetricValue.metric_code == ctx.scoped(m.code)).order_by(MetricValue.created_at.desc()).limit(1)
         ).scalar()
         data_origin = _origin_of(ctx, sources)
         oc = MetricOutcome(
@@ -441,7 +464,7 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
         if not error:
             ctx.session.add(
                 MetricValue(
-                    metric_code=m.code,
+                    metric_code=ctx.scoped(m.code),
                     value=oc.value,
                     display_value=display,
                     previous_value=prev,

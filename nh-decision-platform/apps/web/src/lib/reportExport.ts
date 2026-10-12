@@ -222,8 +222,10 @@ function dispositionName(header: string | null, fallback: string): string {
   return plain ? plain[1] : fallback;
 }
 /** 서버에서 변환한 보고서 파일을 내려받는다 (API 모드) */
-export async function downloadServerReport(tabKey: string, format: string): Promise<string> {
-  const res = await fetch(`/backend/reports/${encodeURIComponent(tabKey)}/export?format=${encodeURIComponent(format)}`, {
+export async function downloadServerReport(tabKey: string, format: string, office?: string | null): Promise<string> {
+  // 영업점 보고서는 지점 인자(B.47 · 다지점)를 함께 — 비우면 서버가 사용자 소속 → 기본 지점
+  const officeQs = office ? `&office=${encodeURIComponent(office)}` : "";
+  const res = await fetch(`/backend/reports/${encodeURIComponent(tabKey)}/export?format=${encodeURIComponent(format)}${officeQs}`, {
     credentials: "same-origin",
     cache: "no-store",
   });

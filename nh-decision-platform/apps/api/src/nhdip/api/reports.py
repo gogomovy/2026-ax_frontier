@@ -36,6 +36,7 @@ def export_report(
     tab_key: str,
     request: Request,
     format: str = Query("pdf", pattern="^[a-z]{3,4}$"),
+    office: str | None = Query(None, pattern=r"^[A-Za-z0-9_-]{1,20}$"),
     session: Session = Depends(get_session),
     user: AppUser = Depends(current_user),
 ):
@@ -45,14 +46,27 @@ def export_report(
         raise HTTPException(403, f"이 화면에 대한 권한이 없습니다 ({'branch_reports' if branch else 'reports'})")
     if format not in enabled_formats(session):
         raise HTTPException(422, f"사용하지 않는 형식입니다: {format}")
-    row = get_current_row(session, f"report.{tab_key}")
+    key, target = f"report.{tab_key}", None
+    if branch:
+        # 다지점(B.47) — 볼 지점의 범위 산출물(기본 지점은 기존 키)
+        from nhdip.scopes import office_scope, resolve_office, scoped_key
+
+        from nhdip.orgs import can_view_office as _can_view
+
+        target = resolve_office(session, user, office)
+        if office and not _can_view(session, user, office):
+            audit(session, user.emp_no, "branch.office_denied", "office", office, {"artifact": key, "format": format}, client_ip(request))
+            session.commit()
+            raise HTTPException(404, "보고서 없음")
+        key = scoped_key(key, target, office_scope(session)[0])
+    row = get_current_row(session, key)
     if not row:
         raise HTTPException(404, "보고서 없음")
     if branch:
         from nhdip.orgs import can_view_office
 
         code = ((row.payload or {}).get("office") or {}).get("code")
-        if not code or not can_view_office(session, user, code):
+        if not code or (target and str(code) != str(target)) or not can_view_office(session, user, code):
             raise HTTPException(404, "보고서 없음")
     data, name, ctype = export(session, row.payload, format)
     audit(session, user.emp_no, "report.export", "report", tab_key, {"format": format, "generation": row.generation, "bytes": len(data)}, client_ip(request))

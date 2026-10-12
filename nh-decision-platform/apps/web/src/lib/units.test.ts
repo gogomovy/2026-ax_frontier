@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nextFocusIndex } from "@/lib/a11y";
+import { officeParam, withOffice } from "@/lib/branchOffice";
 import { buildCsp, newNonce } from "@/lib/csp";
 import { formatFigure, formatKstDateTime, formatSigned, toneOfDelta } from "@/lib/format";
 import { safeNext } from "@/lib/safe-next";
@@ -81,5 +82,21 @@ describe("KST 시각 표기 — 서버 · 브라우저 같은 글자 (B.41 · #4
   it("빈 값 · 해석 불가 값", () => {
     expect(formatKstDateTime("")).toBe("");
     expect(formatKstDateTime("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("영업점 지점 인자(B.47)", () => {
+  it("형식이 맞는 값만 쓴다", () => {
+    expect(officeParam({ office: "001068" })).toBe("001068");
+    expect(officeParam({ office: ["00X_1", "b"] })).toBe("00X_1");
+    expect(officeParam({ office: "../x" })).toBeNull();
+    expect(officeParam({ office: "a".repeat(21) })).toBeNull();
+    expect(officeParam({})).toBeNull();
+    expect(officeParam(undefined)).toBeNull();
+  });
+  it("이동 주소에 이어 붙인다", () => {
+    expect(withOffice("/branch", null)).toBe("/branch");
+    expect(withOffice("/branch/analysis", "001234")).toBe("/branch/analysis?office=001234");
+    expect(withOffice("/branch?x=1", "A B")).toBe("/branch?x=1&office=A%20B");
   });
 });

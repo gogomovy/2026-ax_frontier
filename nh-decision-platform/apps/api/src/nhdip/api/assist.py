@@ -146,6 +146,25 @@ def _setting_dict(session: Session, key: str) -> dict[str, Any]:
     return s.value if s is not None and isinstance(s.value, dict) else {}
 
 
+def _scope_suffixes(session: Session, user: AppUser) -> dict[str, str | None]:
+    """범위 워크플로우(다지점 · B.47)의 지표 값은 사용자가 볼 지점 값으로 — {워크플로우: '@지점' | '' | None(볼 수 없음)}.
+    영업점 직원은 자기 지점 값만(계산되지 않은 지점이면 값 없음), 그 외는 기본 지점 값."""
+    from nhdip.orgs import can_view_office
+    from nhdip.scopes import resolve_office, scope_specs, scope_values
+
+    out: dict[str, str | None] = {}
+    for wf, spec in scope_specs(session).items():
+        if spec.get("name") != "office":
+            continue
+        primary, _ = scope_values(session, spec)
+        target = resolve_office(session, user, None)
+        if target and not can_view_office(session, user, target):
+            out[wf] = None
+        else:
+            out[wf] = f"@{target}" if target and target != primary else ""
+    return out
+
+
 def metrics_for(session: Session, user: AppUser, q: str, concepts: list[str], limit: int = 8) -> list[dict[str, Any]]:
     allowed = user_resources(session, user)
     s = session.get(Setting, "assist.workflow_resources")
@@ -156,9 +175,13 @@ def metrics_for(session: Session, user: AppUser, q: str, concepts: list[str], li
             continue
         by_code[m.code] = m
     ranked = rank_metrics([(m.code, m.label, m.sort) for m in by_code.values()], q, concepts, _setting_dict(session, "assist.synonyms"), _setting_dict(session, "assist.metric_synonyms"))
+    suffix = _scope_suffixes(session, user)
     out = []
     for m in (by_code[c] for c in ranked[:limit]):
-        mv = session.execute(select(MetricValue).where(MetricValue.metric_code == m.code).order_by(MetricValue.created_at.desc()).limit(1)).scalar()
+        sfx = suffix.get(m.workflow_code, "")
+        if sfx is None:
+            continue  # 열람 범위 밖 지점의 지표
+        mv = session.execute(select(MetricValue).where(MetricValue.metric_code == f"{m.code}{sfx}").order_by(MetricValue.created_at.desc()).limit(1)).scalar()
         if not mv or mv.display_value is None:
             continue
         out.append(

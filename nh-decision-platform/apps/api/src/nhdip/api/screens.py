@@ -147,34 +147,69 @@ def _viewer_office(session: Session, user: AppUser) -> dict[str, Any] | None:
     return {"code": office_code_of(session, br.code), "name": br.name, "orgCode": br.code} if br else None
 
 
-def _branch_artifact(session: Session, user: AppUser, key: str) -> Any:
-    from nhdip.orgs import can_view_office
+OFFICE_Q = Query(None, pattern=r"^[A-Za-z0-9_-]{1,20}$", description="지점(사무소) 코드 — 비우면 사용자 소속 영업점, 없으면 기본 지점 (B.47)")
 
-    v = get_current(session, key)
+
+def branch_artifact(session: Session, user: AppUser, key: str, office: str | None = None) -> Any:
+    """영업점 산출물 — 볼 지점(주소 인자 · 소속 · 기본)의 범위 키('<키>@<지점>', 기본 지점은 기존 키)를 읽고 열람 범위를 검사한다 (B.47 · Q44)."""
+    from nhdip.orgs import can_view_office
+    from nhdip.scopes import office_scope, resolve_office, scoped_key
+
+    primary, _ = office_scope(session)
+    target = resolve_office(session, user, office)
+    if office and not can_view_office(session, user, office):
+        # 열람 범위 밖 지점을 주소로 요청 — 감사에 남기고 없는 것처럼 응답 (BRM-04)
+        from nhdip.events import audit
+
+        audit(session, user.emp_no, "branch.office_denied", "office", str(office)[:20], {"artifact": key})
+        session.commit()
+        return None
+    v = get_current(session, scoped_key(key, target, primary))
     if not isinstance(v, dict):
         return None
     code = (v.get("office") or {}).get("code")
-    return v if code and can_view_office(session, user, code) else None
+    if not code or (target and str(code) != str(target)):
+        return None
+    return v if can_view_office(session, user, code) else None
+
+
+
+@router.get("/branch/offices")
+def branch_offices(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_dashboard"))):
+    """볼 수 있는 계산 대상 지점 목록 (B.47 · BRM-05) — 지역본부 · 관리자 화면의 지점 선택 상자. 영업점 직원은 자기 지점 하나."""
+    from nhdip.orgs import can_view_office, org_of_office
+    from nhdip.scopes import office_scope, resolve_office, scoped_key
+
+    primary, offices = office_scope(session)
+    out = []
+    for code in offices:
+        if not can_view_office(session, user, code):
+            continue
+        v = get_current(session, scoped_key("branch_dashboard", code, primary))
+        org = org_of_office(session, code)
+        name = ((v or {}).get("office") or {}).get("name") if isinstance(v, dict) else None
+        out.append({"code": code, "name": name or (org.name if org else code), "available": isinstance(v, dict), "primary": code == primary})
+    return {"offices": out, "default": resolve_office(session, user, None)}
 
 
 @router.get("/branch/dashboard")
-def branch_dashboard(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_dashboard"))):
+def branch_dashboard(office: str | None = OFFICE_Q, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_dashboard"))):
     """영업점 1화면 — 열람 범위 밖이거나 분석이 없는 영업점이면 available=false 와 사용자 영업점만 돌려준다."""
-    v = _branch_artifact(session, user, "branch_dashboard")
+    v = branch_artifact(session, user, "branch_dashboard", office)
     if v is None:
         return {"available": False, "viewer": _viewer_office(session, user)}
     return {**v, "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
 
 
 @router.get("/branch/tabs")
-def branch_tabs(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_tabs"))):
-    v = _branch_artifact(session, user, "branch_tabs")
+def branch_tabs(office: str | None = OFFICE_Q, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_tabs"))):
+    v = branch_artifact(session, user, "branch_tabs", office)
     return v if v is not None else {"current": [], "previous": []}
 
 
 @router.get("/branch/reports/{tab_key}")
-def branch_report(tab_key: str, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_reports"))):
-    v = _branch_artifact(session, user, f"report.branch-{tab_key}")
+def branch_report(tab_key: str, office: str | None = OFFICE_Q, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_reports"))):
+    v = branch_artifact(session, user, f"report.branch-{tab_key}", office)
     if v is None:
         raise HTTPException(404, "보고서 없음")
     return {**v, "workflow": _producer(session, f"report.branch-{tab_key}")}

@@ -179,7 +179,8 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     if final:
         arts = ctx.load_artifacts()
         feed = arts.get("change_feed") if isinstance(arts.get("change_feed"), dict) else {"items": []}
-        entries = [{**i, "id": f"{ctx.run.id[:10]}-{i['kind']}-{i['code']}", "at": now, "workflow": ctx.workflow.code, "workflowName": ctx.workflow.name, "runId": ctx.run.id, **({"scope": scope} if scope else {})} for i in final]
+        # 범위 실행(다지점)은 같은 실행 안에서 지점마다 항목이 생기므로 ID 에 범위를 붙인다 (B.47)
+        entries = [{**i, "id": f"{ctx.run.id[:10]}{ctx.eval.scope_suffix}-{i['kind']}-{i['code']}", "at": now, "workflow": ctx.workflow.code, "workflowName": ctx.workflow.name, "runId": ctx.run.id, **({"scope": scope} if scope else {})} for i in final]
         arts["change_feed"] = {"items": (entries + list(feed.get("items") or []))[: int(pol.get("max_feed", 200))], "updatedAt": now}
         ctx.changed.add("change_feed")
         ctx.emit_after_success("change.detected", {"workflow": ctx.workflow.code, "run": ctx.run.id, "major": major, "total": len(final), "data": data_n, "chain": [*chain, ctx.workflow.code],
@@ -233,6 +234,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     changed_figs = {f for i in changes if i["kind"] == "metric" for f in i.get("figureIds") or []}
     data_changed = [i["code"] for i in changes if i["kind"] == "data"]
     narrated = set(ctx.session.execute(select(AgentDecision.detail["insight"].astext).where(AgentDecision.agent_code == (nar.agent_code or ""), AgentDecision.decision == "narrated")).scalars())
+    sfx = ctx.eval.scope_suffix  # 범위 실행(다지점)이면 서술 이력도 범위별 (B.47)
     arts = ctx.load_artifacts()
     # 1) 규칙 계획(기준안 · 대체 경로)
     rule_choice, rule_skip, why, info = [], {}, {}, []
@@ -241,7 +243,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ins = find_insight(arts, tid) or {}
         hit = sorted(set(ins.get("figures") or {}) & changed_figs)
         info.append({"id": tid, "title": ins.get("title"), "severity": ins.get("severity"), "figures": [f.get("label") for f in (ins.get("figures") or {}).values()][:12],
-                     "changedFigures": hit, "narratedBefore": tid in narrated, "instruction": t.get("instruction")})
+                     "changedFigures": hit, "narratedBefore": f"{tid}{sfx}" in narrated, "instruction": t.get("instruction")})
         if full:
             why[tid] = f"전체 갱신({', '.join(sorted(set(full)))})"
         elif doc_change:
@@ -250,7 +252,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             why[tid] = f"수치 변화: {', '.join(hit[:5])}"
         elif data_changed and pol.get("narrate_on_data_change", True) and not ins.get("figures"):
             why[tid] = f"데이터 변경: {', '.join(data_changed[:3])}"
-        elif tid not in narrated:
+        elif f"{tid}{sfx}" not in narrated:
             why[tid] = "LLM 서술 이력 없음 — 최초 1회"
         else:
             rule_skip[tid] = "수치 · 근거 변화 없음 — 기존 서술 유지"

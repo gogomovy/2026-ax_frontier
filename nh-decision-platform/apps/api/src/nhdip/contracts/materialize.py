@@ -139,6 +139,13 @@ def compare(expected_text: str | None, display: Decimal | None, metric_unit: str
     return "mismatch", f"계산 {got} vs 정의서 {exp.normalize():f} (차이 {diff.normalize():f})"
 
 
+def _compare(ctx: EvalContext, expected_text: str | None, display: Decimal | None, metric_unit: str) -> tuple[str, str]:
+    """추가 범위(다지점 · B.47)는 정의서 목업값(기본 지점 기준)과 대조하지 않는다 — 다른 지점 수치가 '불일치'로 보이지 않게."""
+    if ctx.scope_suffix:
+        return "scoped", f"추가 범위({ctx.scope_suffix[1:]}) — 정의서 목업값은 기본 지점 기준이라 대조 생략" + ("" if display is not None else " · 계산값 없음")
+    return compare(expected_text, display, metric_unit)
+
+
 UNIT_TEXT = {"PCT": "%", "PP": "%p", "KRW_TN": "조원", "KRW_BN": "억원", "KRW_MN": "백만원", "CNT": "건", "RATIO": ""}
 FIG_RE = re.compile(r"\[\[fig:([^\]]+)\]\]")
 TERM_RE = re.compile(r"\{\{term:[^|}]+\|([^}]+)\}\}")
@@ -290,7 +297,7 @@ def materialize(session: Session, ctx: EvalContext, artifacts: dict[str, Any], t
                 row[col] = r["value"]
                 # 결정으로 정정한 기대값(binding.expected)이 있으면 그 값으로 대조하고 정의서 원값은 메모로 남긴다
                 exp = (c.binding or {}).get("expected") or c.expected_text
-                verdict, note = compare(exp, r["display"], r["unit"])
+                verdict, note = _compare(ctx, exp, r["display"], r["unit"])
                 if (c.binding or {}).get("expected"):
                     note = f"{note} · 정정 기대값 {exp} (정의서 {c.expected_text}) — {(c.binding or {}).get('expected_note', '')}".strip(" ·")
             elif r["kind"] in ("base_ym", "const"):
@@ -441,7 +448,7 @@ def _materialize_rows(session: Session, ctx: EvalContext, artifacts: dict[str, A
                 tgt = next((x for x in rows if all(str(x.get(k)) == str(v) for k, v in chk.items())), rows[0]) if chk else None
                 if chk and tgt is not None and c.expected_text:
                     unit = (c.binding or {}).get("unit", "")
-                    verdict, note = compare(c.expected_text, tgt.get(key), unit)
+                    verdict, note = _compare(ctx, c.expected_text, tgt.get(key), unit)
                     note = f"{note} · 대조 행 {chk}".strip(" ·")
                     val = tgt.get(key)
             elif (c.binding or {}).get("optional") and rows:
@@ -454,7 +461,7 @@ def _materialize_rows(session: Session, ctx: EvalContext, artifacts: dict[str, A
             common[col] = r["value"]
             val, disp = r["value"], r["display"]
             exp = (c.binding or {}).get("expected") or c.expected_text
-            verdict, note = compare(exp, r["display"], r["unit"])
+            verdict, note = _compare(ctx, exp, r["display"], r["unit"])
         elif kind in ("base_ym", "const", "derived"):
             common[col] = r["value"]
             verdict, val = "derived", r["value"]
