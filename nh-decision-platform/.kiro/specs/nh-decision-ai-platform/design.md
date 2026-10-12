@@ -2545,3 +2545,256 @@ wf_hq_goal_review: … build_views → narrate → critic → materialize_contra
 - 토큰 추가: `--color-{info|success|attention|warning|critical}-soft`(옅은 배경) · `--color-attention-text` · `--color-warning-text` · `--chart-1..6`(차트 팔레트) · `--shell-max`.
 - 구성 요소: `StatCard`(값 · 변화 · 보조) · `EmptyState` · `Breadcrumbs` · `PageHeader`(위치 · 요약) · `Advanced`(접기) · `KeyValueList` · `BarList`(가로 막대 순위) · `Timeline`(노드 소요) · `StackedBars`(시간대별 상태) · `StatusPill`.
 - 셸: 모바일 메뉴를 `role=dialog` · 포커스 가두기 · Esc, 사이드바 묶음 접기, 현재 위치 강조.
+
+---
+
+## 21. 질문하기 고도화 설계 — 통합 지식 색인 · 팀별 컬렉션 · 하이브리드 검색 (요구사항 §21 · Q110~Q117)
+
+### 21.1 한눈에 보기
+
+```
+ 게시(publish 노드) ──같은 트랜잭션──▶ knowledge.indexer.index_artifacts()          [텍스트 · 개념 · 컬렉션 · 범위]
+ (직접 게시/장애로 놓친 것)  ◀──1분 대조──  worker.housekeeping → knowledge.maintenance   [대조 · 임베딩 · 그래프 이벤트]
+                                                 │
+                       app.kb_chunk (tsvector · vector · concepts[] · collection · scope_key · required_resource)
+                       bank/ext.chunk (문서 청크: 기존)        cfg.kb_collection (담당/공유 팀 · 공개 범위)
+                                                 │
+ 질문 ──▶ assist.ask ──▶ knowledge.search.retrieve(access, query, history, screen)
+              │            ① 접근 범위 해석(AccessScope)      ② 질의 이해(조사 · 개념 · 확장 · 후속 질문 재작성)
+              │            ③ 채널: 키워드 / 의미 / 그래프 (모두 사전 필터)   ④ 가중 RRF   ⑤ 재순위 · 출처당 상한 · 게이팅
+              ▼
+        확정 수치(metrics_for) + 분석 결과 + 근거 문서 ──▶ LLM(query_assistant) 또는 결정론 정리 ──▶ 숫자 출처 검증
+```
+
+계층: `nhdip.knowledge` 는 핵심 계층이다(HTTP · FastAPI 를 가져오지 않는다). 사용자 조직 · 리소스 같은 HTTP 계층 정보는 `api/assist.py` 가 `AccessContext` 로 만들어 넘긴다. `.importlinter` 의 `core-no-http` 에 `nhdip.knowledge` 를 더한다.
+
+### 21.2 데이터 모델 (마이그레이션 0014)
+
+| 테이블 | 열 | 용도 |
+|---|---|---|
+| `cfg.kb_collection` | `code`(PK) · `label` · `description` · `kind`(document · analysis · glossary · catalog) · `owner_orgs` JSONB[조직 코드] · `shared_orgs` JSONB · `required_resources` JSONB · `audience`(all · restricted · owner_only) · `sources` JSONB(`doc_classes` · `artifact_keys` · `artifact_prefixes` · `spaces` · `personas` · `screens`) · `boost` · `enabled` · `sort` · `updated_by` · `updated_at` | 컬렉션 정의(관리자 편집). 시드는 없는 코드만 추가 |
+| `app.kb_chunk` | `id` · `collection_code` · `source_kind`(artifact) · `source_key`(산출물 키, 범위는 `키@지점`) · `source_generation` · `unit_hash`(본문 SHA-1 앞 40자) · `ordinal` · `scope_key`(`office:<코드>`) · `required_resource` · `owner_org` · `title` · `section_path` · `text` · `concepts` VARCHAR[] · `meta` JSONB(href · severity · tab · figures) · `as_of` · `embedding` vector · `embedding_model` · `tsv` tsvector(생성 열: 제목 + 본문) · `indexed_at` | 분석 결과 청크 |
+
+인덱스: `(collection_code)` · `(source_key)` · `GIN(tsv)` · `GIN(concepts)` · `UNIQUE(source_key, COALESCE(scope_key,''), unit_hash)` · 임베딩 대기 조회용 부분 인덱스 `WHERE embedding IS NULL`. 임베딩 차원은 모델에 따라 달라 열을 고정하지 않는다(기존 `chunk` 와 같음). 모델이 확정되면 CLI(`nhdip.cli kb-hnsw --dim N`, 생성 트랜잭션에서 `maintenance_work_mem` 1GB · 병렬 4로 올림 — §21.14)가 `WHERE vector_dims(embedding)=N` 부분 HNSW 인덱스를 만들고, 설정 `knowledge.search.hnsw_dim` 이 같을 때 검색 SQL 이 같은 식을 쓴다.
+
+색인 단위는 `unit_hash` 로 식별한다(본문 해시). 같은 본문은 같은 행 → 멱등, 임베딩 재사용. 본문이 바뀌면 옛 행이 지워지고 새 행이 임베딩 대기가 된다.
+
+### 21.3 컬렉션 기본 정의 (시드 `seed/defs_knowledge.py`)
+
+| 코드 | 종류 | 포함 규칙 | 담당 팀 | 공유 팀 | 공개 범위 |
+|---|---|---|---|---|---|
+| `doc.gov_policy` 정부정책 DB | document | 문서 분류 `gov_policy` | - | - | all |
+| `doc.mgmt_decision` 경영 의사결정 DB | document | `mgmt_decision` | D100 | - | all (문서별 `dept_only` 유지) |
+| `doc.model_method` 모형 · 방법론 | document | `model_method` | D200 | D100 | restricted |
+| `doc.branch_ref` 영업점 기준 · 공문 | document | `branch_ref` | D300 · D400 · D500 | D100 · D200 | restricted |
+| `doc.reference` 기타 문서 | document | `reference` + 나머지(`*`) | - | - | all |
+| `analysis.hq` 종합기획부 분석 결과 | analysis | 분석 공간 `hq` · 키 `hq_dashboard` `loan_overview` `comparison_view` `capital_view` `profitability` `goals` `proposals` `attentions` `report_requests` `review_queue` `cascade` · 페르소나 P1 | D100 | - | restricted |
+| `analysis.risk` 신용리스크 분석 결과 | analysis | 공간 `risk` · 키 `risk_dashboard` `analysis_tabs` `inclusive` `default_rate_trend` `insights` `action_plans` `report.model-monitoring` `report.inclusive-risk` · 페르소나 P2 | D200 | - | restricted |
+| `analysis.branch` 영업점 분석 결과 | analysis | 공간 `branch` · 키 `branch_*` · 접두어 `report.branch-` · 페르소나 P3 | D300 · D400 · D500 | - | restricted |
+| `glossary` 용어집 | glossary | 키 `terms` | - | - | all |
+| `catalog.data` 데이터 목록 | catalog | 키 `dataset_meta` | - | - | restricted(화면 리소스 `datasets`) |
+| `admin.contracts` 컬럼 정의서 대조 보고 | catalog | 접두어 `contract.` (관리자 [컬럼 정의서] 화면의 표별 대조 보고) | - | - | owner_only(관리자만) · 가산점 −0.15 |
+| `analysis.unassigned` 미분류 | analysis | (위 규칙에 안 맞는 산출물) | - | - | owner_only(관리자만) |
+
+기본 컬렉션은 모두 12개다. `contract.*` 산출물을 별도 컬렉션으로 둔 것은 관리자 전용 자료가 `analysis.unassigned`(= 규칙을 정해야 할 산출물을 알리는 곳)를 채워 의미를 흐리지 않게 하기 위해서다.
+
+- `D100` 종합기획부 · `D200` 신용리스크관리부 · `D300/D400/D500` 지역본부(영업점은 그 아래라 조직 경로에 포함). 조직 코드는 하위 조직을 포함한다(`org_chain`).
+- 색인에서 제외하는 산출물: `documents`(문서 목록 — 문서는 본문 청크로 따로 검색) · `meta` · `change_feed` · `domains` · 사용자 상태. 제외 목록은 설정 `knowledge.index.exclude_keys`.
+
+#### 산출물 → 컬렉션 배정 (`knowledge.access.assign_collection`)
+
+모듈 이름은 표준 라이브러리 `collections` 를 가리지 않도록 `access.py` 로 했다.
+
+1. 단위(엔티티)에 `persona`(P1 · P2 · P3)가 있으면 그 페르소나를 가진 컬렉션(`sources.personas`) — 예: `insights` 안의 신용리스크 인사이트는 `analysis.risk`.
+2. 산출물 키가 분석 에이전트 보고서(`report.an-*`)면 그 에이전트의 공간(`AnalysisAgent.space`)을 가진 컬렉션(`sources.spaces`).
+3. 키가 정확히 일치(`artifact_keys`)하거나 접두어(`artifact_prefixes`)가 맞는 컬렉션. 범위 키(`키@지점`)는 `@` 앞 키로 판단.
+4. 위 모두 아니면 `analysis.unassigned`.
+
+청크의 열람 리소스(`required_resource`) 우선순위: 렌더러 지정(영업점 참고가 켜진 진행사업 단위) → 페르소나 리소스 → 분석 공간 리소스 → 산출물 매핑. `unit_hash` 는 `페르소나|리소스|담당 팀` 머리말과 본문을 합쳐 SHA-1 로 만든다(같은 문장이어도 열람 권한이나 담당이 다르면 다른 행).
+
+#### 화면 리소스 매핑 (`knowledge.artifact_resources` 설정, 기본값은 화면 API 와 같은 값)
+
+산출물 키 → 그 산출물을 보여주는 화면 API 의 리소스. 청크의 `required_resource` 가 된다. 예: `hq_dashboard → hq_dashboard`, `goals → goals`, `proposals → proposals`, `risk_dashboard → risk_dashboard`, `report.model-monitoring → reports`, `report.branch-* → branch_reports`, `branch_dashboard → branch_dashboard`, `action_plans → plan_actions`(영업점 참고가 켜진 진행사업 단위는 `action_plans`), `insights → insights` 이지만 단위에 페르소나가 있으면 설정 `knowledge.persona_resources`(`P1→hq_dashboard`, `P2→risk_dashboard`, `P3→branch_dashboard`)를 우선한다(부서 간 인사이트 열람 불가 — B.32 와 같은 원칙). 분석 에이전트 보고서는 공간의 열람 리소스(`analysis.spaces.<공간>.resource`).
+
+### 21.4 접근 범위 해석 (`knowledge.access.resolve_scope`)
+
+입력 `AccessContext`: `emp_no` · `is_admin` · `org_codes`(사용자 조직 + 상위) · `resources`(None = 제한 없음) · `offices`(열람 가능한 지점, None = 제한 없음) · `dept_docs`(열람 가능한 `dept_only` 문서 코드, None = 제한 없음) · `screen`(현재 화면 경로).
+
+```
+관리자:  모든 사용 중 컬렉션, 지점 · 문서 제한 없음
+그 외:   각 컬렉션에 대해
+           owned  = (owner_orgs ∪ shared_orgs) ∩ org_codes ≠ ∅                 → 컬렉션 전체 허용(담당이면 owned=true)
+           open   = audience == 'all'                                            → 컬렉션 전체 허용
+           res    = audience != 'owner_only' and required_resources ∩ resources ≠ ∅   → 컬렉션 전체 허용
+           gated  = audience != 'owner_only' (위 셋이 아님)                      → 청크의 required_resource ∈ resources 인 청크만
+```
+
+`AccessScope` = `full`(전체 허용 컬렉션) · `gated`(청크 단위 허용) · `owned`(담당) · `doc_classes`(허용 문서 분류, `*` 는 다른 컬렉션이 안 가져간 분류) · `offices` · `dept_docs`.
+
+존재 비공개: `gated` 컬렉션은 실제로 열 수 있는 청크(리소스 · 지점 범위가 맞는 것)가 하나라도 있을 때만 범위(`scope`)에 보인다(`_reachable`). 열 수 없는 컬렉션은 이름조차 응답에 나오지 않는다. 범위 화면용 응답 항목은 `partial`(청크 단위 허용) 표시를 갖는다.
+
+SQL 사전 필터(분석 결과):
+```sql
+WHERE (c.collection_code = ANY(:full) OR (c.collection_code = ANY(:gated) AND c.required_resource = ANY(:resources)))
+  AND (c.scope_key IS NULL OR c.scope_key = ANY(:scopes))        -- 지점 범위 (관리자는 생략)
+```
+SQL 사전 필터(문서):
+```sql
+WHERE d.is_current AND d.doc_class = ANY(:classes)
+  AND (COALESCE(d.meta->>'accessClass','internal') <> 'dept_only' OR d.doc_code = ANY(:dept_docs))
+```
+`dept_docs` 는 설정 `docs.owner_orgs` 에서 사용자 조직 경로와 겹치는 문서 코드(`graph.evidence.doc_visible` 과 같은 규칙).
+
+### 21.5 색인 (`knowledge.render` · `knowledge.indexer`)
+
+**선형화**: 산출물 JSON 을 구조를 아는 척하지 않는 범용 규칙으로 '제목이 붙은 글 블록'으로 펼친다. 산출물이 30여 종이고 분석 에이전트 보고서가 계속 늘어도 코드를 고치지 않기 위해서다.
+
+- 수치 객체(`id` · `label` · `unit` · `value`)는 한 줄 사실 `라벨: 값단위`(소수 자릿수 · 단위 문자 적용: `PCT→%`, `PP→%p`, `KRW_TN→조원`, `KRW_BN→억원`, `KRW_MN→백만원`, `CNT→건`)로. 산출물 전체의 수치 사전으로 `[[fig:ID]]` 를 풀고, `{{term:코드|표시}}` 는 표시 글자로.
+- 제목 후보(`title` · `name` · `heading` · `caption` · `label` · `assetClass` · `org`)가 있는 객체는 제목 경로를 한 단계 더하고, 서술 문자열(8자 이상 · 제외 키 아님)은 글로, 의미 있는 짧은 필드(`severity` · `status` · `verdict` · `ownerOrg` · `fromOrg` · `toOrg` · `dueDate` · `periodLabel` 등 `LABELS` 표)는 `한글 이름: 값` 으로 낸다.
+- 보고서 블록: `p` 글 · `ul` 항목 · `callout` 글 · `kv` 쌍 · `table` 캡션 + 행(열 이름=값, 최대 12행) · `chart` 제목 + 계열별 처음 · 끝 · 최대 · 최소.
+- 시계열 `[{label, value}, …]` 는 `이름: 처음 → 끝 (최소 · 최대)` 한 줄.
+- 제외 키: `id` `kind` `calc` `sourceRef` `tableRef` `dataOrigin` `executedAt` `formulaId` `href` `verifications` `rankScore` … (설정 `knowledge.index.skip_keys`).
+- 개인정보: `privacy.mask_text` 로 주민번호 · 휴대전화 · 이메일 · 카드번호 형식 값 가림.
+
+**청크 분할**: 블록을 순서대로 모으되 제목 경로가 바뀌거나 `chunk_chars`(기본 900자)를 넘으면 끊는다. 모든 청크 본문 앞에 `제목 경로` 줄을 붙여 단독으로 읽혀도 맥락이 있게 한다. 한 블록이 너무 길면 문장 경계에서 자른다(겹침 80자).
+
+**동기화**: `index_artifacts(session, keys=None)` — 키별로 ⓐ 현재 세대 읽기 ⓑ 렌더 ⓒ 컬렉션 · 리소스 · 범위 배정 ⓓ 개념 태깅 ⓔ `unit_hash` 기준 upsert(있으면 메타 · 세대만 갱신, 없으면 삽입) ⓕ 이번에 없는 해시 삭제 ⓖ 산출물이 사라졌으면 청크 삭제. 게시 노드는 `session.begin_nested()` 로 감싸 실패해도 게시를 막지 않는다(워커 대조가 복구).
+
+**임베딩/대조 (`knowledge.maintenance`)** — 워커 `housekeeping` 60초 주기, `try_lock('housekeeping:knowledge')` 로 한 워커만:
+1. 대조: `view_artifact` 현재 세대 ↔ `kb_chunk.source_generation` 이 다른 키 · 컬렉션 설정이 바뀐 키(설정 변경 시각 기준)를 다시 색인.
+2. 임베딩: `embedding IS NULL OR embedding_model <> 현재 모델` 청크를 32개씩(최대 160/회) `embedder` 에이전트로 임베딩. 모델 없음 · 호출 실패는 건너뛰고 다음 주기에 재시도(예산 초과 시 `LlmBudgetExceeded` 로 멈춤).
+3. 그래프: 이번 주기에 색인이 바뀌었으면 이벤트 `kb.indexed` 를 한 번 내 `wf_graph_projection` 이 산출물 → 개념 관계를 투영한다(트리거 `event: kb.indexed`, 디바운스 5초).
+
+### 21.6 검색 (`knowledge.search.retrieve`)
+
+**질의 이해** (`knowledge.query`)
+- 질의어: 기존 `terms_of`(조사 한 개 떼기 · 불용어). 개념: 온톨로지 별칭 사전 부분 일치(`concepts_of`).
+- 후속 질문 재작성 `contextualize(question, history)`: 질문이 짧거나(질의어 ≤ 3) 지시어(`그럼` `그러면` `그건` `이건` `거기` `같은` …)로 시작하거나 개념이 없는데 직전 질문에 개념이 있으면 후속으로 본다. 규칙 재작성은 직전 질문의 개념 · 핵심어를 앞에 붙인다. LLM 이 켜져 있고 후속 질문이면 `query_assistant` 로 독립형 질문 한 줄을 받아(200자 이하 · 검증) 대신 쓴다. 실패 · 예산 초과는 규칙 재작성.
+- 개념 확장 `expand_concepts`: 데이터셋 매핑(`Dataset.mapping.concepts[].edges`)의 개념 간선(예: 햇살론 –PART_OF_THEME→ 포용금융, 소기업 –BELONGS_TO→ 기업여신)에서 **무방향 1홉** 이웃을 구한다(PostgreSQL, 항상 가능). Neo4j 가 살아 있으면 개념 노드의 직접 이웃(문서 관계 제외)을 더한다. 확장은 최대 `graph_expand_max`(24)개, 정확 일치의 절반 가중.
+
+**채널** (각각 사전 필터 + 후보 `candidates_per_channel`(40)건)
+
+| 채널 | 분석 결과(`kb_chunk`) | 문서(`bank/ext.chunk`) |
+|---|---|---|
+| 키워드 | 어절(접두 낱말 `t:*`) 단위로, 많이 맞춘 후보부터 단계적으로(전부 AND → 하나 빼기 → … → 최소 `min_term_ratio` 비율; 단계마다 AND 조합을 UNION) `lim` 건이 모일 때까지 찾는다. 점수 = 맞춘 어절 수 + 0.1 × ts_rank, 점수를 매길 후보는 `keyword_candidates`(3000)까지. 어절이 7개를 넘으면 단계 없이 OR (§21.14) | 기존 `hybrid_search` 와 같은 식 |
+| 의미 | `embedding <=> :v` (`embedding_model = :model`, `vector_dims = :dim`), 임베딩 모델 없으면 건너뜀 | 기존과 같이 `vector_dims` 일치 |
+| 그래프 | `concepts && :exact_and_expanded` — 순위 = 정확 일치 수 + 0.5 × 확장 일치 수 | Neo4j `graph_documents(개념 ∪ 확장)`로 연결된 문서의 청크를 (키워드 커버리지 → 의미 거리 → 순번) 순으로 |
+
+**결합**: `score(x) = Σ_채널 w_채널 / (rrf_k + 순위_채널(x))` (기본 w: 키워드 1.0 · 의미 1.0 · 그래프 0.8, rrf_k 60). 채널 결과가 비면 그 채널은 0 으로 두고 계속한다.
+
+**게이팅**: 문서 후보는 기존 `graph.evidence.rank_evidence`(권한 · 부문 · 시점 · 문서유형 · 의미 · 개념경로, 범주 균형)를 그대로 쓴다(그래프 채널로 들어온 문서는 개념 경로 통과로 간주). 분석 후보는 다음 중 하나를 통과해야 한다. ⓐ 키워드 맞춤 낱말 수 ≥ `max(min_keyword_coverage, ceil(min_term_ratio × 질의어 수))` (기본 비율 0.34 — '증가율' 처럼 흔한 낱말 하나만 겹치는 엉뚱한 결과를 거른다) ⓑ 코사인 거리 ≤ `max_cosine_distance` ⓒ 질문 개념과 **정확히** 일치하는 개념 태그 ≥ 1 ⓓ 확장 개념 일치가 있고 키워드 낱말도 1개 이상 맞음. 확장 개념만으로 끌려온 후보는 통과하지 못한다. 못 통과한 후보는 `rejected` 에 사유(낱말 n/필요 수 · 거리 · 개념 점수)와 함께 남는다.
+
+**재순위**: `final = norm(score) + team_boost·[담당] + screen_boost·[현재 화면 컬렉션] + recency·f(as_of) + intent_boost·[의도 일치]`
+- `norm(score)` = 결합 점수 ÷ 후보 최댓값.
+- 의도: 질문에 `근거 정책 문서 규정 공문 지침` 가 있으면 문서 +, `현황 얼마 비중 추이 증가율 부도율 수치 결과 판정 의견` 이 있으면 분석 결과 +.
+- 컬렉션 `boost` 도 더한다.
+- 출처당 상한 `per_source_max`(2): 같은 `source_key`(또는 같은 문서)에서 상한을 넘으면 다음 후보로 넘어간다.
+- 선택적 LLM 재순위(`knowledge.search.rerank_llm`, 기본 false): 상위 12건의 번호 목록을 JSON 으로 받아 순서를 바꾼다. 형식 오류 · 실패 · 예산 초과는 무시.
+
+**결과**: 분석 `analysis_k`(4)건 + 문서 `doc_k`(4)건을 합쳐 점수 순으로 돌려준다. 응답 항목: `kind` · `collection` · `collectionLabel` · `owned` · `title` · `text` · `sectionPath` · `page` · `origin` · `docClass` · `sourceKey` · `href` · `asOf` · `severity` · `score` · `signals`(채널별 순위 · 점수). 진단: 채널별 후보 수 · 소요(ms) · 사용 여부(`semantic` · `graph` · 사유) · 확장 개념 · 다시 쓴 질문 · 거부 목록.
+
+### 21.7 질문하기 API (`api/assist.py`)
+
+`POST /assist` 요청: `{question, screen?, history?: [{q, a}]}` (history 최대 3개, 각 q ≤ 300자 · a ≤ 400자). 응답은 기존 필드(`mode` `answer` `concepts` `metrics` `evidence` `verification` `toolResults` `missingCategories` `graphFilter`…)를 **유지**하고 다음을 더한다.
+
+| 필드 | 내용 |
+|---|---|
+| `analysis[]` | 분석 결과 출처(컬렉션 · 제목 · 본문 · 이동 주소 · 담당 여부) |
+| `sources[]` | 분석 + 문서 + 용어를 한 목록으로(번호 순, 화면의 출처 카드) |
+| `collections[]` | 이번 답변에 쓰인 컬렉션 `{code, label, kind, owned, count}` |
+| `scope` | 내가 질문할 수 있는 컬렉션 `[{code, label, kind, owned, partial}]` (권한 밖은 없음) |
+| `retrieval` | `{channels:{keyword,vector,graph}, semantic, graph, expanded[], intent, rewritten, rewriteBy('rule'\|'llm'), timingsMs}` — 채널 항목은 `{on, candidates, reason?}`(그래프는 `docGraph` 포함) |
+
+LLM 프롬프트: `확정 수치` · `분석 결과(컬렉션 이름 표시)` · `근거 문서` 세 블록 + `이전 대화(구분자 안)`. 규칙에 `[분석:제목]` 인용을 더한다. 숫자 검증 풀에 분석 결과 · 이전 답변이 아니라 **이번 근거 텍스트**만 넣는다(이전 답변의 숫자는 풀에 넣지 않는다 — 환각이 재인용으로 통과하는 것을 막는다). 결정론 폴백은 분석 결과 · 문서 요약을 줄로 정리한다.
+
+`GET /assist/scope?screen=<경로>` → `{collections:[{code, label, kind, owned, partial}]}` — 패널을 열 때 보여 주는 '내가 질문할 수 있는 범위'(ASK-05). 응답에 없는 컬렉션은 그 사용자에게 없는 것으로 취급한다.
+
+`POST /assist/feedback` `{question, helpful, mode?, sourceCount?}` → 감사 `assist.feedback`. 두 경로 모두 `assist` 리소스 권한을 쓴다.
+
+### 21.8 관리자 API (`api/admin_knowledge.py`, 관리자 전용)
+
+| 경로 | 내용 |
+|---|---|
+| `GET /admin/knowledge/status` | 컬렉션별 청크 · 문서 수, 임베딩 대기 · 완료율, 미분류 수, 마지막 색인 시각, 임베딩 모델 · 그래프 상태 |
+| `GET /admin/knowledge/collections` | 컬렉션 정의(담당 · 공유 팀 이름 포함) |
+| `PUT /admin/knowledge/collections/{code}` | 담당 · 공유 팀, 화면 리소스, 공개 범위, 가산점, 사용 여부 수정 (조직 코드 검증 · 감사) |
+| `POST /admin/knowledge/reindex` | 전체 재색인(대조 + 임베딩 대기 전체) |
+| `POST /admin/knowledge/search` | `{query, asEmpNo?, screen?}` 검색 진단 — 지정 사용자 관점으로 같은 검색을 돌려 채널별 후보 · 거부 사유 · 소요를 돌려준다(읽기 전용 · 감사) |
+
+관리자 화면은 `/admin/knowledge`(화면 코드 `ADMIN_KNOWLEDGE`, 메뉴 [데이터와 지식 › 질문하기 색인])이며 위 API 만 사용한다. 탭은 ⓐ 색인 상태(조각 · 임베딩 준비율 · 뒤처진 산출물 · 미분류 · 컬렉션별 현황) ⓑ 컬렉션(담당/공유 팀 코드 · 공개 범위 · 화면 권한 · 가산점 · 사용 여부 저장, 포함 규칙 JSON) ⓒ 검색 진단(질문 + 사용자 사번 + 화면 → 범위 · 채널별 후보/소요 · 분석/문서 후보 · 걸러진 사유).
+
+운영 점검(`nhdip.cli preflight` · `GET /admin/readiness`)에는 `knowledge_index` 항목이 더해진다 — 색인이 비었거나 뒤처진 산출물 · 미분류 청크가 있으면 경고(수치 · 화면은 정상이므로 위험(fail)로 올리지 않음). CLI `nhdip.cli kb-hnsw --dim N` 은 임베딩 모델 확정 후 부분 HNSW 인덱스를 만들고 `knowledge.search.hnsw_dim` 을 반영한다(검색 SQL 은 인덱스 식 · 조건과 같은 리터럴을 써야 인덱스를 탄다).
+
+### 21.9 그래프 투영 보강 (`graph/projection.py`)
+
+`kb_chunk` 의 `(source_key, concept)` 쌍마다 `Artifact{key}` 노드와 `(Artifact)-[:MENTIONS]->(개념)` 관계를 더한다(개념 라벨은 활성 스키마 별칭 사전에서). 스키마의 `MENTIONS` 정의는 **바꾸지 않는다**(투영 코드가 관계 종류만 확인하고 양 끝 라벨은 검사하지 않으므로 새 스키마 버전이 필요 없다). 기존 `graph_documents` 쿼리는 문서만 대상이므로 영향이 없고, 질문하기의 그래프 채널은 PostgreSQL 태그를 쓰므로 투영 지연과 무관하다. 투영은 '개념 지도 · 영향 범위 질의'용이다.
+
+### 21.10 설정 (시드, 관리자 [시스템 설정]에서 편집)
+
+| 키 | 기본값 요지 |
+|---|---|
+| `knowledge.search` | `weights{keyword:1.0, vector:1.0, graph:0.8}` · `rrf_k:60` · `candidates_per_channel:40` · `analysis_k:4` · `doc_k:4` · `per_source_max:2` · `team_boost:0.15` · `screen_boost:0.08` · `recency_boost:0.05` · `intent_boost:0.1` · `min_keyword_coverage:1` · `min_term_ratio:0.34` · `keyword_candidates:3000` · `max_cosine_distance:0.65` · `graph_expand_max:24` · `expand_weight:0.5` · `rerank_llm:false` · `hnsw_dim:null` |
+| `knowledge.index` | `chunk_chars:900` · `overlap:80` · `table_rows:12` · `embed_batch:32` · `embed_max_per_run:160` · `exclude_keys[]` · `skip_keys[]` |
+| `knowledge.artifact_resources` · `knowledge.persona_resources` · `knowledge.artifact_routes` | 산출물 → 화면 리소스 · 페르소나 → 리소스 · 산출물 → 화면 주소 |
+| `assist.rewrite` | `{enabled:true, llm:true, max_history:3}` |
+
+### 21.11 오류 · 축소 동작
+
+| 상황 | 동작 |
+|---|---|
+| 임베딩 모델 미설정 · 호출 실패 | 의미 채널 건너뜀, 응답 `retrieval.semantic=false` + 사유. 청크는 NULL 임베딩으로 두고 다음 주기에 재시도 |
+| Neo4j 장애 | 문서 그래프 채널 건너뜀, 개념 확장은 PostgreSQL 간선으로, 분석 그래프 채널은 정상 |
+| LLM 없음 · 예산 초과 | 후속 질문은 규칙 재작성, 재순위 생략, 답변은 결정론 정리 |
+| 색인 실패(게시 중) | 게시는 성공, 청크는 대조 주기에 복구, 오류는 로그 + 관리자 상태의 `stale` 건수 |
+| 컬렉션 설정 오류(없는 조직 코드) | 저장 시 422, 저장된 값이 깨진 경우 해당 조직은 무시하고 경고 로그 |
+| 후보 0건 | 접근 가능한 범위에서 못 찾았다고 안내(권한 밖 존재는 언급하지 않음) |
+
+### 21.12 테스트 전략
+
+- 단위: 선형화(마커 해석 · 단위 · 시계열 · 표 · 보고서 블록 · 결정성) · 청크 분할 · 질의 이해(조사 · 후속 질문) · RRF/재순위 순수 함수(가중치 · 출처당 상한 · 팀 가중) · 접근 범위 계산(담당 · 공유 · 공개 · 리소스 · 지점 · 관리자).
+- 통합(DB): 시드 → 색인 → 팀별 격리(종합기획부 / 신용리스크 / 영업점 직원 / 지역본부 / 관리자) · 문서 컬렉션 제한 · `dept_only` · 지점 범위 · 멱등 · 세대 교체 시 변경분만 재임베딩 · 직접 게시 후 대조 복구 · 임베딩 가짜 모델(결정적 벡터)로 의미 채널 · 그래프 확장(PostgreSQL 간선) · Neo4j 꺼짐 축소 동작 · 질문하기 응답 계약(기존 필드 유지 + 신규 필드) · LLM 프롬프트에 분석 결과 포함과 `[분석:…]` · 숫자 검증 · 후속 질문 재작성 · 인젝션 이력.
+- 회귀: 기존 질문하기/증거 검색 시험 유지.
+- 평가: 골든셋에 팀별 기대 컬렉션 사례 추가(`/admin/evals`).
+
+### 21.13 대표 시퀀스 — 신용리스크 vs 종합기획부
+
+```
+신용리스크 담당자 "포용금융 충당금 비중 어때?"
+  AccessScope: full={analysis.risk, doc.gov_policy, doc.mgmt_decision, doc.model_method, doc.reference, glossary}, gated={analysis.hq…}
+  키워드 · 의미 · 그래프(포용금융 + 햇살론 · 새희망홀씨 · 사잇돌) → analysis.risk 의 inclusive 인사이트 · 보고서 섹션 + 정부정책 문서
+  답변: 확정 수치 9.16% … [지표:share_now] [분석:포용금융 확대에 따른 신용리스크 …] [문서:…]
+
+종합기획부 담당자 같은 질문
+  AccessScope: analysis.risk 는 담당/공유 아님, 리소스(risk_dashboard · reports …) 없음 → 후보에 없음
+  → analysis.hq 의 'attentions · requests' 중 포용금융 관련 항목(신용리스크의 확인 요청) + 정책 문서
+```
+
+### 21.14 대규모 · 실연동 검증 결과 (2026-10-13)
+
+시험(pytest)은 작은 시드 데이터와 Neo4j 없는 환경이라 RAG-07(대용량 속도)과 실제 그래프 연동은 따로 확인했다. 아래는 그때의 조건과 결과다. 측정 스크립트는 일회용이라 저장소에 두지 않았고, 같은 방법으로 다시 잴 수 있게 조건을 적는다.
+
+**A. 합성 부하 — 청크 10만 건 (RAG-07)**
+
+- 조건: 개발 PC 한 대(PostgreSQL 18 + pgvector, 기본 설정 `shared_buffers` 128MB), 분석 결과 청크 100,000건(표 + 인덱스 957MB) · 본문 60어절 · 1024차원 임베딩 · 컬렉션 3종(30/40/30%) · 영업점 청크는 지점 121곳에 분산. 도메인 낱말 30개가 각각 청크의 25~30%에 나오게 만든 **보수적(최악에 가까운) 분포**다. 질문 5개 × 사용자 관점 4개(신용리스크 · 종합기획부 · 영업점 · 관리자) × 12회, 질의 벡터는 가짜(임베딩 모델 호출 시간 제외 — LLM 호출 제외 목표와 같음), Neo4j 는 실제 5.26 에 연결.
+- 결과 (질문 한 번의 `retrieve()` 전체, 20개 조합의 p95):
+
+| 구성 | p95 중앙값 | p95 최악 | 비고 |
+|---|---|---|---|
+| ① 최초 구현 — 순차 탐색 + 전체 OR 키워드 | 약 0.95초 | 약 1.5초 | 키워드 채널 최대 1.6초, 의미 채널(순차 탐색) 0.03~0.66초 |
+| ② 키워드 단계적 완화 + 어절 단위 점수 (의미는 순차 탐색) | 약 0.54초 | 약 0.88초 | 키워드 채널 최대 0.65초 |
+| ③ ② + 후보 상한 · UNION 조합 + 부분 HNSW 인덱스 (`kb-hnsw`) | **0.14초** | **0.45초** | 키워드 채널 최대 0.33초, 의미 채널 14~43ms — 목표 700ms 안 |
+
+  ①②의 "최악"은 Neo4j 연결 시도 지연(약 2초)과 측정 중 다른 작업의 간섭으로 튄 값을 뺀 것이다. ①②는 의미 채널이 순차 탐색인 상태이고, ③ 이 권장 운영 구성이다. 가장 느린 경우는 흔한 낱말 세 개가 모두 걸리는 여섯 어절 질문("소기업 6B 등급 부도율은 예측 대비 어떤가요?", 키워드 채널 약 0.32초)이고, 희귀 낱말 질문은 25~50ms 였다.
+- 개선 내용과 이유
+  - 키워드 채널: 낱말을 전부 OR 로 묶어 수만 행의 순위를 매기던 것을, 어절 단위로 세고(`증가율과` · `증가율` 중복 제거) 많이 맞춘 후보부터 단계적으로 찾는다(전부 → 하나씩 빼기 → 최소 `min_term_ratio` 비율). 단계마다 AND 조합을 `UNION` 으로 각각 인덱스에 태운다 — 한 쿼리에 `(a&b)|(a&c)…` 로 묶으면 GIN 이 흔한 낱말의 색인 목록 전체를 합쳐 검사해 느렸다. 점수를 매길 후보는 `keyword_candidates`(기본 3000)로 상한을 둔다. 최소 비율 아래 후보는 어차피 분석 후보 게이팅에서 걸러지므로 찾지 않는다.
+  - HNSW: 열 차원을 고정하지 않아 모델이 정해진 뒤에 `kb-hnsw --dim N` 으로 만든다. **만들 때 `maintenance_work_mem` 기본값(64MB)이면 그래프가 메모리에 못 들어가 10분이 넘도록 끝나지 않아 중단했다.** `ensure_hnsw` 가 그 트랜잭션에만 1GB · 병렬 4로 올리면 10만 건 × 1024차원이 **48초**에 끝났다.
+  - 운영 점검: 임베딩 2만 건 이상인데 HNSW 가 없으면 `knowledge_index` 항목이 경고한다(순차 탐색은 10만 건에서 0.35~0.6초 이상).
+  - 진단: 개념 확장 소요를 `timingsMs.expand` 로 따로 기록한다(Neo4j 가 막혔을 때 기다리는 곳).
+- 한계: 합성 데이터의 낱말 분포와 실제 분석 결과 문장의 분포는 다르다. 실제 청크로 다시 재면 키워드 채널은 더 빠를 가능성이 높지만 확인한 것은 아니다. 실제 임베딩 모델의 호출 시간(수십~수백 ms)은 별도로 더해진다.
+
+**B. 실제 Neo4j 5.26 (community, 로컬) 연동**
+
+- 투영(`wf_graph_projection`): 노드 407 · 관계 936. `Artifact` 노드 26개에서 개념으로 가는 `MENTIONS` 138개(산출물 26종 → 개념 20종), 문서 → 개념 `MENTIONS` 29개. 두 번 투영해도 관계 수가 같아(멱등) 재투영이 안전하다. 스키마의 `MENTIONS` 정의를 바꾸지 않아도 투영이 통과함을 확인(§21.9).
+- 검색: 문서 그래프 채널이 켜져(`docGraph=true`) 문서 후보를 개념 관계로 더하고, 팀별 격리는 그대로였다(종합기획부 관점의 후보에 신용리스크 컬렉션이 `analysis_tabs` 화면 권한 범위 밖으로 나오지 않음). 개념 확장의 Neo4j 이웃 질의가 실제로 동작함을 확인(포용금융 ↔ 햇살론 · 사잇돌 · 새희망홀씨대출, 소기업 ↔ 기업여신 · CORP_MICRO). 데이터셋 매핑 간선(PostgreSQL)과 같은 이웃이라 출처 표시는 `ontology` 로 나온다.
+- 보강: Neo4j 연결이 막혀 있을 때 질문이 기다리는 시간을 줄이려고 차단기를 **지수 대기**(30초 → 60 → 120 → … 최대 5분, 한 번 성공하면 처음부터)로 바꿨다. 연결 거부가 즉시 오지 않는 환경(개발 PC 에서 약 2초)에서 확인한 지연이다.
+- 확인하지 않은 것: Neo4j 클러스터 · 인증서 · 대용량 그래프(노드 수십만 이상)의 투영 시간.

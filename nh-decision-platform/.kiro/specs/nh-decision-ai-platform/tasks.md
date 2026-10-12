@@ -343,6 +343,28 @@
 - [x] C.10 검증 · 문서 — E2E(자료 요청 → 승인, 분석 만들기 → 승인 → 탭), 접근성 행 추가, README · 남은작업 · 작업정리
 - [x] C.11 후속 · 사용자 결정 (2026-10-12 · Q107~Q109) — 부서 데이터 책임자 승인(마이그레이션 0013 · `/db/uploads/review` · [승인할 자료]), 분석 에이전트 관리자 승인 기준(주기 · 자료 변경 · LLM 의견), 새 분석 = 기존 부서 분석 화면의 탭(종합기획부 [데이터 분석] · 별도 메뉴 정리), 실 LLM 시험(`analysis-agents-llm.mjs` · 프록시 대기 180초 · 정제 출력 상한), 시험 4건 · E2E · 문서
 
+---
+
+## Phase D. 질문하기 고도화 — 통합 지식 색인 · 팀별 컬렉션 · 하이브리드 검색 (2026-10-12 착수 · 요구사항 §21 · 설계 §21 · Q110~Q117)
+
+> 사용자 요청(2026-10-12): 분석 결과도 질문하기에서 답할 수 있게 색인하고, 데이터를 담당 · 관련 팀별 컬렉션으로 나눠 팀마다 다르게 가져오며, 의미 · 키워드 · 그래프를 함께 쓰는 하이브리드 검색으로 고도화. 세부는 "프로덕션 수준 추천안" 으로 위임. 단계마다 시험 · 문서 갱신.
+
+- [x] D.1 모델 · 마이그레이션 0014 (KB-01 · KB-04 · NFR-KB-05) — `cfg.kb_collection` · `app.kb_chunk`(tsvector 생성 열 · GIN · 해시 유일 인덱스), 모델 `models/kb.py`, `.importlinter` 에 `nhdip.knowledge` 추가
+- [x] D.2 컬렉션 정의 · 접근 범위 (KB-04 · KB-05 · KB-08 · ACL-01 · ACL-02 · ACL-05) — 시드 `seed/defs_knowledge.py`(컬렉션 12개 · 설정 6종), `knowledge/access.py`(배정 규칙 · `AccessContext` · `resolve_scope` · SQL 사전 필터 — 표준 `collections` 를 가리지 않도록 `access` 로 명명)
+- [x] D.3 산출물 선형화 · 청크 분할 (KB-02 · KB-10) — `knowledge/render.py`(마커 해석 · 수치 문장 · 시계열 · 보고서 블록 · 개인정보 가림 · 결정적 분할)
+- [x] D.4 색인기 (KB-01 · KB-03 · KB-05 · KB-06 · KB-07) — `knowledge/indexer.py`(세대 동기화 · 멱등 upsert · 개념 태깅 · 지점 범위 · 화면 리소스 · 이동 주소), `publish` 노드에서 같은 트랜잭션 색인(savepoint), 시드 끝에서 전체 색인
+- [x] D.5 유지보수 (KB-09 · NFR-KB-01) — `knowledge/maintenance.py`(대조 · 임베딩 대기 채우기 · 모델 변경 재임베딩 · `kb.indexed` 이벤트), 워커 `housekeeping` 60초 주기, 그래프 투영에 산출물 → 개념 `MENTIONS` 관계(스키마 정의는 변경 없음 — 투영이 관계 종류만 확인)
+- [x] D.6 질의 이해 (RAG-03) — `knowledge/query.py`(조사 · 개념 · 개념 확장(PostgreSQL 간선 + Neo4j) · 후속 질문 재작성(규칙 + 선택 LLM))
+- [x] D.7 하이브리드 검색 (RAG-01 · RAG-02 · RAG-04 · RAG-05 · RAG-06) — `knowledge/search.py`(3채널 · 가중 RRF · 게이팅 · 재순위 · 출처당 상한 · 선택 LLM 재순위 · 진단)
+- [x] D.8 질문하기 API 개편 (ASK-01 · ASK-02 · ASK-03 · ASK-07 · ACL-04) — `api/assist.py`(AccessContext 생성 · 검색 호출 · 프롬프트 · 검증 · 신규 응답 필드 · 이력 · 피드백 · 감사)
+- [x] D.9 관리자 API (NFR-KB-03 · NFR-KB-04) — `api/admin_knowledge.py`(상태 · 컬렉션 조회/수정 · 재색인 · 검색 진단), `nhdip.cli kb-hnsw --dim N`(부분 HNSW 인덱스 + `knowledge.search.hnsw_dim` 반영), 운영 점검 항목 `knowledge_index`(`nhdip.preflight`), 관리자 화면 `/admin/knowledge`(메뉴 [데이터와 지식 › 질문하기 색인], 탭: 색인 상태 · 컬렉션 편집(담당/공유 팀 · 공개 범위 · 화면 권한 · 가산점 · 사용 · 포함 규칙) · 사용자 관점 검색 진단, 전체 재색인 버튼)
+- [x] D.10 프론트 질문하기 (ASK-04 · ASK-05 · ASK-06) — `components/assist/AssistPanel.tsx`: 출처 카드(분석 · 문서 · 용어 · 컬렉션 · 담당 표시 · 화면 열기) · 검색 상태(의미 · 그래프 사용 여부 · 다시 쓴 질문) · 내 범위(`GET /assist/scope`) · 최근 3턴 이력 전송 · 피드백. 화면 낭독기 · 키보드 실사용 점검은 수동 확인 필요
+- [x] D.11 시험 · 평가 (NFR-KB-02) — 단위 · 통합(팀 경계 · 지점 · 문서 · 멱등 · 대조 · 축소 동작 · 계약), 골든셋 `knowledge` 범주(팀별 기대 · 금지 컬렉션 4건, `/admin/evals` 에 표시), 기존 시험 회귀(`tests/test_knowledge.py` 27건 + 기존 시험 갱신 3건: 프롬프트 구분자 수 · 평가 범주 집합 · 운영 점검 항목)
+- [x] D.12 검증 · 문서 — 전체 pytest 209건 중 208 통과(실패 1건 `test_filecheck::test_antivirus_hook` 은 Windows 에 `false` 명령이 없어서 나는 기존 환경 문제, 이번 변경과 무관) · import-linter 4/4 · tsc · eslint · vitest 25건 · `next build` 통과.
+  - **실제로 확인하지 못한 것**: 실 임베딩 모델 · 실 LLM 응답(시험은 가짜 임베딩 · 가짜 LLM), 브라우저 화면 낭독기 · 키보드 전용 실사용, 실제 분석 결과 문장 분포에서의 속도(합성 데이터로만 측정), 대용량 Neo4j 그래프의 투영 시간.
+  - **후속**: 임베딩 모델 확정 후 `kb-hnsw --dim N` 실행(Q119), 미결 Q118(부서 간 공유 범위) · Q120(대화 이력 서버 보관), 실데이터 전환 후 골든셋 `knowledge` 사례 보강
+- [x] D.13 대규모 · 실연동 검증과 보강 (2026-10-13) — 합성 10만 청크 부하 측정(p95 중앙값 0.95초 → 0.14초, 최대 1.5초 → 0.45초): 키워드 단계적 완화 · 후보 상한 · 부분 HNSW 생성 메모리 상향(48초) · 운영 점검 경고, 실 Neo4j 5.26 으로 투영(멱등) · 문서 그래프 채널 · 개념 확장 확인, Neo4j 차단기 지수 대기, 개념 확장 소요 진단 기록, 브라우저 실사용 점검(질문하기 패널 · `/admin/knowledge` · axe 위반 0). 결과와 조건은 설계 §21.14
+
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
 
 > Phase 0~8 항목은 착수 시점 설계(§1.4 · Redis · MinIO · Milvus · LangGraph)를 기준으로 쓰였고, 설계 §19 가 이를 대체했다. 아래는 Phase B 로 **대체 구현된 범위**다. 원 항목의 체크박스는 원 DoD(원 기술 선택 포함)를 모두 충족할 때만 체크하므로, 대체 완료 항목의 상태는 이 표로 본다.
