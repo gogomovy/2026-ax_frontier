@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from nhdip.api import admin_core, admin_data, admin_home, analysis, assist, auth, cascade, documents, oidc, reports, screens, state
+from nhdip.api import admin_core, admin_data, admin_home, analysis, assist, auth, cascade, db_uploads, documents, oidc, reports, screens, state
 from nhdip import obs
 from nhdip.config import check_runtime, docs_enabled, get_settings
 from nhdip.db import SessionLocal, engine
@@ -42,6 +42,8 @@ app.include_router(assist.router)
 app.include_router(admin_core.router)
 app.include_router(admin_data.router)
 app.include_router(admin_home.router)
+app.include_router(db_uploads.router)
+app.include_router(db_uploads.admin_router)
 
 
 _slow_cache: dict[str, float] = {"value": 1000.0, "at": 0.0}

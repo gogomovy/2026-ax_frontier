@@ -70,12 +70,15 @@ SCREENS = [
     dict(code="BRANCH_ANALYSIS", path="/branch/analysis", label="분석 결과", section="영업점", kind="flow", step=2, count_key="branchAnalyses", match="/branch/analysis", sort=31, resources=["branch_dashboard", "branch_tabs", "branch_reports"]),
     dict(code="BRANCH_TARGETS", path="/branch/targets", label="본부 전파 목표·가이드", section="영업점", kind="reference", sort=32, resources=["branch_targets", "action_plans", "plan_state", "cascade", "goals"]),
     dict(code="KNOWLEDGE", path="/knowledge", label="데이터베이스", section="공통", kind="reference", sort=80, resources=["documents", "datasets", "terms", "search"]),
+    # 업무 자료 올리기 (Phase C · UPL · Q99) — 화면을 받은 조직만 [데이터베이스]에서 자료를 올려 승인 요청
+    dict(code="KNOWLEDGE_UPLOAD", path="/knowledge/upload", label="자료 올리기", section="공통", kind="reference", sort=81, resources=["db_upload"]),
     # 관리자 — 묶음 6개 (Phase C · ADM-01 · Q104). 화면 코드 · 경로는 그대로, 묶음(section) · 이름 · 정렬만
     dict(code="ADMIN_HOME", path="/admin", label="관리자 홈", section="관리자 홈", kind="admin", sort=100, admin_only=True, match="=/admin"),
     dict(code="ADMIN_USERS", path="/admin/users", label="사용자", section="사용자와 권한", kind="admin", sort=110, admin_only=True),
     dict(code="ADMIN_ORGS", path="/admin/orgs", label="조직", section="사용자와 권한", kind="admin", sort=111, admin_only=True),
     dict(code="ADMIN_SCREENS", path="/admin/screens", label="화면 권한", section="사용자와 권한", kind="admin", sort=112, admin_only=True),
     dict(code="ADMIN_AUDIT", path="/admin/audit", label="감사 로그", section="사용자와 권한", kind="admin", sort=113, admin_only=True),
+    dict(code="ADMIN_UPLOADS", path="/admin/uploads", label="자료 승인", section="데이터와 지식", kind="admin", sort=120, admin_only=True),
     dict(code="ADMIN_DATASETS", path="/admin/datasets", label="데이터셋·문서", section="데이터와 지식", kind="admin", sort=121, admin_only=True),
     dict(code="ADMIN_CONTRACTS", path="/admin/contracts", label="컬럼 정의서", section="데이터와 지식", kind="admin", sort=122, admin_only=True),
     dict(code="ADMIN_ONTOLOGY", path="/admin/ontology", label="온톨로지", section="데이터와 지식", kind="admin", sort=123, admin_only=True),
@@ -98,8 +101,8 @@ SCREENS = [
 
 # 조직 → 화면 (하위 조직은 상속)
 GRANTS = {
-    "D100": ["HQ_OVERVIEW", "HQ_ANALYSIS", "HQ_GOALS", "HQ_INITIATIVES", "HQ_CAPITAL", "DOMAINS", "KNOWLEDGE"],
-    "D200": ["RISK_HOME", "RISK_ANALYSIS", "RISK_GUIDES", "KNOWLEDGE"],
+    "D100": ["HQ_OVERVIEW", "HQ_ANALYSIS", "HQ_GOALS", "HQ_INITIATIVES", "HQ_CAPITAL", "DOMAINS", "KNOWLEDGE", "KNOWLEDGE_UPLOAD"],
+    "D200": ["RISK_HOME", "RISK_ANALYSIS", "RISK_GUIDES", "KNOWLEDGE", "KNOWLEDGE_UPLOAD"],
     "D300": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
     "D400": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
     "D500": ["BRANCH_HOME", "BRANCH_ANALYSIS", "BRANCH_TARGETS", "KNOWLEDGE"],
@@ -167,6 +170,7 @@ SETTINGS = {
     "report.pdf_fonts": ({"regular": "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "bold": "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"}, "PDF 한글 글꼴 경로 (없으면 내장 CID 글꼴 HYGothic-Medium)"),
     "obs.slow_request_ms": (1000, "느린 조회 기준(ms) — 이보다 오래 걸린 GET 요청도 추적 기록(ops.request_log)에 남김. 변경 요청 · 오류는 항상 기록"),
     "upload.policy": ({"max_mb": 50, "zip_max_uncompressed_mb": 300, "zip_max_ratio": 150, "zip_max_entries": 5000, "block_pdf_active": True, "av_timeout_sec": 60}, "업로드 보안 정책 — 크기 · 압축 폭탄 한도 · PDF 스크립트 차단 · 백신 시간 제한(백신 명령은 배포 환경변수 UPLOAD_AV_COMMAND)"),
+    "upload.user_targets": ({"datasets": "*", "doc_classes": "*"}, "업무 화면 [자료 올리기]에서 올릴 수 있는 대상 — datasets · doc_classes 에 \"*\"(전체) 또는 코드 목록. 올린 자료는 관리자 [자료 승인] 후 반영 (Phase C · UPL)"),
     "obs.request_log_days": (30, "요청 추적 기록(ops.request_log) 보관 일수 — 지난 기록은 워커가 하루 1회 정리"),
     "analysis.min_interval_sec": (60, "업무 화면 온디맨드 분석 — 같은 분석을 다시 요청할 수 있는 최소 간격(초). 간격 안의 요청은 진행 중인 실행을 함께 본다"),
     "risk.segment_labels": ({}, "부도율 추이 구분코드 → 화면 표시명 (예: {\"pool_1\": \"신용대출 일반\"}). 비우면 데이터의 구분명(segment_label)을 쓴다 — 개인 풀 확정 시 여기만 바꾼다(F.18)"),

@@ -361,6 +361,19 @@ def preview_file(ds: Dataset, filename: str, content: bytes) -> dict[str, Any]:
     return {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "quality": quality_check(ds, rows, errors), "source": source}
 
 
+def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10) -> dict[str, Any]:
+    """업무 사용자 자료 요청의 사전 검사(Phase C · UPL-01) — 확정과 같은 품질 검사(직전 현재 버전 대비 · 개인정보 정책), 저장 없음."""
+    from nhdip.privacy import policy as privacy_policy
+
+    raw, source = _read_any(content, filename, ds)
+    rows, errors = map_rows(ds, raw)
+    _, prev = current_rows(session, ds)
+    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session))
+    if source:
+        quality["source"] = source
+    return {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in ds.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality}
+
+
 def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
     """같은 기준일 구획 안에서 지정 버전을 현재 버전으로 되돌린다(이후 버전은 rolled_back 표시)."""
     from nhdip.locks import lock

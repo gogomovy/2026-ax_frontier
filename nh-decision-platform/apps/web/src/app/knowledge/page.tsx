@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UploadCta } from "@/components/knowledge/UploadCta";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge, DataTable, IconChevron, SectionHead, Td } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
@@ -39,6 +40,7 @@ export default async function KnowledgePage() {
         eyebrow="참고"
         title="데이터베이스"
         description="Agent 판단의 근거가 되는 문서와 정형 데이터입니다. 문서는 원본과 메타데이터를 함께 보관하며 관련성 판단을 통해 선별 사용됩니다."
+        actions={<UploadCta />}
       />
 
       <div className="shell flex flex-col gap-xxl">
@@ -110,7 +112,7 @@ export default async function KnowledgePage() {
         </section>
 
         <p className="text-[11.5px] leading-relaxed text-stone">
-          업로드 · 메타데이터 등록은 MVP 에서 폼과 스키마만 정의되어 있습니다. 백엔드 연동 시 PDF·HWP 파싱, 표 추출, 임베딩 색인, 온톨로지 연결이 이어집니다.
+          새 자료는 [자료 올리기]에서 올리면 보안 · 형식 · 품질 검사 후 관리자 승인을 거쳐 반영됩니다. 문서는 본문 추출 · 임베딩 색인 · 온톨로지 연결이 이어서 실행됩니다.
         </p>
       </div>
     </>

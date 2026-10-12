@@ -827,6 +827,29 @@ def admin_ia_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["admin_ia_upgrade"] = moved
 
 
+def _merge_screen_resources(s: Session, codes: set[str]) -> list[str]:
+    """새 화면의 리소스를 설정 screen.resources 에 더한다 — 그 화면 키가 없을 때만(관리자 편집 보존)."""
+    res = s.get(Setting, "screen.resources")
+    if res is None:
+        return []
+    cur = dict(res.value or {})
+    added = []
+    for sc in C.SCREENS:
+        if sc["code"] in codes and sc.get("resources") and sc["code"] not in cur:
+            cur[sc["code"]] = list(sc["resources"])
+            added.append(sc["code"])
+    res.value = cur
+    return added
+
+
+def upload_request_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """업무 자료 올리기(Phase C · UPL) — 1회. 새 화면(자료 올리기)의 리소스 db_upload 를 화면 리소스 설정에 더한다.
+    화면 · 기본 권한(종합기획부 · 신용리스크관리부)은 seed_iam 이 없을 때 추가. 되돌리기: 관리자 [화면 권한]에서 회수."""
+    if _applied(s, "upload-request-v1"):
+        return
+    out["upload_request_upgrade"] = _merge_screen_resources(s, {"KNOWLEDGE_UPLOAD"})
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -852,6 +875,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     score_snapshot_upgrade(s, out)
     ontology_extraction_upgrade(s, out)
     admin_ia_upgrade(s, out)
+    upload_request_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

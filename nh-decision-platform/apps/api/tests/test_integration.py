@@ -1415,3 +1415,92 @@ def test_admin_home_and_monitor_overview(db):
         assert (home.section, home.label) == ("관리자 홈", "관리자 홈") and (rules.section, rules.label) == ("계산과 규칙", "규칙(사용자 지정)")
         rules.label = "판정 규칙"
         s.commit()
+
+
+def test_db_upload_request_and_approval(db):
+    """Phase C · UPL-01~03 — 업무 사용자 자료 요청(사전 품질 검사 · 대기, 반영 없음) → 관리자 승인(확정 · 이벤트 · 관련 워크플로) / 반려(사유 필수), 권한 · 감사."""
+    from nhdip.models import AuditLog, OutboxEvent, WorkflowRun
+
+    _drain(db)
+    admin = _client()
+    _login(admin, "00000001", "Admin1234!")
+
+    def user(emp, org):
+        c = _client()
+        c.post("/auth/signup", json={"emp_no": emp, "name": "자료", "password": "abcd1234", "org_code": org})
+        admin.post(f"/admin/users/{emp}/approve")
+        assert _login(c, emp, "abcd1234").status_code == 200
+        return c
+
+    u = user("20259080", "T211")  # 신용리스크관리부 — 자료 올리기 기본 권한
+    b = user("20259081", "BR401")  # 영업점 — 권한 없음
+    hrefs = lambda c: {i["href"] for s in c.get("/me/menu").json()["sections"] for i in s["flow"] + s["reference"]}  # noqa: E731
+    assert "/knowledge/upload" in hrefs(u) and "/knowledge/upload" not in hrefs(b)
+    assert b.get("/db/uploadable").status_code == 403 and b.get("/db/uploads/mine").status_code == 403
+    up = u.get("/db/uploadable").json()
+    assert any(d["code"] == "PROVISION_BY_PRODUCT" for d in up["datasets"]) and any(c["key"] == "gov_policy" for c in up["docClasses"])
+    assert "/admin/uploads" in hrefs(admin)
+
+    rows = admin.get("/admin/datasets").json()
+    prov = next(d for d in rows if d["code"] == "PROVISION_BY_PRODUCT")
+    cur = next(v for v in prov["versions"] if v["isCurrent"] and v["asOf"] == "2026-08-31")
+    data = admin.get(f"/admin/datasets/PROVISION_BY_PRODUCT/versions/{cur['id']}/rows").json()["rows"]
+    lines = ["ym,product_code,product_name,provision,is_total,src_ref"]
+    for r in data:
+        amt = r["provision"] + (10_000 if r["product_code"] == "2001107820007" else 0) - (10_000 if r["product_code"] == "OTHERS" else 0)
+        lines.append(f"{r['ym']},{r['product_code']},{r['product_name']},{amt},{'1' if r['is_total'] else '0'},{r.get('src_ref') or ''}")
+    fname = "(202608)7790_상품별_충당금.csv"
+    # 품질 실패(키 중복)는 요청 단계에서 거절 — 요청 · 데이터 모두 없음
+    bad = u.post("/db/uploads/dataset", data={"target": "PROVISION_BY_PRODUCT"}, files={"file": (fname, ("\n".join(lines + [lines[1]])).encode("utf-8"), "text/csv")})
+    assert bad.status_code == 422 and "품질" in bad.json()["detail"], bad.text
+    assert b.post("/db/uploads/dataset", data={"target": "PROVISION_BY_PRODUCT"}, files={"file": (fname, b"x", "text/csv")}).status_code == 403
+    with db() as s:
+        ev0 = s.execute(select(OutboxEvent.id).order_by(OutboxEvent.id.desc()).limit(1)).scalar() or 0
+    r = u.post("/db/uploads/dataset", data={"target": "PROVISION_BY_PRODUCT", "data_origin": "simulated", "note": "8월 정정본"}, files={"file": (fname, "\n".join(lines).encode("utf-8"), "text/csv")})
+    assert r.status_code == 201, r.text
+    req = r.json()
+    assert req["status"] == "pending" and req["preview"]["rows"] == len(data) and req["preview"]["quality"]["status"] in ("passed", "warning")
+    # 대기 중에는 현재 버전 · 이벤트 · 화면이 그대로
+    with db() as s:
+        assert not s.execute(select(OutboxEvent).where(OutboxEvent.id > ev0, OutboxEvent.type == "dataset.committed")).first()
+    assert admin.get("/screens/inclusive").json()["shareNow"]["value"] == 9.16
+    mine = u.get("/db/uploads/mine").json()
+    assert mine[0]["id"] == req["id"] and mine[0]["statusLabel"] == "승인 대기"
+    pend = admin.get("/admin/uploads", params={"status": "pending"}).json()
+    assert pend["counts"]["pending"] >= 1 and pend["items"][0]["requestedByName"] == "자료" and pend["items"][0]["preview"]["sample"]
+    assert next(t for t in admin.get("/admin/overview").json()["tasks"] if t["key"] == "uploads")["count"] >= 1
+    assert u.post(f"/admin/uploads/{req['id']}/approve", json={}).status_code == 403
+    # 승인 → 기존 확정 경로(현재 버전 · dataset.committed · 관련 워크플로만)
+    ok = admin.post(f"/admin/uploads/{req['id']}/approve", json={"note": "확인"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["status"] == "approved" and ok.json()["result"]["isCurrent"] and ok.json()["result"]["version"] > cur["version"]
+    assert admin.post(f"/admin/uploads/{req['id']}/approve", json={}).status_code == 409
+    with db() as s:
+        before = {w.id for w in s.execute(select(WorkflowRun)).scalars()}
+    _drain(db)
+    with db() as s:
+        ran = sorted({w.workflow_code for w in s.execute(select(WorkflowRun)).scalars() if w.id not in before})
+        acts = [a.action for a in s.execute(select(AuditLog).where(AuditLog.target_kind == "upload_request", AuditLog.target_id == str(req["id"])).order_by(AuditLog.id)).scalars()]
+    assert ran == ["wf_graph_projection", "wf_inclusive_risk"], ran
+    assert acts == ["db.upload.request", "db.upload.approve", "db.upload.applied"], acts
+    assert admin.get("/screens/inclusive").json()["shareNow"]["value"] == 9.45
+    mine = u.get("/db/uploads/mine").json()
+    assert mine[0]["status"] == "approved" and mine[0]["result"]["version"] == ok.json()["result"]["version"]
+    # 문서 요청 → 반려(사유 필수) → 문서 없음
+    d = u.post("/db/uploads/document", data={"doc_class": "gov_policy", "title": "업무 등록 시험 정책", "text": "서민금융 공급을 확대한다."})
+    assert d.status_code == 201, d.text
+    assert d.json()["preview"]["chars"] > 5 and d.json()["origin"] == "ext"
+    assert admin.post(f"/admin/uploads/{d.json()['id']}/reject", json={}).status_code == 422
+    rj = admin.post(f"/admin/uploads/{d.json()['id']}/reject", json={"note": "출처 확인 필요"})
+    assert rj.status_code == 200 and rj.json()["status"] == "rejected"
+    assert not any(x["title"] == "업무 등록 시험 정책" for x in admin.get("/admin/documents").json())
+    assert u.get("/db/uploads/mine").json()[0]["reviewNote"] == "출처 확인 필요"
+    # 문서 요청 → 승인 → 문서 등록
+    d2 = u.post("/db/uploads/document", data={"doc_class": "gov_policy", "title": "업무 등록 승인 정책", "issuer": "금융위원회", "text": "햇살론 공급 목표를 상향한다."}).json()
+    a2 = admin.post(f"/admin/uploads/{d2['id']}/approve", json={})
+    assert a2.status_code == 200 and a2.json()["result"]["docCode"].startswith("doc-")
+    assert any(x["title"] == "업무 등록 승인 정책" for x in admin.get("/admin/documents").json())
+    # 원상 복구 — 충당금 버전 되돌리기
+    assert admin.post(f"/admin/datasets/PROVISION_BY_PRODUCT/versions/{cur['id']}/rollback").status_code == 200
+    _drain(db)
+    assert admin.get("/screens/inclusive").json()["shareNow"]["value"] == 9.16
