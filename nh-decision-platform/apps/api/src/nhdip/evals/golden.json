@@ -394,6 +394,14 @@
   {
    "question": "PSI 안정성 지수는?",
    "expect_metric": "psi_micro"
+  },
+  {
+   "question": "6B 등급 실제부도율과 대표값의 차이는?",
+   "expect_metric": "breach_gap_6b"
+  },
+  {
+   "question": "기업과 가계 수익률 차이는 얼마인가요?",
+   "expect_metric": "ros_gap"
   }
  ]
 }

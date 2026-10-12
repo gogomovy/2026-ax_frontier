@@ -105,3 +105,32 @@ jobs:
           name: e2e-screenshots
           path: e2e-out
           if-no-files-found: ignore
+
+  # 업로드 기반 에이전트 시험(B.40 · B.45) — 수동 실행(workflow_dispatch) 때만. 약 7~10분이라 push CI 에는 넣지 않는다.
+  # LLM 키를 CI 에 두지 않으므로 LLM 없는 모드(규칙 판단 · 기존 문장 · 별칭 사전 추출 · 질의 정리)를 확인한다.
+  upload:
+    name: upload test (rule mode · manual)
+    if: github.event_name == 'workflow_dispatch'
+    needs: [api, web]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: .env (비밀값 자동 생성)
+        run: bash infra/scripts/ensure-env.sh
+      - name: images (기본 스택과 같은 nhdip/api · nhdip/web)
+        run: docker compose build
+      - name: upload test (별도 스택 nhdipe2e)
+        run: make upload-test
+        env:
+          E2E_EXPECT_LLM: "0"
+          E2E_OUT: ${{ github.workspace }}/upload-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: upload-test
+          path: upload-out
+          if-no-files-found: ignore

@@ -81,3 +81,139 @@ def test_prospect_select_excludes_existing_borrowers():
     r1 = execute("PROSPECT_SELECT", {**args, "existing": ["신동에너지 (주)", "다른기업"]})
     assert r0.value == 2 and r1.value == 1 and r1.extra["excluded"]["existing"] == 1
     assert [x["corp_nm"] for x in r1.extra["selected"]] == ["광교바이오팜(주)"]
+
+
+# ── B.42 온톨로지 추출 '부분 추출' 보완 ─────────────────────────────
+
+def _seed_schema():
+    from nhdip.seed import defs_core as C
+
+    return SimpleNamespace(classes=C.ONTOLOGY_CLASSES, relations=C.ONTOLOGY_RELATIONS, aliases=C.ONTOLOGY_ALIASES)
+
+
+def test_span_found_in_title_spacing_and_ellipsis():
+    """근거 문장: 본문 띄어쓰기 · 가운뎃점 차이, 말줄임으로 이은 조각, 제목 인용은 통과 — 원문에 없는 문장 · 짧은 조각 잇기는 거부."""
+    from nhdip.graph.extraction import span_source
+
+    body = "2026년 9월 말 기준 소기업 모형 6B 등급의 실제부도율이 예측부도율 대표값을 2개월 연속 상회했다. 재무 · 비재무 항목을 추가 확인한다."
+    title = "(시뮬레이션) 신용리스크관리부 공문 - 소기업 모형 6B 등급 부도율 점검 요청(2026.09)"
+    assert span_source("소기업모형 6B등급의 실제부도율이", body, title) == "body"  # PDF 추출 띄어쓰기 차이
+    assert span_source("재무ㆍ비재무 항목을", body, title) == "body"  # 가운뎃점 표기 차이
+    assert span_source("소기업 모형 6B 등급의 실제부도율이 … 2개월 연속 상회했다", body, title) == "body"
+    assert span_source("6B 등급 부도율 점검 요청", body, title) == "title"
+    assert span_source("6B 등급 부도율이 급등했다", body, title) is None
+    assert span_source("2개월 연속 상회했다 … 소기업 모형", body, title) is None  # 조각 순서가 다르면 거부
+    assert span_source("6B … 등급", body, title) is None  # 짧은 조각만 이은 근거는 인용으로 보지 않음
+    assert span_source("", body, title) is None
+
+
+def test_resolver_compact_contains_and_ambiguity():
+    """별칭 해석: 공백 무시 · 포함 일치(가장 긴 별칭 우선 — '비외감' 안의 '외감' 제외), 복합 이름 · 없는 이름은 해석하지 않음."""
+    s = _seed_schema()
+    r = Resolver(s)
+    assert r.resolve("RatingModel", "소기업모형") == "CORP_MICRO"
+    assert r.resolve("RatingModel", "소기업 모형 6B 등급") == "CORP_MICRO"
+    assert r.resolve("PolicyTheme", "서민금융 공급 확대") == "포용금융"
+    assert r.resolve("PolicyTheme", "취약차주 보호") == "포용금융"
+    assert r.resolve("Segment", "비외감 기업") == "비외감"
+    assert r.resolve("Segment", "외감기업") == "외감"
+    assert r.resolve("PolicyTheme", "가계부채 관리 및 포용금융 확대") is None  # 서로 다른 주제가 섞인 이름
+    assert r.resolve("ProductGroup", "정책서민금융 상품") is None  # 특정 상품군이 아님 → 검토 대기
+    assert r.resolve("Issuer", "금융위원회") == "금융위원회"  # 마스터 해석 대상이 아닌 클래스는 그대로
+
+
+def test_validate_title_span_name_fallback_and_relation_label():
+    """제목 인용 근거는 span_source=title 로 통과, key 가 설명형이면 name 으로 해석, 관계 끝 라벨이 없으면 관계 정의 라벨로 해석."""
+    s = _seed_schema()
+    title = "(시뮬레이션) 2026년 하반기 서민금융 공급 확대 및 취약차주 보호 방안"
+    body = "정책서민금융 상품의 공급 목표를 상향하고, 금융회사의 자체 서민금융 상품 취급을 확대해 불법사금융 이용을 줄인다. 새희망홀씨 등 은행권 자체 서민금융 공급 목표를 확대한다."
+    data = {
+        "entities": [
+            {"label": "PolicyTheme", "key": "2026 하반기 정책 방향", "name": "서민금융", "props": {}, "evidence_span": "서민금융 공급 확대 및 취약차주 보호 방안"},
+            {"label": "ProductGroup", "key": "새희망홀씨", "name": "새희망홀씨", "props": {}, "evidence_span": "새희망홀씨 등 은행권 자체 서민금융 공급 목표를"},
+        ],
+        "relations": [
+            {"type": "STATES_STANCE", "from": "$doc", "to": "정책서민금융", "props": {"direction": "expand"}, "evidence_span": "자체 서민금융 상품 취급을 확대해"},
+            {"type": "MENTIONS", "from": "$doc", "to": "새희망홀씨", "evidence_span": "새희망홀씨 등"},
+        ],
+    }
+    ents, rels, issues = validate(s, Resolver(s), body, data, title=title)
+    assert issues == []
+    assert [(e["label"], e["key"], e.get("span_source")) for e in ents] == [("PolicyTheme", "포용금융", "title"), ("ProductGroup", "새희망홀씨대출", None)]
+    assert [(r["type"], r["to_label"], r["to"]) for r in rels] == [("STATES_STANCE", "PolicyTheme", "포용금융"), ("MENTIONS", "ProductGroup", "새희망홀씨대출")]
+    # 제목 없이 같은 입력이면 제목 인용 근거는 원문에 없다고 본다(이전 동작)
+    _, _, issues2 = validate(s, Resolver(s), body, data)
+    assert [i["kind"] for i in issues2] == ["span_not_found"]
+
+
+def test_merge_aliases_keeps_admin_edits():
+    """B.42 운영 DB 보강 — 없는 별칭만 더하고, 관리자가 지운 키는 되살리지 않으며 관리자가 넣은 별칭은 그대로."""
+    from nhdip.seed.run import merge_aliases
+
+    cur = {"PolicyTheme": {"포용금융": ["포용금융", "관리자별칭"]}, "ProductGroup": {"햇살론": ["햇살론"]}}
+    add = {"PolicyTheme": {"포용금융": ["포용금융", "취약차주"], "가계부채 관리": ["가계부채"]}, "ProductGroup": {"햇살론": ["햇살론15"]}, "Segment": {"소기업": ["소기업"]}}
+    merged, n = merge_aliases(cur, add)
+    assert n == 2
+    assert merged["PolicyTheme"] == {"포용금융": ["포용금융", "관리자별칭", "취약차주"]}
+    assert merged["ProductGroup"]["햇살론"] == ["햇살론", "햇살론15"] and "Segment" not in merged
+    assert cur["PolicyTheme"]["포용금융"] == ["포용금융", "관리자별칭"]  # 원본은 바꾸지 않는다
+    assert merge_aliases(merged, add)[1] == 0  # 멱등
+
+
+# ── B.43 판단 입력 글자 상한 — JSON 을 자르지 않고 목록을 덜어 낸다 ─────────────
+
+def test_fit_context_trims_list_tail_and_keeps_valid_json():
+    import json
+
+    from nhdip.workflow.llm_judge import fit_context
+
+    small = {"workflow": {"code": "wf"}, "candidates": [{"code": "a"}]}
+    text, trimmed = fit_context(small, 14000)
+    assert json.loads(text) == small and trimmed == {}
+
+    cands = [{"code": f"m{i:03d}", "label": "지표" * 10, "deltaPct": 100 - i} for i in range(120)]
+    ctx = {"workflow": {"code": "wf_branch_kpi", "name": "영업점"}, "guidance": "", "candidates": cands, "notes": ["x" * 50] * 40}
+    text, trimmed = fit_context(ctx, 3000, shrink=("candidates",))
+    data = json.loads(text)  # 잘린 JSON 이 아니다
+    assert len(text) <= 3000
+    kept = data["candidates"]
+    assert kept == cands[: len(kept)] and len(kept) >= 1  # 앞쪽(중요한 순) 후보를 남긴다
+    assert data["_omitted"]["candidates"] == trimmed["candidates"] == 120 - len(kept)
+    assert data["workflow"] == ctx["workflow"]
+    assert len(ctx["candidates"]) == 120  # 원본은 바꾸지 않는다
+
+    # 우선 줄일 키가 없으면 큰 목록부터
+    text2, trimmed2 = fit_context({"a": ["y" * 100] * 30, "b": ["z"] * 3}, 1200)
+    assert "a" in trimmed2 and "b" not in trimmed2 and len(text2) <= 1200
+
+    # 목록을 다 줄여도 넘으면 보내지 않는다(호출자가 규칙 판단)
+    text3, _ = fit_context({"big": "q" * 5000, "c": [1, 2]}, 1000)
+    assert text3 is None
+
+
+def test_ask_json_reports_trimmed_candidates(monkeypatch):
+    """ask_json 이 상한을 넘는 입력을 덜어 내고 메타 contextTrimmed 로 알린다 — LLM 에는 완전한 JSON 만 간다."""
+    import dataclasses
+
+    from nhdip.workflow import llm_judge as J
+
+    sent = []
+
+    class R:
+        text, call_id = '{"changes": []}', "c1"
+
+    def fake_chat(session, llm, messages, **kw):
+        sent.append(messages[-1]["content"])
+        return R()
+
+    llm = SimpleNamespace(timeout=30, retries=1, user_template="", system_prompt="", model="m", prompt_version=1)
+    monkeypatch.setattr(J, "chat", fake_chat)
+    monkeypatch.setattr(J, "resolve", lambda session, code: llm)
+    monkeypatch.setattr(J, "policy", lambda session: {**J.DEFAULT_POLICY, "max_context_chars": 2000})
+    monkeypatch.setattr(J, "_cooling", lambda *a: False)
+    monkeypatch.setattr(dataclasses, "replace", lambda obj, **kw: obj)
+    J._COOL.clear()
+    cands = [{"code": f"c{i}", "label": "변화 후보 " * 5} for i in range(80)]
+    data, meta = J.ask_json(None, "change_detector", "과제", {"candidates": cands}, required=("changes",), shrink=("candidates",))
+    assert meta["by"] == "llm" and 0 < meta["contextTrimmed"]["candidates"] < 80
+    assert '"_omitted"' in sent[0] and "_omitted 는 글자 상한" in sent[0]

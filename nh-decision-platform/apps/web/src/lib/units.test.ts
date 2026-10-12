@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { nextFocusIndex } from "@/lib/a11y";
 import { buildCsp, newNonce } from "@/lib/csp";
-import { formatFigure, formatSigned, toneOfDelta } from "@/lib/format";
+import { formatFigure, formatKstDateTime, formatSigned, toneOfDelta } from "@/lib/format";
 import { safeNext } from "@/lib/safe-next";
 import type { Figure } from "@/lib/types";
 
@@ -62,5 +62,24 @@ describe("수치 표기", () => {
     expect(toneOfDelta(1)).toBe("good");
     expect(toneOfDelta(1, false)).toBe("bad");
     expect(toneOfDelta(0)).toBe("neutral");
+  });
+});
+
+describe("KST 시각 표기 — 서버 · 브라우저 같은 글자 (B.41 · #418)", () => {
+  it("자정 시간대는 00 시 (Node 20 Intl hour12:false 는 24 시로 그려 하이드레이션이 어긋났다)", () => {
+    expect(formatKstDateTime("2026-10-11T15:11:00+00:00")).toBe("10. 12. 00:11");
+    expect(formatKstDateTime("2026-10-11T15:00:59.123456+00:00")).toBe("10. 12. 00:00");
+  });
+  it("UTC → KST 날짜 넘김 · 월 경계 · 다른 시간대 표기", () => {
+    expect(formatKstDateTime("2026-10-11T05:07:00Z")).toBe("10. 11. 14:07");
+    expect(formatKstDateTime("2026-09-30T23:30:00Z")).toBe("10. 01. 08:30");
+    expect(formatKstDateTime("2026-10-12T00:11:00+09:00")).toBe("10. 12. 00:11");
+  });
+  it("시간대 없는 시각은 UTC 로 본다 — 실행 환경 시간대와 무관", () => {
+    expect(formatKstDateTime("2026-10-11T15:11:00")).toBe("10. 12. 00:11");
+  });
+  it("빈 값 · 해석 불가 값", () => {
+    expect(formatKstDateTime("")).toBe("");
+    expect(formatKstDateTime("not-a-date")).toBe("not-a-date");
   });
 });

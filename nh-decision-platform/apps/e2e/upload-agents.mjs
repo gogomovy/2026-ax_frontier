@@ -6,6 +6,8 @@
 //   2) 실행:          E2E_BASE=http://localhost:3100 E2E_ADMIN_EMP=... E2E_ADMIN_PW=... FIXTURES=./upload-fixtures node upload-agents.mjs
 //      LLM 연결(선택): E2E_LLM_BASE=https://.../v1 E2E_LLM_KEY=... E2E_LLM_MODEL=claude-sonnet-5 E2E_LLM_EMBED=amazon.titan-embed-text-v2:0
 //                      (키는 환경변수로만 받는다 — 파일에 남기지 않음)
+//      판정 모드(B.45): LLM 연결(주소 · 기본 모델)이 있으면 LLM 판단 · 서술 · 추출을, 없으면 규칙 경로(규칙 판단 · 기존 문장 유지 ·
+//                      별칭 사전 추출 · 질의 정리 모드)를 확인한다. E2E_EXPECT_LLM=1|0 으로 강제.
 //
 // 운영 DB 를 바꾸므로 별도 스택(docker compose -p nhdipe2e …)에서 돌린다. 결과: $E2E_OUT/upload-agents.{json,md}
 import fs from "node:fs";
@@ -20,6 +22,8 @@ const TIMEOUT_MIN = Number(process.env.E2E_FLOW_TIMEOUT_MIN ?? 25);
 fs.mkdirSync(OUT, { recursive: true });
 
 let cookie = "";
+let LLM_MODE = true; // 연결 상태를 읽은 뒤 정한다
+let EMBED_MODE = true;
 const results = [];
 const ok = (name, cond, detail = "") => {
   results.push({ name, pass: !!cond, detail });
@@ -98,7 +102,11 @@ try {
     ok("LLM 간단 설정 · 연결 확인", r.status === 200 && t.ok === true, `HTTP ${r.status} · 모델 ${r.body?.model ?? "-"} · 임베딩 ${r.body?.embeddingModel ?? "-"} · 모델 목록 ${(t.models ?? []).length ?? 0}개 · chat ${t.chat_ok}`);
   }
   const setup = await get("/admin/llm/setup");
-  info("LLM 연결", `${setup?.connection?.baseUrl ?? "-"} · 키 ${setup?.connection?.hasKey ? "있음" : "없음"} · 기본 모델 ${setup?.model ?? "-"} · 임베딩 ${setup?.embeddingModel ?? "-"}`);
+  // LLM 없는 모드(B.45) — 연결 주소 · 기본 모델이 없으면 판단 · 서술 · 추출은 규칙으로 돈다. 판정을 그 모드에 맞춘다.
+  // E2E_EXPECT_LLM=1 / 0 으로 강제할 수 있다(예: CI 에서 LLM 없이 규칙 경로만 확인).
+  LLM_MODE = process.env.E2E_EXPECT_LLM ? process.env.E2E_EXPECT_LLM === "1" : Boolean(setup?.connection?.active && setup?.connection?.baseUrl && setup?.model);
+  EMBED_MODE = LLM_MODE && Boolean(setup?.embeddingModel);
+  info("LLM 연결", `${setup?.connection?.baseUrl || "-"} · 키 ${setup?.connection?.hasKey ? "있음" : "없음"} · 기본 모델 ${setup?.model || "-"} · 임베딩 ${setup?.embeddingModel || "-"} · 판정 모드 ${LLM_MODE ? "LLM" : "LLM 없음(규칙)"}`);
 
   // 3) 이전 상태
   const before = await snapshot();
@@ -173,8 +181,16 @@ try {
     if (byAgent[k].samples.length < 2) byAgent[k].samples.push(d.summary);
   }
   const llmBy = (agent) => Object.entries(byAgent).filter(([k]) => k.startsWith(agent + ":")).reduce((a, [, v]) => a + v.llm, 0);
-  ok("변화 감지 — LLM 판단", llmBy("change_detector") > 0, JSON.stringify(Object.fromEntries(Object.entries(byAgent).filter(([k]) => k.startsWith("change_detector")).map(([k, v]) => [k, { llm: v.llm, rule: v.rule }]))));
-  ok("실행 계획(플래너) — LLM 판단", llmBy("planner") > 0, JSON.stringify(Object.fromEntries(Object.entries(byAgent).filter(([k]) => k.startsWith("planner")).map(([k, v]) => [k, { llm: v.llm, rule: v.rule }]))));
+  const allBy = (agent) => Object.entries(byAgent).filter(([k]) => k.startsWith(agent + ":")).reduce((a, [, v]) => a + v.llm + v.rule + v.other, 0);
+  const agentDetail = (agent) => JSON.stringify(Object.fromEntries(Object.entries(byAgent).filter(([k]) => k.startsWith(agent)).map(([k, v]) => [k, { llm: v.llm, rule: v.rule }])));
+  if (LLM_MODE) {
+    ok("변화 감지 — LLM 판단", llmBy("change_detector") > 0, agentDetail("change_detector"));
+    ok("실행 계획(플래너) — LLM 판단", llmBy("planner") > 0, agentDetail("planner"));
+  } else {
+    // LLM 없이도 판단 에이전트는 규칙(CHANGE_SIGNIFICANCE · PLANNER_POLICY)으로 결정을 남겨야 한다 — LLM 판단은 0
+    ok("변화 감지 — 규칙 판단(LLM 없음)", allBy("change_detector") > 0 && llmBy("change_detector") === 0, agentDetail("change_detector"));
+    ok("실행 계획(플래너) — 규칙 판단(LLM 없음)", allBy("planner") > 0 && llmBy("planner") === 0, agentDetail("planner"));
+  }
   info("오케스트레이터", JSON.stringify(Object.fromEntries(Object.entries(byAgent).filter(([k]) => k.startsWith("orchestrator")).map(([k, v]) => [k, { llm: v.llm, rule: v.rule, other: v.other }]))));
 
   const pipe = await get("/admin/pipeline");
@@ -184,15 +200,24 @@ try {
     nodeView[w.code] = w.nodes.filter((n) => n.last).map((n) => ({ key: n.key, status: n.last.status, ms: n.last.ms, agent: n.agent ? `${n.agent.kind}${n.agent.model ? ":" + n.agent.model : ""}` : null, summary: n.last.summary }));
   }
   const narr = Object.entries(nodeView).flatMap(([w, ns]) => ns.filter((n) => n.key === "narrate").map((n) => `${w}: ${n.summary}`));
-  ok("의견 서술 — LLM 모델로 생성", narr.some((s) => /sonnet|claude|gpt|haiku|opus/i.test(s)), narr.join(" · "));
+  if (LLM_MODE) ok("의견 서술 — LLM 모델로 생성", narr.some((s) => /sonnet|claude|gpt|haiku|opus/i.test(s)), narr.join(" · "));
+  else {
+    // LLM 없으면 서술 노드는 기존 문장을 유지하고 실패하지 않아야 한다
+    const narrSt = Object.entries(nodeView).flatMap(([w, ns]) => ns.filter((n) => n.key === "narrate").map((n) => `${w}:${n.status}`));
+    ok("의견 서술 — LLM 없음(기존 문장 유지 · 실패 없음)", narrSt.length > 0 && narrSt.every((s) => !s.endsWith("failed")), narr.join(" · "));
+  }
   const crit = Object.entries(nodeView).flatMap(([w, ns]) => ns.filter((n) => n.key === "critic").map((n) => `${w}:${n.status}`));
   ok("검증(Critic) 통과", crit.length > 0 && crit.every((s) => !s.endsWith("failed")), crit.join(", "));
   const detected = Object.entries(nodeView).flatMap(([w, ns]) => ns.filter((n) => n.key === "detect").map((n) => `${w}: ${n.summary}`));
   ok("유의 변화 감지", detected.some((s) => /유의 변화 [1-9]/.test(s)), detected.join(" · "));
 
   const docs = (await get("/admin/documents")).filter((d) => DOCS.some((x) => x.doc_code === d.docCode));
-  ok("문서 청크 · 임베딩", docs.length === DOCS.length && docs.every((d) => d.chunks > 0 && d.embedded === d.chunks), docs.map((d) => `${d.docCode}: 청크 ${d.chunks} · 임베딩 ${d.embedded} · 상태 ${d.status}`).join(" · "));
-  ok("온톨로지 추출(LLM)", docs.some((d) => String(d.extraction?.by ?? "").startsWith("llm") && d.extraction.entities > 0), docs.map((d) => `${d.docCode}: ${d.extraction?.by ?? "-"} 개체 ${d.extraction?.entities ?? 0} · 관계 ${d.extraction?.relations ?? 0}${d.extraction?.fallbackReason ? " · " + d.extraction.fallbackReason : ""}`).join(" · "));
+  const docLine = docs.map((d) => `${d.docCode}: 청크 ${d.chunks} · 임베딩 ${d.embedded} · 상태 ${d.status}`).join(" · ");
+  if (EMBED_MODE) ok("문서 청크 · 임베딩", docs.length === DOCS.length && docs.every((d) => d.chunks > 0 && d.embedded === d.chunks), docLine);
+  else ok("문서 청크(임베딩 모델 없음 — 키워드 검색)", docs.length === DOCS.length && docs.every((d) => d.chunks > 0), docLine);
+  const extLine = docs.map((d) => `${d.docCode}: ${d.extraction?.by ?? "-"} 개체 ${d.extraction?.entities ?? 0} · 관계 ${d.extraction?.relations ?? 0}${d.extraction?.fallbackReason ? " · " + d.extraction.fallbackReason : ""}`).join(" · ");
+  if (LLM_MODE) ok("온톨로지 추출(LLM)", docs.some((d) => String(d.extraction?.by ?? "").startsWith("llm") && d.extraction.entities > 0), extLine);
+  else ok("온톨로지 추출(규칙 — 별칭 사전)", docs.length > 0 && docs.every((d) => d.extraction?.by === "rule" && d.extraction.entities > 0), extLine);
 
   // 7) 이후 상태 · 비교
   const after = await snapshot();
@@ -212,7 +237,12 @@ try {
 
   // 8) 질의 — 새 수치를 LLM 이 도구 결과로만 답하는지
   const ask = await call("POST", "/assist", { question: "2026년 9월 기준 소기업 6B 등급 실제부도율과 예측부도율 대표값 차이는 얼마이고 최대값 이내인가요?", screen: "RISK_HOME" });
-  ok("질의 — LLM 답변 · 수치 출처 검증", ask.status === 200 && ask.body?.mode === "llm" && ask.body?.verification?.passed !== false, `${ask.body?.mode} · ${ask.body?.model ?? "-"} · 검증 ${ask.body?.verification?.passed} · ${String(ask.body?.answer ?? ask.body?.detail ?? "").slice(0, 220)}`);
+  const askLine = `${ask.body?.mode} · ${ask.body?.model ?? "-"} · 검증 ${ask.body?.verification?.passed} · ${String(ask.body?.answer ?? ask.body?.detail ?? "").slice(0, 220)}`;
+  if (LLM_MODE) ok("질의 — LLM 답변 · 수치 출처 검증", ask.status === 200 && ask.body?.mode === "llm" && ask.body?.verification?.passed !== false, askLine);
+  else ok("질의 — LLM 없음(확정 수치 · 근거 정리)", ask.status === 200 && ask.body?.mode === "fallback" && String(ask.body?.answer ?? "").length > 0, askLine);
+  // B.44 — '차이' 로 물어도 '대표값 초과 폭' 지표를 찾아 LLM 이 직접 빼지 않게 한다(두 모드 공통)
+  const askMetrics = (ask.body?.metrics ?? []).map((m) => m.code);
+  ok("질의 — '차이' 질문에 대표값 초과 폭 지표 포함", askMetrics.includes("breach_gap_6b"), askMetrics.join(", "));
 
   const report = { at: new Date().toISOString(), base: BASE, seconds: Math.round((Date.now() - t0) / 1000), uploads, flow, runs: runs.map((r) => ({ workflow: r.workflow, status: r.status, startedAt: r.startedAt, finishedAt: r.finishedAt, causes: r.causes?.length ?? 0, llmCalls: r.llmCalls, tokens: r.tokens })), decisions: byAgent, nodes: nodeView, documents: docs, metrics: diff, contracts: { before: before.contracts, after: after.contracts }, assist: ask.body, results };
   fs.writeFileSync(path.join(OUT, "upload-agents.json"), JSON.stringify(report, null, 1));

@@ -78,37 +78,86 @@ def concepts_of(session: Session, q: str) -> list[str]:
     return found
 
 
+def _label_score(label: str, code: str, terms: list[str]) -> float:
+    """질문어가 지표명에 많이·길게 맞을수록 높게, 질문어 대부분이 맞는 지표를 우선."""
+    hits = [t for t in terms if t in label]
+    # 지표명 중 질문어로 덮인 비율 — 짧고 정확히 맞는 지표(예: '목표 대비 이탈')가 긴 파생 지표보다 앞선다
+    covered = set()
+    for t in hits:
+        start = label.find(t)
+        while start >= 0:
+            covered.update(range(start, start + len(t)))
+            start = label.find(t, start + 1)
+    body = sum(1 for ch in label if not ch.isspace())
+    coverage = len([i for i in covered if not label[i].isspace()]) / body if body else 0
+    return sum(len(t) for t in hits) + 2 * len(hits) + sum(0.5 for t in terms if t in code) + 8 * coverage
+
+
+def _compact(s: str) -> str:
+    return re.sub(r"\s+", "", s or "").lower()
+
+
+def _stem(t: str) -> str:
+    """어절 끝 조사 하나를 뗀다('대표값의' → '대표값') — 남는 글자가 2자 이상일 때만."""
+    for p in PARTICLES:
+        if t.endswith(p) and len(t) - len(p) >= 2:
+            return t[: -len(p)]
+    return t
+
+
+def _question_forms(q: str) -> tuple[str, str]:
+    """별칭 문구 대조용 질문 — (공백 제거 원문, 조사를 뗀 어절을 이은 것)."""
+    return _compact(q), _compact("".join(_stem(t) for t in TERM.findall(q)))
+
+
+def metric_score(label: str, code: str, q: str, terms: list[str], aliases: list[str] | tuple[str, ...] = ()) -> float:
+    """지표 하나의 질의 점수 — 지표명과 지표별 질의 별칭(설정 assist.metric_synonyms) 중 가장 잘 맞는 것.
+    별칭 문구가 질문에 통째로 들어 있으면(공백 · 조사 무시: '대표값의 차이' = '대표값 차이') 그 길이만큼 더 준다 —
+    지표명에 없는 표현으로 물어도 그 지표를 찾는다(B.44)."""
+    best = _label_score(label, code, terms)
+    forms = _question_forms(q) if aliases else ("", "")
+    for a in aliases or ():
+        if not isinstance(a, str) or not a.strip():
+            continue
+        s = _label_score(a, code, terms)
+        ac = _compact(a)
+        if len(ac) >= 2 and any(ac in f for f in forms):
+            s += len(ac) + 8
+        best = max(best, s)
+    return best
+
+
+def rank_metrics(metrics: list[tuple[str, str, int]], q: str, concepts: list[str], syn: dict[str, Any], metric_syn: dict[str, Any]) -> list[str]:
+    """(code, label, sort) 목록 → 질의 점수 순 코드 (점수 0 제외). DB 없이 시험할 수 있게 분리(B.44)."""
+    terms = list(dict.fromkeys(_terms(q) + concepts))  # 개념과 질문어가 같으면 한 번만
+    # 질문어 동의어(설정 assist.synonyms) — '차이' 로 물으면 '초과 폭' · '격차' 지표도 찾는다(LLM 이 직접 빼지 않도록 · B.40)
+    terms = list(dict.fromkeys(terms + [x for t in terms for x in (syn.get(t) or [])]))
+    scored = []
+    for code, label, sort in metrics:
+        score = metric_score(label, code, q, terms, metric_syn.get(code) or ())
+        if score:
+            scored.append((score, -(sort or 0), code))
+    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [c for _, _, c in scored]
+
+
+def _setting_dict(session: Session, key: str) -> dict[str, Any]:
+    s = session.get(Setting, key)
+    return s.value if s is not None and isinstance(s.value, dict) else {}
+
+
 def metrics_for(session: Session, user: AppUser, q: str, concepts: list[str], limit: int = 8) -> list[dict[str, Any]]:
     allowed = user_resources(session, user)
     s = session.get(Setting, "assist.workflow_resources")
     wf_res: dict[str, str] = s.value if s else DEFAULT_WF_RESOURCES
-    terms = list(dict.fromkeys(_terms(q) + concepts))  # 개념과 질문어가 같으면 한 번만
-    # 질문어 동의어(설정 assist.synonyms) — '차이' 로 물으면 '초과 폭' · '격차' 지표도 찾는다(LLM 이 직접 빼지 않도록 · B.40)
-    syn_s = session.get(Setting, "assist.synonyms")
-    syn = syn_s.value if syn_s is not None and isinstance(syn_s.value, dict) else {}
-    terms = list(dict.fromkeys(terms + [x for t in terms for x in (syn.get(t) or [])]))
-    scored = []
+    by_code = {}
     for m in session.execute(select(Metric).where(Metric.enabled)).scalars():
         if allowed is not None and wf_res.get(m.workflow_code) not in allowed:
             continue
-        label = m.label
-        # 질문어가 지표명에 많이·길게 맞을수록 높게, 질문어 대부분이 맞는 지표를 우선
-        hits = [t for t in terms if t in label]
-        # 지표명 중 질문어로 덮인 비율 — 짧고 정확히 맞는 지표(예: '목표 대비 이탈')가 긴 파생 지표보다 앞선다
-        covered = set()
-        for t in hits:
-            start = label.find(t)
-            while start >= 0:
-                covered.update(range(start, start + len(t)))
-                start = label.find(t, start + 1)
-        body = sum(1 for ch in label if not ch.isspace())
-        coverage = len([i for i in covered if not label[i].isspace()]) / body if body else 0
-        score = sum(len(t) for t in hits) + 2 * len(hits) + sum(0.5 for t in terms if t in m.code) + 8 * coverage
-        if score:
-            scored.append((score, -m.sort, m))
-    scored.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        by_code[m.code] = m
+    ranked = rank_metrics([(m.code, m.label, m.sort) for m in by_code.values()], q, concepts, _setting_dict(session, "assist.synonyms"), _setting_dict(session, "assist.metric_synonyms"))
     out = []
-    for _, _, m in scored[:limit]:
+    for m in (by_code[c] for c in ranked[:limit]):
         mv = session.execute(select(MetricValue).where(MetricValue.metric_code == m.code).order_by(MetricValue.created_at.desc()).limit(1)).scalar()
         if not mv or mv.display_value is None:
             continue

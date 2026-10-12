@@ -290,6 +290,14 @@
   - [x] 별도 스택에서 업로드 → 이벤트 → 워크플로우 → LLM 판단 · 서술 → 화면 · mart 검증(`apps/e2e/upload-agents.mjs`, claude-sonnet-5) — 33/33 통과, 결과 `docs/에이전트_업로드시험_2026-10-11.md`
   - [x] 시험에서 찾은 문제 수정: 출력 잘림 max_tokens 자동 확대 · 판단 JSON 재요청 · 변화 후보 상한 · 관계 양끝 객체 해석 · 득점 스냅숏 중복 합산 · 유치 기업 재추천 · 단위 중복 · 질의 동의어
   - 결과(B.37~B.40): pytest 156 · 커버리지 95.6% · 계층 계약 4/4 · vitest 18 · tsc · eslint · 브라우저 E2E 68/68 · 접근성 26개 화면 위반 0 · 골든셋 100% · 업로드 시험 33/33(`make upload-test`)
+- [x] B.41 React #418 하이드레이션 경고 (Q90) — 원인: 사이드바 '최근 계산' 시각의 `Intl.DateTimeFormat(hour12:false)` 자정 표기가 Node 20(`24:11`)과 브라우저(`00:11`)에서 다름 → `lib/format.formatKstDateTime`(UTC 산술) · vitest 4건
+- [x] B.42 온톨로지 추출 '부분 추출' 보완 (Q91) — 근거 문장 본문 · 제목 대조(공백 · 표기 · 말줄임), 이름 해석(공백 무시 · 포함 · name 대체 · 관계 라벨), 추출 프롬프트 v2, 별칭 보강 + 운영 DB 1회 보강(`ontology-extraction-v2`) · 단위 시험 4건 · 통합 시험 1건(`test_ontology_upgrade` — 기존 DB 초기 프롬프트면 새 버전, 관리자 편집 프롬프트 · 지운 별칭 키는 보존, 1회만)
+- [x] B.43 판단 입력 글자 상한 (Q92) — JSON 중간 자르기 대신 목록 뒤쪽을 덜어 냄(`fit_context`), 보내지 않은 변화 후보는 규칙 판단 · 단위 시험 2건
+- [x] B.44 질의 패널 지표 찾기 (Q93) — 설정 `assist.metric_synonyms`(지표별 질의 별칭, 공백 · 조사 무시 문구 일치), 순위 함수 분리(`rank_metrics`), 골든셋 질의 6건('차이' 2건 추가) · 단위 시험 4건(시드 지표로 골든셋 순위 재현)
+- [x] B.45 시험 범위 (Q94 · Q95) — 접근성 점검 탭 재점검(`A11Y_TAB_PAGES`, `/admin/pipeline` 탭 2개 추가 → 28행), 업로드 시험 LLM 없는 모드 판정 · '차이' 질의 판정(34개), CI 수동 실행 전용 `upload` 잡
+  - 결과(B.41~B.45, Windows · Docker 없이 — api · worker 는 Windows Python 3.11, DB 는 WSL1 PostgreSQL 18.6 + pgvector 0.8.1, Neo4j 없음): pytest 통합 포함 167 중 166 passed(`test_antivirus_hook` 1건은 Windows 에 `sh` 가 없어 실패 · 코드 변경과 무관) · 커버리지 95.56% · 골든셋(`test_golden`, 질의 6건) · 계층 계약 4/4 · vitest 22 · tsc · eslint · next build(API 모드) · 브라우저 E2E 68/68 · 접근성 28행 위반 0(파이프라인 탭 2개 포함) · 업로드 시험 LLM 없는 모드 33/33
+  - #418 비교 시험(최근 계산 시각을 KST 0시대로 · 웹 서버 Node 20): 수정 전 서버 글자 `10. 13. 24:11` → 6개 화면 모두 #418, 수정 후 `10. 13. 00:11` → 0건
+  - **미확인**: Docker 이미지 빌드 · Neo4j 경로(그래프 투영 · 근거 검색) · LLM 모드 업로드 시험(키 없음) · PostgreSQL 16(18 로 시험) — Docker 스택에서 `make up` 후 9장 체크리스트
 - [ ] B.35 운영 확정 (운영 입력 필요)
   - [ ] 운영 값: 도메인 · HTTPS(`TRUSTED_ORIGINS` · `COOKIE_SECURE`) · 앞단 프록시(`TRUST_UPSTREAM_PROXY` · `TRUSTED_PROXY_HOPS`) · 보관 기간 · 이중 승인 / 사람 승인 범위 · 백업 외부 보관 위치 · DB 계정 비밀번호 교체 주기
   - [ ] WCAG 2.1 AA — 보조기술(화면 낭독기 · 키보드 전용) 실사용 테스트 · 전문가 검토

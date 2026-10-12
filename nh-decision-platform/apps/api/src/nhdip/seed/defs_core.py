@@ -173,6 +173,14 @@ SETTINGS = {
     "evidence.policy": ({"weights": {"official": 0.40, "recency": 0.25, "semantic": 0.20, "path": 0.15}, "recency_half_life_days": 365, "max_age_days": 1825, "min_keyword_coverage": 1, "max_cosine_distance": 0.65}, "근거 선별 — 우선순위 가중치(공식성 · 시점 · 의미 · 개념경로) · 시점 반감기 · 최대 경과일 · 의미 기준"),
     "alerts.policy": ({"enabled": False, "channels": ["webhook", "email"], "min_severity": "warning", "lookback_min": 30, "rules": {"workflow_failed": {"enabled": True, "severity": "critical"}, "quality_failed": {"enabled": True, "severity": "warning"}, "auth_failures": {"enabled": True, "severity": "warning", "threshold": 10, "window_min": 10}, "llm_budget": {"enabled": True, "severity": "warning", "levels": [80, 100]}, "golden_failed": {"enabled": True, "severity": "warning"}}}, "운영 알림 — 켜기 · 채널 · 최소 심각도 · 조건별 기준. 채널 주소 · 계정은 배포 환경변수(ALERT_WEBHOOK_URL · ALERT_SMTP_*)"),
     "assist.synonyms": ({"차이": ["초과 폭", "격차", "이탈", "증감"], "초과": ["초과 폭"], "변화": ["증감", "증가율"], "비중": ["구성비"]}, "질의 패널 지표 찾기 — 질문어 → 같은 뜻의 지표명 표현(질문어가 지표명에 없을 때 보강) (B.40)"),
+    "assist.metric_synonyms": ({
+        "breach_gap_6b": ["대표값 차이", "대표 PD 차이", "PD 차이", "부도율 차이", "초과폭", "대표값을 넘은 폭"],
+        "dr_6b": ["6B 부도율", "6B 실제부도율"],
+        "psi_micro": ["안정성 지수", "모집단 안정성", "PSI 지수"],
+        "share_now": ["포용금융 비중", "충당금 비중"],
+        "corp_gap": ["목표 이탈", "목표와 차이", "목표 대비 차이"],
+        "ros_gap": ["수익률 차이", "기업 가계 수익률 차이"],
+    }, "질의 패널 지표 찾기 — 지표 코드 → 지표명 외의 질의 표현(별칭). 별칭 문구가 질문에 들어 있으면 그 지표를 우선 (B.44)"),
     "llm.max_tokens_cap": (8000, "LLM 출력이 max_tokens 에서 잘리면(추론형 모델의 생각 토큰 등) 두 배씩(최대 2회) 늘려 다시 호출할 상한. 0 = 늘리지 않음 (B.40)"),
     "llm.pricing": ({}, "LLM 단가(1천 토큰당, 원) — {\"모델명\" 또는 \"*\": {\"prompt_per_1k\": 0, \"completion_per_1k\": 0}}. 비우면 금액 0(사내 게이트웨이)"),
     "llm.budget": ({"monthly_tokens": 0, "monthly_cost": 0, "per_agent_tokens": {}, "on_exceed": "warn", "warn_pct": 80}, "LLM 월 예산 — 0 = 한도 없음. on_exceed: warn(알림만) · block(초과 후 호출 차단, 서술은 기존 문장 유지)"),
@@ -314,14 +322,14 @@ ONTOLOGY_RELATIONS = [
 
 ONTOLOGY_ALIASES = {
     "PolicyTheme": {
-        "포용금융": ["포용금융", "포용적 금융", "서민금융", "취약계층", "포용"],
+        "포용금융": ["포용금융", "포용적 금융", "서민금융", "취약계층", "포용", "정책서민금융", "서민금융 공급", "취약차주", "중·저신용", "중저신용"],
         "기업여신 확대": ["생산적 금융", "기업금융 활성화", "기업여신 확대", "생산적금융"],
-        "가계부채 관리": ["가계부채", "가계부채 관리", "DSR", "가계여신 관리"],
+        "가계부채 관리": ["가계부채", "가계부채 관리", "DSR", "가계여신 관리", "가계대출 관리"],
         "자본비율 관리": ["자본비율", "BIS", "RWA 순증", "자본적정성"],
     },
     "ProductGroup": {
         "새희망홀씨대출": ["새희망홀씨", "새희망홀씨대출"],
-        "햇살론": ["햇살론", "햇살론뱅크", "햇살론youth", "근로자햇살론"],
+        "햇살론": ["햇살론", "햇살론뱅크", "햇살론youth", "근로자햇살론", "햇살론15", "햇살론유스", "햇살론 유스"],
         "사잇돌": ["사잇돌", "사잇돌중금리대출"],
     },
     "Segment": {
@@ -332,7 +340,7 @@ ONTOLOGY_ALIASES = {
         "기업형소호": ["기업형소호", "소호"],
     },
     "RatingModel": {
-        "CORP_MICRO": ["소기업 모형", "소기업모형"],
+        "CORP_MICRO": ["소기업 모형", "소기업모형", "소기업 신용평가모형", "소기업 평가모형"],
         "CORP_SMALL": ["중소기업 모형"],
         "CORP_MID": ["중견기업 모형"],
         "CORP_LARGE": ["대기업 모형"],
@@ -356,9 +364,16 @@ NARRATOR_SYSTEM = (
     "3) 근거에 없는 사실을 만들지 않는다.\n"
     "4) 출력은 JSON 하나: {\"statement\": \"...\"}"
 )
-EXTRACTOR_SYSTEM = (
+EXTRACTOR_SYSTEM_V1 = (
     "너는 은행 문서를 온톨로지로 구조화하는 추출기다. 허용된 클래스와 관계만 쓰고, 모든 항목에 원문 그대로의 evidence_span 을 붙인다.\n"
     "마스터 키 목록에 있는 값이면 그 키를 key 로 쓴다. 확실하지 않으면 출력하지 않는다. JSON 만 출력한다."
+)
+# B.42 — 업로드 시험에서 근거 문장을 요약 · 제목 인용 · 바꿔 쓰기로 내 '부분 추출' 이 났다. 복사 규칙과 마스터 키 우선을 분명히 한다.
+EXTRACTOR_SYSTEM = (
+    "너는 은행 문서를 온톨로지로 구조화하는 추출기다. 허용된 클래스와 관계만 쓴다.\n"
+    "1) 모든 항목에 evidence_span 을 붙인다 — 본문(또는 제목)에서 글자 그대로 복사한 한 문장 이내. 요약 · 말줄임 · 바꿔 쓰기 금지.\n"
+    "2) key 는 마스터 키 목록의 키를 그대로 쓴다(별칭 · 설명형 이름 대신). 목록에 없는 대상만 원문 표현 그대로 쓴다(검토 대기로 간다).\n"
+    "3) 관계의 from · to 는 엔티티 key 또는 문서 자신이면 \"$doc\". 확실하지 않으면 출력하지 않는다. JSON 만 출력한다."
 )
 QUERY_SYSTEM = (
     "너는 은행 데이터 질의 보조자다. 숫자 계산이 필요하면 반드시 제공된 calc_* 도구를 호출하고, 도구 결과의 값만 인용한다. 직접 계산하지 않는다."

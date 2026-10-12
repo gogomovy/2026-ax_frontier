@@ -11,7 +11,7 @@ import { useSession, type MenuPayload } from "@/components/providers/SessionProv
 import { apiPost } from "@/lib/api-client";
 import { API_MODE } from "@/lib/config";
 import { IconChevron, IconClose, IconMenu } from "@/components/ui/primitives";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatKstDateTime } from "@/lib/format";
 import { PERSONAS, isActive, personaOfPath, type NavItem } from "@/lib/nav";
 import type { Persona } from "@/lib/types";
 import { PROPOSALS } from "@/mock/goals";
@@ -206,7 +206,8 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
         <p className="mt-1 text-[13px] font-bold text-ink-deep tnum">{formatDate(asOf)}</p>
         {genAt ? (
           <p className="mt-0.5 text-[11px] text-stone tnum">
-            {API_MODE ? `최근 계산 ${formatDateTime(genAt)}` : `일배치 분석 완료 ${genAt.slice(11, 16)}`}
+            {/* KST 시각은 Intl 없이 산술로 만든다 — 서버(Node) · 브라우저 ICU 의 자정 표기 차이로 #418 (B.41) */}
+            {API_MODE ? `최근 계산 ${formatKstDateTime(genAt)}` : `일배치 분석 완료 ${genAt.slice(11, 16)}`}
           </p>
         ) : null}
         <p className="mt-2 flex items-center gap-1.5 text-[11px] font-bold text-[#8a5d00]">
@@ -280,14 +281,6 @@ function useNavCounts(): Record<NonNullable<NavItem["countKey"]>, number> {
     proposedPlans: proposedPlans.length,
     branchAnalyses,
   };
-}
-
-/** 서버(UTC)와 브라우저의 시간대가 달라도 같은 문자열이 나오도록 KST 로 고정 (하이드레이션 일치) */
-const KST = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
-function formatDateTime(iso: string) {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return KST.format(d);
 }
 
 /** 로그인 사용자 — 이름 · 직급 · 소속(부 > 국 > 팀) · 로그아웃 */

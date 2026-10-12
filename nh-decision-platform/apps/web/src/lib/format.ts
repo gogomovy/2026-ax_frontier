@@ -92,6 +92,25 @@ export function formatDateTime(iso: string): string {
   return `${datePart} ${timeMatch[1]}:${timeMatch[2]}`;
 }
 
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * 시각(시간대 포함 ISO) → KST `M. DD. HH:mm` (예: `10. 12. 00:11`).
+ * `Intl.DateTimeFormat` 을 쓰지 않는다 — `hour12: false` 의 자정 표기가 엔진마다 달라
+ * (Node 20 = `24:11`(h24), Node 24 · 최신 Chrome = `00:11`(h23)) 서버 렌더와 브라우저 렌더가
+ * 어긋나 React #418 이 났다(B.41 · Q90). 시각 계산은 UTC 기준 산술로만 한다.
+ * 시간대 표기가 없는 시각은 UTC 로 본다 — 실행 환경 시간대(서버 UTC · 브라우저 KST)에 따라 값이 달라지지 않게.
+ */
+export function formatKstDateTime(iso: string): string {
+  if (!iso) return "";
+  const zoned = /T\d{2}:\d{2}/.test(iso) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? `${iso}Z` : iso;
+  const t = Date.parse(zoned);
+  if (Number.isNaN(t)) return iso;
+  const k = new Date(t + KST_OFFSET_MS);
+  return `${k.getUTCMonth() + 1}. ${pad2(k.getUTCDate())}. ${pad2(k.getUTCHours())}:${pad2(k.getUTCMinutes())}`;
+}
+
 export const SEVERITY_LABEL = {
   info: "정상",
   watch: "관찰",

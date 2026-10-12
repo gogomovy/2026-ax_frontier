@@ -146,13 +146,16 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ask_items = ranked[:cap] if cap else ranked
         context = {"workflow": {"code": ctx.workflow.code, "name": ctx.workflow.name, "description": ctx.workflow.description}, "guidance": pol.get("llm_guidance"),
                    "candidates": [{k: i.get(k) for k in ("kind", "code", "label", "unit", "before", "after", "delta", "deltaPct", "direction", "ruleLevel", "files")} for i in ask_items]}
-        data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",))
-        if len(ask_items) < len(items):
-            meta = {**meta, "llmCandidates": len(ask_items), "ruleOnly": len(items) - len(ask_items)}
+        data, meta = ask_json(ctx.session, node.agent_code or DETECTOR, DETECT_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("changes",), shrink=("candidates",))
+        # 입력 글자 상한으로 뒤쪽 후보를 덜어 냈으면(B.43) 실제로 보낸 후보만 LLM 판단을 받는다 — 나머지는 규칙
+        sent = ask_items[: len(ask_items) - int((meta.get("contextTrimmed") or {}).get("candidates", 0))]
+        if len(sent) < len(items):
+            meta = {**meta, "llmCandidates": len(sent), "ruleOnly": len(items) - len(sent)}
         by_code = {}
         if data:
+            sent_codes = {i["code"] for i in sent}
             for d in data.get("changes") or []:
-                if isinstance(d, dict) and d.get("code") in {i["code"] for i in ask_items} and d.get("level") in LEVELS:
+                if isinstance(d, dict) and d.get("code") in sent_codes and d.get("level") in LEVELS:
                     by_code[d["code"]] = d
             judged_by = "llm" if by_code else "rule"
             llm_summary, _ = clean_reason(data.get("summary"))

@@ -33,16 +33,53 @@ if (!ADMIN || !ADMIN_PW) {
 }
 fs.mkdirSync(OUT, { recursive: true });
 
-async function scan(page, url) {
-  process.stderr.write(`… ${url}\n`);
-  await page.goto(BASE + url, { waitUntil: "networkidle2", timeout: 30000 });
+// 탭(role=tab)으로 내용이 바뀌는 화면 — 첫 탭 외의 탭도 눌러 다시 점검한다 (B.45). 쉼표로 바꿀 수 있다.
+const TAB_PAGES = (process.env.A11Y_TAB_PAGES ?? "/admin/pipeline").split(",").filter(Boolean);
+
+async function settle(page) {
   await page.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
+}
+
+async function axeRun(page) {
   await page.evaluate(AXE); // CDP 평가는 페이지 CSP 의 적용을 받지 않는다
   return page.evaluate(async () => {
     // eslint-disable-next-line no-undef
     const r = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] }, resultTypes: ["violations"] });
     return r.violations.map((v) => ({ id: v.id, impact: v.impact, help: v.help, nodes: v.nodes.slice(0, 5).map((n) => ({ target: n.target.join(" "), summary: (n.failureSummary || "").split("\n").slice(0, 3).join(" "), html: n.html.slice(0, 160) })), count: v.nodes.length }));
   });
+}
+
+async function scan(page, url) {
+  process.stderr.write(`… ${url}\n`);
+  await page.goto(BASE + url, { waitUntil: "networkidle2", timeout: 30000 });
+  await settle(page);
+  return axeRun(page);
+}
+
+/** 현재 화면에서 선택되지 않은 탭을 하나씩 눌러 점검 — 탭 이름은 화면에서 읽는다(목록을 코드에 두지 않음). */
+async function scanTabs(page, url) {
+  const labels = await page.$$eval('[role="tab"]', (els) => els.filter((e) => e.getAttribute("aria-selected") !== "true").map((e) => (e.textContent || "").trim()).filter(Boolean));
+  const out = [];
+  for (const label of labels) {
+    process.stderr.write(`… ${url} [탭: ${label}]\n`);
+    const clicked = await page.evaluate((l) => {
+      const el = [...document.querySelectorAll('[role="tab"]')].find((e) => (e.textContent || "").trim() === l);
+      if (!el) return false;
+      el.click();
+      return true;
+    }, label);
+    if (!clicked) {
+      out.push({ url: `${url} [탭: ${label}]`, violations: [], note: "탭을 찾지 못함" });
+      continue;
+    }
+    await page
+      .waitForFunction((l) => [...document.querySelectorAll('[role="tab"]')].some((e) => (e.textContent || "").trim() === l && e.getAttribute("aria-selected") === "true"), { timeout: 10000 }, label)
+      .catch(() => undefined);
+    await new Promise((r) => setTimeout(r, 500));
+    await settle(page);
+    out.push({ url: `${url} [탭: ${label}]`, violations: await axeRun(page) });
+  }
+  return out;
 }
 
 const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
@@ -59,14 +96,17 @@ try {
   await page.type("#password", ADMIN_PW);
   await Promise.all([page.click('button[type="submit"]'), page.waitForNavigation({ waitUntil: "networkidle2" })]);
   if (page.url().includes("/login")) throw new Error("관리자 로그인 실패 — E2E_ADMIN_PW 확인");
-  for (const url of PAGES) report.push({ url, violations: await scan(page, url) });
+  for (const url of PAGES) {
+    report.push({ url, violations: await scan(page, url) });
+    if (TAB_PAGES.includes(url)) report.push(...(await scanTabs(page, url)));
+  }
 } finally {
   await browser.close();
 }
 for (const r of report) {
   const hit = r.violations.filter((v) => (LEVELS[v.impact] ?? 0) >= MIN);
   bad += hit.length;
-  console.log(`${hit.length ? "FAIL" : "PASS"}  ${r.url}${hit.length ? ` — ${hit.map((v) => `${v.id}(${v.impact}×${v.count})`).join(", ")}` : ""}`);
+  console.log(`${hit.length ? "FAIL" : "PASS"}  ${r.url}${hit.length ? ` — ${hit.map((v) => `${v.id}(${v.impact}×${v.count})`).join(", ")}` : ""}${r.note ? ` (${r.note})` : ""}`);
   for (const v of hit) for (const n of v.nodes) console.log(`      ${v.id}: ${n.target} :: ${n.summary}`);
 }
 const below = report.reduce((n, r) => n + r.violations.filter((v) => (LEVELS[v.impact] ?? 0) < MIN).length, 0);

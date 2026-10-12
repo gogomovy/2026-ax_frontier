@@ -194,8 +194,8 @@ make up
 | `make eval` | 골든셋 평가 — 기준값 · 판정 · 서술 출처 · 검색 · 질의 결과를 관리자 [골든셋 평가]에 게시 |
 | `make perf` | 주요 API p50 · p95 측정 후 기준치(`perf_budgets.json`)와 대조 |
 | `make wait-idle` | 이벤트 · 작업 처리가 끝날 때까지 대기 (기동 직후 선계산 확인) |
-| `make a11y` | 자동 접근성 점검(axe-core, 주요 26개 화면) |
-| `make upload-test` | 업로드 기반 에이전트 시험 — 별도 스택(포트 3100)을 새로 띄워 2026.09 시험 엑셀 · PDF 를 올리고 워크플로우 · 에이전트 판단 · 서술 · mart 갱신을 확인한 뒤 내림. LLM 을 쓰려면 `E2E_LLM_BASE` · `E2E_LLM_KEY` · `E2E_LLM_MODEL` 환경변수(키는 파일에 남지 않음) |
+| `make a11y` | 자동 접근성 점검(axe-core, 주요 26개 화면 + 파이프라인 화면의 다른 탭) |
+| `make upload-test` | 업로드 기반 에이전트 시험 — 별도 스택(포트 3100)을 새로 띄워 2026.09 시험 엑셀 · PDF 를 올리고 워크플로우 · 에이전트 판단 · 서술 · mart 갱신을 확인한 뒤 내림. LLM 을 쓰려면 `E2E_LLM_BASE` · `E2E_LLM_KEY` · `E2E_LLM_MODEL` 환경변수(키는 파일에 남지 않음). LLM 이 없으면 규칙 경로로 판정(`E2E_EXPECT_LLM=0/1` 로 강제) |
 
 ---
 

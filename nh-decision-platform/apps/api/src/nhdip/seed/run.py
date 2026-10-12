@@ -758,6 +758,49 @@ def score_snapshot_upgrade(s: Session, out: dict[str, Any]) -> None:
         out["score_snapshot_upgrade"] = n
 
 
+def merge_aliases(cur: dict[str, Any] | None, add: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """별칭 사전에 없는 별칭만 더한다 — 관리자가 넣은 키 · 별칭은 그대로, 지운 키는 되살리지 않는다(키가 남아 있을 때만 보강)."""
+    out = copy.deepcopy(cur or {})
+    n = 0
+    for label, entries in add.items():
+        have_label = out.get(label)
+        if not isinstance(have_label, dict):
+            continue
+        for key, aliases in entries.items():
+            if key not in have_label:
+                continue
+            have = list(have_label.get(key) or [])
+            new = [a for a in aliases if a not in have]
+            if new:
+                have_label[key] = have + new
+                n += len(new)
+    return out, n
+
+
+def ontology_extraction_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """B.42 — 온톨로지 추출 '부분 추출' 보완, 1회. ① 추출 프롬프트가 초기값 그대로면 새 버전(근거 복사 · 마스터 키 우선)
+    ② 활성 스키마 별칭 사전에 없는 별칭만 더한 새 스키마 버전(관리자 편집 보존). 되돌리기: 관리자 [에이전트] 프롬프트 · [온톨로지] 스키마 버전."""
+    if _applied(s, "ontology-extraction-v2"):
+        return
+    done: dict[str, Any] = {}
+    a = s.get(Agent, "ontology_extractor")
+    if a is not None and a.prompt_version is None:
+        last = s.execute(select(Prompt).where(Prompt.agent_code == a.code).order_by(Prompt.version.desc()).limit(1)).scalar()
+        if last is not None and last.system == C.EXTRACTOR_SYSTEM_V1 and not (last.user_template or "").strip():
+            s.add(Prompt(agent_code=a.code, version=last.version + 1, system=C.EXTRACTOR_SYSTEM, user_template="", note="B.42 근거 문장 복사 · 마스터 키 우선 (초기 프롬프트였던 경우만)", created_by="seed"))
+            done["prompt"] = last.version + 1
+    sc = s.execute(select(OntologySchema).where(OntologySchema.active).order_by(OntologySchema.version.desc()).limit(1)).scalar()
+    if sc is not None:
+        merged, n = merge_aliases(sc.aliases, C.ONTOLOGY_ALIASES)
+        if n:
+            last_v = s.execute(select(func.max(OntologySchema.version))).scalar() or sc.version
+            sc.active = False
+            s.add(OntologySchema(version=last_v + 1, classes=sc.classes, relations=sc.relations, aliases=merged, active=True, note=f"B.42 별칭 보강 +{n} (v{sc.version} 기준, 관리자 편집 보존)"))
+            done["aliases_added"] = n
+    if done:
+        out["ontology_extraction_upgrade"] = done
+
+
 def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     out: dict[str, Any] = {}
     first = not s.execute(select(func.count()).select_from(Workflow)).scalar()
@@ -781,6 +824,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     s.flush()
     dept_contracts_upgrade(s, out, first)
     score_snapshot_upgrade(s, out)
+    ontology_extraction_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.
