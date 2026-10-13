@@ -127,10 +127,15 @@ def run(session: Session, golden: dict[str, Any] | None = None) -> dict[str, Any
         who = AppUser(emp_no="golden-eval", name="골든셋", password_hash="-", org_code=c["org"], role="user", status="active")
         scope = resolve_scope(session, access_context(session, who))
         ret = retrieve(session, scope, c["query"], user=who, concepts=concepts_of(session, c["query"]))
-        got_cols = sorted({h["collection"] for h in [*ret.analysis, *ret.documents] if h.get("collection")})
+        hits = [*ret.analysis, *ret.documents]
+        got_cols = sorted({h["collection"] for h in hits if h.get("collection")})
         want, forbid = c.get("expect_collection"), c.get("forbid_collections", [])
-        ok = (want is None or want in got_cols) and not (set(forbid) & set(got_cols))
-        cats["knowledge"].append(_case(c.get("label") or f"{c['org']}:{c['query']}", ok, expected=want, forbidden=forbid, top=got_cols))
+        # 화면 권한으로 열람이 허용된 산출물(예: 영업점의 '본부 전파 목표' cascade)은 다른 컬렉션이어도 정상 — allow_sources 로 명시
+        allow = set(c.get("allow_sources", []))
+        bad = sorted({f"{h['collection']}:{h.get('source_key') or h.get('sourceKey') or h.get('docCode') or '-'}" for h in hits
+                      if h.get("collection") in forbid and str(h.get("source_key") or h.get("sourceKey") or "").split("@", 1)[0] not in allow})
+        ok = (want is None or want in got_cols) and not bad
+        cats["knowledge"].append(_case(c.get("label") or f"{c['org']}:{c['query']}", ok, expected=want, forbidden=forbid, top=got_cols, forbidden_hits=bad))
     th = g.get("thresholds", {})
     summary = {}
     for name, cases in cats.items():

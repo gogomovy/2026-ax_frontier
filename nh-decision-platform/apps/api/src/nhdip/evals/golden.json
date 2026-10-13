@@ -427,10 +427,11 @@
    "forbid_collections": ["analysis.risk", "analysis.branch", "admin.contracts", "analysis.unassigned"]
   },
   {
-   "label": "영업점 — 본부 · 신용리스크 분석 결과와 관리자 전용 컬렉션이 나오지 않음 (영업점이 화면 권한을 가진 '본부 전파 목표'는 예외라 그 낱말은 쓰지 않음)",
+   "label": "영업점 — 본부 · 신용리스크 분석 결과와 관리자 전용 컬렉션이 나오지 않음 (영업점 화면 '본부 전파 목표·가이드' 권한으로 보는 cascade · goals 는 예외)",
    "org": "001068",
    "query": "포용금융 충당금 비중 인사이트",
-   "forbid_collections": ["analysis.risk", "analysis.hq", "admin.contracts", "analysis.unassigned"]
+   "forbid_collections": ["analysis.risk", "analysis.hq", "admin.contracts", "analysis.unassigned"],
+   "allow_sources": ["cascade", "goals"]
   }
  ]
 }
