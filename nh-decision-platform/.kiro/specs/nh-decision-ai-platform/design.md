@@ -3152,7 +3152,7 @@ ES 판은 **사전 필터**일 뿐이고 판정은 PostgreSQL 이 한다 — 색
 
 ### 24.6 배포 · 운영
 
-- **compose**: `elasticsearch` 서비스가 기본(프로필 없음) — `infra/elasticsearch/Dockerfile`(9.5.4 + analysis-nori), 단일 노드 · 보안 켬 · 내부망 HTTP · 힙 `ES_HEAP`(기본 1g) · 볼륨 `esdata`. api · worker 환경 `ES_URL=${ES_URL-http://elasticsearch:9200}` · `ES_USER=${ES_USER-elastic}` · `ES_PASSWORD` · `ES_INDEX` · `ES_DOC_INDEX`. `.env` 에서 `ES_URL=` 로 **명시해 비우면** ES 를 쓰지 않는다.
+- **compose**: `elasticsearch` 서비스가 기본(프로필 없음) — `infra/elasticsearch/Dockerfile`(9.5.4 + analysis-nori), 단일 노드 · 보안 켬 · 내부망 HTTP · 힙 `ES_HEAP`(기본 1g) · 볼륨 `esdata` · 디스크 기준을 남은 용량으로(`ES_DISK_LOW/HIGH/FLOOD` 기본 2gb · 1gb · 500mb — 비율 기준(90%)이면 디스크가 큰 서버에서 보안 색인을 배치하지 못해 `elastic` 인증이 503 으로 막힌다. CI 첫 실행에서 확인). api · worker 환경 `ES_URL=${ES_URL-http://elasticsearch:9200}` · `ES_USER=${ES_USER-elastic}` · `ES_PASSWORD` · `ES_INDEX` · `ES_DOC_INDEX`. `.env` 에서 `ES_URL=` 로 **명시해 비우면** ES 를 쓰지 않는다.
 - **`.env`**: `.env.example` 에 `ES_URL=http://elasticsearch:9200` · `ES_USER=elastic` · `ES_DOC_INDEX`, `ensure-env.sh`(make env)가 `ES_PASSWORD` 를 만든다. **이전 판 `.env.example` 로 만든 `.env` 는 `ES_URL=` 이 비어 있을 수 있다** — 그대로면 3-way 가 아니라 PostgreSQL 축소 동작(운영 점검 경고). `bash infra/scripts/set-env.sh ES_URL http://elasticsearch:9200` · `ES_USER elastic` 후 재기동.
 - **호스트**: `vm.max_map_count ≥ 262144`(make host-check 가 확인, 부족하면 ES 가 뜨지 않고 검색은 PostgreSQL). 메모리는 ES 힙 1GB + 오프힙만큼 더 필요.
 - **CI e2e**: `sysctl vm.max_map_count` → compose up(ES 포함) → wait-idle → `kb-es --sync` · `kb-es --check`(문제 있으면 실패) → E2E(`E2E_EXPECT_ES=1` — 3-way 항목이 분석 결과 · 문서 모두 ES 사용을 확인) → 접근성 → 골든셋(ES 경로).

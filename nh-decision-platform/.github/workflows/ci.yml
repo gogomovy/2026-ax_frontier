@@ -79,8 +79,11 @@ jobs:
           node-version: "20"
       - name: .env (비밀값 자동 생성)
         run: bash infra/scripts/ensure-env.sh
-      - name: Elasticsearch 커널 설정 (vm.max_map_count — 3-way 검색 엔진)
-        run: sudo sysctl -w vm.max_map_count=262144
+      - name: Elasticsearch 커널 설정 (vm.max_map_count — 3-way 검색 엔진) · 디스크 확보(쓰지 않는 도구 정리)
+        run: |
+          sudo sysctl -w vm.max_map_count=262144
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
       - name: compose up
         run: docker compose up -d --build --wait --wait-timeout 600
       - name: wait for precompute (이벤트 · 작업 처리 완료까지)
