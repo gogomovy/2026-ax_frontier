@@ -177,7 +177,7 @@ class LlmCall(Base):
     prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    status: Mapped[str] = mapped_column(String(12), default="ok")  # ok | error | skipped
+    status: Mapped[str] = mapped_column(String(12), default="ok")  # ok | error | skipped | cancelled(스트리밍 중 사용자가 중지)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
     trace_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True, default=_trace)

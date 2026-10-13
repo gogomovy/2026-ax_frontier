@@ -9,7 +9,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterator
 
 import httpx
 from sqlalchemy import select
@@ -290,6 +290,130 @@ def chat(
     call.params = {**call.params, "attempts": attempts}
     _save_call(call)
     raise LlmError(last_err)
+
+
+def chat_stream(
+    session: Session,
+    cfg: ResolvedLlm,
+    messages: list[dict[str, Any]],
+    *,
+    tools: list[dict[str, Any]] | None = None,
+    purpose: str = "chat",
+    workflow_run_id: str | None = None,
+) -> Iterator[tuple[str, Any]]:
+    """스트리밍 호출(OpenAI 호환 `stream=true`) — ('delta', 글자 조각)을 내다가 마지막에 ('result', ChatResult) 하나.
+
+    `chat` 과 같은 기록(ops.llm_call) · 예산 점검 · 지원하지 않는 파라미터 빼고 다시 보내기를 지킨다. 다른 점:
+    - 재시도는 **첫 글자를 내보내기 전**의 연결 오류 · 429 · 5xx 에만 한다. 이미 내보낸 글자가 있으면 되돌릴 수 없으므로 LlmError.
+    - 호출자가 중간에 그만두면(사용자의 [중지]) 연결을 닫고 기록을 `cancelled` 로 남긴다.
+    - 도구 호출(tool_calls)은 조각을 모아 `chat` 과 같은 모양으로 돌려준다. 출력 상한 확장(max_tokens 늘려 재호출)은 하지 않는다 — 잘리면 잘린 채 끝낸다."""
+    from .budget import check as check_budget
+
+    check_budget(session, cfg.agent_code)
+    body: dict[str, Any] = {"model": cfg.model, "messages": messages, **cfg.params, **cfg.extra, "stream": True, "stream_options": {"include_usage": True}}
+    if tools and cfg.tools_enabled:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
+    for k in _UNSUPPORTED.get(cfg.model, set()):
+        body.pop(k, None)
+    call = LlmCall(
+        workflow_run_id=workflow_run_id, agent_code=cfg.agent_code, purpose=purpose, connection_name=cfg.connection_name, base_url=cfg.base_url, model=cfg.model,
+        params={**cfg.snapshot(), "stream": True}, messages=_log_messages(session, messages),
+    )
+    call.id = new_id()
+    t0 = time.monotonic()
+    last_err = ""
+    attempts = 0
+    dropped: list[str] = []
+    emitted = False
+    finished = False
+    parts: list[str] = []
+    timeout = httpx.Timeout(connect=15.0, read=_timeout_for(cfg.timeout, body.get("max_tokens")), write=15.0, pool=15.0)  # read = 조각 사이 최대 대기
+    try:
+        for attempt in range(cfg.retries + 1 + len(_DROPPABLE) + 2):
+            if attempts - len(dropped) > cfg.retries:
+                break
+            attempts += 1
+            try:
+                with httpx.stream("POST", _url(cfg.base_url, "/chat/completions"), headers=_headers(cfg.api_key), json=body, timeout=timeout) as resp:
+                    if resp.status_code >= 400:
+                        err_text = resp.read().decode("utf-8", "replace")
+                        bad = _unsupported_param(err_text, body) if resp.status_code == 400 else None
+                        if bad:
+                            body.pop(bad, None)
+                            _UNSUPPORTED.setdefault(cfg.model, set()).add(bad)
+                            dropped.append(bad)
+                            continue
+                        if resp.status_code == 400 and "stream_options" in body:
+                            body.pop("stream_options", None)  # 사용량 옵션을 모르는 게이트웨이
+                            dropped.append("stream_options")
+                            continue
+                        last_err = f"HTTP {resp.status_code}: {err_text[:300]}"
+                        if resp.status_code >= 500 or resp.status_code == 429:
+                            time.sleep(min(2**attempt, 8))
+                            continue
+                        break
+                    parts.clear()
+                    tool_acc: dict[int, dict[str, Any]] = {}
+                    usage: dict[str, Any] = {}
+                    finish: str | None = None
+                    for line in resp.iter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(payload)
+                        except ValueError:
+                            continue
+                        usage = chunk.get("usage") or usage
+                        choice = (chunk.get("choices") or [{}])[0]
+                        delta = choice.get("delta") or {}
+                        if delta.get("content"):
+                            parts.append(delta["content"])
+                            emitted = True
+                            yield "delta", delta["content"]
+                        for tc in delta.get("tool_calls") or []:
+                            acc = tool_acc.setdefault(int(tc.get("index", 0)), {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                            acc["id"] = tc.get("id") or acc["id"]
+                            fn = tc.get("function") or {}
+                            acc["function"]["name"] += fn.get("name") or ""
+                            acc["function"]["arguments"] += fn.get("arguments") or ""
+                        finish = choice.get("finish_reason") or finish
+                    text = "".join(parts)
+                    tool_calls = [tool_acc[i] for i in sorted(tool_acc)]
+                    message = {"role": "assistant", "content": text or None, **({"tool_calls": tool_calls} if tool_calls else {})}
+                    raw = {"stream": True, "usage": usage, "finish_reason": finish}
+                    call.response = raw
+                    call.output_text = text
+                    call.prompt_tokens = usage.get("prompt_tokens")
+                    call.completion_tokens = usage.get("completion_tokens")
+                    call.latency_ms = int((time.monotonic() - t0) * 1000)
+                    call.status = "ok"
+                    call.params = {**call.params, "attempts": attempts, **({"dropped": dropped} if dropped else {}), **({"truncated": True} if finish == "length" else {})}
+                    finished = True
+                    _save_call(call)
+                    yield "result", ChatResult(text, tool_calls, raw, call.id, message)
+                    return
+            except (httpx.HTTPError, ValueError) as exc:
+                last_err = f"{type(exc).__name__}: {exc}"
+                if emitted:
+                    break  # 이미 글자를 내보냈다 — 같은 요청을 다시 보내면 글이 겹친다
+                time.sleep(min(2**attempt, 8))
+        call.status = "error"
+        call.error = last_err
+        call.latency_ms = int((time.monotonic() - t0) * 1000)
+        call.params = {**call.params, "attempts": attempts}
+        finished = True
+        _save_call(call)
+        raise LlmError(last_err)
+    finally:
+        if not finished:  # 호출자가 중간에 그만둠(GeneratorExit) — 비용 · 지연 기록은 남긴다
+            call.status = "cancelled"
+            call.latency_ms = int((time.monotonic() - t0) * 1000)
+            call.output_text = "".join(parts)
+            _save_call(call)
 
 
 def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_id: str | None = None, node_run_id: str | None = None) -> list[list[float]]:

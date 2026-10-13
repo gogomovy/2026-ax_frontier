@@ -4,6 +4,8 @@
 - `GET  /admin/knowledge/collections`            컬렉션 정의(담당 · 공유 팀 이름 포함)
 - `PUT  /admin/knowledge/collections/{code}`     담당 · 공유 팀, 화면 리소스, 공개 범위, 포함 규칙, 가산점, 사용 여부 수정
 - `POST /admin/knowledge/reindex`                전체 재색인(임베딩은 워커가 이어서 채운다)
+- `POST /admin/knowledge/calibrate`              임베딩 모델별 코사인 거리 기준 측정 · 적용(설계 §21.15)
+- `GET  /admin/knowledge/quality`                질문하기 품질 지표 — 답 못 한 비율 · 피드백 · 자주 답 못 한 질문(설계 §21.16)
 - `POST /admin/knowledge/search`                 검색 진단 — 지정 사용자 관점으로 같은 검색을 돌려 채널별 후보 · 거부 사유 · 소요를 본다(읽기 전용)
 담당 · 공유 팀 · 공개 범위는 검색 때 읽으므로 바꾸면 다음 질문부터 적용된다. 포함 규칙을 바꾸면 워커 대조(1분)가 다시 색인한다.
 """
@@ -11,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -19,11 +21,15 @@ from sqlalchemy.orm import Session
 from nhdip.db import get_session
 from nhdip.events import audit
 from nhdip.graph.neo4j_client import health as graph_health
-from nhdip.knowledge.access import AUDIENCES, resolve_scope
+from nhdip.knowledge.access import AUDIENCES, resolve_scope, setting_dict
+from nhdip.knowledge.calibration import apply_calibration, calibrate, calibrated_model
+from nhdip.knowledge.defaults import SEARCH_DEFAULT
 from nhdip.knowledge.maintenance import embedding_agent, reconcile, status as kb_status
 from nhdip.knowledge.search import retrieve
+from nhdip.knowledge.quality import quality as kb_quality
 from nhdip.llm import LlmUnavailable, resolve
 from nhdip.models import AppUser, KbCollection, OrgUnit
+from nhdip.privacy import audit_text
 
 from .assist import _analysis_view, _evidence_view, access_context
 from .deps import client_ip, require_admin
@@ -90,8 +96,10 @@ def status(session: Session = Depends(get_session)):
             classes = [x for x in (c.sources or {}).get("doc_classes", []) if x != "*"]
             v["stats"]["documents"] = sum(docs.get(x, 0) for x in classes)
         items.append(v)
+    scfg = setting_dict(session, "knowledge.search", SEARCH_DEFAULT)
     return {
         "totals": st["totals"], "stale": st["stale"], "state": st["state"], "documentsByClass": docs, "embedding": emb, "graph": graph_health(),
+        "distance": {"threshold": float(scfg["max_cosine_distance"]), "calibratedModel": calibrated_model(session), "fusion": scfg.get("fusion", "convex")},
         "unassigned": st["collections"].get("analysis.unassigned", {}).get("chunks", 0), "collections": sorted(items, key=lambda x: (x["sort"], x["code"])),
         "orphanChunks": int(session.execute(text("SELECT count(*) FROM app.kb_chunk c WHERE c.collection_code NOT IN (SELECT code FROM cfg.kb_collection)")).scalar() or 0),
     }
@@ -148,6 +156,36 @@ def reindex(request: Request, session: Session = Depends(get_session), admin: Ap
     return {**stats.as_dict(), "note": "텍스트 · 개념 색인을 마쳤습니다. 임베딩은 워커가 60초 주기로 이어서 채웁니다."}
 
 
+@router.get("/quality")
+def quality(days: int = Query(7, ge=1, le=90), session: Session = Depends(get_session)):
+    """질문하기 품질 지표 — 답 못 한 비율 · 피드백 · 동작 방식, 자주 답을 못 한 질문 · 도움이 안 됐다는 질문(감사 기록에서 집계, 질문은 개인정보 가림)."""
+    return kb_quality(session, days)
+
+
+class CalibrateIn(BaseModel):
+    apply: bool = False
+
+
+@router.post("/calibrate")
+def calibrate_distance(body: CalibrateIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """현재 임베딩 모델 기준 코사인 거리 임계값 보정(설계 §21.15). apply=false 는 측정만(읽기 전용), true 는 확신할 수 있을 때만 검색 설정에 반영."""
+    try:
+        rep = calibrate(session)
+    except LlmUnavailable as exc:
+        raise HTTPException(409, f"임베딩 모델을 쓸 수 없습니다 — {str(exc)[:160]}") from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if body.apply:
+        try:
+            apply_calibration(session, rep, admin.emp_no)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        rep["applied"] = True
+        audit(session, admin.emp_no, "admin.knowledge.calibrate", "kb_chunk", rep["model"], {"suggested": rep["suggested"], "previous": rep["current"]}, client_ip(request))
+    session.commit()
+    return rep
+
+
 @router.post("/search")
 def search_diagnostic(body: SearchIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     target = admin
@@ -157,7 +195,7 @@ def search_diagnostic(body: SearchIn, request: Request, session: Session = Depen
             raise HTTPException(404, "사용자 없음")
     scope = resolve_scope(session, access_context(session, target, body.screen))
     ret = retrieve(session, scope, body.query.strip(), user=target, explain=True)
-    audit(session, admin.emp_no, "admin.knowledge.search", "assist", target.emp_no, {"query": body.query[:200], "analysis": len(ret.analysis), "documents": len(ret.documents)}, client_ip(request))
+    audit(session, admin.emp_no, "admin.knowledge.search", "assist", target.emp_no, {"query": audit_text(session, body.query), "analysis": len(ret.analysis), "documents": len(ret.documents)}, client_ip(request))
     session.commit()
     return {
         "asEmpNo": target.emp_no, "scope": scope.public(), "query": ret.query, "concepts": ret.concepts, "expanded": ret.expanded,

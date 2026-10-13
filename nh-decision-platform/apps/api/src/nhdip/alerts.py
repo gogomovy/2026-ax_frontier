@@ -6,6 +6,7 @@
 조건(설정 alerts.policy.rules — 관리자 편집)
   workflow_failed · quality_failed · auth_failures(창 안 실패 횟수) · llm_budget(경고 %) · golden_failed
   worker_stale(워커 심장박동 끊김) · queue_backlog(대기열 적체) · stuck_runs(오래 실행 중) — B.32
+  knowledge_stale(질문하기 색인 대조 멈춤 · 산출물 반영 지연) — 설계 §21.16
 같은 알림은 dedupe 키로 한 번만 보낸다.
 """
 from __future__ import annotations
@@ -42,6 +43,8 @@ DEFAULT_POLICY: dict[str, Any] = {
         "worker_stale": {"enabled": True, "severity": "critical", "stale_sec": 120},
         "queue_backlog": {"enabled": True, "severity": "warning", "threshold": 50, "overdue_min": 10},
         "stuck_runs": {"enabled": True, "severity": "warning", "running_min": 60},
+        # 질문하기 색인 (설계 §21.16) — 워커 대조가 멈췄거나, 대조가 도는데도 뒤처진 산출물이 계속 남을 때
+        "knowledge_stale": {"enabled": True, "severity": "warning", "reconcile_stale_min": 15, "stale_min": 10},
     },
 }
 
@@ -114,6 +117,32 @@ def raise_alert(session: Session, kind: str, severity: str, title: str, detail: 
     return a
 
 
+def _scan_knowledge(session: Session, rule: dict[str, Any]) -> int:
+    """질문하기 색인 점검 — (1) 워커 대조 시각이 오래 갱신되지 않음 (2) 뒤처진 산출물이 `stale_min` 분 넘게 남음. 반환: 새로 만든 알림 수."""
+    from datetime import datetime
+
+    from nhdip.knowledge.maintenance import get_state, set_state, status as kb_status
+
+    made = 0
+    now = utcnow()
+    st = get_state(session)
+    rec = st.get("reconciled_at")
+    if rec:  # 워커가 한 번이라도 대조한 환경에서만 (워커 자체가 없으면 worker_stale 이 알린다)
+        rec_dt = datetime.fromisoformat(str(rec))
+        if now - rec_dt > timedelta(minutes=int(rule.get("reconcile_stale_min", 15))):
+            made += int(raise_alert(session, "knowledge_stale", rule["severity"], "질문하기 색인 대조가 멈춤 — 새로 게시한 분석 결과가 질문하기에 반영되지 않을 수 있습니다", {"reconciledAt": str(rec), "minutes": int((now - rec_dt).total_seconds() // 60)}, f"knowledge_stale:reconcile:{rec}") is not None)
+    behind = int(kb_status(session)["stale"]["count"])
+    since = st.get("stale_since")
+    if not behind:
+        if since:
+            set_state(session, stale_since=None)  # 따라잡음 — 다음 지연은 새 사건
+    elif not since:
+        set_state(session, stale_since=now.isoformat())
+    elif now - datetime.fromisoformat(str(since)) >= timedelta(minutes=int(rule.get("stale_min", 10))):
+        made += int(raise_alert(session, "knowledge_stale", rule["severity"], f"질문하기 색인이 뒤처짐 — 산출물 {behind}건이 {int(rule.get('stale_min', 10))}분 넘게 반영되지 않음", {"behind": behind, "since": str(since)}, f"knowledge_stale:behind:{since}") is not None)
+    return made
+
+
 def scan(session: Session) -> int:
     """조건 검사 — 워커 루프에서 1분마다. 반환: 새로 만든 알림 수."""
     pol = policy(session)
@@ -173,6 +202,13 @@ def scan(session: Session) -> int:
     if sr.get("enabled"):
         for r in session.execute(select(WorkflowRun).where(WorkflowRun.status == "running", WorkflowRun.started_at < utcnow() - timedelta(minutes=int(sr.get("running_min", 60))))).scalars():
             add("stuck_runs", sr["severity"], f"오래 실행 중인 워크플로우 — {r.workflow_code}", {"run": r.id, "startedAt": r.started_at.isoformat()}, f"stuck_runs:{r.id}")
+    kr = rules["knowledge_stale"]
+    if kr.get("enabled"):
+        try:
+            with session.begin_nested():  # 색인 점검이 실패해도 앞에서 만든 알림은 지키도록 savepoint
+                n += _scan_knowledge(session, kr)
+        except Exception:  # noqa: BLE001 — 마이그레이션 전 등 색인 표가 없는 환경에서도 알림 점검은 계속
+            log.warning("knowledge_stale 점검 실패", exc_info=True)
     if rules["golden_failed"].get("enabled"):
         from nhdip.views.store import get_current
 

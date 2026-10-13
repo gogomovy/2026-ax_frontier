@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from nhdip.models import Setting
 
-DEFAULTS = {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "stream_user": [10, 60], "request_user": [20, 86400]}
+DEFAULTS = {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "assist_feedback": [30, 60], "assist_scope": [60, 60], "stream_user": [10, 60], "request_user": [20, 86400]}
 _hits: dict[str, deque[float]] = {}
 _lock = threading.Lock()
 log = logging.getLogger("nhdip.ratelimit")

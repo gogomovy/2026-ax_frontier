@@ -137,8 +137,8 @@ SETTINGS = {
     "auth.session_idle_minutes": (120, "세션 유휴 만료(분)"),
     "auth.lockout_minutes": (30, "로그인 잠금 자동 해제(분) — 0 이면 관리자만 해제 (B.32)"),
     "auth.rate_limits": (
-        {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "stream_user": [10, 60], "request_user": [20, 86400]},
-        "요청 속도 제한 {이름: [허용 횟수, 초]} — 0 이면 끄기. 로그인(IP · 사번) · 가입(IP) · 질의(사용자) · 분석 스트림(사용자) · 확인 요청(사용자) (B.32)",
+        {"login_ip": [30, 300], "login_emp": [10, 300], "signup_ip": [10, 3600], "assist_user": [30, 60], "assist_feedback": [30, 60], "assist_scope": [60, 60], "stream_user": [10, 60], "request_user": [20, 86400]},
+        "요청 속도 제한 {이름: [허용 횟수, 초]} — 0 이면 끄기. 로그인(IP · 사번) · 가입(IP) · 질의(사용자) · 질문하기 피드백 · 범위 조회(사용자) · 분석 스트림(사용자) · 확인 요청(사용자) (B.32)",
     ),
     "ops.backup_max_age_days": (1, "운영 준비 점검 — 마지막 백업(make backup)이 이 일수보다 오래되면 '확인' 표시 (B.34)"),
     "workflow.max_run_minutes": (120, "워크플로우 한 번 실행 시간 상한(분) — 넘으면 워커가 재시작하고 작업을 다시 대기열로 (0 = 끔) (B.33 · 시뮬레이션 가정)"),
@@ -149,8 +149,8 @@ SETTINGS = {
         "보관 기간 정리(워커 하루 1회) — 화면 산출물 이전 세대 수 · 운영 기록 보관 일수. 0 = 정리 안 함. 감사 로그 · 계산 기록은 정리하지 않음",
     ),
     "privacy.policy": (
-        {"pii_scan": True, "pii_allow_columns": [], "display_mask_columns": ["brwr_nm"], "mask_llm_log": True},
-        "개인정보 — 적재 전 개인정보 형식 값 검사(주민번호 · 휴대전화 · 이메일 · 카드번호, 발견 시 적재 거부) · 검사 제외 열 · 화면 가림 열 · LLM 호출 기록 가림",
+        {"pii_scan": True, "pii_allow_columns": [], "display_mask_columns": ["brwr_nm"], "mask_llm_log": True, "mask_assist_audit": True},
+        "개인정보 — 적재 전 개인정보 형식 값 검사(주민번호 · 휴대전화 · 이메일 · 카드번호, 발견 시 적재 거부) · 검사 제외 열 · 화면 가림 열 · LLM 호출 기록 가림 · 질문하기 감사 기록의 질문 가림",
     ),
     "governance.dual_control": ({"enabled": False, "rules": True}, "이중 승인 — 켜면 판정 규칙 새 버전은 만든 관리자가 아닌 다른 관리자가 적용해야 활성화"),
     "calc.unit_check": (
