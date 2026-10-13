@@ -200,17 +200,19 @@ def test_llm_narrate_and_critic(db, monkeypatch):
         p = s.execute(select(LlmProfile).where(LlmProfile.name == "default")).scalar()
         p.model = "coder.general.multimodal"
         s.commit()
-    replies = iter([
-        "실제부도율 [[fig:dr_6b]]이 대표값 [[fig:pd_mid_6b]]을 [[fig:breach_gap_6b]] 상회하나 최대값 [[fig:pd_max_6b]] 이내입니다.",
-        "충당금 비중이 9.16%로 상승했습니다.",  # 리터럴 숫자 → Critic 차단
-        "기업여신 증가율 [[fig:corp_growth]]와 가계여신 증가율 [[fig:hh_growth]]의 방향이 다릅니다.",
-    ])
-
+    # 워크플로 실행 순서는 작업 대기열 순서라 보장되지 않는다 — 서술 요청에 든 수치 id 로 답을 고른다(순서에 기대면 CI 에서 가끔 어긋남)
+    replies = [
+        ("dr_6b", "실제부도율 [[fig:dr_6b]]이 대표값 [[fig:pd_mid_6b]]을 [[fig:breach_gap_6b]] 상회하나 최대값 [[fig:pd_max_6b]] 이내입니다."),
+        ("share_now", "충당금 비중이 9.16%로 상승했습니다."),  # 리터럴 숫자 → Critic 차단
+        ("corp_growth", "기업여신 증가율 [[fig:corp_growth]]와 가계여신 증가율 [[fig:hh_growth]]의 방향이 다릅니다."),
+    ]
     def fake_post(url, headers=None, json=None, timeout=None):  # noqa: A002
         assert url.endswith("/chat/completions")
         # 판단 에이전트(변화 감지 · 플래너 · 오케스트레이터) 호출은 빈 판단 → 서술 에이전트만 준비된 문장을 받는다
         narr = "분석 서술 에이전트" in (json["messages"][0]["content"] if json else "")
-        content = _json.dumps({"statement": next(replies)}, ensure_ascii=False) if narr else "{}"
+        user = " ".join(str(m.get("content") or "") for m in (json or {}).get("messages", [])[1:])
+        pick = next((text for key, text in replies if key in user), None)
+        content = _json.dumps({"statement": pick}, ensure_ascii=False) if narr and pick else "{}"
         body = {"choices": [{"message": {"role": "assistant", "content": content}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
         return httpx.Response(200, json=body, request=httpx.Request("POST", url))
 
