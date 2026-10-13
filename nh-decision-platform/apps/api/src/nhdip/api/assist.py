@@ -396,16 +396,20 @@ def _finish_llm(prep: Prepared, cfg: Any, out: dict[str, Any]) -> dict[str, Any]
 
 
 def _finish_fallback(prep: Prepared, exc: Exception) -> dict[str, Any]:
-    lines = ["LLM 이 연결되지 않아 관련 확정 수치와 분석 결과 · 근거 문서만 정리했습니다."]
-    if prep.metrics:
-        lines.append("관련 수치: " + " · ".join(f"{m['label']} {m['display']}{m['unit']}" for m in prep.metrics[:4]))
-    for a in prep.analysis[:2]:
-        lines.append(f"분석 결과 — {a['artifactTitle'] or a['title']}({a['collectionLabel']}): {_snippet(a['text'])}")
-    if prep.evidence:
-        lines.append("관련 근거: " + " · ".join(f"{e['title']}" + (f" p.{e['page']}" if e["page"] else "") for e in prep.evidence[:3]))
-    if not prep.metrics and not prep.evidence and not prep.analysis:
-        lines.append("내가 볼 수 있는 범위에서 질문과 연결된 지표 · 분석 결과 · 문서를 찾지 못했습니다. 지표 이름이나 상품·모형 이름을 넣어 다시 질문해 주세요.")
-    return {**prep.result, "mode": "fallback", "answer": "\n".join(lines), "reason": str(exc)[:300], "verification": {"checkCode": "numeric_provenance", "passed": True, "unverified": []}}
+    """AI 모델이 없거나 실패했을 때의 결정론 답. 대화 화면이 읽기 좋게 마크다운(굵은 소제목 · 목록)으로 쓰고,
+    수치에는 `[지표:코드]`, 분석 결과 · 문서에는 출처 번호 `[n]` 을 달아 화면이 번호 칩 → 출처 카드로 잇게 한다(출처 카드는 기본 접힘)."""
+    if not (prep.metrics or prep.analysis or prep.evidence):
+        text_ = "내가 볼 수 있는 범위에서 질문과 연결된 지표 · 분석 결과 · 문서를 찾지 못했습니다. 지표 이름이나 상품·모형 이름을 넣어 다시 질문해 주세요."
+    else:
+        parts = ["AI 모델이 연결되어 있지 않아, 질문과 관련해 찾은 자료를 정리해 드려요."]
+        if prep.metrics:
+            parts.append("**확정 수치**\n" + "\n".join(f"- {m['label']} **{m['display']}{m['unit']}** [지표:{m['code']}]" for m in prep.metrics[:4]))
+        if prep.analysis:
+            parts.append("**분석 결과**\n" + "\n".join(f"- **{a['artifactTitle'] or a['title']}** ({a['collectionLabel']}) — {_snippet(a['text'], 110)} [{a['no']}]" for a in prep.analysis[:3]))
+        if prep.evidence:
+            parts.append("**근거 문서**\n" + "\n".join(f"- {e['title']}" + (f" p.{e['page']}" if e["page"] else "") + f" [{e['no']}]" for e in prep.evidence[:3]))
+        text_ = "\n\n".join(parts)
+    return {**prep.result, "mode": "fallback", "answer": text_, "reason": str(exc)[:300], "verification": {"checkCode": "numeric_provenance", "passed": True, "unverified": []}}
 
 
 def ask_core(session: Session, user: AppUser, body: AskIn) -> dict[str, Any]:

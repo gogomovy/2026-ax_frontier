@@ -121,23 +121,23 @@ def run_checks(session: Session) -> dict[str, Any]:
         cal_model = calibrated_model(session)
         used_model = session.execute(text("SELECT embedding_model FROM app.kb_chunk WHERE embedding IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")).scalar() if tot["embedded"] else None
         if tot["chunks"] == 0:
-            add(_item("knowledge_index", "질문하기 색인", "warn", "분석 결과 색인이 비어 있음 — 질문하기가 분석 결과로 답하지 못함", "python -m nhdip.cli seed (또는 관리자 API POST /admin/knowledge/reindex)"))
+            add(_item("knowledge_index", "AI 어시스턴트 색인", "warn", "분석 결과 색인이 비어 있음 — 질문하기가 분석 결과로 답하지 못함", "python -m nhdip.cli seed (또는 관리자 API POST /admin/knowledge/reindex)"))
         elif behind or loose:
-            add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 뒤처진 산출물 {behind}건 · 미분류 청크 {loose}건", "워커가 1분 안에 따라잡음. 계속되면 워커 로그 확인 · 미분류는 관리자 컬렉션 규칙 지정"))
+            add(_item("knowledge_index", "AI 어시스턴트 색인", "warn", f"{sub} · 뒤처진 산출물 {behind}건 · 미분류 청크 {loose}건", "워커가 1분 안에 따라잡음. 계속되면 워커 로그 확인 · 미분류는 관리자 컬렉션 규칙 지정"))
         elif cal_model and used_model and cal_model != used_model:
             # 코사인 거리 눈금은 모델마다 달라(설계 §21.15) 보정 때와 다른 모델이면 의미 기준(max_cosine_distance)이 맞지 않는다
-            add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 임베딩 모델이 보정 때와 다름({cal_model} → {used_model}) — 의미 검색 기준이 맞지 않을 수 있음", "python -m nhdip.cli kb-calibrate (결과 확인 후 --apply) 또는 관리자 [색인 · 컬렉션] 의 거리 보정"))
+            add(_item("knowledge_index", "AI 어시스턴트 색인", "warn", f"{sub} · 임베딩 모델이 보정 때와 다름({cal_model} → {used_model}) — 의미 검색 기준이 맞지 않을 수 있음", "python -m nhdip.cli kb-calibrate (결과 확인 후 --apply) 또는 관리자 [색인 · 컬렉션] 의 거리 보정"))
         elif tot["embedded"] >= HNSW_ADVISE_CHUNKS and not _setting(session, "knowledge.search", {}).get("hnsw_dim"):
             # 합성 부하 측정(설계 §21.14): 임베딩 10만 건에서 순차 탐색 400~570ms, 부분 HNSW 인덱스를 쓰면 한 자릿수 ms
-            add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 의미 검색이 순차 탐색 중(임베딩 {HNSW_ADVISE_CHUNKS:,}건 이상)", "python -m nhdip.cli kb-hnsw --dim <임베딩 차원> (모델이 확정된 뒤 한 번)"))
+            add(_item("knowledge_index", "AI 어시스턴트 색인", "warn", f"{sub} · 의미 검색이 순차 탐색 중(임베딩 {HNSW_ADVISE_CHUNKS:,}건 이상)", "python -m nhdip.cli kb-hnsw --dim <임베딩 차원> (모델이 확정된 뒤 한 번)"))
         else:
             note = "" if not tot["pendingEmbedding"] else " · 의미 검색은 임베딩 모델 연결 후 채워짐"
             if used_model and not cal_model:
                 note += f" · 거리 기준 미보정({used_model}) — kb-calibrate 권장"
-            add(_item("knowledge_index", "질문하기 색인", "ok", sub + note))
+            add(_item("knowledge_index", "AI 어시스턴트 색인", "ok", sub + note))
     except Exception as exc:  # noqa: BLE001 — 점검 자체가 실패해도 나머지 점검은 계속
         session.rollback()
-        add(_item("knowledge_index", "질문하기 색인", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}", "마이그레이션 0014 적용 여부 확인 (alembic upgrade head)"))
+        add(_item("knowledge_index", "AI 어시스턴트 색인", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}", "마이그레이션 0014 적용 여부 확인 (alembic upgrade head)"))
 
     # 질문하기 선택 검색 엔진(ES · 설계 §21.18) — 쓰지 않으면(ES_URL 비움 + backend=pg) 항목을 만들지 않는다. 쓰기로 했는데 안 되면 검색은 PostgreSQL 로 폴백하므로 경고
     try:
@@ -146,21 +146,21 @@ def run_checks(session: Session) -> dict[str, Any]:
         want = str(_setting(session, "knowledge.search", {}).get("backend", "pg")).strip().lower() == "es"
         if elastic.configured() or want:
             if not elastic.configured():
-                add(_item("search_backend", "질문하기 검색 엔진", "warn", "검색 설정이 ES 인데 ES_URL 이 비어 있음 — PostgreSQL 로 동작 중", "ES_URL 설정 후 api · worker 재기동, 또는 knowledge.search.backend 를 pg 로"))
+                add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", "검색 설정이 ES 인데 ES_URL 이 비어 있음 — PostgreSQL 로 동작 중", "ES_URL 설정 후 api · worker 재기동, 또는 knowledge.search.backend 를 pg 로"))
             else:
                 es = elastic.status(session)
                 stt = es.get("state") or {}
                 if not es.get("up"):
-                    add(_item("search_backend", "질문하기 검색 엔진", "warn" if want else "ok", f"ES 에 연결하지 못함 — {es.get('error', '')[:100]}" + (" · PostgreSQL 로 폴백 중" if want else ""), "ES 기동 · ES_URL · 인증 확인"))
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if want else "ok", f"ES 에 연결하지 못함 — {es.get('error', '')[:100]}" + (" · PostgreSQL 로 폴백 중" if want else ""), "ES 기동 · ES_URL · 인증 확인"))
                 elif want and (stt.get("synced_at") is None or es.get("lag")):
-                    add(_item("search_backend", "질문하기 검색 엔진", "warn", f"ES 연결됨 · 동기화 미완료(색인 {es.get('es_docs')}/{es.get('pg_chunks')}) — 새 청크는 PostgreSQL 로 보충", "워커 주기 안에 따라잡음. 계속되면 python -m nhdip.cli kb-es --sync"))
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", f"ES 연결됨 · 동기화 미완료(색인 {es.get('es_docs')}/{es.get('pg_chunks')}) — 새 청크는 PostgreSQL 로 보충", "워커 주기 안에 따라잡음. 계속되면 python -m nhdip.cli kb-es --sync"))
                 elif stt.get("analyzer") == "standard":
-                    add(_item("search_backend", "질문하기 검색 엔진", "warn", "ES 연결됨 · nori 분석기 없음(standard) — 한국어 조사 · 합성어 처리가 약함", "ES 에 analysis-nori 설치 후 python -m nhdip.cli kb-es --rebuild"))
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", "ES 연결됨 · nori 분석기 없음(standard) — 한국어 조사 · 합성어 처리가 약함", "ES 에 analysis-nori 설치 후 python -m nhdip.cli kb-es --rebuild"))
                 else:
-                    add(_item("search_backend", "질문하기 검색 엔진", "ok", f"ES 연결됨 · 색인 {es.get('es_docs')}/{es.get('pg_chunks')} · {'사용 중' if want else '준비됨(검색 설정은 pg)'}"))
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "ok", f"ES 연결됨 · 색인 {es.get('es_docs')}/{es.get('pg_chunks')} · {'사용 중' if want else '준비됨(검색 설정은 pg)'}"))
     except Exception as exc:  # noqa: BLE001
         session.rollback()
-        add(_item("search_backend", "질문하기 검색 엔진", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}"))
+        add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}"))
 
     # 운영 상태
     alive = session.execute(select(func.count()).select_from(WorkerHeartbeat).where(WorkerHeartbeat.seen_at > utcnow() - timedelta(seconds=60))).scalar() or 0

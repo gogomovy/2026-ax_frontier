@@ -829,6 +829,16 @@ def admin_ia_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["admin_ia_upgrade"] = moved
 
 
+def assist_rename_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """화면 이름 '질문하기' → 'AI 어시스턴트' — 1회. 관리자 메뉴의 이전 기본 이름('질문하기 색인')인 화면만 새 이름으로(관리자가 바꾼 이름은 보존)."""
+    if _applied(s, "assist-rename-v1"):
+        return
+    sc = s.get(Screen, "ADMIN_KNOWLEDGE")
+    if sc is not None and sc.label == "질문하기 색인":
+        sc.label = "AI 어시스턴트 색인"
+        out["assist_rename_upgrade"] = 1
+
+
 def _merge_screen_resources(s: Session, codes: set[str]) -> list[str]:
     """새 화면의 리소스를 설정 screen.resources 에 더한다 — 그 화면 키가 없을 때만(관리자 편집 보존)."""
     res = s.get(Setting, "screen.resources")
@@ -948,6 +958,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     score_snapshot_upgrade(s, out)
     ontology_extraction_upgrade(s, out)
     admin_ia_upgrade(s, out)
+    assist_rename_upgrade(s, out)
     upload_request_upgrade(s, out)
     analysis_spaces_upgrade(s, out)
     analysis_agents_upgrade(s, out)

@@ -916,7 +916,12 @@ def test_assist_fallback_lists_analysis_results_without_llm(db):
     admin = _admin()
     risk = _user(admin, "20269102", "T211")
     r = _ask(risk, "포용금융 충당금 비중은 얼마인가요?")
-    assert r["mode"] == "fallback" and r["analysis"] and any(ln.startswith("분석 결과 —") for ln in r["answer"].splitlines())
+    lines = r["answer"].splitlines()
+    assert r["mode"] == "fallback" and r["analysis"] and "**분석 결과**" in lines
+    # 마크다운 목록 + 출처 번호 — 화면이 번호 칩으로 바꿔 출처 카드(기본 접힘)와 잇는다
+    item = next(ln for ln in lines[lines.index("**분석 결과**") + 1 :] if ln.startswith("- **"))
+    nos = {a["no"] for a in r["analysis"]}
+    assert re.search(r"\[(\d+)\]$", item) and int(re.search(r"\[(\d+)\]$", item).group(1)) in nos
     nothing = _ask(risk, "ㅋㅋㅋ ㅎㅎㅎ")
     assert nothing["analysis"] == [] and "찾지 못했습니다" in nothing["answer"]
 
