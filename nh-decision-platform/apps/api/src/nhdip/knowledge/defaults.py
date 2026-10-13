@@ -16,6 +16,7 @@ SEARCH_DEFAULT: dict[str, Any] = {
     "recency_boost": 0.05,
     "intent_boost": 0.1,
     "min_keyword_coverage": 1,
+    "fusion": "convex",
     "min_term_ratio": 0.34,
     "keyword_candidates": 3000,
     "max_cosine_distance": 0.65,

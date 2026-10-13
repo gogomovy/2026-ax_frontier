@@ -8,6 +8,7 @@
   python -m nhdip.cli record-backup <폴더> <바이트>  백업 기록 남기기 (make backup 이 호출 — 운영 준비 점검의 '백업' 항목)
   python -m nhdip.cli wait-idle [--timeout 300]    미처리 이벤트 · 대기 · 실행 중 작업이 없을 때까지 대기 (CI · 기동 직후 점검)
   python -m nhdip.cli kb-hnsw --dim N              질문하기 분석 결과 색인에 부분 HNSW 인덱스 생성 + 검색 설정(knowledge.search.hnsw_dim) 반영 (임베딩 모델 확정 후)
+  python -m nhdip.cli kb-calibrate [--apply]       현재 임베딩 모델의 코사인 거리 임계값 추천(엉뚱한 질문 vs 제목 질문 분포), --apply 면 확신할 때만 반영
 """
 from __future__ import annotations
 
@@ -40,7 +41,26 @@ def main(argv: list[str] | None = None) -> int:
     ap_wait.add_argument("--strict", action="store_true", help="시간 초과면 종료 코드 1")
     ap_hn = sub.add_parser("kb-hnsw")
     ap_hn.add_argument("--dim", type=int, required=True, help="임베딩 차원(모델 확정 후, 2~2000)")
+    ap_cal = sub.add_parser("kb-calibrate")
+    ap_cal.add_argument("--apply", action="store_true", help="확신할 수 있는 추천값을 검색 설정(max_cosine_distance)에 반영")
     args = ap.parse_args(argv)
+
+    if args.cmd == "kb-calibrate":
+        from nhdip.knowledge.calibration import apply_calibration, calibrate
+        from nhdip.llm import LlmUnavailable
+
+        with SessionLocal() as s:
+            try:
+                rep = calibrate(s)
+                if args.apply:
+                    apply_calibration(s, rep, "cli")
+                    s.commit()
+                    rep["applied"] = True
+            except (LlmUnavailable, ValueError) as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
+        print(json.dumps(rep, ensure_ascii=False, indent=1))
+        return 0
 
     if args.cmd == "kb-hnsw":
         from nhdip.knowledge.maintenance import ensure_hnsw

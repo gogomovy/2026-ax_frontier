@@ -10,8 +10,11 @@
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date
@@ -31,7 +34,7 @@ from nhdip.models import AppUser, Setting
 from .access import AccessScope, CollectionInfo, doc_filter, kb_filter, load_collections, screen_collections, setting_dict
 from .defaults import SEARCH_DEFAULT
 from .maintenance import embedding_agent
-from .query import concepts_of, expand_concepts, graph_up, mark_graph_down, mark_graph_ok, query_tokens, terms_of
+from .query import concept_aliases, concepts_of, expand_concepts, graph_up, mark_graph_down, mark_graph_ok, query_tokens, terms_of
 
 EVIDENCE_WORDS = ("근거", "정책", "문서", "규정", "공문", "지침", "방안", "발표", "기조", "출처", "회의")
 STATUS_WORDS = ("현황", "얼마", "비중", "추이", "증가율", "부도율", "수치", "결과", "판정", "의견", "분석", "이탈", "점수", "잔액", "충당금")
@@ -69,6 +72,31 @@ def rrf_fuse(channels: dict[str, list[dict[str, Any]]], weights: dict[str, float
         for rank, r in enumerate(rows, start=1):
             it = fused.setdefault(r["ref"], {**{k: v for k, v in r.items() if k != "sig"}, "score": 0.0, "signals": {}})
             it["score"] += w / (rrf_k + rank)
+            it["signals"][f"{ch}_rank"] = rank
+            it["signals"].update(r.get("sig") or {})
+    return fused
+
+
+def convex_fuse(channels: dict[str, list[dict[str, Any]]], weights: dict[str, float], *, n_tok: int, t_dist: float, g_norm: float) -> dict[Any, dict[str, Any]]:
+    """채널별 점수를 0~1 로 맞춘 뒤 가중합 — 순위가 아니라 '얼마나 잘 맞는가'를 합친다.
+    키워드 = 맞춘 어절 비율, 의미 = 1 − 거리/임계값(임계값 밖은 0), 그래프 = 일치 개념 수/질문 개념 수.
+    RRF 는 순위만 보므로 두 채널에서 어중간하게 걸린 후보가 한 채널에서 아주 잘 맞는 후보를 이긴다 — 실제 다국어 임베딩 모델로
+    바꿔 말한 질문을 시험했을 때 하이브리드가 키워드 검색보다 나아지지 않던 문제를 푼다(설계 §21.15). 동점 정리는 아주 작은 RRF 항."""
+    fused: dict[Any, dict[str, Any]] = {}
+    n_tok = max(1, n_tok)
+    t_dist = max(1e-6, t_dist)
+    g_norm = max(1.0, g_norm)
+    for ch, rows in channels.items():
+        w = float(weights.get(ch, 1.0))
+        for rank, r in enumerate(rows, start=1):
+            it = fused.setdefault(r["ref"], {**{k: v for k, v in r.items() if k != "sig"}, "score": 0.0, "signals": {}})
+            if ch == "keyword":
+                s = min(1.0, int(r["raw"]) / n_tok)  # raw = 맞춘 어절 수 + 0.1 × ts_rank
+            elif ch == "vector":
+                s = max(0.0, 1.0 - float(r["raw"]) / t_dist)
+            else:
+                s = min(1.0, float(r["raw"]) / g_norm)
+            it["score"] += w * s + 1e-4 / (60 + rank)
             it["signals"][f"{ch}_rank"] = rank
             it["signals"].update(r.get("sig") or {})
     return fused
@@ -176,13 +204,54 @@ def _stems(terms: list[str]) -> list[str]:
     return [t for t in uniq if not any(o != t and t.startswith(o) for o in uniq)]
 
 
-def _relax_stages(stems: list[str], min_ratio: float = 0.34) -> list[list[str]]:
+def _relax_stages(stems: list[str], min_ratio: float = 0.34, total: int | None = None) -> list[list[str]]:
     """단계별 AND 조합 목록 — 전부 맞춤 → 하나 빼고 → … → 최소 `min_ratio` 비율(게이팅 기준과 같음). 단계마다 조합 하나가 tsquery 하나(`a:* & b:*`).
     조합마다 따로 인덱스를 타고(UNION) 합치므로 GIN 이 AND 를 교집합으로 빠르게 푼다 — 한 쿼리에 OR 로 묶으면 흔한 낱말의 색인 목록 전체를
-    합쳐 검사하느라 느려진다(10만 건 합성 부하에서 확인, 설계 §21.14). 그 아래 단계의 후보는 어차피 분석 후보 게이팅(낱말 비율)에서 걸러지므로 찾지 않는다."""
+    합쳐 검사하느라 느려진다(10만 건 합성 부하에서 확인, 설계 §21.14). 그 아래 단계의 후보는 어차피 분석 후보 게이팅(낱말 비율)에서 걸러지므로 찾지 않는다.
+    `total` = 질문의 전체 어절 수 — 색인에 한 건도 없는 어절을 빼고 `stems` 만 넘길 때, 최소 단계는 원래 어절 수 기준으로 잡는다(없는 어절이 든 조합은 어차피 결과가 없다)."""
     m = len(stems)
-    low = max(1, math.ceil(m * float(min_ratio) - 1e-9))
+    low = max(1, math.ceil((total if total is not None else m) * float(min_ratio) - 1e-9))
     return [[" & ".join(f"{t}:*" for t in combo) for combo in combinations(stems, level)] for level in range(m, low - 1, -1)]
+
+
+_ALIVE: dict[tuple[str, str], float] = {}  # (접근 범위 지문, 어절) → 만료 시각(monotonic) — '있음' 판정만 잠깐 기억한다
+_ALIVE_LOCK = threading.Lock()
+ALIVE_TTL_SEC = 300.0
+ALIVE_MAX = 4096
+
+
+def _live_stems(session: Session, filt: str, fp: dict[str, Any], stems: list[str]) -> list[str]:
+    """접근 범위 안의 청크에 한 건이라도 있는 어절만. 자연어 질문에는 색인에 없는 어절('몫이' · '줄고' …)이 흔한데, 없는 어절이 든 AND 조합은
+    결과가 없는 채로 조합마다 인덱스를 훑느라 시간을 쓴다(실제 문장 10만 건에서 키워드 채널 최대 0.65초, 설계 §21.16).
+    '있음'만 5분 기억한다 — 흔한 어절은 반복되고(확인에 7~18ms), '없음'은 새로 게시된 자료가 바로 잡혀야 하므로 매번 확인한다(없는 어절은 ~2ms)."""
+    if not stems:
+        return []
+    now = time.monotonic()
+    scope = hashlib.sha1(json.dumps([filt, fp], sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    with _ALIVE_LOCK:
+        known = {t for t in stems if _ALIVE.get((scope, t), 0.0) > now}
+    todo = [t for t in stems if t not in known]
+    if todo:
+        found = _exists_stems(session, filt, fp, todo)
+        with _ALIVE_LOCK:
+            if len(_ALIVE) > ALIVE_MAX:
+                _ALIVE.clear()
+            for t in found:
+                _ALIVE[(scope, t)] = now + ALIVE_TTL_SEC
+        known |= set(found)
+    return [t for t in stems if t in known]
+
+
+def _exists_stems(session: Session, filt: str, fp: dict[str, Any], stems: list[str]) -> list[str]:
+    sql = "SELECT " + ", ".join(f"EXISTS(SELECT 1 FROM app.kb_chunk c WHERE {filt} AND c.tsv @@ to_tsquery('simple', :e{i}))" for i in range(len(stems)))
+    # EXISTS 는 '첫 행만' 찾는 계획을 고르는데, 없는 어절은 첫 행이 영영 안 나와 전체 순차 탐색이 된다(접근 범위 조건이 붙으면 250ms, 실제 문장 10만 건에서 확인).
+    # 이 문장에서만 비트맵 계획(GIN)만 허용한다 — 없는 어절은 인덱스에서 바로 비어 나오고, 있는 어절도 첫 행만 확인한다. 끝나면 되돌려 뒤따르는 벡터(HNSW) 질의에 영향이 없게 한다.
+    session.execute(text("SELECT set_config('enable_seqscan', 'off', true), set_config('enable_indexscan', 'off', true), set_config('enable_indexonlyscan', 'off', true)"))
+    try:
+        flags = session.execute(text(sql), {**fp, **{f"e{i}": f"{t}:*" for i, t in enumerate(stems)}}).one()
+    finally:
+        session.execute(text("SELECT set_config('enable_seqscan', 'on', true), set_config('enable_indexscan', 'on', true), set_config('enable_indexonlyscan', 'on', true)"))
+    return [t for t, ok in zip(stems, flags) if ok]
 
 
 def _kb_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int, cap: int = 3000, min_ratio: float = 0.34) -> list[dict[str, Any]]:
@@ -192,11 +261,16 @@ def _kb_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int
     cap = max(lim, int(cap))
     filt, fp = kb_filter(scope)
     # 점수는 어절(접두 낱말) 단위로 센다 — '증가율과' · '증가율' 같은 활용형을 따로 세지 않는다(행마다 @@ 계산 횟수도 줄어든다)
-    stems = _stems(terms)
+    all_stems = _stems(terms)
+    # 접근 범위 안에 한 건도 없는 어절은 뺀다 — 결과는 같고(없는 어절이 든 조합은 결과가 없다) 조합 수가 크게 준다. 게이팅 최소 어절 수에 못 미치면 후보 자체가 없다
+    stems = _live_stems(session, filt, fp, all_stems)
+    if len(stems) < max(1, math.ceil(len(all_stems) * float(min_ratio) - 1e-9)):
+        return []
     tp = {f"t{i}": f"{t}:*" for i, t in enumerate(stems)}
     q_all = " | ".join(f"{t}:*" for t in stems)
+    q_rank = " | ".join(f"{t}:*" for t in all_stems)  # ts_rank 는 질문의 모든 어절로 계산 — 없는 어절을 빼도 점수 · 순위가 이전과 같도록
     # 후보 선택 단계: 정확도 높은 단계부터 lim 건이 모일 때까지 (순서는 단계와 무관하게 아래 점수로 정한다)
-    stages = _relax_stages(stems, min_ratio) if 1 < len(stems) <= MAX_RELAX_TERMS else [[q_all]]
+    stages = _relax_stages(stems, min_ratio, total=len(all_stems)) if 1 < len(stems) <= MAX_RELAX_TERMS else [[q_all]]
     rows: list[Any] = []
     for stage in stages:
         branches = " UNION ".join(f"SELECT c.id FROM app.kb_chunk c WHERE {filt} AND c.tsv @@ to_tsquery('simple', :b{i})" for i in range(len(stage)))
@@ -204,7 +278,7 @@ def _kb_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int
             f"SELECT {KB_SELECT}, ({_cover_sql('c', len(stems))}) + 0.1 * ts_rank(c.tsv, to_tsquery('simple', :q)) AS s "
             f"FROM app.kb_chunk c WHERE c.id IN (SELECT id FROM ({branches}) u LIMIT :cap) ORDER BY s DESC LIMIT :lim"
         )
-        rows = session.execute(sql, {**fp, **tp, **{f"b{i}": q for i, q in enumerate(stage)}, "q": q_all, "lim": lim, "cap": cap}).mappings().all()
+        rows = session.execute(sql, {**fp, **tp, **{f"b{i}": q for i, q in enumerate(stage)}, "q": q_rank, "lim": lim, "cap": cap}).mappings().all()
         if len(rows) >= lim:
             break
     return [{"ref": ("kb", r["id"]), "src": "kb", **_kb_cols(r), "raw": float(r["s"]), "sig": {"keyword_score": round(float(r["s"]), 4)}} for r in rows]
@@ -395,6 +469,12 @@ def retrieve(
     diag: dict[str, Any] = {"channels": {}, "timingsMs": {}, "candidates": {}}
     terms = terms_of(query)[:12]
     concepts = concepts if concepts is not None else concepts_of(session, query)
+    if not terms and not concepts:
+        # 'ㅋㅋㅋㅋ' 처럼 검색할 낱말도 개념도 없는 질문 — 의미 검색이 엉뚱한 가장 가까운 글을 돌려주지 않게 아무것도 찾지 않는다
+        off = {"on": False, "candidates": 0, "reason": "질문에서 검색할 낱말을 찾지 못했습니다"}
+        empty = Retrieval(query=query)
+        empty.diagnostics = {"channels": {"keyword": dict(off), "vector": dict(off), "graph": dict(off)}, "timingsMs": {"total": round((time.perf_counter() - t_all) * 1000)}, "candidates": {}, "semantic": False, "graph": False, "emptyQuery": True, "expanded": []}
+        return empty
     t_exp = time.perf_counter()
     expanded = expanded if expanded is not None else expand_concepts(session, concepts, int(cfg["graph_expand_max"]))
     diag["timingsMs"]["expand"] = round((time.perf_counter() - t_exp) * 1000)  # Neo4j 가 막히면 여기서 기다린다(차단기가 다음 질문부터 건너뜀)
@@ -435,7 +515,11 @@ def retrieve(
     diag["graph"] = bool(ch["graph"])
 
     t0 = time.perf_counter()
-    fused = rrf_fuse(ch, cfg["weights"], int(cfg["rrf_k"]))
+    if str(cfg.get("fusion", "convex")) == "rrf":
+        fused = rrf_fuse(ch, cfg["weights"], int(cfg["rrf_k"]))
+    else:
+        fused = convex_fuse(ch, cfg["weights"], n_tok=len(query_tokens(query)), t_dist=float(cfg["max_cosine_distance"]), g_norm=float(len(concepts)))
+    diag["fusion"] = "rrf" if str(cfg.get("fusion", "convex")) == "rrf" else "convex"
     diag["timingsMs"]["fuse"] = round((time.perf_counter() - t0) * 1000)
 
     ctx = scope.ctx
@@ -451,19 +535,25 @@ def retrieve(
     # '증가율' 같은 흔한 낱말 하나만 겹치는 엉뚱한 결과나, 확장 개념만으로 끌려온 결과는 거른다.
     n_tok = max(1, len(query_tokens(query)))
     need = max(int(cfg["min_keyword_coverage"]), math.ceil(float(cfg["min_term_ratio"]) * n_tok))
+    t_max = float(cfg["max_cosine_distance"])
+
+    def gate(sig: dict[str, Any]) -> bool:
+        kw, dist, g, gx = sig.get("keyword_score"), sig.get("cosine_distance"), sig.get("graph_score"), sig.get("graph_exact", 0)
+        kw_n = int(kw) if kw is not None else 0
+        return kw_n >= need or (dist is not None and dist <= t_max) or gx >= 1 or bool(g and g > 0 and kw_n >= 1)
+
     cands, rejected = [], []
     for it in fused.values():
         if it["src"] != "kb":
             continue
         sig = it["signals"]
-        kw, dist, g, gx = sig.get("keyword_score"), sig.get("cosine_distance"), sig.get("graph_score"), sig.get("graph_exact", 0)
-        kw_n = int(kw) if kw is not None else 0
-        if kw_n >= need or (dist is not None and dist <= float(cfg["max_cosine_distance"])) or gx >= 1 or (g and g > 0 and kw_n >= 1):
+        if gate(sig):
             col = scope.collections.get(it["collection"])
             it["kind"] = col.kind if col else "analysis"
             cands.append(it)
         else:
-            rejected.append({"chunkId": it["chunk_id"], "title": it["title"], "stage": "semantic", "reason": f"신호 기준 미달(낱말 {kw_n}/{need} · 거리 {dist} · 개념 {g})"})
+            kw, dist, g = sig.get("keyword_score"), sig.get("cosine_distance"), sig.get("graph_score")
+            rejected.append({"chunkId": it["chunk_id"], "title": it["title"], "stage": "semantic", "reason": f"신호 기준 미달(낱말 {int(kw) if kw is not None else 0}/{need} · 거리 {dist} · 개념 {g})"})
     ranked = rerank_analysis(cands, cfg=cfg, owned=scope.owned, screen_cols=screen_cols, boosts=boosts, intent=intent, ref=ref_date, k=int(cfg["analysis_k"]))
     for c in ranked:
         col = scope.collections.get(c["collection"])
@@ -475,11 +565,18 @@ def retrieve(
     out.analysis = ranked
 
     # 문서 — 기존 6단계 게이팅 · 우선순위 · 범주 균형
+    aliases = concept_aliases(session, concepts) if any(it["src"] == "doc" for it in fused.values()) else []
     doc_hits = []
     for it in fused.values():
         if it["src"] != "doc":
             continue
         sig = dict(it["signals"])
+        # 분석 결과와 같은 최소 신호 기준을 문서에도 먼저 적용 — 기존 근거 게이팅은 낱말 하나만 겹쳐도 통과해 엉뚱한 질문('비 오는 날 우산')에도 문서가 붙었다.
+        # 단, 질문의 온톨로지 개념(포용금융 · 소기업 …)이 본문에 직접 나오는 문서는 낱말이 하나뿐이어도 근거 후보다(개념은 도메인에서 뜻이 정해진 낱말이라 '방법' 같은 흔한 낱말과 다르다)
+        text_low = (it.get("text") or "").lower()
+        if not (gate(sig) or sig.get("graph") or any(a in text_low for a in aliases)):
+            rejected.append({"chunkId": it["chunk_id"], "title": it["title"], "stage": "semantic", "reason": f"신호 기준 미달(문서 · 낱말 {int(sig.get('keyword_score') or 0)}/{need} · 거리 {sig.get('cosine_distance')})"})
+            continue
         doc_hits.append({**it, "signals": sig})
     if doc_hits:
         top = max(h["score"] for h in doc_hits) or 1.0

@@ -58,6 +58,15 @@ def query_tokens(q: str) -> list[str]:
     return out
 
 
+def concept_aliases(session: Session, concepts: list[str]) -> list[str]:
+    """질문 개념 키들의 별칭(소문자, 2자 이상) — 문서 본문에 개념이 직접 나오는지 볼 때 쓴다."""
+    schema = active_schema(session)
+    if schema is None or not concepts:
+        return []
+    want = set(concepts)
+    return sorted({alias for amap in Resolver(schema).alias.values() for alias, key in amap.items() if key in want and len(alias) >= 2})
+
+
 def concepts_of(session: Session, q: str) -> list[str]:
     """질문에 나온 온톨로지 개념 키(별칭 사전 부분 일치)."""
     schema = active_schema(session)

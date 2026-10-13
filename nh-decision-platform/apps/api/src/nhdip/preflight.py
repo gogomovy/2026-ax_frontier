@@ -116,15 +116,25 @@ def run_checks(session: Session) -> dict[str, Any]:
         tot, behind = kb["totals"], kb["stale"]["count"]
         loose = (kb["collections"].get("analysis.unassigned") or {}).get("chunks", 0)
         sub = f"청크 {tot['chunks']} · 임베딩 {tot['embedded']}/{tot['chunks']}"
+        from nhdip.knowledge.calibration import calibrated_model
+
+        cal_model = calibrated_model(session)
+        used_model = session.execute(text("SELECT embedding_model FROM app.kb_chunk WHERE embedding IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC LIMIT 1")).scalar() if tot["embedded"] else None
         if tot["chunks"] == 0:
             add(_item("knowledge_index", "질문하기 색인", "warn", "분석 결과 색인이 비어 있음 — 질문하기가 분석 결과로 답하지 못함", "python -m nhdip.cli seed (또는 관리자 API POST /admin/knowledge/reindex)"))
         elif behind or loose:
             add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 뒤처진 산출물 {behind}건 · 미분류 청크 {loose}건", "워커가 1분 안에 따라잡음. 계속되면 워커 로그 확인 · 미분류는 관리자 컬렉션 규칙 지정"))
+        elif cal_model and used_model and cal_model != used_model:
+            # 코사인 거리 눈금은 모델마다 달라(설계 §21.15) 보정 때와 다른 모델이면 의미 기준(max_cosine_distance)이 맞지 않는다
+            add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 임베딩 모델이 보정 때와 다름({cal_model} → {used_model}) — 의미 검색 기준이 맞지 않을 수 있음", "python -m nhdip.cli kb-calibrate (결과 확인 후 --apply) 또는 관리자 [색인 · 컬렉션] 의 거리 보정"))
         elif tot["embedded"] >= HNSW_ADVISE_CHUNKS and not _setting(session, "knowledge.search", {}).get("hnsw_dim"):
             # 합성 부하 측정(설계 §21.14): 임베딩 10만 건에서 순차 탐색 400~570ms, 부분 HNSW 인덱스를 쓰면 한 자릿수 ms
             add(_item("knowledge_index", "질문하기 색인", "warn", f"{sub} · 의미 검색이 순차 탐색 중(임베딩 {HNSW_ADVISE_CHUNKS:,}건 이상)", "python -m nhdip.cli kb-hnsw --dim <임베딩 차원> (모델이 확정된 뒤 한 번)"))
         else:
-            add(_item("knowledge_index", "질문하기 색인", "ok", sub + ("" if not tot["pendingEmbedding"] else " · 의미 검색은 임베딩 모델 연결 후 채워짐")))
+            note = "" if not tot["pendingEmbedding"] else " · 의미 검색은 임베딩 모델 연결 후 채워짐"
+            if used_model and not cal_model:
+                note += f" · 거리 기준 미보정({used_model}) — kb-calibrate 권장"
+            add(_item("knowledge_index", "질문하기 색인", "ok", sub + note))
     except Exception as exc:  # noqa: BLE001 — 점검 자체가 실패해도 나머지 점검은 계속
         session.rollback()
         add(_item("knowledge_index", "질문하기 색인", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}", "마이그레이션 0014 적용 여부 확인 (alembic upgrade head)"))
