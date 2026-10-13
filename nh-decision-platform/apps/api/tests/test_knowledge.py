@@ -555,6 +555,21 @@ def test_vector_channel_with_embedding_backfill(db, fake_embedder):
         assert any("vector_rank" in h["signals"] for h in ret.analysis)
 
 
+def test_vector_channel_widens_hnsw_candidate_pool_for_narrow_access_scopes(db):
+    """HNSW 는 후보 ef_search(기본 40)개를 찾은 **뒤에** 접근 범위로 거른다 — 범위가 좁은 사용자는 후보 40건을 요청해도 9~24건만 받고 최근접도 놓쳤다(10만 건 실측).
+    후보 풀을 키우는 설정이 검색 트랜잭션에 적용되고, 서버가 모르는 값이어도 검색이 깨지지 않는다(설계 §21.18)."""
+    from nhdip.knowledge.search import _kb_vector
+
+    with db() as s:
+        cfg = search_config(s)
+        assert cfg["hnsw_ef_search"] == 200 and cfg["hnsw_iterative_scan"] == "strict_order"
+        _kb_vector(s, _admin_scope(s), [0.1] * 32, "m", None, 10, ef_search=cfg["hnsw_ef_search"], iterative=cfg["hnsw_iterative_scan"])
+        assert s.execute(text("SHOW hnsw.ef_search")).scalar() == "200"
+        assert s.execute(text("SHOW hnsw.iterative_scan")).scalar() == "strict_order"  # pgvector 0.8+ (이 서버는 0.8.1)
+        _kb_vector(s, _admin_scope(s), [0.1] * 32, "m", None, 10, iterative="not_a_mode")  # 잘못된 값 — savepoint 로 건너뛰고 질의는 계속
+        assert s.execute(text("SELECT 1")).scalar() == 1
+
+
 def test_knowledge_features_work_under_dml_only_app_role(db):
     """운영의 API 는 DML 전용 DB 계정(B.33)으로 접속한다 — 색인 · 검색 · 대조가 그 권한으로 되고, 인덱스 생성(DDL)은 소유자만 된다."""
     import secrets as _s
