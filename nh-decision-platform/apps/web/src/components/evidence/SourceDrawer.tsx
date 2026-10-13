@@ -109,9 +109,9 @@ function EvidenceBody({
 
   return (
     <div className="flex flex-col gap-lg">
-      {/* Agent 판단 → 근거 → 근거 문서 → 원문 경로를 명시 */}
+      {/* AI 판단 → 근거 → 근거 문서 → 원문 경로를 명시 */}
       <ol className="soft flex items-center gap-2 px-base py-2.5 text-[11px] text-steel">
-        <li className="font-bold text-charcoal">Agent 판단</li>
+        <li className="font-bold text-charcoal">AI 판단</li>
         <li aria-hidden>›</li>
         <li className="font-bold text-primary">판단 근거</li>
         <li aria-hidden>›</li>

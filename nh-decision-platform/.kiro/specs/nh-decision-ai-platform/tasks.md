@@ -370,6 +370,33 @@
 
 - [x] D.17 선택 검색 엔진 Elasticsearch (2026-10-13 · RAG-09 · NFR-KB-08) — 기본 PostgreSQL 은 그대로 두고 분석 결과 청크의 키워드(BM25 + nori) · 의미(kNN) 채널만 ES 로 옮기는 **선택 경로**(`knowledge/elastic.py`, 검색 설정 `knowledge.search.backend = pg|es`, 기본 pg). 원장은 PostgreSQL: ES 가 돌려준 id 는 PostgreSQL 에서 접근 규칙으로 다시 걸러 읽는다(낡은 권한 필드 · 지워진 청크가 새지 않음). 워커가 목록 대조로 동기화(`kb-es --sync`), 아직 못 올린 새 청크는 PostgreSQL 이 보충, ES 장애는 차단기 + 자동 폴백, 응답 `retrieval.backend`, 관리자 상태 `searchBackend`, 운영 점검 `search_backend`, CLI `kb-es [--sync|--rebuild]`, 컴포즈 `--profile search`(nori 이미지). **ES 와 견주다 찾은 PostgreSQL 쪽 결함도 고침**: HNSW 가 접근 범위를 후처리해 범위가 좁은 사용자는 후보 40건 중 9~24건만 받던 문제 → `hnsw_ef_search=200` + `hnsw_iterative_scan=strict_order` 로 40/40(`_tune_hnsw`, 시험 `test_vector_channel_widens_hnsw_candidate_pool_for_narrow_access_scopes`). 시험 `tests/test_knowledge_es.py`: ES 없이 14개(가짜 전송) + 실제 ES 8개(`ES_URL` 이 있을 때만 — 접근 규칙 SQL ↔ ES 동치, 팀 · 지점 격리, 골든셋 통과, 지운 청크, 새 청크 보충, 장애 복구, 의미 채널, 상태 · 재구축 · CLI). 실제 ES 9.5.4 + nori 로 확인. 2만 건 측정과 키워드 결과 차이(분석기)는 설계 §21.18. 못 한 것: 컨테이너 빌드 · 기동(Docker 없음), 다중 노드 · TLS, 운영 규모, 실제 임베딩 모델 벡터
 
+---
+
+## Phase E. 사용자 흐름 기준 UI/UX 개선 (2026-10-13 착수 · 요구사항 §22 · 설계 §22 · Q121~Q126)
+
+> 사용자 요청(2026-10-13): [자료 올리기]에서 파일을 직접 올리는 기능이 보이지 않음 + 전체 UI/UX 를 사용자 흐름 기준으로 점검 · 개선. 역할별(종합기획부 · 신용리스크 · 영업점 · 데이터 책임자 · 관리자) 화면 캡처 38장과 코드 분석으로 발견 13건(요구사항 §22.1).
+
+- [x] E.1 문서 — 요구사항 §22(UXF · NAV · INT · TXT · LAY · QA-E1) · 결정 Q121~Q126 · 설계 §22 · 이 목록
+- [x] E.2 공통 구성 요소 — `FileDrop`(끌어다 놓기 · 키보드 · 형식 · 용량) · `useConfirm` 확인 대화상자 · 알림 성공/실패 구분 · 상태 표기 `lib/labels.ts` · 파일 이름 추천 `lib/upload-match.ts`(단위 시험)
+- [x] E.3 업무 업로드 흐름 (UXF-01~04) — 파일 먼저 → 추천 → 확인 → 검사 · 요청, 못 누르는 이유 · 결과 초점 · 승인 주체 문구 통일 · 내 요청 오류 · `?target=` 깊은 링크
+- [x] E.4 관리자 업로드 (UXF-05) — [데이터셋·문서] 머리 파일 놓기 → 추천 → 상세(파일 채움 · 이동 · 초점), 날짜 입력 · 형식 안내, 즉시 확정 · 강제 확정 확인
+- [x] E.5 데이터베이스 화면 (UXF-04) — 행 '새 버전 올리기' · 자료 찾기 · 권한별 안내 · 품질 칸 정리
+- [x] E.6 내비게이션 (NAV-01~05) — 관리자 첫 화면 `/admin` · 관리 묶음 먼저 · 업무 화면 접힘 · 관리 건수 배지(시드 보강 `admin-counts-v1`) · 가장 긴 일치 활성 · 자료 성격 표시 · 권한 없음/없는 화면 안내
+- [x] E.7 위험 작업 확인 (INT-01) — 사용자(역할 · 중지 · 반려 · 비밀번호) · 버전 되돌리기 · 분석 폐기 · LLM · 자료 강제 승인
+- [x] E.8 표기 · 배치 (TXT-01 · LAY-01 · INT-02) — 업무 화면 영어 · 내부 용어 정리, 실행 · 품질 상태 한국어, [질문하기] 단추 가림 해소
+- [x] E.9 시험 — vitest · pytest(첫 화면 · 관리 건수 · 자료 성격) · E2E(업로드 새 흐름 · 깊은 링크 · 관리자 첫 화면 · 확인 대화상자) · 접근성
+- [x] E.10 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · README, 커밋 · 푸시 · CI
+- 후속(Q126): 글자 크기 토큰 일괄 치환(약 900곳) · 긴 표 페이지 나눔 · 관리자 화면 구성 요소 통합(`AdminPage`/`PageHeader`, kit `Tabs`/`PillTabs`)
+## Phase G. 온톨로지 구성 시각화 (2026-10-13 착수 · 요구사항 §23 · 설계 §23 · Q127~Q129)
+> 사용자 요청(2026-10-13): 온톨로지 구성을 관리자 화면에서 보기 쉽게 시각화(3D 군집 가능, 추천 방향으로). 같은 요청의 벡터 저장소(Elasticsearch · Milvus) 전환은 다른 작업 브랜치(feat/ask-knowledge-hybrid-rag · 설계 §21.18)에서 진행 중이라 여기서 하지 않음(Q129).
+- [x] G.1 문서 — 요구사항 §23(OV) · 결정 Q127~Q129 · 설계 §23 · 이 목록
+- [x] G.2 수집 분리 — `graph/projection.collect_graph`(투영 결과 불변 · 근거 부가 정보), `project_all` 은 수집 + 반영
+- [x] G.3 지도 계산 — `graph/ontology_map.py`(상한 · Louvain · 군집 이름 · 3D/2D 배치 · 구조 요약 · 보관), `GET /admin/ontology/map`
+- [x] G.4 화면 — '구성 지도' 탭: 3D 군집 지도(회전 · 확대 · 자동 회전 · 2D) · 찾기 · 범례 · 군집 초점 · 상세 패널 · 구조도 · 표로 보기 · 원장 기준 요약
+- [x] G.5 시험 — pytest(수집 = 투영 입력 · 군집 · 배치 결정성 · 상한 · API), vitest(투영 수학 · 선택), E2E(지도 · 찾기 → 상세 · 표 · 구조도), 접근성
+- [x] G.6 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
+- 후속: 의미 임베딩 기반 '의미 지도'(임베딩 모델 확정 후) · 지도에서 추출 검토(잘못된 관계 바로 제외)
+
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
 
 > Phase 0~8 항목은 착수 시점 설계(§1.4 · Redis · MinIO · Milvus · LangGraph)를 기준으로 쓰였고, 설계 §19 가 이를 대체했다. 아래는 Phase B 로 **대체 구현된 범위**다. 원 항목의 체크박스는 원 DoD(원 기술 선택 포함)를 모두 충족할 때만 체크하므로, 대체 완료 항목의 상태는 이 표로 본다.

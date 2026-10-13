@@ -18,11 +18,11 @@ export function BranchGuides() {
 
   return (
     <section>
-      <SectionHead title="사업부서 가이드" hint={`${shared.length}건 · 영업점 Agent 가 참고하는 진행사업`} />
+      <SectionHead title="사업부서 가이드" hint={`${shared.length}건 · 영업점 AI가 참고하는 진행사업`} />
       {shared.length === 0 ? (
         <RowEmpty
           title="참고 가능한 사업부서 가이드가 없습니다"
-          description="사업부서가 진행사업의 영업점 참고를 켜면 이곳에 표시되고, 영업점 Agent 판단 기준에 반영됩니다."
+          description="사업부서가 진행사업의 영업점 참고를 켜면 이곳에 표시되고, 영업점 AI 판단 기준에 반영됩니다."
         />
       ) : (
         <RowList>

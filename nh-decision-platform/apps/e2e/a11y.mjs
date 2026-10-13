@@ -29,6 +29,8 @@ const PAGES = (process.env.A11Y_PAGES ?? "").split(",").filter(Boolean).length
       // Phase C — 관리자 홈 · 운영 개요 · 설정 · 자료 승인 · 분석 에이전트 · 실행 상세, 업무 자료 올리기 · 분석 만들기 · 부서 분석 공간
       "/admin/monitor", "/admin/settings", "/admin/uploads", "/admin/analysis-agents", "/admin/monitor/runs", "/admin/workflows", "/admin/ontology", "/admin/knowledge",
       "/knowledge/upload", "/analysis/builder?space=risk",
+      // Phase E — 자료를 고른 채 연 업로드(목록 · 기준 정보 펼침) · 권한 없음 · 없는 화면
+      "/knowledge/upload?target=PROVISION_BY_PRODUCT", "/forbidden?from=/risk", "/no-such-page",
     ];
 if (!ADMIN || !ADMIN_PW) {
   console.error("E2E_ADMIN_EMP · E2E_ADMIN_PW 가 필요합니다 (make a11y 는 .env 의 BOOTSTRAP_ADMIN_* 를 사용)");
@@ -37,7 +39,7 @@ if (!ADMIN || !ADMIN_PW) {
 fs.mkdirSync(OUT, { recursive: true });
 
 // 탭(role=tab)으로 내용이 바뀌는 화면 — 첫 탭 외의 탭도 눌러 다시 점검한다 (B.45). 쉼표로 바꿀 수 있다.
-const TAB_PAGES = (process.env.A11Y_TAB_PAGES ?? "/admin/pipeline").split(",").filter(Boolean);
+const TAB_PAGES = (process.env.A11Y_TAB_PAGES ?? "/admin/pipeline,/admin/ontology").split(",").filter(Boolean);
 
 async function settle(page) {
   await page.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);

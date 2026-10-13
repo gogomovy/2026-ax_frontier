@@ -37,7 +37,7 @@ export default async function RiskDashboardPage() {
 
         <div className="grid grid-cols-1 gap-xl xl:grid-cols-2">
           <section>
-            <SectionHead title="현재 적용 경영목표" hint="종합기획부 확정 · Agent 판단 기준" />
+            <SectionHead title="현재 적용 경영목표" hint="종합기획부 확정 · AI 판단 기준" />
             <RowList>
               {dashboard.appliedGoals.map((goal) => (
                 <li key={goal.title} className="flex items-center gap-md px-base py-3">
@@ -75,7 +75,7 @@ export default async function RiskDashboardPage() {
         <NextStep
           step={2}
           title="분석 결과"
-          description="특이사항별 보고서를 Agent 의견부터 확인하고, 필요하면 보고서 문서로 내려받습니다."
+          description="특이사항별 보고서를 AI 의견부터 확인하고, 필요하면 보고서 문서로 내려받습니다."
           href={current[0] ? `/risk/analysis/${current[0].tabKey}` : "/risk/analysis"}
         />
       </div>

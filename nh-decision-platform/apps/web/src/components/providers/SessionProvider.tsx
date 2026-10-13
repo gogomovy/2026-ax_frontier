@@ -39,6 +39,8 @@ export interface MenuPayload {
   counts: Record<string, number>;
   asOf: string;
   batchLabel: string;
+  /** 현재 버전 자료의 성격 (Phase E · NAV-05) — 없으면(이전 서버) 시뮬레이션으로 본다 */
+  dataOrigin?: "simulated" | "mixed" | "actual" | "none";
 }
 export interface Bootstrap {
   menu: MenuPayload | null;

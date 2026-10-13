@@ -2899,3 +2899,159 @@ HNSW 생성은 24초(인덱스 781MB). 개선 후에도 가장 느린 것은 흔
 
 - **확인**: 접근 규칙 SQL ↔ ES 동치(관리자 · 본부 · 신용리스크 · 영업점 · 지역본부 5개 범위에서 청크 id 집합 일치, 서로 다른 팀의 집합은 실제로 다름) · 동기화 멱등 · 팀 격리 · 지점 격리 단언이 `backend=es` 에서 그대로 성립 · **골든셋 전체(팀별 범위 사례 포함)가 ES 로 통과** · 의미 채널 자기 검색 · PostgreSQL 에서 지운 청크가 낡은 ES 에서도 결과에 안 나옴 · 새 청크가 동기화 전에도 잡히고 동기화 뒤 ES 가 직접 찾음 · ES 연결 불가 시 답이 PostgreSQL 과 같음 · ES 장애 중간 복구. 가짜 전송 시험(ES 없이 CI 에서 상시): 접근 규칙 변환 · 목록 대조 · 차단기 · 오류 분류 · 점수 변환 · 낡은 권한 필드 재확인 · 폴백 · 관리자 상태 · 운영 점검.
 - **못 한 것**: 운영 규모(수백만 건) · 다중 노드 · 복제본 · TLS/인증 구성의 ES 는 시험하지 못했다(단일 노드, 보안 끔, 로컬). 컨테이너(`--profile search`)는 이 PC 에 Docker 가 없어 YAML 문법만 확인했고 이미지 빌드 · 기동은 못 봤다. 실제 임베딩 모델 벡터로 ES kNN 을 재지는 못했다(무작위 벡터 · 해시 벡터). ES 보안(사용자 · 역할)은 서비스 계정 하나로만 쓰고 색인 단위 권한 분리는 하지 않았다. 동시에 커밋되는 청크 id 가 뒤섞여 낮은 id 가 늦게 보이는 드문 경우(시퀀스 순서와 커밋 순서가 다름)는 다음 워커 주기(최대 1분)까지 ES 경로에서 안 보일 수 있다.
+
+---
+
+## 22. 사용자 흐름 기준 UI/UX 개선 설계 (요구사항 §22 · Q121~Q126)
+
+### 22.1 한눈에 보기
+
+| 영역 | 바꾸는 것 | 주요 파일 |
+|---|---|---|
+| 공통 구성 요소 | `FileDrop`(파일 놓기 영역) · `ConfirmProvider`/`useConfirm`(앱 확인 대화상자) · 알림 성공/실패 구분 · 실행 상태 한국어 표기(`lib/labels.ts`) | `components/ui/FileDrop.tsx` · `components/ui/Confirm.tsx` · `components/layout/Toast.tsx` · `components/providers/UiProvider.tsx` |
+| 업로드(업무) | 파일 먼저 → 추천 → 확인 → 검사 · 요청, 깊은 링크 `?target=` | `components/knowledge/UploadWorkspace.tsx` · `lib/upload-match.ts` · `app/knowledge/upload/page.tsx` |
+| 업로드(관리자) | 머리 파일 놓기 → 추천 → 상세 양식(파일 채움) · 이동 · 초점, 확정 확인 | `app/admin/datasets/page.tsx` |
+| 데이터베이스 | 행 '새 버전 올리기' · 찾기 · 권한별 안내 | `app/knowledge/page.tsx` |
+| 내비게이션 | 관리자 첫 화면 · 메뉴 순서 · 관리 건수 · 가장 긴 일치 · 자료 성격 표시 | `api/auth.py` · `api/menu_counts.py` · `components/layout/AppShell.tsx` · `lib/nav.ts` |
+| 안내 화면 | 권한 없음(요청 화면 이름) · 없는 화면(내 첫 화면) | `app/forbidden/page.tsx` · `app/not-found.tsx` |
+| 위험 작업 | 확인 대화상자 적용 | `app/admin/{users,datasets,analysis-agents,llm}` · `components/knowledge/RequestReviewCard.tsx` |
+
+### 22.2 파일 놓기 영역 `FileDrop`
+
+```
+<FileDrop id accept=".csv,.xlsx" maxMb={50} file={file} onFile={(f|null)} label hint disabled />
+```
+
+- 영역 전체가 `<label>`(숨긴 `<input type=file>` 과 연결) — 눌러서 고르기 · Enter/Space · 화면 낭독기는 기본 파일 입력으로 동작. 끌어다 놓기(`dragenter/over/leave/drop`)는 영역 테두리 강조.
+- 검사(브라우저): 확장자가 `accept` 에 없으면 '허용 형식 아님', `maxMb` 초과면 '용량 초과' — 파일을 받지 않고 이유를 `role=alert` 로. 서버 검사(보안 · 품질)는 그대로.
+- 고른 뒤: 파일 이름 · 크기(KB/MB) · [다른 파일] · [빼기]. `data-file-drop` 속성(E2E). 용량 한도는 `/db/uploadable` 의 `maxMb`(설정 `upload.policy.max_mb`).
+
+### 22.3 파일 이름 → 자료 추천 `lib/upload-match.ts`
+
+```
+kindOf(name, accept) → "dataset" | "document" | null          // 확장자
+suggestDatasets(name, datasets) → [{code, score, reasons[]}]  // 점수 순, 0점 제외
+```
+
+점수(Q121): 이름 규칙 정규식(`filePattern`, 대소문자 무시) 일치 100 · 데이터셋 코드가 파일 이름에 있음 60 · 보고서 번호(이름의 4자리 숫자, 예 7790 · 2633 · 2020)가 파일 이름의 숫자 묶음과 같음 50 · 이름 낱말(2자 이상) 겹침 낱말당 10(최대 40). 정규식이 브라우저에서 해석되지 않으면(파이썬 전용 문법) 건너뛴다. 50점 이상 1순위를 선택해 두되 '추천' 표시와 근거를 보이고 사용자가 바꿀 수 있다. 20~49점은 '이름 비슷'(목록 앞쪽 · 근거), 20점 미만(낱말 하나만 겹침)은 표시하지 않는다. 문서 형식이면 문서 탭으로 바꾸고 제목 = 파일 이름(확장자 제외).
+
+### 22.4 업로드 화면 흐름 (업무 `/knowledge/upload`)
+
+```
+① 파일 올리기  [FileDrop — 정형 · 문서 형식 모두 허용]   (또는 '파일 없이 문서 본문 붙여 넣기')
+      │ 파일 형식으로 종류 결정 · 추천
+② 무엇인지 확인  정형: 추천 자료(근거) + 다른 자료 찾기(목록, 접기) / 문서: 분류 고르기 · 제목(파일 이름)
+③ 기준 정보     정형: 자료 성격 · 기준일 · 메모 / 문서: 발행 기관 · 시행일 · 메모
+④ 검사 후 승인 요청  [단추] + 못 누르는 이유 · 결과(요청 번호 · 검사 결과)로 초점
+```
+
+- `?target=코드`: 해당 정형 자료를 미리 선택(파일만 올리면 됨). [데이터베이스] 행의 '새 버전 올리기' 가 이 주소로 연결.
+- 자료 목록은 처음엔 추천 · 최근 사용 위주(최대 6개) + [전체 목록 보기], 모바일에서 내부 스크롤 상자를 쓰지 않는다.
+- 승인 주체 문구는 한곳(`APPROVER_TEXT`)에서 — '부서 데이터 책임자 또는 관리자'.
+- '내 요청' 불러오기 실패 → 오류 안내 + [다시 시도].
+
+### 22.5 관리자 업로드 (`/admin/datasets`)
+
+- 머리 카드 '파일로 업로드': `FileDrop`(정형 형식) → `suggestDatasets` 1순위를 열고(상세 양식의 파일 상태에 그 파일을 넣음) 상세 영역으로 `scrollIntoView` + 제목 초점. 추천이 없으면 '맞는 데이터셋이 없습니다 — 표에서 고르세요'.
+- 상세 양식: 파일은 `FileDrop`, 기준일은 `type=date`, 형식 안내는 `accept` 와 같은 값. [업로드(즉시 확정)]와 '품질 실패여도 확정' 은 확인 대화상자(결과 설명: 현재 버전 교체 · 관련 워크플로 재계산).
+- 문서 탭 등록 양식도 `FileDrop`.
+
+### 22.6 확인 대화상자 `useConfirm`
+
+```ts
+const confirm = useConfirm();
+if (await confirm({ title, body, confirmLabel, tone: "danger" | "default", input?: { label, type, validate } })) { … }
+// input 이 있으면 resolve 값은 입력 문자열(취소 = null)
+```
+
+- `UiProvider` 에 한 개의 대화상자(`role=alertdialog`, `aria-modal`, 제목 · 설명 연결, 포커스 가두기, Esc = 취소, 닫히면 연 단추로 초점 복귀, 열릴 때 초점 = [취소] — 위험 작업 기본은 취소).
+- 적용: 사용자 역할 → 관리자 · 사용자 중지 · 가입 반려 · 비밀번호 재설정(입력 + 정책 8자 이상 영문 · 숫자) · 버전 되돌리기 · 즉시 확정 업로드 · 강제 확정 · 강제 승인(자료 요청) · 분석 폐기 · LLM 연결 삭제.
+
+### 22.7 내비게이션
+
+- 서버 `_home`: 관리자이고 `ADMIN_HOME` 화면이 있으면 `/admin`.
+- 서버 `/me/menu`: `dataOrigin` = 현재 버전 데이터의 `data_origin` 종합(`simulated` · `mixed` · `actual`) — 사이드바 하단 표시(NAV-05). 관리 건수 키 `adminTodo`(홈 합계) · `adminUsers`(가입 대기) · `adminUploads`(자료 요청 대기) · `adminAnalyses`(분석 승인 대기) — 관리자에게만 계산. 화면 `count_key` 는 시드 1회 보강 `admin-counts-v1` 로(관리자가 바꾼 값은 보존).
+- 클라이언트 `groupsFromMenu`: 관리자(`user.role === "admin"`)이면 관리 묶음을 먼저, 업무 묶음은 부서별로 접히는 '업무 화면 · <부서>' 묶음으로 뒤에(현재 주소가 그 안이면 펼침). 관리 묶음에도 건수 배지, 접힌 묶음은 안 건수 합을 머리에.
+- 권한 없음: proxy 가 요청 헤더 `x-pathname` 에 화면 주소를 싣고, 서버 `apiGet` 의 403 이동은 그 주소를 `?from=` 으로 넘긴다. `/forbidden` 은 `GET /me/screen?path=`(로그인 필요 · 화면 이름 · 묶음 · 관리자 화면 여부 · 권한 여부 · 내 첫 화면만, 가장 긴 일치)로 '[화면] 화면에 대한 권한이 없습니다' · 메뉴 위치 · 요청 방법을 보인다. 없는 화면(404)은 [내 첫 화면] · [데이터베이스].
+- `lib/nav.ts`: 메뉴 전체에서 현재 주소와 가장 길게 일치하는 항목 하나만 활성(`activeHref(items, pathname)`).
+
+### 22.8 표기 (`lib/labels.ts`)
+
+| 값 | 표시 |
+|---|---|
+| succeeded · success | 성공 |
+| degraded | 축소 동작 |
+| failed · error | 실패 |
+| running · in_progress | 실행 중 |
+| queued · pending | 대기 |
+| passed / warning / failed (품질) | 통과 / 주의 / 실패 |
+
+업무 화면 문구의 'Agent' → 'AI', 'AI Attention' → 'AI 주목 사항', 브랜드 부제 'AI Decision Platform' → 'AI 의사결정 지원'.
+
+### 22.9 시험
+
+- 단위(vitest): `upload-match`(이름 규칙 · 코드 · 보고서 번호 · 낱말 · 문서 판정 · 잘못된 정규식), `activeHref`, 상태 표기.
+- 통합(pytest): 관리자 `home=/admin`, 관리 건수(가입 · 자료 · 분석 대기), `dataOrigin`.
+- E2E: 업로드 — 파일 놓기 영역 존재 → 파일 고르기 → 추천 선택 확인 → 요청, 데이터베이스 '새 버전 올리기' 깊은 링크, 관리자 첫 화면 `/admin` · 관리 건수, 역할 변경 확인 대화상자(취소 시 그대로). 접근성 목록 유지(위반 0).
+
+
+## 23. 온톨로지 구성 시각화 설계 (요구사항 §23 · Q127~Q129)
+
+### 23.1 한눈에 보기
+
+```
+ 원장(PostgreSQL): 스키마 · 데이터셋 · 매핑 행 · 지표 · 워크플로 · 문서 · 추출 결과 · 청크 개념
+        │ collect_graph()  ← 투영의 '수집' 단계를 떼어 낸 것(Neo4j 호출 없음)
+        ├──▶ project_all(): 제약 → Neo4j 반영(기존 동작 그대로)
+        └──▶ ontology_map.build(): 끝점 확인 → 상한 → Louvain 군집 → 3D/2D 배치 → 요약(클래스 · 관계 · 구조)
+                  └──▶ GET /admin/ontology/map ──▶ 관리자 [온톨로지] '구성 지도' 탭(OntologyMap · SchemaMap · 표)
+```
+
+| 영역 | 파일 |
+|---|---|
+| 수집 분리 | `graph/projection.py` — `collect_graph(session) → Batch`(노드 · 관계 · 표시용 부가 정보), `project_all` 은 수집 + 반영 |
+| 지도 계산 | `graph/ontology_map.py` — 순수 함수(군집 · 배치 · 요약) + 보관(원장 서명 · 5분) |
+| API | `api/admin_data.py` `GET /admin/ontology/map?limit=&classes=&refresh=` (관리자) |
+| 화면 | `components/admin/ontology/{OntologyMap,SchemaMap,mapMath}.ts(x)` · `app/admin/ontology/page.tsx` |
+
+### 23.2 수집 (`collect_graph`)
+
+- 투영 함수의 1~4단계(데이터셋 · 매핑 행 · 고정 개념 / 지표 · 워크플로 계보 / 문서 · 발행 기관 · 추출 결과 / 청크 개념)를 그대로 옮긴다. `Batch` 는 노드 · 관계를 모으기만 하고, `flush()` 만 Neo4j 를 부른다.
+- 표시용 부가 정보 `Batch.meta[(클래스, 키)]` — 추출 개체의 근거 문장(최대 200자) · 면 번호. Neo4j 에는 보내지 않는다(투영 결과 불변).
+- 지도에서는 끝점이 없는 관계를 뺀다(Neo4j 의 `MATCH` 가 못 찾는 것과 같음). 노드 id = `클래스:키`, 다중 라벨(문서)은 첫 라벨이 클래스.
+
+### 23.3 군집 · 배치 (`ontology_map.py`)
+
+- **상한**: 기본 1,500(최대 4,000). 넘으면 클래스마다 최소 `max(5, 상한 × 클래스 비율 × 0.3)` 를 연결 수 높은 순으로 먼저 담고 나머지를 전체 연결 수 순으로. 응답 `truncated` · `total`.
+- **Louvain**(가중치 없는 무방향, 결정적 — 노드 순서 고정 · 난수 없음): 1단계 지역 이동(모듈성 증가가 가장 큰 이웃 군집, 동률이면 작은 번호) → 군집을 한 점으로 묶어 반복, 개선 없을 때까지(최대 10단계). 크기 3 미만 군집은 '작은 묶음' 하나로.
+- **군집 이름**: 주 클래스(개수 최다) + 연결 수 상위 개체 이름 2개 — 예 '상품 · 햇살론 · 새희망홀씨대출'.
+- **배치**(numpy, 결정적): ① 군집 중심 — 피보나치 구(2D 는 원) 위에 고르게 두되 가장 큰 군집부터 '이미 놓인 군집과 가장 많이 엮인 군집' 을 그 근처 빈 자리에(탐욕 배정), 이어서 겹치면 밀어내고(반지름 합 + 여유) 엮인 군집끼리 살짝 당긴다. 화면이 가로로 넓어 세로를 0.62 로 누른다(처음에는 힘 배치만 썼더니 엮인 군집이 한 덩어리로 겹치고 외딴 군집만 멀리 떨어져 나머지가 작아졌다 — 로컬 캡처로 확인 후 바꿈) ② 군집 안은 힘 배치(반발 1/d² · 인력 d, 크기에 따라 25~160회, 고정 시드), 반지름 ∝ √크기, 멀리 튄 점 때문에 줄지 않게 95% 거리로 맞춤 ③ 중심 + 안쪽. 3D · 2D 따로. 좌표는 [-1, 1] 로 정규화.
+- **이름**: 화면 산출물(Artifact)은 키 대신 색인 청크의 화면 제목(`artifactTitle`, 지점 산출물은 '· 지점 코드')을 화면용 부가 정보로 — Neo4j 노드 이름은 그대로.
+- **보관**: 원장 서명(스키마 버전 · 데이터셋 버전 수 · 문서 수 · 지표 · 워크플로 수 · 청크 개념 최근 시각 · 상한 · 거르기) 이 같으면 5분 동안 다시 계산하지 않는다(`refresh=1` 이면 새로).
+
+### 23.4 응답
+
+```jsonc
+{ "classes":   [{"label":"Product","count":312,"description":"…","color":3}],
+  "relTypes":  ["IN_GROUP","MENTIONS", …],
+  "relations": [{"type":"IN_GROUP","count":300}],
+  "schema":    [{"from":"Product","type":"IN_GROUP","to":"ProductGroup","count":300}],
+  "clusters":  [{"id":0,"label":"상품 · 햇살론 · …","size":120,"classes":{"Product":110,"ProductGroup":3},"center":[x,y,z]}],
+  "nodes":     [{"id":"Product:2001107820007","cls":"Product","key":"…","name":"햇살론","deg":4,"c":0,"p3":[x,y,z],"p2":[x,y],"src":"PRODUCT_MASTER v1","by":"rule","kind":"dataset","props":{…},"evidence":"…"}],
+  "links":     [[i, j, relTypeIndex]],
+  "truncated": false, "total": {"nodes": 980, "links": 2100}, "neo4j": {"ok": false}, "generatedAt": "…" }
+```
+
+### 23.5 화면 (관리자 [온톨로지] 첫 탭 '구성 지도')
+
+- **보기 고르기**: 3D 군집 지도 · 2D · 구조도 · 표.
+- **`OntologyMap`**(캔버스): 장치 픽셀 비율 반영, 회전 행렬(좌우 · 상하) → 원근 투영(초점 거리 3) → 깊이 순 정렬(먼 것부터). 선은 깊이에 따라 옅게, 점 크기 = (3 + 2·log2(1+연결 수)) × 원근. 끌어서 회전(2D 는 이동) · 휠 · 단추로 확대 · 자동 회전(`prefers-reduced-motion` 이면 처음부터 끔) · 방향키 회전 · +/− 확대 · Esc 선택 해제. 마우스를 올린 점 이름 표시, 선택하면 이웃만 밝게 · 이름 표시. 군집 이름은 군집 중심에 띄움(겹침 줄이려 큰 군집만).
+- **옆 패널**: 찾기(이름 · 키, 결과 목록 → 고르면 선택 · 초점) · 범례(클래스 색 · 개수 · 켜고 끄기 단추, `aria-pressed`) · 군집 목록(누르면 그 군집만 밝게 · 초점) · 선택 개체 상세(클래스 · 군집 · 키 · 출처 · 추출 방식 · 근거 문장 · 속성 · 관계별 이웃 — 눌러서 이동).
+- **`SchemaMap`**(SVG): 클래스를 원 위에 놓고(개체 수만큼 크기), 관계 유형을 화살표로(굵기 ∝ 개수, 가운데에 '유형 · 개수'). 같은 두 클래스 사이 여러 유형은 휘어서 겹치지 않게.
+- **표**: 군집 표(이름 · 크기 · 주 클래스) · 클래스 표(개수 · 설명) · 관계 유형 표(시작 → 끝 · 개수) · 선택 개체 이웃 표.
+- **요약 카드**: 개체 · 관계 · 군집 · 클래스 수(원장 기준), Neo4j 반영 상태는 보조 문구(Q128).
+- **색**: 클래스 16개에 고정 색표(대비 확인한 12색 + 반복 시 무늬 대신 글자 범례), 색만으로 구분하지 않는다.
+
+### 23.6 참고 — 로컬 Elasticsearch 확인 (다른 브랜치 §21.18 작업 참고용, 2026-10-13)
+
+Windows 압축본 9.5.5 + `analysis-nori`(기본 basic 등급)로 확인: nori 가 '기업여신 증가율과 목표 대비 이탈은 얼마인가요?' 를 기업 · 여신 · 증가 · 목표 · 대비 · 이탈 · 얼마 · 이 로 나눔 / `dense_vector` 차원을 생략하면 첫 벡터 길이로 정해지고 다른 길이는 `document_parsing_exception` / kNN `filter` 가 사전 필터로 동작 / 이름 붙은 질의 `matched_queries` 로 맞춘 낱말을 셀 수 있으나 낱말 안 형태소 하나만 맞아도 맞음으로 보이므로 낱말마다 `operator: and` 가 필요 / RRF 리트리버는 basic 등급에서 403(`current license is non-compliant for [Reciprocal Rank Fusion (RRF)]`) → 결합은 앱에서.

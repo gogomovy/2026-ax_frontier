@@ -667,6 +667,28 @@ def ontology_graph(label: str | None = None, limit: int = 150):
     return {"nodes": list(nodes.values()), "edges": edges}
 
 
+@router.get("/ontology/map")
+def ontology_map_view(limit: int = 1500, classes: str | None = None, refresh: bool = False, session: Session = Depends(get_session)):
+    """온톨로지 구성 지도 (Phase G · OV-01~06) — PostgreSQL 원장에서 투영과 같은 규칙으로 모은 개체 · 관계, 군집 · 3D/2D 배치 · 구조 요약.
+    Neo4j 가 없어도 동작한다(Neo4j 반영 상태는 neo4j 에 보조로)."""
+    import re
+
+    from nhdip.graph.neo4j_client import health as graph_health
+    from nhdip.graph.ontology_map import MAX_LIMIT, ontology_map
+
+    want = [c for c in (classes or "").split(",") if c]
+    if any(not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,60}", c) for c in want):
+        raise HTTPException(422, "classes 는 클래스 이름(영문 · 숫자 · _) 쉼표 목록입니다")
+    if not 10 <= limit <= MAX_LIMIT:
+        raise HTTPException(422, f"limit 은 10~{MAX_LIMIT} 입니다")
+    try:
+        out = ontology_map(session, limit=limit, classes=want or None, refresh=refresh)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    gh = graph_health()
+    return {**out, "neo4j": {"ok": bool(gh.get("ok")), **({"nodes": gh.get("nodes"), "relationships": gh.get("relationships")} if gh.get("ok") else {"error": str(gh.get("error", ""))[:160]})}}
+
+
 # ═════════════════════════ 모니터링 ═════════════════════════
 @router.get("/monitor/flow")
 def monitor_flow(limit: int = 60, session: Session = Depends(get_session)):

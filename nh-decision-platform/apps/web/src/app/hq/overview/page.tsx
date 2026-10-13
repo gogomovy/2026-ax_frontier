@@ -30,7 +30,7 @@ export default async function OverviewPage() {
       <PageHeader
         eyebrow="1단계"
         title="현황·목표"
-        description="Agent 가 사업 데이터와 현재 경영목표를 미리 분석해 두었습니다. 사업부문을 선택해 확인하세요."
+        description="AI가 사업 데이터와 현재 경영목표를 미리 분석해 두었습니다. 사업부문을 선택해 확인하세요."
       />
       <OverviewWorkspace
         domains={domains}

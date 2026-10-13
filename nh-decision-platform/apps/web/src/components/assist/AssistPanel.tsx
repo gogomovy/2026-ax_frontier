@@ -73,17 +73,18 @@ export function AssistPanel() {
           load();
           setOpen(true);
         }}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-pill bg-ink-deep px-5 py-3 text-[13px] font-bold text-white shadow-pop no-print"
+        className="fixed bottom-4 right-4 z-40 flex h-12 min-w-[48px] items-center justify-center gap-2 rounded-pill bg-ink-deep px-4 text-[13px] font-bold text-white shadow-pop no-print sm:bottom-6 sm:right-6 sm:h-auto sm:px-5 sm:py-3"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-keyshortcuts="Alt+Q"
         title="질문하기 (Alt+Q)"
       >
-        <IconChat size={18} /> 질문하기
+        {/* 좁은 화면은 아이콘 단추(이름은 화면 낭독기용으로 유지) — 내용을 덜 가린다 (Phase E · LAY-01) */}
+        <IconChat size={18} /> <span className="max-sm:sr-only">질문하기</span>
         {working && !open ? (
           <span className="flex items-center gap-1 rounded-pill bg-white/20 px-2 py-0.5 text-[11px] font-medium">
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-circle bg-white motion-safe:animate-pulse" />
-            답변 중
+            <span className="max-sm:sr-only">답변 중</span>
           </span>
         ) : null}
       </button>

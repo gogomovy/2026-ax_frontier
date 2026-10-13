@@ -117,7 +117,7 @@ export function BranchKpiBoard({ dashboard, office }: { dashboard: BranchDashboa
           ) : null}
         </div>
         <div className="text-right">
-          <p className="text-[12px] text-steel">Agent 의견 반영 시 예상</p>
+          <p className="text-[12px] text-steel">AI 의견 반영 시 예상</p>
           <p className="mt-1 text-[22px] font-bold leading-none text-primary">
             <FigureText figure={scorecard.totalAfter} strong />점
           </p>
@@ -134,9 +134,9 @@ export function BranchKpiBoard({ dashboard, office }: { dashboard: BranchDashboa
       </div>
 
       {alerts.length > 0 ? (
-        <section aria-label="업적평가 기준 변경과 Agent 영업 가이드" className="overflow-hidden rounded-2xl border border-info-line bg-info-faint">
+        <section aria-label="업적평가 기준 변경과 AI 영업 가이드" className="overflow-hidden rounded-2xl border border-info-line bg-info-faint">
           <div className="flex flex-wrap items-baseline gap-x-md gap-y-1 px-lg pt-base">
-            <p className="text-[14px] font-bold text-ink-deep">하반기 업적평가 기준 변경 {alerts.length}건 · Agent 영업 가이드</p>
+            <p className="text-[14px] font-bold text-ink-deep">하반기 업적평가 기준 변경 {alerts.length}건 · AI 영업 가이드</p>
             <p className="text-[12px] text-steel">상반기 대비 신설 · 변경 항목을 분석했습니다 · 선택하면 분석 결과로 이동합니다</p>
           </div>
           <ul className="mt-2 divide-y divide-info-line-soft border-t border-info-line-soft">

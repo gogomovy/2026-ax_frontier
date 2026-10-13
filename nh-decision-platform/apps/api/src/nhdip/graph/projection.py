@@ -33,6 +33,9 @@ class Batch:
         self.nodes: dict[tuple[str, ...], dict[str, dict[str, Any]]] = defaultdict(dict)
         self.rels: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
         self.rejected: list[str] = []
+        # 화면(구성 지도)에만 쓰는 부가 정보 — 근거 문장 · 면 번호. Neo4j 에는 보내지 않는다 (Phase G · 설계 §23.2)
+        self.meta: dict[tuple[str, str], dict[str, Any]] = {}
+        self.counts: dict[str, int] = {}
 
     def node(self, labels: str | Iterable[str], key: str, props: dict[str, Any] | None = None, *, origin: str = "bank", src_kind: str = "master", src_ref: str = "", extracted_by: str = "rule"):
         labels = (labels,) if isinstance(labels, str) else tuple(labels)
@@ -96,14 +99,26 @@ def ensure_constraints(labels: Iterable[str]) -> None:
 
 
 def project_all(session: Session) -> dict[str, Any]:
+    """원장 → Neo4j. 수집(collect_graph)은 관리자 [온톨로지] 구성 지도와 같은 코드다(Q128 — 지도와 그래프가 다르지 않게)."""
     schema = active_schema(session)
+    if not schema:
+        raise RuntimeError("활성 온톨로지 스키마가 없습니다")
+    labels = {c["label"] for c in schema.classes}
+    ensure_constraints(labels)
+    b = collect_graph(session, schema)
+    stats = b.flush()
+    return {**stats, "artifact_mentions": b.counts.get("artifact_mentions", 0), "documents": b.counts.get("documents", 0), "generation": b.gen, "schema_version": schema.version, "rejected": sorted(set(b.rejected))[:50]}
+
+
+def collect_graph(session: Session, schema: OntologySchema | None = None) -> Batch:
+    """원장(PostgreSQL)에서 투영할 노드 · 관계를 모은다 — Neo4j 를 부르지 않는다(flush 만 부른다)."""
+    schema = schema or active_schema(session)
     if not schema:
         raise RuntimeError("활성 온톨로지 스키마가 없습니다")
     labels = {c["label"] for c in schema.classes}
     rels = {r["type"] for r in schema.relations}
     gen = int(time.time() * 1000)
     b = Batch(schema.version, gen, labels, rels)
-    ensure_constraints(labels)
 
     # 1) 데이터셋 · 버전 · 결정론 매핑(ONT-14)
     for ds in session.execute(select(Dataset).where(Dataset.active)).scalars():
@@ -177,6 +192,8 @@ def project_all(session: Session) -> dict[str, Any]:
             by = ex.get("by", "rule")
             for e in ex.get("entities", []):
                 b.node(e["label"], e["key"], {"name": e.get("name") or e["key"], **(e.get("props") or {})}, origin=origin, src_kind="document", src_ref=f"{origin}.document({d.id}) p.{e.get('page') or '-'}", extracted_by=by)
+                if e.get("evidence_span"):  # 속성(src_ref)처럼 마지막 문서가 남는다 — 출처와 근거가 같은 문서를 가리키게
+                    b.meta[(e["label"], str(e["key"]))] = {"evidence": str(e["evidence_span"])[:200], "page": e.get("page"), "document": d.title}
             for r in ex.get("relations", []):
                 fl, fk = (r["from_label"], r["from"]) if r.get("from") != "$doc" else ("Document", dkey)
                 b.rel(r["type"], fl, fk, r["to_label"], r["to"], r.get("props"), extracted_by=by, src_ref=f"{origin}.document({d.id})")
@@ -192,8 +209,21 @@ def project_all(session: Session) -> dict[str, Any]:
         b.node("Artifact", skey, {"name": skey}, src_kind="artifact", src_ref=f"app.kb_chunk({skey})")
         b.rel("MENTIONS", "Artifact", skey, label, concept, src_ref=f"app.kb_chunk({skey})")
         n_mentions += 1
-    stats = b.flush()
-    return {**stats, "artifact_mentions": n_mentions, "documents": n_docs, "generation": gen, "schema_version": schema.version, "rejected": sorted(set(b.rejected))[:50]}
+    b.counts = {"artifact_mentions": n_mentions, "documents": n_docs}
+    # 화면용 — 산출물 키 대신 화면 제목(색인 청크의 artifactTitle). Neo4j 노드 이름은 그대로(키)
+    titles: dict[str, str] = {}
+    for skey, title in session.execute(select(KbChunk.source_key, KbChunk.meta["artifactTitle"].astext).distinct()).all():
+        if title and skey not in titles:
+            titles[skey] = title
+    for (labels, items) in b.nodes.items():
+        if labels[0] != "Artifact":
+            continue
+        for key in items:
+            t = titles.get(key) or titles.get(key.split("@", 1)[0])
+            if t:
+                office = f" · {key.split('@', 1)[1]}" if "@" in key else ""
+                b.meta.setdefault(("Artifact", key), {})["title"] = f"{t}{office}"[:120]
+    return b
 
 
 def impact_of_dataset(code: str) -> list[dict[str, Any]]:

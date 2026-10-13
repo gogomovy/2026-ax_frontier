@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 import { AdminPage, Card, JsonView, Loading, StatusBadge, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { useConfirm } from "@/components/providers/UiProvider";
 import { Advanced, EmptyState, KeyValueList, Notice } from "@/components/ui/Layout";
 import { Badge, Button, PillTabs } from "@/components/ui/primitives";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { apiPost } from "@/lib/api-client";
+import { runStatusLabel } from "@/lib/labels";
 
 interface Version {
   version: number;
@@ -136,6 +138,7 @@ export default function AdminAnalysisAgents() {
 
 function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
   const { run, busy } = useAction();
+  const confirm = useConfirm();
   const [note, setNote] = useState("");
   const pending = a.versions.find((v) => v.status === "pending");
   const shown = pending ?? a.versions[0];
@@ -173,7 +176,7 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
             { label: "승인 버전", value: a.version ? `v${a.version}` : "없음" },
             { label: "요청자", value: a.requestedByName ?? a.requestedBy ?? "-" },
             { label: "워크플로", value: a.workflow ? <code className="font-mono text-[11.5px]">{a.workflow}</code> : "승인 때 생성" },
-            { label: "최근 실행", value: a.lastRun ? `${a.lastRun.status} · ${fmtTime(a.lastRun.startedAt)}` : "-" },
+            { label: "최근 실행", value: a.lastRun ? `${runStatusLabel(a.lastRun.status)} · ${fmtTime(a.lastRun.startedAt)}` : "-" },
             { label: "탭 키", value: <code className="font-mono text-[11.5px]">{a.tabKey}</code> },
           ]}
         />
@@ -189,7 +192,15 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
             </Button>
           ) : null}
           {a.status !== "retired" ? (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => window.confirm("이 분석을 폐기할까요? 탭이 사라지고 다시 계산하지 않습니다(이력은 남습니다).") && run(() => apiPost(`/admin/analysis-agents/${a.code}/retire`), "폐기했습니다", reload)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                const ok = await confirm({ title: "이 분석을 폐기할까요?", body: `[${a.title}] 탭이 ${a.spaceLabel} 화면에서 사라지고 다시 계산하지 않습니다. 이력은 남습니다.`, confirmLabel: "폐기", tone: "danger" });
+                if (ok) await run(() => apiPost(`/admin/analysis-agents/${a.code}/retire`), "폐기했습니다", reload);
+              }}
+            >
               폐기
             </Button>
           ) : null}

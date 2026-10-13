@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AdminPage, C, Card, Check, JsonView, Loading, Select, StatusBadge, Table, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { useConfirm } from "@/components/providers/UiProvider";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPatch, apiPost } from "@/lib/api-client";
 
@@ -189,6 +190,7 @@ export default function LlmAdmin() {
 function ConnRow({ conn, busy, onSave, onTest, testModel, setTestModel, result }: { conn: Conn; busy: boolean; onSave: (p: Record<string, unknown>) => void; onTest: () => void; testModel: string; setTestModel: (v: string) => void; result: unknown }) {
   const [url, setUrl] = useState(conn.baseUrl);
   const [key, setKey] = useState("");
+  const confirm = useConfirm();
   return (
     <div className="rounded-xl border border-hairline-soft p-base">
       <div className="mb-md flex flex-wrap items-center gap-xs">
@@ -208,7 +210,15 @@ function ConnRow({ conn, busy, onSave, onTest, testModel, setTestModel, result }
             저장
           </Button>
           {conn.hasKey ? (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => window.confirm("키를 삭제할까요?") && onSave({ api_key: "" })}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={async () => {
+                const ok = await confirm({ title: "키를 삭제할까요?", body: `[${conn.name}] 연결의 키를 지웁니다. 이 연결을 쓰는 LLM 기능은 키를 다시 넣을 때까지 쓸 수 없거나 축소 동작합니다.`, confirmLabel: "키 삭제", tone: "danger" });
+                if (ok) onSave({ api_key: "" });
+              }}
+            >
               키 삭제
             </Button>
           ) : null}

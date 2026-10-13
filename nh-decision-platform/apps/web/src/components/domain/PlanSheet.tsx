@@ -154,14 +154,14 @@ function PlanView({
           <Switch
             checked={plan.branchShared}
             onChange={() => toggleBranchShare(plan.id)}
-            label={plan.branchShared ? "영업점 Agent 참고 가능" : "영업점 Agent 참고 중단"}
+            label={plan.branchShared ? "영업점 AI 참고 가능" : "영업점 AI 참고 중단"}
             description="언제든 다시 바꿀 수 있습니다. 켜면 전파 경로에 영업점이 연결됩니다."
           />
         </div>
       ) : null}
       {running && readOnly ? (
         <p className="mb-lg rounded-xl bg-surface-soft px-base py-3 text-[12.5px] text-charcoal">
-          영업점 Agent 참고 <b>{plan.branchShared ? "가능" : "중단"}</b> 상태입니다.
+          영업점 AI 참고 <b>{plan.branchShared ? "가능" : "중단"}</b> 상태입니다.
         </p>
       ) : null}
 
@@ -300,7 +300,7 @@ function PlanForm({
       width="lg"
       eyebrow={<Badge tone="neutral">{plan ? "수정" : "직접 추가"}</Badge>}
       title={plan ? "수행방안 수정" : "사업·분석 직접 추가"}
-      meta={plan ? plan.title : "Agent 제안과 같은 구조로 등록되며 제안안으로 시작합니다."}
+      meta={plan ? plan.title : "AI 제안과 같은 구조로 등록되며 제안안으로 시작합니다."}
       footer={
         <>
           <Button variant="confirm" size="sm" disabled={!title.trim() || !body.trim()} onClick={save}>
@@ -342,7 +342,7 @@ function PlanForm({
           </FormField>
         ) : (
           <p className="rounded-lg bg-surface-soft px-3 py-2.5 text-[12px] leading-relaxed text-steel">
-            Agent 가 수집한 근거는 판단 이력 보존을 위해 수정할 수 없습니다.
+            AI가 수집한 근거는 판단 이력 보존을 위해 수정할 수 없습니다.
           </p>
         )}
         <FormField label="모니터링 지표 (쉼표로 구분)">

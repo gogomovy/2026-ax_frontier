@@ -62,7 +62,7 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
 }
 
 /* ── Button ────────────────────────────────────────────────── */
-type ButtonVariant = "primary" | "confirm" | "secondary" | "ghost" | "quiet";
+type ButtonVariant = "primary" | "confirm" | "secondary" | "ghost" | "quiet" | "danger";
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   // 마케팅 primary(검정 pill) → 일반 주요 액션
@@ -72,7 +72,11 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   secondary: "bg-transparent text-ink-deep border-2 border-ink-deep",
   ghost: "bg-transparent text-ink-deep border-2 border-line-strong",
   quiet: "bg-surface-soft text-charcoal",
+  // 되돌리기 어려운 작업 확인 (Phase E · INT-01)
+  danger: "bg-critical-strong text-white active:bg-critical",
 };
+// 꺼진 단추 — 변형 색과 섞이지 않게 변형 대신 쓴다(같은 bg-* 두 개면 CSS 순서로 켜진 색이 이겨 켜진 것처럼 보였다 · Phase E F4)
+const BUTTON_DISABLED = "cursor-not-allowed bg-surface-soft text-stone border-transparent";
 
 type ButtonProps = {
   children: ReactNode;
@@ -86,6 +90,8 @@ type ButtonProps = {
   /** 접근성 이름 · 시험용 식별자 (aria-* · data-*) 는 그대로 넘긴다 (Phase C) */
   "aria-label"?: string;
   "aria-pressed"?: boolean;
+  /** 못 누르는 이유 등 설명 연결 (Phase E · UXF-04) */
+  "aria-describedby"?: string;
   [data: `data-${string}`]: string | number | boolean | undefined;
 };
 
@@ -110,8 +116,7 @@ export function Button({
       className={clsx(
         "inline-flex items-center justify-center gap-1.5 rounded-pill font-bold transition-colors",
         size === "md" ? "px-6 py-2.5 text-[13px]" : "px-4 py-2 text-[12px]",
-        BUTTON_VARIANT[variant],
-        disabled && "cursor-not-allowed bg-disabled text-white border-transparent",
+        disabled ? BUTTON_DISABLED : BUTTON_VARIANT[variant],
         className,
       )}
     >

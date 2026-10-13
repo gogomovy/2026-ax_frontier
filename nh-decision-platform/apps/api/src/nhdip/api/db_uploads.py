@@ -133,7 +133,15 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
             "columns": [{"name": c.get("name"), "label": c.get("label") or c.get("description") or "", "type": c.get("type")} for c in (d.columns or [])][:60],
             "current": [{"version": v.version, "asOf": _iso(v.as_of), "rows": v.row_count, "dataOrigin": v.data_origin} for v in cur[:3]],
         })
-    return {"datasets": out, "docClasses": _doc_classes(session), "accept": {"dataset": ".csv,.tsv,.xlsx,.json", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"}}
+    pol = session.get(Setting, "upload.policy")
+    max_mb = (pol.value or {}).get("max_mb") if pol is not None and isinstance(pol.value, dict) else None
+    return {
+        "datasets": out,
+        "docClasses": _doc_classes(session),
+        "accept": {"dataset": ".csv,.tsv,.xlsx,.json", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"},
+        # 파일 놓기 영역이 먼저 알려 주는 용량 한도(Phase E · UXF-01) — 실제 차단은 서버 보안 검사
+        "maxMb": int(max_mb) if isinstance(max_mb, (int, float)) else 50,
+    }
 
 
 @router.post("/db/uploads/dataset", status_code=201)

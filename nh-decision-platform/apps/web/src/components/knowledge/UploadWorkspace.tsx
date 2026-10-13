@@ -2,17 +2,25 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUi } from "@/components/providers/UiProvider";
+import { FileDrop } from "@/components/ui/FileDrop";
 import { Advanced, EmptyState, KeyValueList, Notice } from "@/components/ui/Layout";
-import { Badge, Button, PillTabs } from "@/components/ui/primitives";
+import { Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
+import { confidentSuggestion, kindOf, suggestDatasets, titleFromFile, type DatasetSuggestion } from "@/lib/upload-match";
 
 /*
- * 업무 자료 올리기 (Phase C · UPL-01~03 · Q99)
- * 1) 무엇을 올릴지 고르기(정형 자료 = 기존 데이터셋의 새 버전 · 문서 = 분류 지정) → 2) 파일 · 정보 → 3) 검사 결과와 함께 승인 요청
- * → 관리자 [자료 승인] 후 반영. 아래 '내 요청' 에서 상태(승인 대기 · 승인 · 반려 · 실패)를 본다.
+ * 업무 자료 올리기 (Phase C · UPL-01~03 · Q99 → Phase E · UXF-01~05 · Q121)
+ * ① 파일 올리기(끌어다 놓기 · 고르기) → ② 무엇인지 확인(파일 이름으로 추천 · 근거, 사용자가 바꿀 수 있음)
+ * → ③ 기준 정보 → ④ 검사 후 승인 요청. 부서 데이터 책임자 또는 관리자가 승인하면 반영.
+ * 아래 '내 요청' 에서 상태(승인 대기 · 승인 · 반려 · 실패)를 본다. `?target=코드` 로 들어오면 그 자료를 미리 고른다.
  */
+
+/** 승인 주체 문구 — 화면 여러 곳이 같은 말을 쓴다 (Phase E · TXT-01) */
+export const APPROVER_TEXT = "부서 데이터 책임자 또는 관리자";
+/** 처음 보이는 자료 수 — 나머지는 [전체 목록 보기] (Phase E · LAY-01) */
+const LIST_HEAD = 6;
 
 interface DatasetOpt {
   code: string;
@@ -29,6 +37,8 @@ export interface Uploadable {
   datasets: DatasetOpt[];
   docClasses: { key: string; label: string; origin: string }[];
   accept: { dataset: string; document: string };
+  /** 업로드 용량 한도(설정 upload.policy.max_mb) — 파일 놓기 영역이 먼저 알려 준다 */
+  maxMb?: number;
 }
 interface Check {
   rule: string;
@@ -173,10 +183,12 @@ function Step({ n, title, children, done }: { n: number; title: string; children
   return (
     <li className="relative pl-10">
       <span aria-hidden="true" className={clsx("absolute left-0 top-0 flex h-7 w-7 items-center justify-center rounded-circle text-[12px] font-bold", done ? "bg-success-soft text-success" : "bg-ink-deep text-white")}>
-        {n}
+        {done ? "✓" : n}
       </span>
       <h2 className="mb-md pt-1 text-[15px] font-bold text-ink-deep">
-        <span className="sr-only">{n}단계 · </span>
+        <span className="sr-only">
+          {n}단계{done ? "(완료)" : ""} ·{" "}
+        </span>
         {title}
       </h2>
       {children}
@@ -184,43 +196,168 @@ function Step({ n, title, children, done }: { n: number; title: string; children
   );
 }
 
-export function UploadWorkspace({ initial }: { initial: Uploadable }) {
+function versionText(d: DatasetOpt) {
+  const c = d.current[0];
+  return c ? `현재 v${c.version}${c.asOf ? ` · ${c.asOf.slice(0, 10)}` : ""} · ${c.rows.toLocaleString("ko-KR")}행` : "현재 자료 없음";
+}
+
+/** 추천으로 표시할 최소 점수 — 낱말 하나(예: '상품')만 겹치는 것은 잡음이라 뺀다. '추천' 배지는 확실한 것(50 이상)만 */
+const SHOW_MIN = 20;
+const STRONG_MIN = 50;
+
+/** 자료 고르기 단추(라디오) — 추천 근거를 함께 보인다 */
+function DatasetOption({ d, on, onPick, suggestion }: { d: DatasetOpt; on: boolean; onPick: () => void; suggestion?: DatasetSuggestion }) {
+  const strong = Boolean(suggestion && suggestion.score >= STRONG_MIN);
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={on}
+      onClick={onPick}
+      className={clsx("w-full rounded-xl border px-md py-2.5 text-left transition-colors", on ? "border-primary bg-info-faint ring-1 ring-primary" : "border-hairline-soft hover:bg-surface-soft")}
+      data-upload-target={d.code}
+      data-upload-suggested={suggestion ? (strong ? "strong" : "weak") : undefined}
+    >
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className="text-[13px] font-bold text-ink-deep">{d.name}</span>
+        <Badge tone={d.origin === "bank" ? "dark" : "info"}>{d.origin === "bank" ? "당행" : "외부"}</Badge>
+        {suggestion ? strong ? <Badge tone="success">추천</Badge> : <Badge>이름 비슷</Badge> : null}
+      </span>
+      <span className="mt-0.5 block font-mono text-[10.5px] text-stone">{d.code}</span>
+      <span className="mt-0.5 block text-[11.5px] text-steel">
+        {versionText(d)}
+        {d.refreshCycle ? ` · ${d.refreshCycle} 갱신` : ""}
+      </span>
+      {suggestion ? <span className={clsx("mt-0.5 block text-[11.5px]", strong ? "font-bold text-success" : "text-steel")}>근거: {suggestion.reasons.join(" · ")}</span> : null}
+    </button>
+  );
+}
+
+export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadable; initialTarget?: string }) {
   const { showToast } = useUi();
   const opts = initial;
+  const preset = initialTarget && opts.datasets.some((d) => d.code === initialTarget) ? initialTarget : "";
   const [mine, setMine] = useState<UploadReq[] | null>(null);
+  const [mineError, setMineError] = useState<string | null>(null);
   const [kind, setKind] = useState<"dataset" | "document">("dataset");
-  const [target, setTarget] = useState("");
+  const [target, setTarget] = useState(preset);
+  // 사용자가 직접(또는 주소로) 고른 자료 — 파일을 바꿔도 추천으로 덮지 않는다
+  const [pinned, setPinned] = useState(Boolean(preset));
+  const [textMode, setTextMode] = useState(false);
+  const [browse, setBrowse] = useState(Boolean(preset));
+  const [showAll, setShowAll] = useState(false);
   const [q, setQ] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const [fileKey, setFileKey] = useState(0);
+  const [autoTitle, setAutoTitle] = useState("");
   const [form, setForm] = useState({ data_origin: "actual", as_of: "", note: "", title: "", issuer: "", published_at: "", text: "" });
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<UploadReq | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
-  const loadMine = useCallback(() => api<UploadReq[]>("/db/uploads/mine").then(setMine), []);
+  const loadMine = useCallback(async () => {
+    setMineError(null);
+    try {
+      setMine(await api<UploadReq[]>("/db/uploads/mine"));
+    } catch (e) {
+      setMineError((e as Error).message || "불러오지 못했습니다");
+    }
+  }, []);
   useEffect(() => {
     let alive = true;
     api<UploadReq[]>("/db/uploads/mine")
       .then((m) => alive && setMine(m))
-      .catch(() => undefined);
+      .catch((e: Error) => alive && setMineError(e.message || "불러오지 못했습니다"));
     return () => {
       alive = false;
     };
   }, []);
+  // 요청 결과로 초점 이동 — 화면 낭독기 · 키보드 사용자가 결과를 바로 듣는다 (UXF-04)
+  useEffect(() => {
+    if (last) resultRef.current?.focus();
+  }, [last]);
 
-  const datasets = useMemo(() => opts.datasets.filter((d) => !q || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(q.toLowerCase())), [opts, q]);
+  const suggestions = useMemo(() => (file && kind === "dataset" ? suggestDatasets(file.name, opts.datasets).filter((s) => s.score >= SHOW_MIN) : []), [file, kind, opts.datasets]);
+  const sugMap = useMemo(() => new Map(suggestions.map((s) => [s.code, s])), [suggestions]);
+  const best = confidentSuggestion(suggestions);
   const ds = opts.datasets.find((d) => d.code === target) ?? null;
   const cls = opts.docClasses.find((c) => c.key === target) ?? null;
-  const ready = kind === "dataset" ? Boolean(ds && file) : Boolean(cls && form.title.trim() && (file || form.text.trim()));
 
-  const switchKind = (k: "dataset" | "document") => {
-    setKind(k);
-    setTarget("");
-    setFile(null);
-    setFileKey((n) => n + 1);
+  const ordered = useMemo(() => {
+    const low = q.trim().toLowerCase();
+    const hit = opts.datasets.filter((d) => !low || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(low));
+    // 추천(점수 순) → 고른 자료 → 나머지(원래 순서)
+    const rank = (d: DatasetOpt) => (sugMap.has(d.code) ? 0 : d.code === target ? 1 : 2);
+    return [...hit].sort((a, b) => rank(a) - rank(b) || (sugMap.get(b.code)?.score ?? 0) - (sugMap.get(a.code)?.score ?? 0));
+  }, [opts.datasets, q, sugMap, target]);
+  const visible = showAll || q.trim() ? ordered : ordered.slice(0, LIST_HEAD);
+
+  const pickFile = (f: File | null) => {
+    setFailure(null);
+    setFile(f);
+    if (!f) {
+      if (!pinned && kind === "dataset") setTarget("");
+      return;
+    }
+    setTextMode(false);
+    const k = kindOf(f.name, opts.accept) ?? "dataset";
+    if (k === "document") {
+      if (kind !== "document") {
+        setKind("document");
+        setTarget("");
+        setPinned(false);
+      }
+      const t = titleFromFile(f.name);
+      // 제목이 비었거나 이전 파일 이름에서 채운 그대로면 새 파일 이름으로
+      if (!form.title.trim() || form.title === autoTitle) setForm((x) => ({ ...x, title: t }));
+      setAutoTitle(t);
+      return;
+    }
+    // 정형 자료 — 직접 고른 자료가 없으면 확실한 추천(이름 규칙 · 코드 · 보고서 번호)을 골라 둔다(확정은 사용자가 · Q121)
+    const wasDoc = kind !== "dataset";
+    if (wasDoc) {
+      setKind("dataset");
+      setPinned(false);
+    }
+    if (wasDoc || !pinned) setTarget(confidentSuggestion(suggestDatasets(f.name, opts.datasets))?.code ?? "");
+  };
+  const pickTarget = (code: string) => {
+    setTarget(code);
+    setPinned(true);
     setFailure(null);
   };
+  const startText = () => {
+    setTextMode(true);
+    setFile(null);
+    setKind("document");
+    setTarget("");
+    setPinned(false);
+  };
+  const stopText = () => {
+    setTextMode(false);
+    setKind("dataset");
+    setTarget(preset);
+    setPinned(Boolean(preset));
+    setForm((x) => ({ ...x, text: "" }));
+  };
+
+  const blocker =
+    kind === "dataset"
+      ? !file
+        ? "1단계에서 파일을 고르세요."
+        : !ds
+          ? "2단계에서 이 파일이 어떤 자료인지 고르세요."
+          : null
+      : !file && !textMode
+        ? "1단계에서 파일을 고르세요."
+        : !cls
+          ? "2단계에서 문서 분류를 고르세요."
+          : !form.title.trim()
+            ? "2단계에서 문서 제목을 입력하세요."
+            : !file && !form.text.trim()
+              ? "3단계에서 문서 본문을 붙여 넣으세요."
+              : null;
+  const ready = blocker === null;
 
   const submit = async () => {
     setBusy(true);
@@ -242,9 +379,9 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
       if (form.note) fd.append("note", form.note);
       const r = await api<UploadReq>(`/db/uploads/${kind}`, { method: "POST", body: fd });
       setLast(r);
-      showToast("승인 요청을 보냈습니다 — 관리자가 승인하면 반영됩니다");
+      showToast(`승인 요청을 보냈습니다 — ${APPROVER_TEXT}가 승인하면 반영됩니다`, "success");
       setFile(null);
-      setFileKey((n) => n + 1);
+      setAutoTitle("");
       setForm((f) => ({ ...f, note: "", title: "", issuer: "", published_at: "", text: "" }));
       await loadMine();
     } catch (e) {
@@ -254,114 +391,160 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
     }
   };
 
+  const acceptAll = `${opts.accept.dataset},${opts.accept.document}`;
+  const fmt = (s: string) => s.replaceAll(",", " · ");
+  const showChooser = kind === "dataset" && (Boolean(file) || browse || Boolean(target));
+
   return (
     <div className="grid grid-cols-1 gap-xl xl:grid-cols-[minmax(0,1fr)_380px]">
-      <section aria-label="자료 올리기" className="rounded-2xl border border-hairline-soft bg-canvas p-lg">
+      <section aria-label="자료 올리기" className="rounded-2xl border border-hairline-soft bg-canvas p-lg" data-upload-workspace>
         <ol className="flex flex-col gap-xl">
-          <Step n={1} title="무엇을 올리나요" done={Boolean(target)}>
-            <PillTabs
-              label="자료 종류"
-              value={kind}
-              onChange={switchKind}
-              items={[
-                { key: "dataset", label: "정형 자료(엑셀 · CSV)", count: opts.datasets.length },
-                { key: "document", label: "문서(PDF · 한글 · 글)", count: opts.docClasses.length },
-              ]}
-            />
-            {kind === "dataset" ? (
-              <div className="mt-md">
-                <input className="input !h-9 mb-xs w-full max-w-[360px] text-[13px]" placeholder="자료 이름 · 코드로 찾기" aria-label="자료 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
-                {datasets.length ? (
-                  <div className="grid max-h-[340px] grid-cols-1 gap-xs overflow-y-auto pr-1 md:grid-cols-2" role="radiogroup" aria-label="올릴 자료">
-                    {datasets.map((d) => {
-                      const on = d.code === target;
-                      return (
-                          <button
-                            key={d.code}
-                            type="button"
-                            role="radio"
-                            aria-checked={on}
-                            onClick={() => setTarget(d.code)}
-                            className={clsx("w-full rounded-xl border px-md py-2.5 text-left transition-colors", on ? "border-primary bg-info-faint" : "border-hairline-soft hover:bg-surface-soft")}
-                            data-upload-target={d.code}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <span className="truncate text-[13px] font-bold text-ink-deep">{d.name}</span>
-                              <Badge tone={d.origin === "bank" ? "dark" : "info"}>{d.origin === "bank" ? "당행" : "외부"}</Badge>
-                            </span>
-                            <span className="mt-0.5 block font-mono text-[10.5px] text-stone">{d.code}</span>
-                            <span className="mt-0.5 block text-[11.5px] text-steel">
-                              {d.current[0] ? `현재 v${d.current[0].version}${d.current[0].asOf ? ` · ${d.current[0].asOf.slice(0, 10)}` : ""} · ${d.current[0].rows.toLocaleString("ko-KR")}행` : "현재 자료 없음"}
-                              {d.refreshCycle ? ` · ${d.refreshCycle} 갱신` : ""}
-                            </span>
-                          </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <EmptyState compact title="맞는 자료가 없습니다" description="찾는 말을 바꾸거나, 새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요." />
-                )}
+          <Step n={1} title="파일 올리기" done={Boolean(file) || (textMode && Boolean(form.text.trim()))}>
+            {textMode ? (
+              <div className="flex flex-wrap items-center gap-sm rounded-2xl border border-hairline-soft bg-surface-soft px-md py-3">
+                <p className="flex-1 text-[12.5px] text-charcoal">파일 없이 문서 본문을 붙여 넣습니다. 3단계에 본문을 넣으세요.</p>
+                <Button size="sm" variant="ghost" onClick={stopText}>
+                  파일로 올리기
+                </Button>
               </div>
             ) : (
-              <div className="mt-md flex flex-wrap gap-xs" role="radiogroup" aria-label="문서 분류">
-                {opts.docClasses.map((c) => (
-                  <button
-                    key={c.key}
-                    type="button"
-                    role="radio"
-                    aria-checked={c.key === target}
-                    onClick={() => setTarget(c.key)}
-                    className={clsx("rounded-xl border px-md py-2 text-[12.5px] font-bold", c.key === target ? "border-primary bg-info-faint text-primary" : "border-hairline-soft text-charcoal hover:bg-surface-soft")}
-                  >
-                    {c.label}
-                    <span className="ml-1.5 text-[11px] font-medium text-stone">{c.origin === "ext" ? "외부" : "당행"}</span>
+              <>
+                <FileDrop
+                  id="up-file"
+                  accept={acceptAll}
+                  maxMb={opts.maxMb}
+                  file={file}
+                  onFile={pickFile}
+                  label="올릴 파일을 여기로 끌어다 놓거나 눌러서 고르세요"
+                  hint={`정형 자료 ${fmt(opts.accept.dataset)} · 문서 ${fmt(opts.accept.document)}${opts.maxMb ? ` · 최대 ${opts.maxMb}MB` : ""} — 파일 이름으로 어떤 자료인지 추천합니다`}
+                  data-testid="upload"
+                />
+                {!file ? (
+                  <button type="button" onClick={startText} className="mt-sm text-[12px] font-bold text-primary underline-offset-2 hover:underline" data-upload-text-mode>
+                    파일 없이 문서 본문 붙여 넣기
                   </button>
-                ))}
+                ) : null}
+              </>
+            )}
+          </Step>
+
+          <Step n={2} title={kind === "dataset" ? "어떤 자료인지 확인" : "문서 분류와 제목"} done={kind === "dataset" ? Boolean(ds) : Boolean(cls && form.title.trim())}>
+            {kind === "dataset" ? (
+              !showChooser ? (
+                <div className="flex flex-wrap items-center gap-sm">
+                  <p className="text-[12.5px] text-stone">파일을 고르면 파일 이름으로 맞는 자료를 찾아 드립니다.</p>
+                  <Button size="sm" variant="quiet" onClick={() => setBrowse(true)} data-upload-browse>
+                    목록에서 먼저 고르기
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-sm">
+                  {file && best && target === best.code ? (
+                    <p className="text-[12.5px] text-success" role="status" data-upload-suggestion>
+                      파일 이름으로 <strong className="font-bold">{ds?.name}</strong>을(를) 골라 두었습니다. 맞는지 확인하고, 다르면 아래에서 바꾸세요.
+                    </p>
+                  ) : null}
+                  {file && pinned && best && target !== best.code ? (
+                    <Notice tone="attention" title="고른 자료와 파일 이름이 다릅니다">
+                      <span>
+                        파일 이름은 <strong>{opts.datasets.find((d) => d.code === best.code)?.name}</strong>에 더 가깝습니다({best.reasons.join(" · ")}).{" "}
+                      </span>
+                      <button type="button" className="font-bold text-primary underline" onClick={() => pickTarget(best.code)} data-upload-use-suggestion>
+                        추천 자료로 바꾸기
+                      </button>
+                    </Notice>
+                  ) : null}
+                  {file && !suggestions.length && !target ? (
+                    <p className="text-[12.5px] text-attention" role="status" data-upload-no-suggestion>
+                      파일 이름으로 맞는 자료를 찾지 못했습니다. 아래 목록에서 고르세요.
+                    </p>
+                  ) : null}
+                  <input className="input !h-9 w-full max-w-[360px] text-[13px]" placeholder="자료 이름 · 코드로 찾기" aria-label="자료 찾기" value={q} onChange={(e) => setQ(e.target.value)} />
+                  {visible.length ? (
+                    <div className="grid grid-cols-1 gap-xs md:grid-cols-2" role="radiogroup" aria-label="올릴 자료">
+                      {visible.map((d) => (
+                        <DatasetOption key={d.code} d={d} on={d.code === target} onPick={() => pickTarget(d.code)} suggestion={sugMap.get(d.code)} />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState compact title="맞는 자료가 없습니다" description="찾는 말을 바꾸거나, 새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요." />
+                  )}
+                  {!q.trim() && ordered.length > LIST_HEAD ? (
+                    <div>
+                      <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)} aria-pressed={showAll} data-upload-show-all>
+                        {showAll ? "접기" : `전체 목록 보기 (${ordered.length}개)`}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            ) : (
+              <div className="flex flex-col gap-md">
+                <div className="flex flex-wrap gap-xs" role="radiogroup" aria-label="문서 분류">
+                  {opts.docClasses.map((c) => (
+                    <button
+                      key={c.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={c.key === target}
+                      onClick={() => pickTarget(c.key)}
+                      className={clsx("rounded-xl border px-md py-2 text-[12.5px] font-bold", c.key === target ? "border-primary bg-info-faint text-primary ring-1 ring-primary" : "border-hairline-soft text-charcoal hover:bg-surface-soft")}
+                      data-upload-doc-class={c.key}
+                    >
+                      {c.label}
+                      <span className="ml-1.5 text-[11px] font-medium text-stone">{c.origin === "ext" ? "외부" : "당행"}</span>
+                    </button>
+                  ))}
+                </div>
+                <Field label="제목" htmlFor="up-title" hint={file && form.title === autoTitle ? "파일 이름으로 채웠습니다 — 필요하면 고치세요" : undefined}>
+                  <input id="up-title" className="input !h-9 text-[13px]" value={form.title} maxLength={200} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+                </Field>
               </div>
             )}
           </Step>
 
-          <Step n={2} title={kind === "dataset" ? "파일과 기준 정보" : "문서와 정보"} done={ready}>
-            {!target ? (
-              <p className="text-[12.5px] text-stone">먼저 1단계에서 {kind === "dataset" ? "올릴 자료" : "문서 분류"}를 고르세요.</p>
-            ) : kind === "dataset" && ds ? (
-              <div className="flex flex-col gap-md">
-                <p className="text-[12.5px] leading-relaxed text-steel">{ds.description}</p>
-                <Field label="파일" htmlFor="up-file" hint={`${opts.accept.dataset} · ${ds.filePattern ? `파일명 규칙 ${ds.filePattern}` : "파일명 규칙 없음"}`}>
-                  <input key={fileKey} id="up-file" type="file" accept={opts.accept.dataset} onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[12.5px]" />
-                </Field>
-                <div className="grid grid-cols-1 gap-md md:grid-cols-3">
-                  <Field label="자료 성격" htmlFor="up-origin">
-                    <select id="up-origin" className="input !h-9 text-[13px]" value={form.data_origin} onChange={(e) => setForm({ ...form, data_origin: e.target.value })}>
-                      <option value="actual">실데이터</option>
-                      <option value="simulated">시뮬레이션</option>
-                    </select>
-                  </Field>
-                  <Field label="기준일(선택)" htmlFor="up-asof" hint="비우면 파일의 기준일 열에서 읽습니다">
-                    <input id="up-asof" className="input !h-9 text-[13px]" type="date" value={form.as_of} onChange={(e) => setForm({ ...form, as_of: e.target.value })} />
-                  </Field>
-                  <Field label="메모(선택)" htmlFor="up-note">
-                    <input id="up-note" className="input !h-9 text-[13px]" value={form.note} maxLength={500} placeholder="예: 8월 정정본" onChange={(e) => setForm({ ...form, note: e.target.value })} />
-                  </Field>
-                </div>
-                <Advanced label={`이 자료의 열 ${ds.columns.length}개`}>
-                  <ul className="grid grid-cols-1 gap-x-lg gap-y-0.5 text-[11.5px] md:grid-cols-2">
-                    {ds.columns.map((c) => (
-                      <li key={c.name}>
-                        <code className="font-mono text-charcoal">{c.name}</code> <span className="text-stone">{c.label}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </Advanced>
-              </div>
-            ) : cls ? (
-              <div className="flex flex-col gap-md">
-                <div className="grid grid-cols-1 gap-md md:grid-cols-3">
-                  <div className="md:col-span-3">
-                    <Field label="제목" htmlFor="up-title">
-                      <input id="up-title" className="input !h-9 text-[13px]" value={form.title} maxLength={200} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+          <Step n={3} title="기준 정보" done={false}>
+            {kind === "dataset" ? (
+              ds ? (
+                <div className="flex flex-col gap-md" data-upload-selected={ds.code}>
+                  <p className="text-[12.5px] leading-relaxed text-steel">
+                    <strong className="font-bold text-ink-deep">{ds.name}</strong> · {versionText(ds)} — 승인되면 새 버전이 됩니다. {ds.description}
+                  </p>
+                  <div className="grid grid-cols-1 gap-md md:grid-cols-3">
+                    <Field label="자료 성격" htmlFor="up-origin">
+                      <select id="up-origin" className="input !h-9 text-[13px]" value={form.data_origin} onChange={(e) => setForm({ ...form, data_origin: e.target.value })}>
+                        <option value="actual">실데이터</option>
+                        <option value="simulated">시뮬레이션</option>
+                      </select>
+                    </Field>
+                    <Field label="기준일(선택)" htmlFor="up-asof" hint="비우면 파일의 기준일 열에서 읽습니다">
+                      <input id="up-asof" className="input !h-9 text-[13px]" type="date" value={form.as_of} onChange={(e) => setForm({ ...form, as_of: e.target.value })} />
+                    </Field>
+                    <Field label="메모(선택)" htmlFor="up-note">
+                      <input id="up-note" className="input !h-9 text-[13px]" value={form.note} maxLength={500} placeholder="예: 8월 정정본" onChange={(e) => setForm({ ...form, note: e.target.value })} />
                     </Field>
                   </div>
+                  <Advanced label={`이 자료의 열 ${ds.columns.length}개${ds.filePattern ? " · 파일 이름 규칙" : ""}`}>
+                    {ds.filePattern ? (
+                      <p className="mb-xs text-[11.5px] text-steel">
+                        파일 이름 규칙 <code className="font-mono text-charcoal">{ds.filePattern}</code>
+                      </p>
+                    ) : null}
+                    <ul className="grid grid-cols-1 gap-x-lg gap-y-0.5 text-[11.5px] md:grid-cols-2">
+                      {ds.columns.map((c) => (
+                        <li key={c.name}>
+                          <code className="font-mono text-charcoal">{c.name}</code> <span className="text-stone">{c.label}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </Advanced>
+                </div>
+              ) : (
+                <p className="text-[12.5px] text-stone">2단계에서 자료를 고르면 기준 정보를 넣을 수 있습니다.</p>
+              )
+            ) : (
+              <div className="flex flex-col gap-md">
+                <div className="grid grid-cols-1 gap-md md:grid-cols-3">
                   <Field label="발행 기관(선택)" htmlFor="up-issuer">
                     <input id="up-issuer" className="input !h-9 text-[13px]" value={form.issuer} onChange={(e) => setForm({ ...form, issuer: e.target.value })} />
                   </Field>
@@ -372,25 +555,31 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
                     <input id="up-dnote" className="input !h-9 text-[13px]" value={form.note} maxLength={500} onChange={(e) => setForm({ ...form, note: e.target.value })} />
                   </Field>
                 </div>
-                <Field label="파일" htmlFor="up-dfile" hint={`${opts.accept.document} · 스캔 PDF 는 글자 인식(OCR) 후 올려 주세요`}>
-                  <input key={fileKey} id="up-dfile" type="file" accept={opts.accept.document} onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[12.5px]" />
-                </Field>
-                {!file ? (
-                  <Field label="또는 본문 붙여 넣기" htmlFor="up-text">
-                    <textarea id="up-text" className="input text-[12.5px]" rows={4} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} />
+                {textMode ? (
+                  <Field label="문서 본문" htmlFor="up-text">
+                    <textarea id="up-text" className="input text-[12.5px]" rows={6} value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} />
                   </Field>
-                ) : null}
+                ) : (
+                  <p className="text-[11.5px] text-stone">스캔 PDF 는 글자 인식(OCR) 후 올려 주세요.</p>
+                )}
               </div>
-            ) : null}
+            )}
           </Step>
 
-          <Step n={3} title="검사 후 승인 요청">
+          <Step n={4} title="검사 후 승인 요청">
             <p className="mb-md text-[12.5px] leading-relaxed text-steel">
-              보내면 바로 보안 · 형식 · 품질 검사를 합니다. 품질 검사에 실패한 자료는 요청되지 않습니다. 관리자가 승인해야 화면 수치와 분석에 반영됩니다.
+              보내면 바로 보안 · 형식 · 품질 검사를 합니다. 품질 검사에 실패한 자료는 요청되지 않습니다. {APPROVER_TEXT}가 승인해야 화면 수치와 분석에 반영됩니다.
             </p>
-            <Button variant="confirm" disabled={!ready || busy} onClick={submit} data-upload-submit>
-              {busy ? "검사 중…" : "검사하고 승인 요청"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-md">
+              <Button variant="confirm" disabled={!ready || busy} onClick={submit} aria-describedby={blocker ? "up-blocker" : undefined} data-upload-submit>
+                {busy ? "검사 중…" : "검사하고 승인 요청"}
+              </Button>
+              {blocker ? (
+                <p id="up-blocker" className="text-[12px] text-steel" data-upload-blocker>
+                  {blocker}
+                </p>
+              ) : null}
+            </div>
             {failure ? (
               <div className="mt-md">
                 <Notice tone="critical" title="요청하지 못했습니다">
@@ -399,7 +588,7 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
               </div>
             ) : null}
             {last ? (
-              <div className="mt-md flex flex-col gap-xs rounded-xl border border-success-line bg-success-faint p-md" data-upload-last role="status">
+              <div ref={resultRef} tabIndex={-1} className="mt-md flex flex-col gap-xs rounded-xl border border-success-line bg-success-faint p-md outline-none focus-visible:ring-2 focus-visible:ring-primary" data-upload-last role="status">
                 <p className="flex flex-wrap items-center gap-xs text-[13px] font-bold text-ink-deep">
                   요청 #{last.id} · {last.targetLabel} <RequestStatus r={last} />
                 </p>
@@ -413,11 +602,19 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
       <aside aria-label="내 요청" className="rounded-2xl border border-hairline-soft bg-canvas p-lg">
         <div className="mb-md flex items-center justify-between">
           <h2 className="text-[15px] font-bold text-ink-deep">내 요청</h2>
-          <Button size="sm" variant="quiet" onClick={() => loadMine().catch(() => undefined)}>
+          <Button size="sm" variant="quiet" onClick={() => void loadMine()}>
             새로고침
           </Button>
         </div>
-        {!mine ? (
+        {mineError ? (
+          <div role="alert" className="flex flex-col items-start gap-xs rounded-xl border border-critical-line bg-critical-faint p-md" data-my-uploads-error>
+            <p className="text-[12.5px] font-bold text-critical">내 요청을 불러오지 못했습니다</p>
+            <p className="text-[11.5px] text-steel">{mineError}</p>
+            <Button size="sm" variant="ghost" onClick={() => void loadMine()}>
+              다시 시도
+            </Button>
+          </div>
+        ) : !mine ? (
           <p className="text-[12.5px] text-stone">불러오는 중…</p>
         ) : !mine.length ? (
           <EmptyState compact title="아직 요청이 없습니다" description="자료를 올리면 승인 상태가 여기에 보입니다." />
@@ -441,6 +638,11 @@ export function UploadWorkspace({ initial }: { initial: Uploadable }) {
                 {r.status === "approved" && r.kind === "document" ? (
                   <Link href={`/knowledge/${r.target}`} className="mt-0.5 inline-block text-[11.5px] font-bold text-primary">
                     문서 목록에서 보기
+                  </Link>
+                ) : null}
+                {r.status === "rejected" && r.kind === "dataset" ? (
+                  <Link href={`/knowledge/upload?target=${encodeURIComponent(r.target)}`} className="mt-0.5 inline-block text-[11.5px] font-bold text-primary">
+                    고쳐서 다시 올리기
                   </Link>
                 ) : null}
               </li>

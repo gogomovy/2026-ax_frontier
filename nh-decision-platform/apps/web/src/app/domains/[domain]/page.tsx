@@ -23,7 +23,7 @@ export default async function DomainPlaceholderPage(props: { params: Promise<{ d
       <PageHeader
         crumbs={[{ label: "현황·목표", href: "/hq/overview" }, { label: domain.name }]}
         title={`${domain.name} 부문 — 준비 중`}
-        description="1차 범위는 여신 부문입니다. 이 부문은 도메인 정의 · 지표 정의 · Agent 플레이북 설정만 등록하면 동일한 구조로 동작합니다."
+        description="1차 범위는 여신 부문입니다. 이 부문은 도메인 정의 · 지표 정의 · AI 플레이북 설정만 등록하면 동일한 구조로 동작합니다."
       />
 
       <div className="shell">
