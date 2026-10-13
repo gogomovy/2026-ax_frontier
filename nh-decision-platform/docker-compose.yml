@@ -14,6 +14,7 @@ name: nhdip
 #   neo4j     :7474  온톨로지 그래프 (브라우저 UI) / :7687 bolt
 #   litellm   :4000  (선택 · 기본 꺼짐) 내장 LiteLLM 게이트웨이 — 외부 LiteLLM 을 쓰면 띄우지 않는다.
 #                    켜려면 .env 에 COMPOSE_PROFILES=litellm
+#   elasticsearch :9200 (선택 · 기본 꺼짐) 질문하기 검색 엔진(nori 포함) — 기본은 PostgreSQL. 켜려면 COMPOSE_PROFILES=search (설계 §21.18)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 로그 회전 (B.32) — 컨테이너 로그가 디스크를 채우지 않도록
@@ -71,6 +72,12 @@ x-api-env: &api-env
   ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-}
   ALERT_SMTP_TO: ${ALERT_SMTP_TO:-}
   ALERT_SMTP_STARTTLS: ${ALERT_SMTP_STARTTLS:-1}
+  # 선택 검색 엔진 Elasticsearch (설계 §21.18) — ES_URL 을 비우면 PostgreSQL 만 쓴다. 내장 ES 는 COMPOSE_PROFILES=search, 주소는 http://elasticsearch:9200
+  ES_URL: ${ES_URL:-}
+  ES_USER: ${ES_USER:-}
+  ES_PASSWORD: ${ES_PASSWORD:-}
+  ES_INDEX: ${ES_INDEX:-nhdip-kb-chunk}
+  ES_VERIFY_CERTS: ${ES_VERIFY_CERTS:-1}
 
 services:
   postgres:
@@ -135,6 +142,39 @@ services:
       postgres: {condition: service_healthy}
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
+  elasticsearch:
+    # 선택 서비스 (설계 §21.18) — 질문하기 키워드 · 의미 검색을 PostgreSQL 대신 ES 로 돌릴 때만. COMPOSE_PROFILES=search
+    # 켜면 .env 에 ES_PASSWORD(= elastic 계정 비밀번호)와 ES_URL=http://elasticsearch:9200 · ES_USER=elastic 이 필요하다.
+    # 호스트에 vm.max_map_count=262144 이상이 필요하다(sysctl). 데이터 원장은 PostgreSQL 이라 ES 볼륨을 잃어도 `python -m nhdip.cli kb-es --rebuild` 로 복구된다.
+    profiles: ["search"]
+    build:
+      context: ./infra/elasticsearch
+      args:
+        ES_IMAGE_BASE: ${ES_IMAGE_BASE:-docker.elastic.co/elasticsearch/elasticsearch:9.5.4}
+    image: nhdip/elasticsearch:${IMAGE_TAG:-local}
+    logging: *logging
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "true"
+      # 컴포즈 내부망(api · worker)에서만 접근하므로 HTTP 는 평문. 망 밖에 열 때는 TLS 를 켜고 ES_URL 을 https 로
+      xpack.security.http.ssl.enabled: "false"
+      ELASTIC_PASSWORD: ${ES_PASSWORD:-}
+      ES_JAVA_OPTS: -Xms${ES_HEAP:-1g} -Xmx${ES_HEAP:-1g}
+      bootstrap.memory_lock: "false"
+    ulimits:
+      nofile: {soft: 65535, hard: 65535}
+    ports:
+      - "${ADMIN_BIND:-127.0.0.1}:${ES_PORT:-9200}:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u elastic:$${ELASTIC_PASSWORD} http://127.0.0.1:9200/_cluster/health >/dev/null || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 20
@@ -235,4 +275,5 @@ services:
 volumes:
   pgdata:
   neo4jdata:
+  esdata:
   filestore:
