@@ -567,7 +567,7 @@ def test_preflight_readiness_and_backup_record(db):
         rep = run_checks(s)
     keys = {i["key"]: i for i in rep["items"]}
     assert {"env", "session_secret", "db_role", "cookie_secure", "admin_password", "llm", "worker", "backup", "alerts", "knowledge_index"} <= set(keys)
-    assert keys["knowledge_index"]["level"] in ("ok", "warn") and "질문하기" in keys["knowledge_index"]["label"]
+    assert keys["knowledge_index"]["level"] in ("ok", "warn") and "AI 어시스턴트" in keys["knowledge_index"]["label"]
     assert keys["session_secret"]["level"] == "ok"
     assert keys["admin_password"]["level"] == "warn"  # 테스트 관리자는 최초 비밀번호 그대로
     assert all(i["level"] in ("ok", "warn", "fail") and "Admin1234" not in i["message"] for i in rep["items"])  # 비밀값 미노출
