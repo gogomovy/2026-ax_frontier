@@ -16,11 +16,14 @@ export function FigureText({
   signed,
   className,
   strong,
+  plain,
 }: {
   figure: Figure;
   signed?: boolean;
   className?: string;
   strong?: boolean;
+  /** 점선 밑줄 없이 그린다(표 · 큰 숫자) — 누르면 계산 추적이 열리는 것은 같다 */
+  plain?: boolean;
 }) {
   const { openDrawer } = useUi();
   const [hint, setHint] = useState(false);
@@ -38,7 +41,8 @@ export function FigureText({
         onBlur={() => setHint(false)}
         aria-label={`${figure.label} ${text}${figure.stale ? " (갱신 실패 — 이전 값)" : ""} — 계산 추적 보기`}
         className={clsx(
-          "figure-traceable tnum text-left",
+          plain ? "cursor-pointer decoration-icon decoration-dotted underline-offset-4 hover:underline" : "figure-traceable",
+          "tnum text-left",
           undefinedValue ? "text-stone" : strong ? "font-bold text-ink-deep" : "font-bold text-ink",
           className,
         )}
@@ -53,7 +57,7 @@ export function FigureText({
       {hint ? (
         <span
           role="tooltip"
-          className="absolute left-0 top-[calc(100%+6px)] z-40 block w-[280px] rounded-lg border border-hairline-soft bg-canvas p-3 text-left shadow-pop"
+          className="absolute left-0 top-[calc(100%+6px)] z-40 block w-[280px] rounded-lg border border-hairline-soft bg-canvas p-3 text-left shadow-tooltip"
         >
           <span className="block text-[11px] font-bold text-steel">{figure.label}</span>
           {figure.calc ? (
@@ -82,17 +86,15 @@ export function DeltaFigure({
   figure,
   positiveIsGood = true,
   className,
+  plain,
 }: {
   figure: Figure;
   positiveIsGood?: boolean;
   className?: string;
+  plain?: boolean;
 }) {
   const value = figure.value ?? 0;
-  const tone =
-    value === 0
-      ? "text-charcoal"
-      : (value > 0 ? positiveIsGood : !positiveIsGood)
-        ? "text-success"
-        : "text-critical";
-  return <FigureText figure={figure} signed className={clsx(tone, className)} />;
+  // 색은 문제가 되는 값에만 — 좋은 방향은 본문색, 나쁜 방향만 위험색
+  const bad = value !== 0 && (value > 0 ? !positiveIsGood : positiveIsGood);
+  return <FigureText figure={figure} signed plain={plain} className={clsx(bad ? "text-critical" : value === 0 ? "text-steel" : "text-ink-deep", className)} />;
 }

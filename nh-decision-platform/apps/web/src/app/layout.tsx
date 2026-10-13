@@ -36,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const boot = await loadBootstrap();
   return (
     <html lang="ko">
-      <body className="min-h-screen bg-canvas antialiased">
+      <body className="min-h-screen bg-page antialiased">
         <SessionProvider value={boot}>
           <UiProvider>
             <GoalStateProvider>

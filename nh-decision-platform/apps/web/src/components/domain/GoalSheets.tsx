@@ -5,16 +5,16 @@ import { useEffect, useState } from "react";
 import { FigureText } from "@/components/data/FigureText";
 import { RichText } from "@/components/data/RichText";
 import { EvidenceSummary } from "@/components/evidence/EvidenceChips";
-import { AlignmentPanel, VerificationRow } from "@/components/domain/Verification";
+import { VerificationRow } from "@/components/domain/Verification";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { useUi } from "@/components/providers/UiProvider";
 import { Sheet, SheetSection } from "@/components/ui/Sheet";
-import { Badge, Button, IconCalc, IconCheck, IconChevron, SeverityBadge } from "@/components/ui/primitives";
+import { Badge, Button, IconCheck, IconChevron, SeverityBadge } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
 import { API_MODE } from "@/lib/config";
 import { UNIT_LABEL, formatDate, formatDateTime } from "@/lib/format";
-import { resolveGoal } from "@/lib/goalView";
-import type { Goal, Insight, Proposal, ReportRequest } from "@/lib/types";
+import { proposalRange, resolveGoal } from "@/lib/goalView";
+import type { Goal, Insight, Proposal } from "@/lib/types";
 
 export const SUB_LABEL: Record<string, string> = {
   corporate: "기업여신",
@@ -25,12 +25,6 @@ export const SUB_LABEL: Record<string, string> = {
   inclusive_finance: "포용금융",
 };
 
-/** 정합성 검증 항목 (`POST /state/goals/check`, 6.4.7) */
-interface ConsistencyIssue {
-  code: string;
-  severity: "block" | "warn" | "info";
-  message: string;
-}
 /** 서버 변경 이력 (`GET /state/goals/{id}/history`, 6.4.8) */
 interface GoalHistoryEntry {
   at: string;
@@ -66,22 +60,6 @@ const DETAIL_HREF: Record<string, string> = {
   portfolio: "/hq/analysis",
   inclusive_finance: "/risk/analysis",
 };
-
-const ACTION_LABEL = {
-  keep: "기존 목표 유지",
-  adopt: "AI 제안 반영",
-  manual_edit: "직접 수정 반영",
-  added: "경영목표로 추가",
-} as const;
-
-export function proposalRange(p: Proposal) {
-  const unit = UNIT_LABEL[p.recommendation.unit];
-  const dec = p.recommendation.decimals ?? 1;
-  const n = (v?: number) => (v === undefined || v === null ? "-" : v.toFixed(dec));
-  if (p.recommendation.mode === "range") return `${n(p.recommendation.low)}${unit} ~ ${n(p.recommendation.high)}${unit}`;
-  if (p.recommendation.mode === "point") return `${n(p.recommendation.value)}${unit}`;
-  return "방향성만 제시";
-}
 
 /* ═══════════════ AI 주목 사항 ═══════════════ */
 export function AttentionSheet({
@@ -156,80 +134,6 @@ export function AttentionSheet({
           <p className="mt-1.5 text-[11px] text-stone">ATTENTION_SCORE v1 · 가중합 규칙</p>
         </SheetSection>
       ) : null}
-    </Sheet>
-  );
-}
-
-/* ═══════════════ 확인·보고 요청 ═══════════════ */
-const REQ_STATUS = {
-  open: { label: "확인 대기", tone: "attention" as const },
-  reviewing: { label: "검토 중", tone: "info" as const },
-  done: { label: "완료", tone: "success" as const },
-};
-
-export function RequestSheet({
-  request,
-  onClose,
-  onOpenGoal,
-}: {
-  request: ReportRequest;
-  onClose: () => void;
-  onOpenGoal: (goalId: string) => void;
-}) {
-  const { registerReviewItem, reviewItems } = useGoalState();
-  const { showToast } = useUi();
-  const saved = reviewItems.includes(request.title);
-  const status = REQ_STATUS[request.status];
-
-  return (
-    <Sheet
-      open
-      onClose={onClose}
-      eyebrow={
-        <>
-          <Badge tone="neutral">{request.reqTypeLabel}</Badge>
-          <Badge tone={status.tone}>{status.label}</Badge>
-        </>
-      }
-      title={request.title}
-      meta={`${request.fromOrg} → ${request.toOrg} · 등록 ${formatDate(request.createdAt)}${
-        request.dueDate ? ` · 기한 ${formatDate(request.dueDate)}` : ""
-      }`}
-      footer={
-        <>
-          <Button
-            variant={saved ? "quiet" : "primary"}
-            size="sm"
-            disabled={saved}
-            onClick={() => {
-              registerReviewItem(request.title);
-              showToast("경영목표 검토 대상으로 저장했습니다");
-            }}
-          >
-            {saved ? (
-              <>
-                <IconCheck /> 검토 대상 저장됨
-              </>
-            ) : (
-              "검토 대상으로 저장"
-            )}
-          </Button>
-          {request.relatedGoalId ? (
-            <Button variant="ghost" size="sm" onClick={() => onOpenGoal(request.relatedGoalId!)}>
-              관련 경영목표
-            </Button>
-          ) : null}
-        </>
-      }
-    >
-      <SheetSection title="요청 내용">
-        <p className="text-[14px] leading-[1.7] text-charcoal">{request.body}</p>
-      </SheetSection>
-      <SheetSection title="처리 안내">
-        <p className="text-[12.5px] leading-relaxed text-steel">
-          AI 주목 사항과 달리 타 조직이 직접 올린 요청입니다. 검토 대상으로 저장하면 경영목표 검토 목록에 함께 표시됩니다.
-        </p>
-      </SheetSection>
     </Sheet>
   );
 }
@@ -387,297 +291,6 @@ function HistoryItem({ title, meta, current }: { title: string; meta: string; cu
         <p className="mt-0.5 text-[11.5px] text-steel">{meta}</p>
       </div>
     </li>
-  );
-}
-
-/* ═══════════════ AI 제안 ═══════════════ */
-export function ProposalSheet({
-  proposal,
-  goal,
-  onClose,
-}: {
-  proposal: Proposal;
-  goal?: Goal;
-  onClose: () => void;
-}) {
-  const { applyProposal, keepGoal, addNewGoal, proposalActions } = useGoalState();
-  const { showToast } = useUi();
-  const [showLogic, setShowLogic] = useState(false);
-  const [editing, setEditing] = useState(false);
-  /* 확정 전 정합성 검증(6.4.7) — 경고면 사유 입력 후 강제 확정, 차단이면 확정 불가 */
-  const [check, setCheck] = useState<{ mode: "adopt" | "manual_edit"; value?: number; issues: ConsistencyIssue[]; blocked: boolean } | null>(null);
-  const [reason, setReason] = useState("");
-  const confirm = async (mode: "adopt" | "manual_edit", v?: number) => {
-    if (API_MODE) {
-      try {
-        const r = await api<{ passed: boolean; blocked: boolean; issues: ConsistencyIssue[] }>("/state/goals/check", { method: "POST", json: { proposalId: proposal.id, mode, value: v } });
-        if (!r.passed) {
-          setCheck({ mode, value: v, issues: r.issues, blocked: r.blocked });
-          setReason("");
-          return;
-        }
-      } catch (e) {
-        showToast(`정합성 검증을 하지 못했습니다 — ${(e as Error).message}`);
-        return;
-      }
-    }
-    applyProposal(proposal, mode, v);
-    showToast(mode === "adopt" ? "AI 제안을 반영했습니다" : "입력한 목표값으로 수정했습니다");
-    setEditing(false);
-  };
-  const [value, setValue] = useState(String(proposal.recommendation.high ?? proposal.recommendation.value ?? ""));
-  const action = proposalActions[proposal.id];
-  const isNew = proposal.kind === "goal_new";
-  const unit = UNIT_LABEL[proposal.recommendation.unit];
-  const dec = proposal.recommendation.decimals ?? 1;
-  const range = proposalRange(proposal);
-
-  const checkFooter = check ? (
-    <div className="flex w-full flex-col gap-2" data-consistency>
-      <ul className="flex flex-col gap-1">
-        {check.issues.map((i) => (
-          <li key={i.code} className="flex items-start gap-1.5 text-[12px]">
-            <Badge tone={i.severity === "block" ? "critical" : i.severity === "warn" ? "attention" : "neutral"}>
-              {i.severity === "block" ? "확정 불가" : i.severity === "warn" ? "경고" : "참고"}
-            </Badge>
-            <span className="text-charcoal">{i.message}</span>
-          </li>
-        ))}
-      </ul>
-      {check.blocked ? null : (
-        <label className="flex flex-col gap-1">
-          <span className="text-[11.5px] font-bold text-steel">강제 확정 사유 (5자 이상 · 이력에 남습니다)</span>
-          <textarea
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            rows={2}
-            className="rounded-lg border border-hairline px-3 py-2 text-[13px] focus:border-primary focus:outline-none"
-            aria-label="강제 확정 사유"
-          />
-        </label>
-      )}
-      <div className="flex gap-2">
-        {check.blocked ? null : (
-          <Button
-            variant="confirm"
-            size="sm"
-            disabled={reason.trim().length < 5}
-            onClick={() => {
-              applyProposal(proposal, check.mode, check.value, reason.trim(), true);
-              showToast("사유와 함께 확정했습니다");
-              setCheck(null);
-              setEditing(false);
-            }}
-          >
-            사유 입력 후 확정
-          </Button>
-        )}
-        <Button variant="ghost" size="sm" onClick={() => setCheck(null)}>
-          {check.blocked ? "값 다시 입력" : "취소"}
-        </Button>
-      </div>
-    </div>
-  ) : null;
-
-  const footer = checkFooter ?? (action ? (
-    <>
-      <Badge tone="success">
-        <IconCheck />
-        {ACTION_LABEL[action]} 완료
-      </Badge>
-      <span className="text-[12px] text-steel">변경 사유·채택 여부·근거 ID 가 함께 기록됩니다.</span>
-      <Button variant="ghost" size="sm" className="ml-auto" onClick={onClose}>
-        닫기
-      </Button>
-    </>
-  ) : editing ? (
-    <>
-      <label className="flex items-center gap-2">
-        <span className="text-[12px] font-bold text-steel">목표값</span>
-        <input
-          type="number"
-          step="0.1"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className="h-10 w-[120px] rounded-lg border border-hairline px-3 text-[14px] font-bold text-ink tnum focus:border-primary focus:outline-none"
-          aria-label="직접 입력 목표값"
-        />
-        <span className="text-[13px] text-steel">{unit}</span>
-      </label>
-      <Button
-        variant="confirm"
-        size="sm"
-        disabled={!value}
-        onClick={() => {
-          if (isNew) {
-            addNewGoal(proposal, `${Number(value).toFixed(dec)}${unit}`);
-            showToast("조정한 값으로 신규 경영목표를 추가했습니다");
-            setEditing(false);
-          } else {
-            void confirm("manual_edit", Number(value));
-          }
-        }}
-      >
-        반영
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
-        취소
-      </Button>
-    </>
-  ) : isNew ? (
-    <>
-      <Button
-        variant="confirm"
-        size="sm"
-        onClick={() => {
-          addNewGoal(proposal, range);
-          showToast("신규 경영목표로 추가했습니다");
-        }}
-      >
-        경영목표로 추가
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-        값 조정 후 추가
-      </Button>
-    </>
-  ) : (
-    <>
-      <Button
-        variant="confirm"
-        size="sm"
-        onClick={() => void confirm("adopt")}
-      >
-        제안 반영
-      </Button>
-      <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-        직접 수정
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          keepGoal(proposal);
-          showToast("기존 목표를 유지합니다");
-        }}
-      >
-        기존 유지
-      </Button>
-    </>
-  ));
-
-  return (
-    <Sheet
-      open
-      onClose={onClose}
-      width="lg"
-      eyebrow={
-        <>
-          <Badge tone={isNew ? "primary" : "attention"}>{isNew ? "신규 목표 제안" : "목표 수정 제안"}</Badge>
-          <AlignmentPanel compact verdict={proposal.alignment.verdict} matched={[]} conflicts={[]} />
-          <VerificationRow items={proposal.verifications} />
-        </>
-      }
-      title={proposal.title}
-      meta={goal ? `대상 목표 · ${goal.title}` : "기존 목표가 다루지 않는 영역"}
-      footer={footer}
-    >
-      <SheetSection title={isNew ? "왜 신설이 필요한가" : "왜 수정이 필요한가"}>
-        <RichText text={proposal.judgement} figures={proposal.figures} className="text-[14px] leading-[1.7] text-charcoal" />
-      </SheetSection>
-
-      <SheetSection title="추천 목표값 · 왜 이 수치인가">
-        <div className="flex flex-wrap items-end gap-x-lg gap-y-2">
-          <div>
-            <p className="text-[11.5px] text-steel">현재</p>
-            <p className="text-[17px] font-bold leading-tight text-stone tnum">
-              {proposal.recommendation.currentValue !== undefined
-                ? `${proposal.recommendation.currentValue.toFixed(dec)}${unit}`
-                : "미설정"}
-            </p>
-          </div>
-          <IconChevron className="mb-1 text-stone" />
-          <div>
-            <p className="text-[11.5px] text-steel">추천 {proposal.recommendation.mode === "range" ? "범위" : "값"}</p>
-            <p className="text-[24px] font-bold leading-tight text-primary tnum">{range}</p>
-          </div>
-        </div>
-        <p className="mt-2 text-[13px] leading-relaxed text-charcoal">{proposal.recommendation.text}</p>
-
-        <button
-          type="button"
-          onClick={() => setShowLogic((v) => !v)}
-          aria-expanded={showLogic}
-          className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-bold text-primary"
-        >
-          <IconCalc />
-          {showLogic ? "산출 근거 접기" : "산출 근거 보기"} · {proposal.ruleId}
-        </button>
-        {showLogic ? (
-          <div className="mt-2 overflow-hidden rounded-xl border border-hairline-soft">
-            <table className="w-full border-collapse text-[12px]">
-              <thead>
-                <tr className="bg-surface-soft text-left">
-                  <th scope="col" className="px-3 py-2 font-bold text-charcoal">입력</th>
-                  <th scope="col" className="px-3 py-2 font-bold text-charcoal">값</th>
-                  <th scope="col" className="px-3 py-2 font-bold text-charcoal">출처</th>
-                </tr>
-              </thead>
-              <tbody>
-                {proposal.ruleInputs.map((input) => (
-                  <tr key={input.label} className="border-t border-hairline-soft">
-                    <td className="px-3 py-2 text-charcoal">{input.label}</td>
-                    <td className="px-3 py-2 font-bold text-ink tnum">{input.value}</td>
-                    <td className="px-3 py-2 font-mono text-[10.5px] text-stone">{input.source}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="border-t border-hairline-soft bg-surface-soft px-3 py-2 text-[11.5px] text-charcoal">
-              목표값은 위 입력과 Rule 로만 산출되며 LLM 이 임의로 만들지 않습니다. 최종 수치는 담당자가 확정합니다.
-            </p>
-          </div>
-        ) : null}
-      </SheetSection>
-
-      {proposal.constraintChecks.length > 0 ? (
-        <SheetSection title="상위 제약 검증">
-          <ul className="flex flex-col divide-y divide-hairline-soft overflow-hidden rounded-xl border border-hairline-soft">
-            {proposal.constraintChecks.map((c) => (
-              <li key={c.label} className="flex flex-wrap items-center gap-x-md gap-y-1 px-base py-3">
-                <div className="min-w-0 flex-1">
-                  <p className="text-[12.5px] font-bold text-ink">{c.label}</p>
-                  {c.basisDoc ? (
-                    <p className="text-[11px] text-stone">
-                      {c.basisDoc.title}
-                      {c.basisDoc.page ? ` p.${c.basisDoc.page}` : ""}
-                    </p>
-                  ) : null}
-                </div>
-                <span className="text-[12px] text-steel">
-                  한도 <FigureText figure={c.ceiling} />
-                </span>
-                <span className="text-[12px] text-steel">
-                  여유 <FigureText figure={c.headroom} />
-                </span>
-                <Badge tone={c.passed ? "success" : "critical"}>{c.passed ? "충족" : "초과"}</Badge>
-              </li>
-            ))}
-          </ul>
-        </SheetSection>
-      ) : null}
-
-      <SheetSection title="근거">
-        <EvidenceSummary items={proposal.evidence} title={proposal.title} />
-      </SheetSection>
-
-      <SheetSection title="배치 검증">
-        <AlignmentPanel
-          verdict={proposal.alignment.verdict}
-          matched={proposal.alignment.matched}
-          conflicts={proposal.alignment.conflicts}
-        />
-      </SheetSection>
-    </Sheet>
   );
 }
 

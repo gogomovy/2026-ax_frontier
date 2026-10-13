@@ -25,6 +25,9 @@ const config: Config = {
         hairline: "var(--color-hairline)",
         "hairline-soft": "var(--color-hairline-soft)",
         canvas: "var(--color-canvas)",
+        page: "var(--color-page)",
+        track: "var(--color-track)",
+        icon: "var(--color-icon)",
         "surface-soft": "var(--color-surface-soft)",
         success: "var(--color-success)",
         attention: "var(--color-attention)",
@@ -83,14 +86,16 @@ const config: Config = {
       fontFamily: {
         sans: "var(--font-display)",
       },
+      // 타이포 (가이드 G02): 캡션 12 · 본문 14 · 카드 제목 16 · 섹션 제목 20 · KPI 24 · 핵심 수치 28~32
       fontSize: {
-        caption: ["12px", { lineHeight: "1.33" }],
-        "body-sm": ["14px", { lineHeight: "1.43", letterSpacing: "-0.14px" }],
-        body: ["16px", { lineHeight: "1.5", letterSpacing: "-0.16px" }],
-        "subtitle-md": ["18px", { lineHeight: "1.44" }],
+        axis: ["11px", { lineHeight: "1.4" }],
+        caption: ["12px", { lineHeight: "1.5" }],
+        "body-sm": ["14px", { lineHeight: "1.5" }],
+        body: ["16px", { lineHeight: "1.4" }],
+        "subtitle-md": ["20px", { lineHeight: "1.25" }],
         "heading-sm": ["24px", { lineHeight: "1.25" }],
-        "heading-md": ["28px", { lineHeight: "1.21" }],
-        "heading-lg": ["36px", { lineHeight: "1.28" }],
+        "heading-md": ["28px", { lineHeight: "1.2" }],
+        "heading-lg": ["32px", { lineHeight: "1.2" }],
       },
       // 글자 색만 대비를 높인 값으로 (B.34) — text-primary · text-success · text-critical. bg-* · border-* 는 colors 그대로
       textColor: {
@@ -100,12 +105,33 @@ const config: Config = {
         attention: "var(--color-attention-text)",
         warning: "var(--color-warning-text)",
       },
+      // 그림자는 떠 있는 요소에만 (G03): 툴팁 · 팝업 · 토스트
       boxShadow: {
-        panel: "rgba(20, 22, 26, 0.12) 0px 1px 4px 0px",
-        pop: "rgba(20, 22, 26, 0.22) 0px 6px 24px 0px",
+        panel: "var(--shadow-tooltip)",
+        tooltip: "var(--shadow-tooltip)",
+        pop: "var(--shadow-popup)",
+        popup: "var(--shadow-popup)",
+        toast: "var(--shadow-toast)",
+      },
+      keyframes: {
+        "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
+        "slide-in-right": { from: { transform: "translateX(24px)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
+        "pop-in": { from: { transform: "translateY(8px) scale(0.98)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
+        "toast-in": { from: { transform: "translate(-50%, 8px)", opacity: "0" }, to: { transform: "translate(-50%, 0)", opacity: "1" } },
+        shimmer: { "0%,100%": { opacity: "1" }, "50%": { opacity: "0.55" } },
+      },
+      animation: {
+        "fade-in": "fade-in 140ms ease-out both",
+        "slide-in-right": "slide-in-right 200ms cubic-bezier(0.2, 0.7, 0.2, 1) both",
+        "pop-in": "pop-in 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both",
+        "toast-in": "toast-in 180ms ease-out both",
+        shimmer: "shimmer 1.4s ease-in-out infinite",
       },
       maxWidth: {
         shell: "var(--shell-max)",
+      },
+      height: {
+        header: "var(--header-h)",
       },
     },
   },

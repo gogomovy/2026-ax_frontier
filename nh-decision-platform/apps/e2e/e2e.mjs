@@ -114,9 +114,18 @@ try {
   // 4) 사용자 로그인 · 권한
   await login(u, EMP, PW);
   ok("승인 후 로그인 → 첫 화면", u.url().endsWith("/hq/overview"), u.url());
-  ok("사용자 카드: 본부 > 부 > 국 > 팀", (await u.evaluate(() => document.querySelector("aside")?.innerText ?? "")).includes("경영기획본부 > 종합기획부 > 경영기획국 > 경영목표팀"));
-  const side = await u.evaluate(() => document.querySelector("aside nav")?.innerText ?? "");
-  ok("사이드바 = 소속 부서 + 공통", side.includes("경영목표 설정") && side.includes("데이터베이스") && !side.includes("수행방안"), side.replace(/\n+/g, " | "));
+  // 사용자 카드는 헤더의 사용자 메뉴(눌러서 펼침)에 있다
+  const userCard = async (p) => {
+    await p.evaluate(() => document.querySelector("[data-user-menu]")?.click());
+    await sleep(250);
+    const t = await p.evaluate(() => document.querySelector("[data-user-menu]")?.parentElement?.innerText ?? "");
+    await p.keyboard.press("Escape");
+    return t;
+  };
+  ok("사용자 카드: 본부 > 부 > 국 > 팀", (await userCard(u)).includes("경영기획본부 > 종합기획부 > 경영기획국 > 경영목표팀"));
+  // 헤더 = 소속 영역의 단계 + 공통(데이터베이스 아이콘). 다른 영역의 단계(수행방안)는 보이지 않는다
+  const head = await u.evaluate(() => ({ text: document.querySelector("header")?.innerText ?? "", db: !!document.querySelector('header a[aria-label="데이터베이스"]'), admin: !!document.querySelector('header a[href="/admin"]') }));
+  ok("헤더 = 소속 부서 단계 + 공통", head.text.includes("경영목표 설정") && head.db && !head.text.includes("수행방안") && !head.admin, head.text.replace(/\n+/g, " | "));
   await shot(u, "03-user-overview");
   for (const p of ["/hq/analysis", "/hq/goals", "/hq/capital", "/hq/initiatives", "/knowledge", "/knowledge/gov_policy", "/knowledge/upload", "/analysis/builder", "/domains/loan"]) {
     await u.goto(BASE + p, { waitUntil: "networkidle0" });
@@ -149,7 +158,7 @@ try {
   await api(`/admin/users/${BR_EMP}/approve`, { method: "POST" });
   await login(b, BR_EMP, PW);
   ok("영업점 사용자 → /branch (지역본부 권한 상속)", b.url().endsWith("/branch"), b.url());
-  ok("영업점 사용자 카드: 지역본부 > 영업점", (await b.evaluate(() => document.querySelector("aside")?.innerText ?? "")).includes("수도권1지역본부 > 강남금융센터"));
+  ok("영업점 사용자 카드: 지역본부 > 영업점", (await userCard(b)).includes("수도권1지역본부 > 강남금융센터"));
   ok("다른 영업점 분석은 보이지 않음(자기 영업점만)", (await text(b)).includes("업적평가 분석은 아직 준비 중"));
   await b.goto(`${BASE}/branch/targets`, { waitUntil: "networkidle0" });
   ok("영업점 참고: 본부 전파 목표·가이드", (await text(b)).includes("전파된 목표"));
@@ -551,8 +560,12 @@ try {
     const me = (await api("/me")).body;
     const mm = (await api("/me/menu")).body;
     ok("관리자 첫 화면 = /admin · 처리 대기 건수", me?.home === "/admin" && typeof mm?.counts?.adminTodo === "number" && mm.counts.adminTodo === mm.counts.adminUsers + mm.counts.adminUploads + mm.counts.adminAnalyses, JSON.stringify({ home: me?.home, todo: mm?.counts?.adminTodo }));
-    const firstGroup = await a.evaluate(() => document.querySelector("aside nav")?.innerText.trim().split("\n")[0] ?? "");
-    ok("관리자 사이드바: 관리 묶음 먼저", !firstGroup.startsWith("업무 화면"), firstGroup);
+    // [관리] 로 들어온 관리자 영역 = 공통 헤더 + 관리자 전용 사이드바(업무 화면 메뉴는 섞이지 않는다)
+    const firstGroup = await a.evaluate(() => document.querySelector('aside nav[aria-label="관리자 메뉴"]')?.innerText.trim().split("\n")[0] ?? "");
+    ok("관리자 사이드바: 관리 묶음만 · 관리자 홈이 먼저", firstGroup.startsWith("관리자 홈") && !(await a.evaluate(() => document.querySelector('aside nav[aria-label="관리자 메뉴"]')?.innerText ?? "")).includes("경영목표 설정"), firstGroup);
+    await a.goto(`${BASE}/hq/overview`, { waitUntil: "networkidle0" });
+    ok("관리자 헤더: [관리] 메뉴 + 세 영역 전환(종기부 · 사업부서 · 영업점)", await a.evaluate(() => !!document.querySelector('header a[href="/admin"]') && ["종기부", "사업부서", "영업점"].every((n) => [...document.querySelectorAll('header nav[aria-label="업무 영역 전환"] a')].some((x) => x.innerText.includes(n)))));
+    await a.goto(`${BASE}/admin`, { waitUntil: "networkidle0" });
     // 역할 변경 = 확인 대화상자, 취소하면 그대로 (INT-01 · Q123)
     await a.goto(`${BASE}/admin/users`, { waitUntil: "networkidle0" });
     await a.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.startsWith("전체"))?.click());
@@ -719,7 +732,9 @@ try {
 
   // 10) 로그아웃 · 정리
   await u.goto(`${BASE}/hq/overview`, { waitUntil: "networkidle0" });
-  await u.evaluate(() => [...document.querySelectorAll("aside button")].find((x) => x.innerText.includes("로그아웃"))?.click());
+  await u.evaluate(() => document.querySelector("[data-user-menu]")?.click());
+  await sleep(250);
+  await u.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.innerText.includes("로그아웃"))?.click());
   await u.waitForNavigation({ waitUntil: "networkidle0" });
   await u.goto(`${BASE}/hq/goals`, { waitUntil: "networkidle0" });
   ok("로그아웃 후 접근 차단", u.url().includes("/login"), u.url());

@@ -356,7 +356,7 @@ function MapItem({ id, selected, className, onClick, children, title }: { id: st
       data-pipe-id={id}
       aria-pressed={selected}
       onClick={onClick}
-      className={`relative z-[1] block w-full rounded-lg border bg-white px-2 py-1 text-left text-[11.5px] transition-opacity ${selected ? "border-primary ring-2 ring-primary/30" : "border-hairline hover:border-steel"} ${className ?? ""}`}
+      className={`relative z-[1] block w-full rounded-lg border bg-white px-2 py-1 text-left text-[11.5px] transition-opacity ${selected ? "border-primary ring-2 ring-info-line" : "border-hairline hover:border-steel"} ${className ?? ""}`}
     >
       {children}
     </button>
@@ -367,7 +367,7 @@ function ConnectionList({ id, label, fwd, back, onClear }: { id: string; label: 
   const up = back.get(id) ?? [];
   const down = fwd.get(id) ?? [];
   return (
-    <div className="mb-md rounded-lg border border-primary/40 bg-primary-soft/40 p-sm text-[12px]" role="status" aria-live="polite" data-pipeline-selection>
+    <div className="mb-md rounded-lg border border-info-line bg-info-faint p-sm text-[12px]" role="status" aria-live="polite" data-pipeline-selection>
       <div className="flex flex-wrap items-center gap-xs">
         <b className="text-ink-deep">{label(id)}</b>
         <button type="button" onClick={onClear} className="ml-auto text-[11px] font-bold text-primary-text">
@@ -552,7 +552,7 @@ function NodeCard({ n, current, live, selected, onClick }: { n: PipeNode; curren
       onClick={onClick}
       aria-pressed={selected}
       data-node={n.key}
-      className={`block w-full overflow-hidden rounded-lg border bg-white text-left ${selected ? "border-primary ring-2 ring-primary/30" : "border-hairline hover:border-steel"} ${!n.enabled ? "opacity-60" : ""}`}
+      className={`block w-full overflow-hidden rounded-lg border bg-white text-left ${selected ? "border-primary ring-2 ring-info-line" : "border-hairline hover:border-steel"} ${!n.enabled ? "opacity-60" : ""}`}
     >
       <span aria-hidden="true" className={`block h-1 w-full ${STATUS_BAR[st ?? ""] ?? "bg-hairline"} ${st === "running" ? "motion-safe:animate-pulse" : ""}`} />
       <span className="block p-1.5">

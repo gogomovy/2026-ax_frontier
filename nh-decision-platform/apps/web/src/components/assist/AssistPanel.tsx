@@ -74,7 +74,7 @@ export function AssistPanel() {
           load();
           setOpen(true);
         }}
-        className="fixed bottom-4 right-4 z-40 flex h-12 min-w-[48px] items-center justify-center gap-2 rounded-pill bg-ink-deep px-4 text-[13px] font-bold text-white shadow-pop no-print sm:bottom-6 sm:right-6 sm:h-auto sm:px-5 sm:py-3"
+        className="fixed bottom-4 right-4 z-40 flex h-12 min-w-[48px] items-center justify-center gap-2 rounded-pill bg-primary px-4 text-[14px] font-bold text-white shadow-popup transition-colors hover:bg-primary-deep no-print sm:bottom-6 sm:right-6 sm:h-auto sm:px-5 sm:py-3"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-keyshortcuts="Alt+Q"

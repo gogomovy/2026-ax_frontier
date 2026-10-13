@@ -9,32 +9,37 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    /* 표 · 서랍이 열릴 때 가로 위치가 흔들리지 않게 (가이드 G05) */
+    scrollbar-gutter: stable;
   }
   body {
-    background: var(--color-canvas);
+    background: var(--color-page);
     color: var(--color-ink);
     font-family: var(--font-display);
     font-size: 14px;
-    line-height: 1.43;
-    letter-spacing: -0.14px;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+    /* 한글은 어절 단위로 줄바꿈 (가이드 G02) */
+    word-break: keep-all;
+    overflow-wrap: anywhere;
   }
   /* 금융 표 가독성: 숫자 폭 고정 */
   table,
   .tnum {
     font-variant-numeric: tabular-nums;
   }
-  /* no-hover 정책이지만 키보드 포커스 링은 필수 */
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
   ::selection {
-    background: var(--color-info-soft);
+    background: var(--color-info-line-soft);
   }
 }
 
 @layer components {
+  /* 페이지 좌우 여백 32px (모바일 20px) */
   .shell {
     max-width: var(--shell-max);
     margin-inline: auto;
@@ -42,12 +47,13 @@
   }
   @media (min-width: 768px) {
     .shell {
-      padding-inline: var(--space-xxl);
+      padding-inline: var(--page-gutter);
     }
   }
-  /* text-input (디자인 시스템) — 44px, hairline, radius-lg, 포커스 시 2px 강조 */
+
+  /* text-input — 40px, 8px 반경, 포커스 시 보라 라인 */
   .input {
-    height: 44px;
+    height: 40px;
     width: 100%;
     border: 1px solid var(--color-hairline);
     border-radius: var(--radius-lg);
@@ -55,14 +61,16 @@
     padding: 0 var(--space-md);
     font-size: 14px;
     color: var(--color-ink);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
   }
   .input::placeholder {
-    color: var(--color-stone);
+    color: var(--color-steel);
+    opacity: 0.8;
   }
   .input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 1px var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-info-line-soft);
   }
   textarea.input {
     height: auto;
@@ -70,18 +78,23 @@
     line-height: 1.6;
   }
 
-  /* 선택 가능한 목록 행 — 누름 상태와 선택 상태만 표현한다 */
+  /* 선택 가능한 목록 행 */
   .row-button {
     width: 100%;
     text-align: left;
     transition: background-color 120ms ease;
   }
-  .row-button:active {
+  .row-button:hover {
     background: var(--color-surface-soft);
+  }
+  .row-button:active {
+    background: var(--color-track);
   }
   .row-button[aria-current="true"] {
     background: var(--color-info-faint);
   }
+
+  /* 카드: 그림자 없이 1px 테두리 (가이드 G03) */
   .card {
     background: var(--color-canvas);
     border: 1px solid var(--color-hairline-soft);
@@ -96,25 +109,54 @@
     background: var(--color-surface-soft);
     border-radius: var(--radius-xl);
   }
+  /* AI 영역: primary/100 박스 + 흰 내부 카드 (가이드 G04) */
+  .ai-zone {
+    background: var(--color-info-soft);
+    border-radius: var(--radius-xl);
+    padding: var(--space-xs);
+  }
+  .ai-zone > .ai-inner {
+    background: var(--color-canvas);
+    border-radius: var(--radius-lg);
+  }
   .label {
     color: var(--color-steel);
     font-size: 12px;
-    line-height: 1.33;
+    line-height: 1.5;
   }
   .divider {
     height: 1px;
     background: var(--color-hairline-soft);
   }
 
+  /* 큰 숫자의 단위는 60% 크기 · neutral/600 (가이드 G02) */
+  .num-unit {
+    font-size: 0.6em;
+    font-weight: 500;
+    color: var(--color-steel);
+    margin-left: 0.15em;
+    letter-spacing: 0;
+  }
+
   /* 근거 있는 수치: 점선 밑줄로 추적 가능함을 알린다 */
   .figure-traceable {
-    border-bottom: 1px dashed var(--color-stone);
+    border-bottom: 1px dashed var(--color-hairline);
     cursor: help;
+  }
+  .figure-traceable:hover {
+    border-bottom-color: var(--color-primary);
   }
   /* 용어집 연결 용어 */
   .term-marked {
     border-bottom: 1px dotted var(--color-primary);
     cursor: help;
+  }
+
+  /* 스켈레톤 — 실제 레이아웃과 같은 위치에 neutral/100 블록 (가이드 G06) */
+  .skeleton {
+    background: var(--color-track);
+    border-radius: var(--radius-md);
+    animation: shimmer 1.4s ease-in-out infinite;
   }
 
   .report-body h2 {
@@ -148,6 +190,30 @@
     padding: var(--space-sm) var(--space-base);
     margin-inline: calc(var(--space-base) * -1);
     transition: background 200ms ease;
+  }
+}
+
+@layer utilities {
+  /* 가로 스크롤 줄 — 얇은 스크롤바 */
+  .thin-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-hairline) transparent;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 

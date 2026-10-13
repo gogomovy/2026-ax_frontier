@@ -1,89 +1,96 @@
 /* ───────────────────────────────────────────────────────────────
- * 자동 생성 대상 파일 — 출처: designsys/DESIGN-meta.md (front-matter)
- * 값은 원 디자인 시스템 토큰을 변경 없이 사용한다.
- * 업무 맥락 재해석(용도 매핑)은 설계서 §12.1 표를 따른다.
+ * 디자인 토큰 — 출처: front_ex/TalkFile_Guide.pdf (개발 가이드 G01~G06, 기준 1440px)
+ * 변수 이름은 기존 구성 요소와 호환되도록 유지하고 값만 새 가이드에 맞춘다.
+ * 색 사용 규칙: 보라 = 데이터 · 행동 · AI / 주황 = 주의 / 빨강 = 위험 / 나머지는 무채색.
+ * neutral/400 은 아이콘 · 비활성 선에만 쓰고 글자에는 쓰지 않는다(대비 2.5:1).
  * ─────────────────────────────────────────────────────────────── */
 :root {
-  /* Color — Brand & Accent */
-  --color-primary: #0064e0;        /* 확정·승인 액션 */
-  --color-primary-deep: #0457cb;   /* pressed */
-  --color-primary-soft: #0091ff;
+  /* Primary — 데이터 · 행동 · AI */
+  --color-primary: #5b5fe0;        /* primary/500 · 메인 버튼 · 선택 라인 · 차트 */
+  --color-primary-deep: #3b3fb8;   /* primary/700 · 눌림 · 링크 · 강조 글자 */
+  --color-primary-soft: #d7d9fa;   /* primary/200 · 비교 막대(과거) · 보조 경계 */
   --color-on-primary: #ffffff;
-  --color-ink-button: #000000;     /* 일반 주요 액션 */
+  --color-ink-button: #5b5fe0;     /* 메인 버튼(화면당 1개) */
   --color-on-ink-button: #ffffff;
 
-  /* Color — Surface */
-  --color-canvas: #ffffff;
-  --color-surface-soft: #f1f4f7;
-  --color-hairline: #ced0d4;
-  --color-hairline-soft: #dee3e9;
+  /* Surface */
+  --color-page: #f9f9fc;           /* neutral/25 · 페이지 배경 */
+  --color-canvas: #ffffff;         /* neutral/0 · 카드 */
+  --color-surface-soft: #f6f6fa;   /* neutral/50 · 표 머리글 · 비선택 탭 */
+  --color-track: #efeff5;          /* neutral/100 · 트랙 · 스켈레톤 */
+  --color-hairline: #d9dbe7;       /* 입력 · 보조 버튼 테두리 */
+  --color-hairline-soft: #e7e8f0;  /* neutral/200 · 카드 테두리 · 구분선 */
 
-  /* Color — Text */
-  --color-ink-deep: #0a1317;
-  --color-ink: #1c1e21;
-  --color-charcoal: #444950;
-  --color-slate: #4b4c4f;
-  --color-steel: #5d6c7b;
-  --color-stone: #616f7f;          /* 접근성 조정(B.34 · AA 4.5:1) — 원값 #8595a4 */
-  --color-disabled-text: #bcc0c4;
+  /* Text */
+  --color-ink-deep: #1e1f2e;       /* neutral/900 · 본문 · 제목 · 숫자 */
+  --color-ink: #1e1f2e;
+  --color-charcoal: #3d3f52;
+  --color-slate: #4b4d60;
+  --color-steel: #6b6e82;          /* neutral/600 · 보조 글자 · 단위(글자 최소 색) */
+  --color-stone: #6b6e82;          /* 글자에는 neutral/400 을 쓰지 않으므로 neutral/600 */
+  --color-disabled-text: #a3a5b6;  /* neutral/400 */
+  --color-icon: #a3a5b6;           /* neutral/400 · 아이콘 · 비활성 선 */
 
-  /* Color — Semantic (업무 재해석) */
-  --color-success: #31a24c;          /* 목표 달성·적정 */
-  --color-attention: #f2a918;        /* 주의(관리 범위 내) */
-  --color-warning: #f7b928;          /* 데이터 한계·시뮬레이션 */
-  --color-critical: #e41e3f;         /* 재검토 필요·한도 위반·배치 */
-  --color-critical-strong: #f0284a;
-  /* 글자용 상태 색 (B.34 · WCAG AA 4.5:1 — 흰 바탕 · 연한 상태색 칩 바탕 모두). 배경 · 선 · 점은 위 원래 색을 쓴다 */
-  --color-primary-text: #0052bd;
-  --color-success-text: #1c7434;
-  --color-critical-text: #c4162f;
-  --color-attention-text: #8a5d00;
-  --color-warning-text: #7a5600;
+  /* Semantic — 의미 있는 값에만 */
+  --color-success: #6b6e82;          /* 정상 · 충족은 무채색 알약(neutral/100 · 600) */
+  --color-attention: #e8924a;        /* warning/500 · 주의 차트 · 아이콘 */
+  --color-warning: #e8924a;
+  --color-critical: #e5484d;         /* danger/500 · 레드닷 · 오류 아이콘 */
+  --color-critical-strong: #c4363b;  /* danger/700 · 눌림 */
+  /* 글자용 상태 색 (흰 바탕 · 연한 태그 배경 모두 4.5:1 이상) */
+  --color-primary-text: #3b3fb8;     /* primary/700 */
+  --color-success-text: #4a4d60;
+  --color-critical-text: #c4363b;    /* danger/700 */
+  --color-attention-text: #b8621f;   /* warning/700 */
+  --color-warning-text: #b8621f;
 
-  /* Color — 상태 옅은 배경 · 선 (C.1 · Q106 — 구성 요소의 rgba 하드코딩을 대체). faint < soft, line = 테두리 */
-  --color-info-faint: rgba(0, 100, 224, 0.05);
-  --color-info-soft: rgba(0, 100, 224, 0.1);
-  --color-info-line-soft: rgba(0, 100, 224, 0.12);
-  --color-info-line: rgba(0, 100, 224, 0.22);
-  --color-success-faint: rgba(49, 162, 76, 0.06);
-  --color-success-soft: rgba(49, 162, 76, 0.12);
-  --color-success-line: rgba(49, 162, 76, 0.3);
-  --color-attention-faint: rgba(242, 169, 24, 0.1);
-  --color-attention-soft: rgba(242, 169, 24, 0.18);
-  --color-warning-soft: rgba(247, 185, 40, 0.18);
-  --color-critical-faint: rgba(228, 30, 63, 0.06);
-  --color-critical-soft: rgba(228, 30, 63, 0.1);
-  --color-critical-line: rgba(228, 30, 63, 0.3);
-  --color-highlight: rgba(242, 169, 24, 0.32);   /* 본문 인용 강조(mark) */
-  --color-line-strong: rgba(10, 19, 23, 0.12);   /* ghost 버튼 테두리 */
-  --color-scrim: rgba(10, 19, 23, 0.32);         /* 시트 · 메뉴 뒤 어둡게 */
+  /* 옅은 배경 · 선 — faint < soft, line = 테두리 */
+  --color-info-faint: #f6f6fe;       /* primary/50 · AI 제안 줄 · 선택 배경 */
+  --color-info-soft: #ecedfd;        /* primary/100 · AI 영역 배경 · AI 태그 */
+  --color-info-line-soft: #d7d9fa;   /* primary/200 */
+  --color-info-line: #bfc1f4;
+  --color-success-faint: #f6f6fa;
+  --color-success-soft: #efeff5;     /* neutral/100 */
+  --color-success-line: #d9dbe7;
+  --color-attention-faint: #fef9f4;
+  --color-attention-soft: #fdf3ea;   /* warning/50 · 태그 배경 */
+  --color-warning-soft: #fdf3ea;
+  --color-critical-faint: #fef7f7;
+  --color-critical-soft: #fdf1f1;    /* danger/50 */
+  --color-critical-line: rgba(229, 72, 77, 0.3);
+  --color-highlight: rgba(232, 146, 74, 0.28);  /* 본문 인용 강조(mark) */
+  --color-line-strong: rgba(30, 31, 46, 0.14);  /* 고스트 버튼 테두리 */
+  --color-scrim: rgba(30, 31, 46, 0.42);        /* 팝업 · 서랍 뒤 어둡게 */
 
-  /* Chart — 계열 팔레트(primary · attention · success · stone · purple · teal), 격자 · 축 */
-  --chart-1: #0064e0;
-  --chart-2: #f2a918;
-  --chart-3: #31a24c;
-  --chart-4: #8595a4;
-  --chart-5: #a121ce;
-  --chart-6: #0f8a8a;
-  --chart-grid: #e4e9ee;
-  --chart-axis: #b8c3cf;
+  /* Chart — 보라 중심, 의미 색은 주의 · 위험에만 */
+  --chart-1: #5b5fe0;
+  --chart-2: #e8924a;
+  --chart-3: #3b3fb8;
+  --chart-4: #a3a5b6;
+  --chart-5: #9b9eea;
+  --chart-6: #6b6e82;
+  --chart-grid: #efeff5;
+  --chart-axis: #d9dbe7;
 
   /* Layout */
-  --shell-max: 1280px;
+  --shell-max: 1536px;
+  --page-gutter: 32px;
+  --header-h: 64px;
+  --admin-nav-w: 248px;
 
-  /* Radius */
+  /* Radius — 버튼 6 · 내부 카드 8 · 카드 10 · 팝업 20 · 태그 999 */
   --radius-xs: 2px;
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --radius-xl: 16px;
-  --radius-xxl: 24px;
-  --radius-xxxl: 32px;
-  --radius-feature: 40px;
-  --radius-full: 100px;
+  --radius-xl: 10px;
+  --radius-xxl: 10px;
+  --radius-xxxl: 20px;
+  --radius-feature: 20px;
+  --radius-full: 999px;
   --radius-circle: 9999px;
 
-  /* Spacing */
+  /* Spacing — 요소 간격 8 / 12 / 16 / 20 / 24, 섹션 40 */
   --space-xxs: 4px;
   --space-xs: 8px;
   --space-sm: 10px;
@@ -93,11 +100,16 @@
   --space-xl: 24px;
   --space-xxl: 32px;
   --space-xxxl: 40px;
-  --space-section-sm: 48px;
+  --space-section-sm: 40px;
   --space-section: 64px;
   --space-section-lg: 80px;
 
-  /* Typography — Optimistic VF 는 한글 글리프가 없어 Pretendard 를 한글 폴백으로 둔다 */
-  --font-display: "Optimistic VF", "Pretendard Variable", Pretendard, -apple-system,
-    BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  /* Shadow — 떠 있는 요소에만 (카드는 그림자 없이 1px 테두리) */
+  --shadow-tooltip: 0 4px 12px rgba(30, 31, 46, 0.22);
+  --shadow-popup: 0 8px 28px rgba(30, 31, 46, 0.2);
+  --shadow-toast: 0 6px 16px rgba(30, 31, 46, 0.25);
+
+  /* Typography — Pretendard 400 / 500 / 700, 숫자 tabular-nums, 행간 1.5 */
+  --font-display: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
 }

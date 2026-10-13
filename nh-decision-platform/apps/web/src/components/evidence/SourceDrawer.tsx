@@ -1,29 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
-import { Badge, IconCalc, IconDoc, IconWarn } from "@/components/ui/primitives";
-import { EVIDENCE_CATEGORY_LABEL, DB_CLASS_LABEL, formatDate, formatFigure } from "@/lib/format";
-import { API_MODE } from "@/lib/config";
-import type { Evidence } from "@/lib/types";
+import { Badge, IconDoc, IconWarn } from "@/components/ui/primitives";
+import { formatFigure } from "@/lib/format";
 import { useFocusTrap } from "@/lib/a11y";
-
-/** 원본 문서 뷰어 주소 — 파일명 · 제목으로 문서를 찾고, 인용문 위치를 하이라이트한다 (F.12) */
-function docViewerHref(item: Evidence): string {
-  const qs = new URLSearchParams();
-  if (item.doc?.fileName) qs.set("file", item.doc.fileName);
-  if (item.doc?.title) qs.set("title", item.doc.title);
-  if (item.doc?.page) qs.set("page", String(item.doc.page));
-  if (item.snippet) qs.set("q", item.snippet.slice(0, 300));
-  return `/knowledge/doc?${qs.toString()}`;
-}
-
-const CATEGORY_TONE = {
-  bank_data: "info",
-  internal_direction: "attention",
-  external_policy: "success",
-} as const;
+import { EvidenceBody } from "./EvidenceBody";
 
 /** 근거 원문 확인 · 계산 추적 · 용어 정의를 담는 우측 패널 (DB-07, UX-02/03/04) */
 export function SourceDrawer() {
@@ -62,173 +44,30 @@ export function SourceDrawer() {
         role="dialog"
         aria-modal="true"
         aria-label={drawer.title}
-        className="flex h-full w-full max-w-[520px] flex-col bg-canvas shadow-pop outline-none"
+        className="flex h-full w-full max-w-[560px] animate-slide-in-right flex-col bg-canvas shadow-popup outline-none"
       >
-        <header className="flex items-start justify-between gap-base border-b border-hairline-soft px-xl py-lg">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wide text-steel">
-              {drawer.kind === "evidence" ? "근거 원문" : drawer.kind === "calc" ? "계산 추적" : "용어 정의"}
-            </p>
-            <h2 className="mt-1 text-[17px] font-bold leading-snug text-ink-deep">{drawer.title}</h2>
+        <header className="flex items-start justify-between gap-base border-b border-hairline-soft px-7 py-5">
+          <div className="min-w-0">
+            <p className="text-[12px] text-steel">{drawer.kind === "evidence" ? "근거 원문" : drawer.kind === "calc" ? "계산 추적" : "용어 정의"}</p>
+            <h2 className="mt-1 text-[20px] font-bold leading-[1.3] text-ink-deep">{drawer.title}</h2>
           </div>
           <button
             type="button"
             onClick={closeDrawer}
-            className="rounded-pill bg-surface-soft px-3 py-1.5 text-[12px] font-bold text-charcoal"
+            className="inline-flex h-8 shrink-0 items-center rounded-md border border-hairline bg-canvas px-3 text-[13px] font-bold text-ink-deep hover:bg-surface-soft"
           >
             닫기
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-xl py-lg">
+        <div className="flex-1 overflow-y-auto px-7 py-5">
           {drawer.kind === "evidence" ? (
-            <EvidenceBody items={drawer.items} selected={selected} onSelect={setSelected} />
+            <EvidenceBody items={drawer.items} selected={selected} onSelect={setSelected} statement={drawer.statement} />
           ) : null}
           {drawer.kind === "calc" ? <CalcBody payload={drawer} /> : null}
           {drawer.kind === "term" ? <TermBody payload={drawer} /> : null}
         </div>
       </aside>
-    </div>
-  );
-}
-
-function EvidenceBody({
-  items,
-  selected,
-  onSelect,
-}: {
-  items: Evidence[];
-  selected: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const grouped = (["bank_data", "internal_direction", "external_policy"] as const).map((category) => ({
-    category,
-    items: items.filter((i) => i.category === category),
-  }));
-  const active = items.find((i) => i.id === selected) ?? items[0];
-
-  return (
-    <div className="flex flex-col gap-lg">
-      {/* AI 판단 → 근거 → 근거 문서 → 원문 경로를 명시 */}
-      <ol className="soft flex items-center gap-2 px-base py-2.5 text-[11px] text-steel">
-        <li className="font-bold text-charcoal">AI 판단</li>
-        <li aria-hidden>›</li>
-        <li className="font-bold text-primary">판단 근거</li>
-        <li aria-hidden>›</li>
-        <li>근거 데이터·문서</li>
-        <li aria-hidden>›</li>
-        <li>원문 확인</li>
-      </ol>
-
-      {grouped.map((group) => (
-        <div key={group.category}>
-          <div className="mb-2 flex items-center gap-2">
-            <Badge tone={CATEGORY_TONE[group.category]}>{EVIDENCE_CATEGORY_LABEL[group.category]}</Badge>
-            <span className="text-[11px] text-stone">{group.items.length}건</span>
-          </div>
-          {group.items.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-hairline px-3 py-2.5 text-[12px] text-stone">
-              해당 범주 근거 없음
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {group.items.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(item.id)}
-                    className={clsx(
-                      "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
-                      active?.id === item.id
-                        ? "border-primary bg-info-faint"
-                        : "border-hairline-soft bg-canvas",
-                    )}
-                  >
-                    <p className="text-[13px] font-bold text-ink">{item.label}</p>
-                    {item.doc ? (
-                      <p className="mt-0.5 text-[11px] text-steel">
-                        {item.doc.issuer} · {formatDate(item.doc.effectiveDate ?? "")}
-                        {item.doc.page ? ` · p.${item.doc.page}` : ""}
-                      </p>
-                    ) : item.tableRef ? (
-                      <p className="mt-0.5 text-[11px] text-steel">{item.tableRef}</p>
-                    ) : null}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))}
-
-      {active ? <EvidenceDetail item={active} /> : null}
-    </div>
-  );
-}
-
-function EvidenceDetail({ item }: { item: Evidence }) {
-  return (
-    <div className="panel bg-surface-soft p-base">
-      <div className="mb-2 flex items-center gap-2">
-        {item.doc ? <IconDoc className="text-steel" /> : <IconCalc className="text-steel" />}
-        <p className="text-[12px] font-bold text-charcoal">참고한 내용</p>
-        {item.doc?.isOfficial ? <Badge tone="success">공식 자료</Badge> : null}
-        {item.doc?.dbClass === "external_web" ? <Badge tone="warning">외부 수집 · 보조자료</Badge> : null}
-      </div>
-
-      {item.doc ? (
-        <dl className="mb-3 grid grid-cols-[84px_1fr] gap-x-3 gap-y-1.5 text-[12px]">
-          <dt className="text-stone">문서명</dt>
-          <dd className="font-medium text-ink">{item.doc.title}</dd>
-          <dt className="text-stone">출처</dt>
-          <dd className="text-charcoal">{item.doc.issuer ?? "-"}</dd>
-          <dt className="text-stone">기준일</dt>
-          <dd className="text-charcoal">{formatDate(item.doc.effectiveDate ?? "")}</dd>
-          <dt className="text-stone">구분</dt>
-          <dd className="text-charcoal">{DB_CLASS_LABEL[item.doc.dbClass]}</dd>
-          {item.doc.sectionPath ? (
-            <>
-              <dt className="text-stone">위치</dt>
-              <dd className="text-charcoal">
-                {item.doc.sectionPath}
-                {item.doc.page ? ` (p.${item.doc.page})` : ""}
-              </dd>
-            </>
-          ) : null}
-        </dl>
-      ) : (
-        <dl className="mb-3 grid grid-cols-[84px_1fr] gap-x-3 gap-y-1.5 text-[12px]">
-          <dt className="text-stone">데이터 위치</dt>
-          <dd className="font-medium text-ink">{item.tableRef ?? item.sourceKind}</dd>
-        </dl>
-      )}
-
-      {item.snippet ? (
-        <blockquote className="border-l-2 border-primary pl-3 text-[12.5px] leading-relaxed text-charcoal">
-          {item.snippet}
-        </blockquote>
-      ) : null}
-
-      <div className="mt-3 flex items-center justify-between gap-2">
-        <p className="text-[11px] text-stone">
-          {item.relevance !== undefined ? `의미 적합도 ${item.relevance.toFixed(2)}` : "데이터 근거"}
-        </p>
-        {item.doc && API_MODE && item.doc.dbClass !== "external_web" ? (
-          <a
-            href={docViewerHref(item)}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-doc-open
-            className="rounded-pill border-2 border-line-strong px-3 py-1.5 text-[11px] font-bold text-ink-deep"
-          >
-            원본 열기 · {item.doc.fileName ?? "파일"}
-          </a>
-        ) : item.doc ? (
-          <span className="text-[11px] text-stone" title="원본 뷰어는 백엔드 연결(API 모드)에서 제공됩니다">
-            {item.doc.dbClass === "external_web" ? "외부 수집 자료 · 원본 미보관" : `원본 · ${item.doc.fileName ?? "파일"}`}
-          </span>
-        ) : null}
-      </div>
     </div>
   );
 }

@@ -15,7 +15,7 @@ export function ChangeFeedPanel({ feed, title = "최근 감지된 변화" }: { f
       {feed.items.length === 0 ? (
         <RowEmpty title="유의 기준을 넘은 변화가 없습니다" description="데이터 · 규칙 · 문서가 바뀌어 수치가 유의하게 움직이면 여기에 기록됩니다." />
       ) : (
-        <ul className="divide-y divide-hairline-soft overflow-hidden rounded-2xl border border-hairline-soft" data-change-feed>
+        <ul className="divide-y divide-hairline-soft overflow-hidden rounded-xl border border-hairline-soft bg-canvas" data-change-feed>
           {feed.items.map((i) => (
             <li key={i.id} className="flex flex-wrap items-center gap-x-md gap-y-1 px-lg py-2.5 text-[13px]">
               <Badge tone={i.level === "major" ? "attention" : "neutral"}>{i.level === "major" ? "주요" : "일반"}</Badge>

@@ -1,272 +1,532 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import clsx from "clsx";
+import { BigFigure } from "@/components/data/BigFigure";
 import { FigureText } from "@/components/data/FigureText";
-import { MetricStrip } from "@/components/data/MetricStrip";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { SemiGauge } from "@/components/charts/SemiGauge";
+import { TrendChart, type TrendPoint } from "@/components/charts/TrendChart";
+import { ProposalPopup } from "@/components/domain/ProposalPopup";
+import { useSector } from "@/components/domain/SectorTitle";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
-import { Badge, IconArrowRight, NextStep, ProgressBar, SectionHead, TextLink } from "@/components/ui/primitives";
-import { UNIT_LABEL } from "@/lib/format";
-import { resolveGoal } from "@/lib/goalView";
-import type { CapitalView, DomainCardInfo, Figure, Goal, LoanOverview } from "@/lib/types";
-import { ScrollRegion } from "@/components/ui/ScrollRegion";
+import { IconInfoCircle, IconSparkle } from "@/components/ui/icons";
+import { EmptyCard } from "@/components/ui/StateViews";
+import { Badge, IconChevron, IconWarn, NextStep } from "@/components/ui/primitives";
+import { derivedFigure, monthOf } from "@/lib/derived";
+import { formatFigure } from "@/lib/format";
+import { GOAL_VERDICT, directionSuffix, proposalRange, resolveGoal } from "@/lib/goalView";
+import type { CapitalView, DomainCardInfo, Figure, Goal, Insight, LoanOverview, Proposal } from "@/lib/types";
+
+type Verdict = NonNullable<Goal["gapVerdict"]>;
+
+/** 한도형 비율의 상태 — 85% 이상 근접, 100% 이상 초과 */
+function limitStatus(pct: number) {
+  if (pct >= 100) return { label: "한도 초과", tone: "critical" as const, gauge: "danger" as const };
+  if (pct >= 85) return { label: "한도 근접", tone: "attention" as const, gauge: "warning" as const };
+  return { label: "정상", tone: "neutral" as const, gauge: "primary" as const };
+}
+
+/** 추천 범위가 지금 목표보다 높은지 낮은지 — 한도형 목표는 낮추는 것이 강화 */
+function changeWord(goal: Goal, p: Proposal, overridden?: number): string {
+  const cur = overridden ?? goal.targetValue;
+  const r = p.recommendation;
+  const mid = r.mode === "range" ? ((r.low ?? 0) + (r.high ?? 0)) / 2 : (r.value ?? null);
+  if (cur === null || cur === undefined || mid === null) return "조정";
+  if (mid > cur) return goal.targetType === "limit" ? "완화" : "상향";
+  if (mid < cur) return goal.targetType === "limit" ? "강화" : "하향";
+  return "유지";
+}
+
+/** 이슈로 보여 줄 목표의 심각도 순서 — 초과 > 미달 > 근접 */
+const ISSUE_ORDER: Partial<Record<Verdict, number>> = { breach: 0, below: 1, near_limit: 2 };
 
 /**
- * STEP 1 — 현황·목표
- * 검토 알림 → 사업부문 선택 → 선택 부문 핵심 지표·현재 경영목표 → 은행 종합목표 → 다음 단계
+ * 1단계 — 경영 현황·목표 (가이드 7155 · 7166 · 7167)
+ * 은행 종합목표 3장 → 사업부문 박스 탭 → [적용 경영목표 요약 · 주요 이슈 · 핵심 지표 · 추이 차트] → 다음 단계.
+ * 이슈에서 [제안 검토]로 AI 제안을 검토해 조정안에 담고, 확정은 3단계에서 한다.
  */
 export function OverviewWorkspace({
   domains,
   goals,
   loan,
   capital,
-  pending,
+  proposals,
+  attentions,
+  aside,
 }: {
   domains: DomainCardInfo[];
   goals: Goal[];
   loan: LoanOverview;
   capital: CapitalView;
-  pending: { attentions: number; requests: number; proposals: number };
+  proposals: Proposal[];
+  attentions: Insight[];
+  /** 사업부문 아래 · 다음 단계 위에 놓을 내용 (최근 감지된 변화) */
+  aside?: ReactNode;
 }) {
-  const { overrides, proposalActions } = useGoalState();
-  const [selected, setSelected] = useState("loan");
-  const active = domains.find((d) => d.domainCode === selected);
-  const isActive = active?.status === "active";
-  const domainGoals = goals.filter((g) => g.domainCode === selected);
-  const openProposals = Math.max(0, pending.proposals - Object.keys(proposalActions).length);
+  const { overrides, proposalActions, staged } = useGoalState();
+  const { code, domain, select } = useSector(domains);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [showAllIssues, setShowAllIssues] = useState(false);
+  const active = domain?.status === "active";
+  const domainGoals = goals.filter((g) => g.domainCode === code);
 
-  const rwaUsed = capital.rwaAllocation.reduce((acc, r) => acc + (r.used.value ?? 0), 0);
-  const rwaAllocated = capital.rwaAllocation.reduce((acc, r) => acc + (r.allocated.value ?? 0), 0);
+  /* ── 은행 종합목표 ───────────────────────────────── */
+  const month = monthOf(capital.asOf);
+  const bank = capital.bankTarget;
+  const bankPct = ((bank.value.value ?? 0) / (bank.ceiling.value ?? 1)) * 100;
+  const bankStatus = limitStatus(bankPct);
+
+  const rwaUsed = capital.rwaAllocation.reduce((n, r) => n + (r.used.value ?? 0), 0);
+  const rwaAlloc = capital.rwaAllocation.reduce((n, r) => n + (r.allocated.value ?? 0), 0);
+  const rwaInputs = (pick: "used" | "allocated") =>
+    capital.rwaAllocation.map((r) => ({ key: r[pick].id, label: `${r.org} ${pick === "used" ? "사용" : "배분"}`, value: String(r[pick].value), unit: "조원", source: r[pick].id }));
+  const rwaUsedFig = derivedFigure({ id: "ov_rwa_used", label: "여신 부문 신용RWA 사용", value: Number(rwaUsed.toFixed(2)), unit: "KRW_TN", decimals: 2, expression: "기업 + 가계 + 기타 RWA 사용 합계", inputs: rwaInputs("used"), asOf: capital.asOf });
+  const rwaAllocFig = derivedFigure({ id: "ov_rwa_alloc", label: "여신 부문 신용RWA 배분", value: Number(rwaAlloc.toFixed(2)), unit: "KRW_TN", decimals: 1, expression: "기업 + 가계 + 기타 RWA 배분 합계", inputs: rwaInputs("allocated"), asOf: capital.asOf });
+  const rwaLeftFig = derivedFigure({
+    id: "ov_rwa_left",
+    label: "신용RWA 잔여",
+    value: Number((rwaAlloc - rwaUsed).toFixed(2)),
+    unit: "KRW_TN",
+    decimals: 2,
+    expression: "배분 − 사용",
+    inputs: [
+      { key: "alloc", label: "배분", value: rwaAlloc.toFixed(2), unit: "조원", source: "ov_rwa_alloc" },
+      { key: "used", label: "사용", value: rwaUsed.toFixed(2), unit: "조원", source: "ov_rwa_used" },
+    ],
+    asOf: capital.asOf,
+  });
+  const rwaPct = rwaAlloc ? (rwaUsed / rwaAlloc) * 100 : 0;
+  const rwaStatus = limitStatus(rwaPct);
+
   const revenueGoal = goals.find((g) => g.id === "goal-annual-revenue");
+  const revenueView = revenueGoal ? resolveGoal(revenueGoal, overrides[revenueGoal.id]) : null;
+  const revenueProgress = revenueGoal?.gap?.value ?? 0;
+  const elapsed = (month / 12) * 100;
+  const elapsedFig = derivedFigure({
+    id: "ov_elapsed",
+    label: "연간 경과율",
+    value: Number(elapsed.toFixed(1)),
+    unit: "PCT",
+    decimals: 1,
+    expression: "기준월 ÷ 12개월 × 100",
+    inputs: [{ key: "month", label: "기준월", value: String(month), unit: "월", source: `기준일 ${capital.asOf}` }],
+    asOf: capital.asOf,
+  });
+  const onPlan = revenueProgress >= elapsed - 5;
+
+  /* ── 선택 부문: 요약 · 이슈 ──────────────────────── */
+  const counts = domainGoals.reduce<Record<Verdict, number>>((acc, g) => ({ ...acc, [g.gapVerdict ?? "on_track"]: acc[g.gapVerdict ?? "on_track"] + 1 }), { on_track: 0, near_limit: 0, below: 0, breach: 0 });
+  const issues = domainGoals
+    .filter((g) => g.gapVerdict && g.gapVerdict in ISSUE_ORDER)
+    .sort((a, b) => (ISSUE_ORDER[a.gapVerdict as Verdict] ?? 9) - (ISSUE_ORDER[b.gapVerdict as Verdict] ?? 9));
+  const shownIssues = showAllIssues ? issues : issues.slice(0, 2);
+  const proposalOf = (goalId: string) => proposals.find((p) => p.targetGoalId === goalId);
+  const reviewProposal = proposals.find((p) => p.id === reviewId);
+  const flagged = Object.fromEntries(domains.map((d) => [d.domainCode, attentions.some((a) => a.domainCode === d.domainCode)]));
+
+  /* ── 차트 ────────────────────────────────────────── */
+  const corpGoal = goals.find((g) => g.id === "goal-corp-growth");
+  const corpTarget = corpGoal ? resolveGoal(corpGoal, overrides[corpGoal.id]) : null;
+  const corpGrowth = corpGoal ? (overrides[corpGoal.id]?.targetValue ?? corpGoal.targetValue) : null;
+  const corpBase = loan.corporate.yearly.find((p) => p.label.endsWith("2025.08") || p.label === "2025.08")?.value ?? null;
+  const corpPoints = loan.corporate.monthly;
+  const corpPath = corpBase !== null && corpGrowth !== null && corpGrowth !== undefined ? corpPoints.map((_, i) => corpBase * (1 + (corpGrowth / 100) * ((i + 1) / 12))) : null;
+
+  const hhLimitGoal = goals.find((g) => g.id === "goal-hh-balance");
+  const hhLimit = hhLimitGoal ? (overrides[hhLimitGoal.id]?.targetValue ?? hhLimitGoal.targetValue) : null;
+
+  const tn = (v: number) => v.toFixed(2);
+  const signed = (v: number, d = 2) => `${v > 0 ? "+" : ""}${v.toFixed(d)}`;
 
   return (
-    <div className="shell flex flex-col gap-xxl">
-      {/* 검토 알림 — 3단계로 바로 이어지는 단일 진입점 */}
-      {openProposals + pending.attentions > 0 ? (
-        <Link
-          href="/hq/goals"
-          className="flex flex-wrap items-center gap-x-lg gap-y-2 rounded-2xl border border-info-line bg-info-faint px-lg py-base"
-        >
-          <span className="text-[14px] font-bold text-ink-deep">경영목표 검토가 필요한 사항이 있습니다</span>
-          <span className="flex flex-wrap items-center gap-x-md gap-y-1 text-[12.5px] text-charcoal">
-            <span>
-              AI 주목 사항 <b className="tnum text-ink-deep">{pending.attentions}</b>
-            </span>
-            <span>
-              확인·보고 요청 <b className="tnum text-ink-deep">{pending.requests}</b>
-            </span>
-            <span>
-              AI 목표 제안 <b className="tnum text-primary">{openProposals}</b>
-            </span>
-          </span>
-          <span className="ml-auto inline-flex items-center gap-1.5 text-[13px] font-bold text-primary">
-            검토하기 <IconArrowRight />
-          </span>
-        </Link>
-      ) : null}
-
-      {/* 사업부문 */}
-      <section>
-        <SectionHead title="사업부문" hint="부문을 선택하면 현황과 현재 경영목표가 표시됩니다" />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
-          {domains.map((domain) => {
-            const on = domain.domainCode === selected;
-            const ready = domain.status === "active";
-            return (
-              <button
-                key={domain.domainCode}
-                type="button"
-                onClick={() => setSelected(domain.domainCode)}
-                aria-pressed={on}
-                className={clsx(
-                  "flex h-[76px] flex-col justify-between rounded-xl border px-base py-3 text-left transition-colors",
-                  on
-                    ? "border-ink-deep bg-ink-deep text-white"
-                    : ready
-                      ? "border-hairline-soft bg-canvas"
-                      : "border-hairline-soft bg-surface-soft/60",
-                )}
-              >
-                <span className={clsx("text-[14px] font-bold", on ? "text-white" : ready ? "text-ink-deep" : "text-steel")}>
-                  {domain.name}
-                </span>
-                <span className={clsx("text-[12px] tnum", on ? "text-white/75" : ready ? "text-steel" : "text-stone")}>
-                  {ready
-                    ? `${domain.headline?.value?.toFixed(2)}${UNIT_LABEL[domain.headline?.unit ?? "NONE"]}`
-                    : "준비 중"}
-                </span>
-              </button>
-            );
-          })}
+    <div className="shell flex flex-col gap-10 pb-6">
+      {/* 은행 종합목표 */}
+      <section aria-labelledby="ov-bank">
+        <h2 id="ov-bank" className="mb-5 flex items-center gap-1 text-[20px] font-bold leading-[1.25] text-ink-deep">
+          <Link href="/hq/capital" className="inline-flex items-center gap-1 hover:text-primary">
+            은행 종합목표
+            <IconChevron className="text-steel" />
+          </Link>
+        </h2>
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <BankCard
+            title="총자산 증가율 목표"
+            status={bankStatus}
+            gauge={<SemiGauge percent={bankPct} label="한도 소진율" tone={bankStatus.gauge} />}
+            main={<BigFigure figure={bank.value} size="kpi" />}
+            rows={[
+              ["지주 한도", <FigureText key="c" figure={bank.ceiling} plain strong />],
+              ["여유", <FigureText key="h" figure={bank.headroom} signed plain strong />],
+            ]}
+          />
+          <BankCard
+            title="여신 신용RWA 소진"
+            status={rwaStatus}
+            gauge={<SemiGauge percent={rwaPct} label="배분 소진율" tone={rwaStatus.gauge} />}
+            main={<BigFigure figure={rwaUsedFig} size="kpi" />}
+            rows={[
+              ["배분", <FigureText key="a" figure={rwaAllocFig} plain strong />],
+              ["잔여", <FigureText key="l" figure={rwaLeftFig} plain strong />],
+            ]}
+          />
+          {revenueGoal?.actual ? (
+            <BankCard
+              title="여신 이자마진 수익"
+              status={onPlan ? { label: "계획 수준", tone: "neutral" } : { label: "계획 미달", tone: "attention" }}
+              gauge={<SemiGauge percent={revenueProgress} label="목표 진행률" tone={onPlan ? "primary" : "warning"} />}
+              main={<BigFigure figure={revenueGoal.actual} size="kpi" />}
+              rows={[
+                ["연간 목표", <span key="t" className="tnum font-bold text-ink-deep">{revenueView?.targetLabel}</span>],
+                ["연간 경과율", <FigureText key="e" figure={elapsedFig} plain strong />],
+              ]}
+            />
+          ) : null}
         </div>
       </section>
 
-      {!isActive ? (
-        <section className="soft flex flex-col items-center gap-2 px-xl py-section text-center">
-          <p className="text-[15px] font-bold text-charcoal">{active?.name} 부문은 준비 중입니다</p>
-          <p className="max-w-[520px] text-[13px] leading-relaxed text-steel">
-            1차 범위는 여신 부문입니다. 이 부문은 도메인·지표·플레이북 설정만 등록하면 같은 구조로 동작합니다.
-          </p>
-          <button
-            type="button"
-            onClick={() => setSelected("loan")}
-            className="mt-2 rounded-pill bg-ink-button px-5 py-2.5 text-[13px] font-bold text-white"
-          >
-            여신 부문 보기
-          </button>
-        </section>
-      ) : (
-        <>
-          {/* 핵심 지표 */}
-          <section>
-            <SectionHead
-              title="여신 부문 현황"
-              hint="2026.08 기준"
-              right={<TextLink href="/hq/analysis">상세 분석</TextLink>}
-            />
-            <MetricStrip
-              items={[
-                {
-                  label: "여신 이자마진 수익",
-                  figure: loan.revenue.rows[1].current,
-                  delta: loan.revenue.rows[1].diffRate,
-                  caption: "8월 누계",
-                },
-                {
-                  label: "전체 수익 중 비중",
-                  figure: loan.revenue.nimShare,
-                  caption: "3개년 연속 축소",
-                  tone: "attention",
-                },
-                { label: "기업여신 잔액", figure: loan.corporate.balance, delta: loan.corporate.growth },
-                {
-                  label: "가계여신 잔액",
-                  figure: loan.household.balance,
-                  delta: loan.household.growth,
-                  positiveIsGood: false,
-                },
-              ]}
-            />
-          </section>
+      {/* 사업부문 */}
+      <section aria-labelledby="ov-sector">
+        <h2 id="ov-sector" className="mb-5 text-[20px] font-bold leading-[1.25] text-ink-deep">
+          사업부문
+        </h2>
+        <div className="overflow-hidden rounded-xl border border-hairline-soft bg-canvas">
+          <div role="tablist" aria-label="사업부문" className="grid grid-cols-2 border-b border-hairline-soft bg-surface-soft sm:grid-cols-4 xl:grid-cols-7">
+            {domains.map((d) => {
+              const on = d.domainCode === code;
+              const ready = d.status === "active";
+              const label = d.headline ? d.headline.label.replace(/\(.*\)/, "").replace(d.name, "").trim() || "규모" : "";
+              return (
+                <button
+                  key={d.domainCode}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => select(d.domainCode)}
+                  className={clsx("relative flex flex-col items-start gap-1 border-b border-r border-hairline-soft px-6 py-5 text-left transition-colors last:border-r-0 sm:border-b-0", on ? "bg-canvas" : "hover:bg-canvas")}
+                >
+                  {on ? <span aria-hidden="true" className="absolute inset-x-0 top-0 h-1 bg-primary" /> : null}
+                  <span className={clsx("flex items-center gap-1.5 text-[16px] leading-[1.4]", on ? "font-bold text-primary" : "font-bold text-ink-deep")}>
+                    {d.name}
+                    {flagged[d.domainCode] && !on ? <span aria-label="확인하지 않은 이슈가 있어요" className="h-[7px] w-[7px] rounded-circle bg-critical" /> : null}
+                  </span>
+                  <span className="tnum text-[14px] text-steel">{ready && d.headline ? `${label} ${formatFigure(d.headline)}` : "준비 중"}</span>
+                </button>
+              );
+            })}
+          </div>
 
-          {/* 현재 경영목표 */}
-          <section>
-            <SectionHead
-              title="현재 경영목표"
-              hint={`${domainGoals.length}건 · 종합기획부 확정`}
-              right={<TextLink href="/hq/goals">목표 설정</TextLink>}
-            />
-            <ScrollRegion className="overflow-x-auto rounded-2xl border border-hairline-soft">
-              <table className="w-full min-w-[720px] border-collapse text-[13px]">
-                <thead>
-                  <tr className="bg-surface-soft text-left">
-                    <th scope="col" className="px-lg py-2.5 font-bold text-charcoal">경영목표</th>
-                    <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">실적</th>
-                    <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">목표 대비</th>
-                    <th scope="col" className="px-lg py-2.5 text-right font-bold text-charcoal">상태</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {domainGoals.map((goal) => {
-                    const view = resolveGoal(goal, overrides[goal.id]);
-                    return (
-                      <tr key={goal.id} className="border-t border-hairline-soft">
-                        <td className="px-lg py-3">
-                          <p className="font-bold text-ink-deep">{view.title}</p>
-                          <p className="mt-0.5 text-[11.5px] text-stone">
-                            {goal.periodLabel} · {goal.metricLabel}
-                          </p>
-                        </td>
-                        <td className="px-base py-3 text-right">
-                          {goal.actual ? <FigureText figure={goal.actual} /> : <span className="text-stone">-</span>}
-                        </td>
-                        <td className="px-base py-3 text-right">
-                          {goal.gap ? (
-                            <span className="inline-flex flex-col items-end">
-                              <FigureText figure={goal.gap} signed={goal.gapSigned ?? true} />
-                              <span className="text-[11px] text-stone">{goal.gapLabel ?? "목표 대비"}</span>
-                            </span>
-                          ) : (
-                            <span className="text-stone">-</span>
-                          )}
-                        </td>
-                        <td className="px-lg py-3 text-right">
-                          <span className="inline-flex flex-wrap justify-end gap-1">
-                            {view.changed ? <Badge tone="primary">방금 수정</Badge> : null}
-                            {!view.changed && view.status === "ai_proposed" ? <Badge tone="info">AI 제안 있음</Badge> : null}
-                            {view.verdict ? <Badge tone={view.verdict.tone}>{view.verdict.label}</Badge> : null}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </ScrollRegion>
-          </section>
-
-          {/* 은행 종합목표 */}
-          <section>
-            <SectionHead
-              title="은행 종합목표"
-              hint="사업부문 목표의 상위 기준 · 지주 한도 이내"
-              right={<TextLink href="/hq/capital">산출 기준</TextLink>}
-            />
-            <div className="grid grid-cols-1 gap-md md:grid-cols-3">
-              <TargetCard
-                label="총자산 증가율 목표"
-                value={capital.bankTarget.value}
-                sub={`지주 한도 ${capital.bankTarget.ceiling.value}% · 여유 +${capital.bankTarget.headroom.value}%p`}
-                progress={((capital.bankTarget.value.value ?? 0) / (capital.bankTarget.ceiling.value ?? 1)) * 100}
+          <div role="tabpanel" className="p-7">
+            {!active ? (
+              <EmptyCard
+                className="border-0"
+                title="이 부문에 적용된 경영목표가 없어요"
+                description="3단계 경영목표 설정에서 목표를 추가하면 현황과 주요 이슈가 여기에 표시돼요."
+                actionLabel="경영목표 추가하기"
+                href="/hq/goals"
               />
-              <TargetCard
-                label="여신 신용RWA 소진"
-                value={{
-                  id: "ov_rwa",
-                  label: "여신 부문 RWA 사용",
-                  value: Number(rwaUsed.toFixed(2)),
-                  unit: "KRW_TN",
-                  decimals: 2,
-                  dataOrigin: "simulated",
-                }}
-                sub={`배분 ${rwaAllocated.toFixed(1)}조원 · 소진율 ${((rwaUsed / rwaAllocated) * 100).toFixed(1)}%`}
-                progress={(rwaUsed / rwaAllocated) * 100}
-              />
-              {revenueGoal?.actual ? (
-                <TargetCard
-                  label="여신 이자마진 수익"
-                  value={revenueGoal.actual}
-                  sub={`연간 목표 ${revenueGoal.targetValue?.toFixed(2)}조원 · 진행률 ${revenueGoal.gap?.value}%`}
-                  progress={revenueGoal.gap?.value ?? 0}
-                />
-              ) : null}
-            </div>
-          </section>
-        </>
-      )}
+            ) : (
+              <div className="flex flex-col gap-6">
+                <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[14px]">
+                  <b className="font-bold text-ink-deep">
+                    적용 경영목표 <span className="tnum">{domainGoals.length}</span>건
+                  </b>
+                  <span className="text-[12px] text-steel">
+                    정상 <b className="tnum text-ink-deep">{counts.on_track}</b> · 한도 근접 <b className="tnum text-ink-deep">{counts.near_limit}</b> · 목표 미달{" "}
+                    <b className="tnum text-ink-deep">{counts.below}</b> · 한도 초과 <b className="tnum text-ink-deep">{counts.breach}</b>
+                  </span>
+                </p>
 
-      <NextStep
-        step={2}
-        title="데이터 분석"
-        description="여신 실적을 AI 해설과 함께 확인하고, 목표 조정이 필요한 지점을 찾습니다."
-        href="/hq/analysis"
-      />
+                {/* 주요 이슈 — AI 영역: primary/100 박스 + 흰 내부 카드 */}
+                <div className="rounded-xl bg-info-soft p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h3 className="flex items-center gap-2 text-[14px] font-bold text-ink-deep">
+                      <IconWarn className="text-ink-deep" />
+                      주요 이슈
+                    </h3>
+                    {issues.length > 2 ? (
+                      <button type="button" onClick={() => setShowAllIssues((v) => !v)} className="inline-flex items-center gap-0.5 text-[13px] font-bold text-primary hover:underline">
+                        {showAllIssues ? "2건만 보기" : `전체 ${issues.length}건 보기`}
+                        <IconChevron className={clsx("transition-transform", showAllIssues && "-rotate-90")} />
+                      </button>
+                    ) : null}
+                  </div>
+                  {issues.length === 0 ? (
+                    <p className="rounded-lg bg-canvas px-5 py-6 text-center text-[14px] text-steel">지금 확인할 이슈가 없어요.</p>
+                  ) : (
+                    <ul className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                      {shownIssues.map((g) => {
+                        const view = resolveGoal(g, overrides[g.id]);
+                        const verdict = GOAL_VERDICT[g.gapVerdict as Verdict];
+                        const p = proposalOf(g.id);
+                        const acted = p ? proposalActions[p.id] : undefined;
+                        const inBasket = p ? Boolean(staged[p.id]) : false;
+                        const limit = g.targetType === "limit";
+                        const tone = g.gapVerdict === "breach" ? "text-critical" : "text-attention";
+                        return (
+                          <li key={g.id} className="rounded-lg bg-canvas p-5">
+                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <h4 className="text-[16px] font-bold leading-[1.4] text-ink-deep">{view.title}</h4>
+                                <Badge tone={verdict.tone}>{verdict.label}</Badge>
+                              </div>
+                              <dl className="flex items-baseline gap-4 text-[12px] text-steel">
+                                {g.actual ? (
+                                  <div className="flex items-baseline gap-1.5">
+                                    <dt>실적</dt>
+                                    <dd className="text-[14px]">
+                                      <FigureText figure={g.actual} plain strong />
+                                    </dd>
+                                  </div>
+                                ) : null}
+                                <div className="flex items-baseline gap-1.5">
+                                  <dt>{limit ? "한도" : "목표"}</dt>
+                                  <dd className="tnum text-[14px] font-bold text-ink-deep">{view.targetLabel}</dd>
+                                </div>
+                                {g.gap ? (
+                                  <div className="flex items-baseline gap-1.5">
+                                    <dt>차이</dt>
+                                    <dd className="text-[14px]">
+                                      <FigureText figure={g.gap} signed={g.gapSigned ?? true} plain className={tone} />
+                                    </dd>
+                                  </div>
+                                ) : null}
+                              </dl>
+                            </div>
+                            {p ? (
+                              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-info-faint px-4 py-3">
+                                <IconSparkle className="shrink-0 text-primary" />
+                                <div className="min-w-0 flex-1 leading-normal">
+                                  <p className="text-[13px]">
+                                    <b className="font-bold text-primary">AI 목표 수정 제안</b>
+                                    <span className="ml-2 text-ink-deep">
+                                      목표 {view.targetLabel} → {proposalRange(p)}
+                                      {directionSuffix(g)}로 {changeWord(g, p, overrides[g.id]?.targetValue)}
+                                    </span>
+                                  </p>
+                                  <p className="line-clamp-1 text-[12px] text-steel">{p.recommendation.text}</p>
+                                </div>
+                                {acted ? (
+                                  <Badge tone="neutral">처리 완료</Badge>
+                                ) : (
+                                  <>
+                                    {inBasket ? <Badge tone="info">조정안에 담김</Badge> : null}
+                                    <button
+                                      type="button"
+                                      onClick={() => setReviewId(p.id)}
+                                      className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-md border border-hairline bg-canvas px-3 text-[13px] font-bold text-ink-deep hover:bg-surface-soft"
+                                    >
+                                      제안 검토
+                                      <IconChevron />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {/* 핵심 지표 */}
+                <dl className="grid grid-cols-2 divide-hairline-soft overflow-hidden rounded-xl border border-hairline-soft lg:grid-cols-4 lg:divide-x">
+                  <Kpi label="여신 이자마진 수익 (8월 누계)" figure={loan.revenue.rows[1].current} caption={<>전년 동기 <FigureText figure={loan.revenue.rows[1].diffRate} signed plain className="text-ink-deep" /></>} />
+                  <Kpi label="전체 수익 중 비중" figure={loan.revenue.nimShare} caption="3개년 연속 축소" />
+                  <Kpi label="기업여신 잔액" figure={loan.corporate.balance} caption={<>증가율 <FigureText figure={loan.corporate.growth} signed plain className="text-ink-deep" />{corpTarget ? <> · 목표 {corpTarget.targetLabel}</> : null}</>} />
+                  <Kpi label="가계여신 잔액" figure={loan.household.balance} caption={<>증가율 <FigureText figure={loan.household.growth} signed plain className="text-ink-deep" />{hhLimit ? <> · 한도 {hhLimit.toFixed(2)}조원</> : null}</>} />
+                </dl>
+
+                {/* 추이 */}
+                <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                  <ChartCard
+                    title="기업여신 실적 vs 목표 경로"
+                    legend={[
+                      { label: "실적", color: "var(--color-primary)" },
+                      ...(corpPath ? [{ label: `목표 경로 (연 +${corpGrowth?.toFixed(1)}%)`, color: "var(--chart-4)", dashed: true }] : []),
+                    ]}
+                    caption={
+                      <>
+                        2026년 1~8월 · 단위 조원
+                        {corpPath ? <span className="block">목표 경로 = 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12)</span> : null}
+                      </>
+                    }
+                    table={{
+                      columns: [
+                        { key: "m", label: "월" },
+                        { key: "a", label: "실적(조원)", align: "right" },
+                        ...(corpPath ? [{ key: "t", label: "목표 경로(조원)", align: "right" as const }, { key: "d", label: "목표 대비(조원)", align: "right" as const }] : []),
+                      ],
+                      rows: corpPoints.map((p, i) => ({
+                        m: p.label,
+                        a: p.value !== null ? tn(p.value) : "-",
+                        t: corpPath ? tn(corpPath[i]) : "",
+                        d: corpPath && p.value !== null ? signed(p.value - corpPath[i]) : "",
+                      })),
+                    }}
+                  >
+                    <TrendChart
+                      ariaLabel={`기업여신 잔액 월별 실적과 목표 경로 — ${corpPoints.map((p) => `${p.label} ${p.value !== null ? tn(p.value) : "-"}조원`).join(", ")}`}
+                      points={corpPoints}
+                      target={corpPath ? { name: "목표", values: corpPath } : undefined}
+                      gapFill
+                      format={(v) => v.toFixed(2)}
+                      formatTick={(v) => v.toFixed(0)}
+                      tooltip={(i) => {
+                        const v = corpPoints[i].value ?? 0;
+                        return {
+                          head: `2026.${String(i + 1).padStart(2, "0")} · 기업여신`,
+                          value: tn(v),
+                          unit: "조원",
+                          rows: corpPath
+                            ? [
+                                { label: "목표 경로", value: `${tn(corpPath[i])}조원` },
+                                { label: "목표 대비", value: `${signed(v - corpPath[i])}조원`, tone: v < corpPath[i] ? "warning" : undefined },
+                              ]
+                            : undefined,
+                        };
+                      }}
+                    />
+                  </ChartCard>
+
+                  <ChartCard
+                    title="가계여신 잔액 vs 관리 한도"
+                    legend={[
+                      { label: "가계여신 잔액", color: "var(--color-primary)" },
+                      ...(hhLimit ? [{ label: `관리 한도 ${hhLimit.toFixed(0)}조원`, color: "var(--color-critical)", dashed: true }] : []),
+                    ]}
+                    caption="2026년 1~8월 · 단위 조원"
+                    table={{
+                      columns: [
+                        { key: "m", label: "월" },
+                        { key: "a", label: "잔액(조원)", align: "right" },
+                        ...(hhLimit ? [{ key: "r", label: "한도 여유(조원)", align: "right" as const }] : []),
+                      ],
+                      rows: loan.household.monthly.map((p) => ({ m: p.label, a: p.value !== null ? tn(p.value) : "-", r: hhLimit && p.value !== null ? tn(hhLimit - p.value) : "" })),
+                    }}
+                  >
+                    <TrendChart
+                      ariaLabel={`가계여신 잔액 월별 추이와 관리 한도 — ${loan.household.monthly.map((p) => `${p.label} ${p.value !== null ? tn(p.value) : "-"}조원`).join(", ")}`}
+                      points={loan.household.monthly}
+                      limit={hhLimit ? { value: hhLimit, label: "관리 한도" } : undefined}
+                      format={(v) => v.toFixed(2)}
+                      formatTick={(v) => v.toFixed(0)}
+                      tooltip={(i) => {
+                        const v = loan.household.monthly[i].value ?? 0;
+                        return {
+                          head: `2026.${String(i + 1).padStart(2, "0")} · 가계여신`,
+                          value: tn(v),
+                          unit: "조원",
+                          rows: hhLimit ? [{ label: "관리 한도", value: `${hhLimit.toFixed(2)}조원` }, { label: "한도 여유", value: `${tn(hhLimit - v)}조원`, tone: hhLimit - v < 1 ? "danger" : undefined }] : undefined,
+                        };
+                      }}
+                    />
+                  </ChartCard>
+
+                  <ChartCard
+                    title="여신 이자마진 비중 추이"
+                    legend={[{ label: "전체 수익 중 비중", color: "var(--color-primary)" }]}
+                    caption="2024~2026년 매년 8월 누계 · 단위 %"
+                    table={{
+                      columns: [
+                        { key: "m", label: "시점" },
+                        { key: "v", label: "비중(%)", align: "right" },
+                      ],
+                      rows: loan.revenue.nimShareTrend.map((p) => ({ m: p.label, v: p.value !== null ? p.value.toFixed(2) : "-" })),
+                    }}
+                  >
+                    <NimTrend points={loan.revenue.nimShareTrend} />
+                  </ChartCard>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {aside}
+
+      <NextStep step={2} title="데이터 분석" description={`${domain?.name ?? "여신"} 부문 이슈를 Agent 해설과 함께 분석하고, 목표 조정이 필요한 지점을 찾아요.`} href="/hq/analysis" cta="분석 시작" />
+
+      {reviewProposal ? <ProposalPopup proposal={reviewProposal} goal={goals.find((g) => g.id === reviewProposal.targetGoalId)} onClose={() => setReviewId(null)} /> : null}
     </div>
   );
 }
 
-function TargetCard({ label, value, sub, progress }: { label: string; value: Figure; sub: string; progress: number }) {
+function NimTrend({ points }: { points: TrendPoint[] }) {
   return (
-    <div className="rounded-2xl border border-hairline-soft px-lg py-base">
-      <p className="text-[12px] text-steel">{label}</p>
-      <p className="mt-1.5 text-[22px] font-bold leading-none text-ink-deep">
-        <FigureText figure={value} strong />
-      </p>
-      <div className="mt-3">
-        <ProgressBar value={progress} tone={progress > 90 ? "critical" : "primary"} />
+    <TrendChart
+      ariaLabel={`여신 이자마진 비중 추이 — ${points.map((p) => `${p.label} ${p.value}%`).join(", ")}`}
+      points={points}
+      format={(v) => `${v.toFixed(2)}%`}
+      formatTick={(v) => `${v.toFixed(1)}%`}
+      tooltip={(i) => {
+        const v = points[i].value ?? 0;
+        const prev = i > 0 ? points[i - 1].value : null;
+        return {
+          head: `${points[i].label} · 여신 이자마진`,
+          value: v.toFixed(2),
+          unit: "%",
+          rows: prev !== null && prev !== undefined ? [{ label: "전기 대비", value: `${v - prev > 0 ? "+" : ""}${(v - prev).toFixed(2)}%p`, tone: v < prev ? "warning" : undefined }] : undefined,
+        };
+      }}
+    />
+  );
+}
+
+function BankCard({
+  title,
+  status,
+  gauge,
+  main,
+  rows,
+}: {
+  title: string;
+  status: { label: string; tone: "neutral" | "attention" | "critical" };
+  gauge: React.ReactNode;
+  main: React.ReactNode;
+  rows: [string, React.ReactNode][];
+}) {
+  return (
+    <article className="rounded-xl border border-hairline-soft bg-canvas p-6">
+      <header className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-[14px] text-steel">
+          {title}
+          <IconInfoCircle className="text-icon" />
+        </h3>
+        <Badge tone={status.tone}>{status.label}</Badge>
+      </header>
+      <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-4">
+        {gauge}
+        <div className="min-w-[150px] flex-1">
+          {main}
+          <dl className="mt-3 flex flex-col gap-2 border-t border-hairline-soft pt-3">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between gap-3 text-[13px]">
+                <dt className="text-steel">{label}</dt>
+                <dd className="text-[14px]">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       </div>
-      <p className="mt-2 text-[11.5px] leading-snug text-stone">{sub}</p>
+    </article>
+  );
+}
+
+function Kpi({ label, figure, caption }: { label: string; figure: Figure; caption?: React.ReactNode }) {
+  return (
+    <div className="border-b border-hairline-soft px-6 py-5 last:border-b-0 lg:border-b-0">
+      <dt className="flex items-center gap-1.5 text-[14px] text-steel">
+        {label}
+        <IconInfoCircle className="text-icon" />
+      </dt>
+      <dd className="mt-2">
+        <BigFigure figure={figure} size="kpi" />
+        {caption ? <p className="mt-1.5 text-[12px] text-steel">{caption}</p> : null}
+      </dd>
     </div>
   );
 }
