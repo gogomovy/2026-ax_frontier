@@ -55,6 +55,8 @@ export interface AssistRetrieval {
   rewritten: string | null;
   rewriteBy: "rule" | "llm" | null;
   timingsMs?: Record<string, number>;
+  /** 실제로 쓴 검색 엔진 — ES 가 안 되어 폴백했으면 pg (없으면 pg) */
+  backend?: "pg" | "es";
 }
 export interface ScopeItem {
   code: string;

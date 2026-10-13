@@ -42,6 +42,12 @@ interface Status {
   embedding: { agent: string; model: string | null; on: boolean; reason?: string };
   graph: { ok: boolean; nodes?: number; relationships?: number; error?: string };
   distance: { threshold: number; calibratedModel: string | null; fusion: string };
+  /** 선택 검색 엔진(Elasticsearch · 설계 §21.18) — ES_URL 이 없으면 es 는 없음 */
+  searchBackend?: {
+    setting: string;
+    configured: boolean;
+    es?: { up: boolean; es_docs?: number | null; pg_chunks?: number; error?: string; state?: { analyzer?: string | null } };
+  };
   unassigned: number;
   orphanChunks: number;
   collections: Collection[];
@@ -189,6 +195,15 @@ export default function KnowledgeAdmin() {
   );
 }
 
+/** 검색 엔진 한 줄 요약 — 기본 PostgreSQL, 설정이 es 면 Elasticsearch(안 되면 PostgreSQL 로 폴백 중임을 밝힌다) */
+function backendNote(sb: Status["searchBackend"]): string {
+  if (!sb || (!sb.configured && sb.setting !== "es")) return "PostgreSQL";
+  const es = sb.es;
+  if (!sb.configured) return "PostgreSQL (설정은 ES 인데 ES_URL 이 비어 있음)";
+  const idx = es?.up ? `색인 ${es.es_docs ?? 0}/${es.pg_chunks ?? 0}${es.state?.analyzer ? ` · ${es.state.analyzer}` : ""}` : "연결 안 됨";
+  return sb.setting === "es" ? (es?.up ? `Elasticsearch (${idx})` : `PostgreSQL (ES ${idx} — 폴백 중)`) : `PostgreSQL (ES 준비: ${idx})`;
+}
+
 /** 의미 검색 기준(코사인 거리) 보정 — 모델마다 거리 눈금이 달라 임베딩 모델을 바꾸면 다시 잰다(설계 §21.15). 측정은 읽기 전용, 적용은 확신할 수 있을 때만 */
 function DistanceCard({ st, reload }: { st: Status; reload: () => unknown }) {
   const { run, busy } = useAction();
@@ -297,7 +312,7 @@ function StatusTab({ st, reload }: { st: Status; reload: () => unknown }) {
         </StatGrid>
       </div>
       <DistanceCard st={st} reload={reload} />
-      <Card title="컬렉션별 현황" actions={<span className="text-[11.5px] text-stone">그래프: {st.graph.ok ? `연결됨 · 노드 ${st.graph.nodes} · 관계 ${st.graph.relationships}` : "연결 안 됨 — 개념 확장은 PostgreSQL 간선으로 계속 동작"}</span>}>
+      <Card title="컬렉션별 현황" actions={<span className="text-[11.5px] text-stone" data-kb-backend>검색 엔진: {backendNote(st.searchBackend)} · 그래프: {st.graph.ok ? `연결됨 · 노드 ${st.graph.nodes} · 관계 ${st.graph.relationships}` : "연결 안 됨 — 개념 확장은 PostgreSQL 간선으로 계속 동작"}</span>}>
         <Table head={["컬렉션", "종류", "담당 팀", "공개 범위", "조각", "임베딩", "출처", "마지막 색인", "상태"]}>
           {st.collections.map((c) => (
             <tr key={c.code} data-kb-collection={c.code}>
