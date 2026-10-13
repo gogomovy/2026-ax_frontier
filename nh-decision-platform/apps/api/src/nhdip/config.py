@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "nhdip-neo4j"
 
+    # 선택 검색 엔진 Elasticsearch (설계 §21.18) — 주소를 비우면 쓰지 않는다(기본: PostgreSQL pgvector + 전문 검색). 쓰려면 관리자 설정 knowledge.search.backend = "es"
+    es_url: str = ""  # 예: http://elasticsearch:9200
+    es_user: str = ""
+    es_password: str = ""
+    es_index: str = "nhdip-kb-chunk"
+    es_verify_certs: bool = True
+    es_timeout_sec: float = 10.0
+    es_replicas: int = 0  # 단일 노드면 0 (복제본이 있으면 노드가 하나일 때 yellow)
+
     filestore_dir: str = "/data/files"
 
     session_secret: str = "dev-session-secret-change-me-dev-session-secret"

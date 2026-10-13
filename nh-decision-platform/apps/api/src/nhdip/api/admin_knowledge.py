@@ -23,6 +23,7 @@ from nhdip.events import audit
 from nhdip.graph.neo4j_client import health as graph_health
 from nhdip.knowledge.access import AUDIENCES, resolve_scope, setting_dict
 from nhdip.knowledge.calibration import apply_calibration, calibrate, calibrated_model
+from nhdip.knowledge import elastic
 from nhdip.knowledge.defaults import SEARCH_DEFAULT
 from nhdip.knowledge.maintenance import embedding_agent, reconcile, status as kb_status
 from nhdip.knowledge.search import retrieve
@@ -100,9 +101,21 @@ def status(session: Session = Depends(get_session)):
     return {
         "totals": st["totals"], "stale": st["stale"], "state": st["state"], "documentsByClass": docs, "embedding": emb, "graph": graph_health(),
         "distance": {"threshold": float(scfg["max_cosine_distance"]), "calibratedModel": calibrated_model(session), "fusion": scfg.get("fusion", "convex")},
+        "searchBackend": _search_backend(session, str(scfg.get("backend", "pg"))),
         "unassigned": st["collections"].get("analysis.unassigned", {}).get("chunks", 0), "collections": sorted(items, key=lambda x: (x["sort"], x["code"])),
         "orphanChunks": int(session.execute(text("SELECT count(*) FROM app.kb_chunk c WHERE c.collection_code NOT IN (SELECT code FROM cfg.kb_collection)")).scalar() or 0),
     }
+
+
+def _search_backend(session: Session, setting: str) -> dict[str, Any]:
+    """질문하기 검색 엔진 — 설정(pg | es) · ES 연결 · 동기화 상태. ES 를 쓰지 않으면 연결 확인(네트워크)을 하지 않는다."""
+    out: dict[str, Any] = {"setting": setting, "configured": elastic.configured()}
+    if elastic.configured():
+        try:
+            out["es"] = elastic.status(session)
+        except Exception as exc:  # noqa: BLE001 — 상태 화면이 ES 때문에 깨지지 않게
+            out["es"] = {"configured": True, "up": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    return out
 
 
 def _clean_orgs(session: Session, codes: list[str], field: str) -> list[str]:

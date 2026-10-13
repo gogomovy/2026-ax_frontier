@@ -139,6 +139,29 @@ def run_checks(session: Session) -> dict[str, Any]:
         session.rollback()
         add(_item("knowledge_index", "질문하기 색인", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}", "마이그레이션 0014 적용 여부 확인 (alembic upgrade head)"))
 
+    # 질문하기 선택 검색 엔진(ES · 설계 §21.18) — 쓰지 않으면(ES_URL 비움 + backend=pg) 항목을 만들지 않는다. 쓰기로 했는데 안 되면 검색은 PostgreSQL 로 폴백하므로 경고
+    try:
+        from nhdip.knowledge import elastic
+
+        want = str(_setting(session, "knowledge.search", {}).get("backend", "pg")).strip().lower() == "es"
+        if elastic.configured() or want:
+            if not elastic.configured():
+                add(_item("search_backend", "질문하기 검색 엔진", "warn", "검색 설정이 ES 인데 ES_URL 이 비어 있음 — PostgreSQL 로 동작 중", "ES_URL 설정 후 api · worker 재기동, 또는 knowledge.search.backend 를 pg 로"))
+            else:
+                es = elastic.status(session)
+                stt = es.get("state") or {}
+                if not es.get("up"):
+                    add(_item("search_backend", "질문하기 검색 엔진", "warn" if want else "ok", f"ES 에 연결하지 못함 — {es.get('error', '')[:100]}" + (" · PostgreSQL 로 폴백 중" if want else ""), "ES 기동 · ES_URL · 인증 확인"))
+                elif want and (stt.get("synced_at") is None or es.get("lag")):
+                    add(_item("search_backend", "질문하기 검색 엔진", "warn", f"ES 연결됨 · 동기화 미완료(색인 {es.get('es_docs')}/{es.get('pg_chunks')}) — 새 청크는 PostgreSQL 로 보충", "워커 주기 안에 따라잡음. 계속되면 python -m nhdip.cli kb-es --sync"))
+                elif stt.get("analyzer") == "standard":
+                    add(_item("search_backend", "질문하기 검색 엔진", "warn", "ES 연결됨 · nori 분석기 없음(standard) — 한국어 조사 · 합성어 처리가 약함", "ES 에 analysis-nori 설치 후 python -m nhdip.cli kb-es --rebuild"))
+                else:
+                    add(_item("search_backend", "질문하기 검색 엔진", "ok", f"ES 연결됨 · 색인 {es.get('es_docs')}/{es.get('pg_chunks')} · {'사용 중' if want else '준비됨(검색 설정은 pg)'}"))
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        add(_item("search_backend", "질문하기 검색 엔진", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}"))
+
     # 운영 상태
     alive = session.execute(select(func.count()).select_from(WorkerHeartbeat).where(WorkerHeartbeat.seen_at > utcnow() - timedelta(seconds=60))).scalar() or 0
     add(_item("worker", "워커", "ok" if alive else "fail", f"동작 중 {alive}개", "" if alive else "docker compose logs worker 확인 후 docker compose up -d worker"))

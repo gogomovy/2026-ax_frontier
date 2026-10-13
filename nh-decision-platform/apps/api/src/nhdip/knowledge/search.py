@@ -32,6 +32,7 @@ from nhdip.llm.guard import GUARD, fence
 from nhdip.models import AppUser, Setting
 
 from .access import AccessScope, CollectionInfo, doc_filter, kb_filter, load_collections, screen_collections, setting_dict
+from . import elastic
 from .defaults import SEARCH_DEFAULT
 from .maintenance import embedding_agent
 from .query import concept_aliases, concepts_of, expand_concepts, graph_up, mark_graph_down, mark_graph_ok, query_tokens, terms_of
@@ -254,12 +255,16 @@ def _exists_stems(session: Session, filt: str, fp: dict[str, Any], stems: list[s
     return [t for t, ok in zip(stems, flags) if ok]
 
 
-def _kb_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int, cap: int = 3000, min_ratio: float = 0.34) -> list[dict[str, Any]]:
-    """키워드 채널. `cap` = 점수를 매길 후보 행의 상한 — 흔한 낱말만 있는 질문이 수만 행의 점수 계산(행당 수십 µs)을 하지 않게 한다(설계 §21.14)."""
+def _kb_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int, cap: int = 3000, min_ratio: float = 0.34, min_id: int | None = None) -> list[dict[str, Any]]:
+    """키워드 채널. `cap` = 점수를 매길 후보 행의 상한 — 흔한 낱말만 있는 질문이 수만 행의 점수 계산(행당 수십 µs)을 하지 않게 한다(설계 §21.14).
+    `min_id` = 이 id 보다 큰 청크만 — ES 에 아직 올라가지 못한 새 청크를 PostgreSQL 로 보충할 때(설계 §21.18)."""
     if not terms:
         return []
     cap = max(lim, int(cap))
     filt, fp = kb_filter(scope)
+    if min_id is not None:
+        filt += " AND c.id > :es_min"
+        fp = {**fp, "es_min": int(min_id)}
     # 점수는 어절(접두 낱말) 단위로 센다 — '증가율과' · '증가율' 같은 활용형을 따로 세지 않는다(행마다 @@ 계산 횟수도 줄어든다)
     all_stems = _stems(terms)
     # 접근 범위 안에 한 건도 없는 어절은 뺀다 — 결과는 같고(없는 어절이 든 조합은 결과가 없다) 조합 수가 크게 준다. 게이팅 최소 어절 수에 못 미치면 후보 자체가 없다
@@ -284,8 +289,27 @@ def _kb_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int
     return [{"ref": ("kb", r["id"]), "src": "kb", **_kb_cols(r), "raw": float(r["s"]), "sig": {"keyword_score": round(float(r["s"]), 4)}} for r in rows]
 
 
-def _kb_vector(session: Session, scope: AccessScope, qvec: list[float], model: str, hnsw_dim: Any, lim: int) -> list[dict[str, Any]]:
+def _tune_hnsw(session: Session, ef_search: int | None, iterative: str | None) -> None:
+    """HNSW 는 가까운 후보 `ef_search`(기본 40)개를 찾은 **뒤에** 접근 범위 조건으로 거른다 — 범위가 좁은 사용자(영업점 · 신용리스크)는 후보 40건을 요청해도 9~24건만 돌아오고
+    진짜 최근접도 놓친다(실측: 10만 건, 영업점 평균 9.2/40 · 자기 검색 1위 78%, 설계 §21.18). 후보 풀을 키우고(`hnsw.ef_search`) 필요하면 pgvector 0.8+ 의 반복 탐색을 켠다.
+    트랜잭션 안에서만 유효(`set_config(…, true)`). 지원하지 않는 서버 · 이름이면 건너뛴다 — 그 savepoint 가 실패해도 검색은 계속된다."""
+    for name, value in (("hnsw.ef_search", str(int(ef_search)) if ef_search else None), ("hnsw.iterative_scan", iterative or None)):
+        if value is None:
+            continue
+        try:
+            with session.begin_nested():
+                session.execute(text("SELECT set_config(:n, :v, true)"), {"n": name, "v": value})
+        except SQLAlchemyError:
+            pass
+
+
+def _kb_vector(
+    session: Session, scope: AccessScope, qvec: list[float], model: str, hnsw_dim: Any, lim: int, min_id: int | None = None, ef_search: int | None = None, iterative: str | None = None
+) -> list[dict[str, Any]]:
     filt, fp = kb_filter(scope)
+    if min_id is not None:
+        filt += " AND c.id > :es_min"
+        fp = {**fp, "es_min": int(min_id)}
     dim = len(qvec)
     col, par, dims = ("c.embedding", "CAST(:v AS vector)", "vector_dims(c.embedding) = :dim")
     if hnsw_dim and int(hnsw_dim) == dim:
@@ -296,8 +320,102 @@ def _kb_vector(session: Session, scope: AccessScope, qvec: list[float], model: s
     params = {**fp, "v": vec, "model": model, "lim": lim}
     if ":dim" in dims:
         params["dim"] = dim
+    _tune_hnsw(session, ef_search, iterative)
     rows = session.execute(sql, params).mappings().all()
     return [{"ref": ("kb", r["id"]), "src": "kb", **_kb_cols(r), "raw": float(r["dist"]), "sig": {"cosine_distance": round(float(r["dist"]), 4)}} for r in rows]
+
+
+# ── Elasticsearch 채널 (선택 · 설계 §21.18) ───────────────────
+def _hydrate(session: Session, scope: AccessScope, ids: list[int]) -> dict[int, Any]:
+    """ES 가 돌려준 id 를 PostgreSQL 에서 접근 규칙으로 다시 걸러 본문 · 메타를 읽는다 — ES 색인의 권한 필드가 늦거나 틀려도, 지워진 청크도 여기서 사라진다."""
+    if not ids:
+        return {}
+    filt, fp = kb_filter(scope)
+    rows = session.execute(text(f"SELECT {KB_SELECT} FROM app.kb_chunk c WHERE {filt} AND c.id = ANY(CAST(:es_ids AS bigint[]))"), {**fp, "es_ids": ids}).mappings().all()
+    return {int(r["id"]): r for r in rows}
+
+
+def _kb_keyword_es(session: Session, scope: AccessScope, terms: list[str], lim: int, n_cand: int, min_ratio: float, diag: dict[str, Any]) -> list[dict[str, Any]]:
+    """키워드 채널(ES) — raw = 맞춘 어절 수 + 0.1 × (BM25 / 최대 BM25). 게이팅 · 결합은 PostgreSQL 채널과 같은 척도(정수부 = 맞춘 어절 수)를 쓴다."""
+    if not terms:
+        return []
+    stems = _stems(terms)
+    hits = elastic.keyword_hits(scope, stems, len(stems), size=n_cand, min_ratio=min_ratio)
+    if not hits:
+        return []
+    top = max((h[1] for h in hits), default=0.0) or 1.0
+    got = _hydrate(session, scope, [h[0] for h in hits])
+    diag.setdefault("es", {})["kb_keyword"] = {"hits": len(hits), "kept": len(got)}
+    out = []
+    for cid, bm25, matched in hits:
+        r = got.get(cid)
+        if r is None:
+            continue
+        s = float(matched) + 0.1 * (bm25 / top)
+        out.append({"ref": ("kb", cid), "src": "kb", **_kb_cols(r), "raw": s, "sig": {"keyword_score": round(s, 4)}})
+    return out[:lim]
+
+
+def _kb_vector_es(session: Session, scope: AccessScope, qvec: list[float], model: str, lim: int, n_cand: int, diag: dict[str, Any]) -> list[dict[str, Any]]:
+    hits = elastic.vector_hits(scope, qvec, model, k=n_cand)
+    if not hits:
+        return []
+    got = _hydrate(session, scope, [h[0] for h in hits])
+    diag.setdefault("es", {})["kb_vector"] = {"hits": len(hits), "kept": len(got)}
+    out = []
+    for cid, dist in hits:
+        r = got.get(cid)
+        if r is None:
+            continue
+        out.append({"ref": ("kb", cid), "src": "kb", **_kb_cols(r), "raw": dist, "sig": {"cosine_distance": round(dist, 4)}})
+    return out[:lim]
+
+
+def _es_state(session: Session, cfg: dict[str, Any], diag: dict[str, Any]) -> dict[str, Any] | None:
+    """ES 채널을 쓸 수 있으면 동기화 상태 {'synced_max_id', 'dims'}, 아니면 None(이유는 진단에). 설정이 'es' 가 아니면 조용히 None."""
+    diag["backend"] = "pg"
+    if str(cfg.get("backend", "pg")).strip().lower() != "es":
+        return None
+    why = None
+    st = None
+    if not elastic.configured():
+        why = "ES_URL 미설정"
+    elif not elastic.es_up():
+        why = "ES 연결 대기(차단기 열림)"
+    else:
+        st = elastic.search_state(session)
+        if st is None:
+            why = "ES 아직 동기화 전"
+    if st is None:
+        diag["esFallback"] = why
+        return None
+    diag["backend"] = "es"
+    return st
+
+
+def _es_or_pg(
+    session: Session, name: str, diag: dict[str, Any], mid: int | None, es_fn: Callable[[], list[dict[str, Any]]], pg_fn: Callable[[int | None], list[dict[str, Any]]], *, reverse: bool, lim: int
+) -> list[dict[str, Any]]:
+    """`mid` 가 None 이면 PostgreSQL 전체. 아니면 ES 결과 + (ES 에 아직 못 올린 새 청크 = id > mid)의 PostgreSQL 결과를 합친다.
+    ES 오류면 이 채널은 PostgreSQL 전체로 폴백한다 — 검색은 멈추지 않는다."""
+    if mid is None:
+        return _safe(session, name, diag, lambda: pg_fn(None))
+
+    def run() -> list[dict[str, Any]]:
+        try:
+            rows = es_fn()
+        except (elastic.EsUnavailable, ValueError, KeyError, TypeError) as exc:  # 연결 · 5xx · 4xx(매핑 · 차원) · 응답 해석 오류 — DB 오류(SQLAlchemyError)는 그대로 _safe 로
+            diag["esFallback"] = f"{name}: {str(exc)[:140]}"
+            diag["backend"] = "pg"
+            return pg_fn(None)
+        seen = {r["ref"] for r in rows}
+        extra = [r for r in pg_fn(mid) if r["ref"] not in seen]
+        merged = sorted([*rows, *extra], key=lambda r: r["raw"], reverse=reverse)
+        if extra:
+            diag.setdefault("es", {}).setdefault(name, {})["supplement"] = len(extra)
+        return merged[:lim]
+
+    return _safe(session, name, diag, run)
 
 
 def _kb_graph(session: Session, scope: AccessScope, exact: list[str], expanded: list[str], weight: float, lim: int) -> list[dict[str, Any]]:
@@ -489,9 +607,23 @@ def retrieve(
     ch: dict[str, list[dict[str, Any]]] = {"keyword": [], "vector": [], "graph": []}
 
     if has_analysis:
-        ch["keyword"] += _safe(session, "kb_keyword", diag, lambda: _kb_keyword(session, scope, terms, lim, int(cfg.get("keyword_candidates", 3000)), float(cfg.get("min_term_ratio", 0.34))))
+        es = _es_state(session, cfg, diag)
+        n_cand, ratio, kw_cap = int(cfg.get("es_candidates", 60)), float(cfg.get("min_term_ratio", 0.34)), int(cfg.get("keyword_candidates", 3000))
+        mid = es["synced_max_id"] if es else None
+        ef = int(cfg["hnsw_ef_search"]) if cfg.get("hnsw_ef_search") else None
+        ch["keyword"] += _es_or_pg(
+            session, "kb_keyword", diag, mid, lambda: _kb_keyword_es(session, scope, terms, lim, n_cand, ratio, diag),
+            lambda m: _kb_keyword(session, scope, terms, lim, kw_cap, ratio, min_id=m), reverse=True, lim=lim,
+        )
         if qvec is not None:
-            ch["vector"] += _safe(session, "kb_vector", diag, lambda: _kb_vector(session, scope, qvec, model or "", cfg.get("hnsw_dim"), lim))
+            # 색인된 임베딩 차원과 질문 벡터 차원이 다르면(모델 교체 직후) 의미 채널만 PostgreSQL 로 — `kb-es --rebuild` 전까지
+            vmid = mid if (es and es.get("dims") == len(qvec)) else None
+            if es and vmid is None:
+                diag["esFallback"] = diag.get("esFallback") or "kb_vector: ES 임베딩 색인 없음 또는 차원 불일치"
+            ch["vector"] += _es_or_pg(
+                session, "kb_vector", diag, vmid, lambda: _kb_vector_es(session, scope, qvec, model or "", lim, n_cand, diag),
+                lambda m: _kb_vector(session, scope, qvec, model or "", cfg.get("hnsw_dim"), lim, min_id=m, ef_search=ef, iterative=cfg.get("hnsw_iterative_scan")), reverse=False, lim=lim,
+            )
         ch["graph"] += _safe(session, "kb_graph", diag, lambda: _kb_graph(session, scope, concepts, exp_keys, wexp, lim))
     ch["keyword"] += _safe(session, "doc_keyword", diag, lambda: _doc_keyword(session, scope, terms, lim))
     if qvec is not None:

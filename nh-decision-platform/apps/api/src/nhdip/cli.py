@@ -9,6 +9,7 @@
   python -m nhdip.cli wait-idle [--timeout 300]    미처리 이벤트 · 대기 · 실행 중 작업이 없을 때까지 대기 (CI · 기동 직후 점검)
   python -m nhdip.cli kb-hnsw --dim N              질문하기 분석 결과 색인에 부분 HNSW 인덱스 생성 + 검색 설정(knowledge.search.hnsw_dim) 반영 (임베딩 모델 확정 후)
   python -m nhdip.cli kb-calibrate [--apply]       현재 임베딩 모델의 코사인 거리 임계값 추천(엉뚱한 질문 vs 제목 질문 분포), --apply 면 확신할 때만 반영
+  python -m nhdip.cli kb-es [--sync|--rebuild]     선택 검색 엔진(Elasticsearch, ES_URL 설정 시) 상태 · 동기화 · 처음부터 다시 올리기 (설계 §21.18). 인자 없으면 상태
 """
 from __future__ import annotations
 
@@ -43,7 +44,33 @@ def main(argv: list[str] | None = None) -> int:
     ap_hn.add_argument("--dim", type=int, required=True, help="임베딩 차원(모델 확정 후, 2~2000)")
     ap_cal = sub.add_parser("kb-calibrate")
     ap_cal.add_argument("--apply", action="store_true", help="확신할 수 있는 추천값을 검색 설정(max_cosine_distance)에 반영")
+    ap_es = sub.add_parser("kb-es")
+    g_es = ap_es.add_mutually_exclusive_group()
+    g_es.add_argument("--sync", action="store_true", help="PostgreSQL ↔ ES 목록을 대조해 다른 것만 올리고 사라진 것은 지움(제한 없이 한 번에)")
+    g_es.add_argument("--rebuild", action="store_true", help="색인을 지우고 처음부터 다시 올림(임베딩 차원 · 분석기가 바뀐 뒤)")
     args = ap.parse_args(argv)
+
+    if args.cmd == "kb-es":
+        from nhdip.knowledge import elastic
+
+        if not elastic.configured():
+            print("ES_URL 이 설정되지 않았습니다(기본은 PostgreSQL 검색).", file=sys.stderr)
+            return 2
+        try:
+            with SessionLocal() as s:
+                if args.rebuild:
+                    rep = elastic.rebuild(s)
+                    s.commit()
+                elif args.sync:
+                    rep = elastic.sync(s, limit=10**9, force=True)
+                    s.commit()
+                else:
+                    rep = elastic.status(s)
+        except elastic.EsUnavailable as exc:
+            print(f"ES 오류: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(rep, ensure_ascii=False, indent=1, default=str))
+        return 0
 
     if args.cmd == "kb-calibrate":
         from nhdip.knowledge.calibration import apply_calibration, calibrate

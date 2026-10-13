@@ -312,6 +312,7 @@ def _retrieval_view(ret: Retrieval, rewrite_used: bool, rewritten: str | None, b
     return {
         "channels": d.get("channels", {}), "semantic": bool(d.get("semantic")), "graph": bool(d.get("graph")), "expanded": d.get("expanded", []), "intent": d.get("intent"),
         "rewritten": rewritten if rewrite_used else None, "rewriteBy": by if rewrite_used else None, "timingsMs": d.get("timingsMs", {}),
+        "backend": d.get("backend", "pg"),  # 'pg' | 'es' — 실제로 쓴 검색 엔진(ES 가 안 되어 폴백했으면 pg). 폴백 사유 같은 내부 정보는 검색 진단(관리자)에만
     }
 
 

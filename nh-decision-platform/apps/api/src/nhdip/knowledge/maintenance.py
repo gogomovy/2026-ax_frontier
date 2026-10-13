@@ -20,8 +20,9 @@ from nhdip.events import emit
 from nhdip.llm import LlmError, LlmUnavailable, embed, resolve
 from nhdip.models import KbChunk, Setting, utcnow
 
+from . import elastic
 from .access import load_collections, setting_dict
-from .defaults import ARTIFACT_RESOURCES, ARTIFACT_ROUTES, INDEX_DEFAULT, PERSONA_RESOURCES
+from .defaults import ARTIFACT_RESOURCES, ARTIFACT_ROUTES, INDEX_DEFAULT, PERSONA_RESOURCES, SEARCH_DEFAULT
 from .indexer import IndexStats, index_artifacts, stale_keys
 
 log = logging.getLogger("nhdip.knowledge")
@@ -130,6 +131,15 @@ def run_maintenance(session: Session) -> dict[str, Any]:
     out["index"] = stats.as_dict()
     session.commit()
     out["embed"] = embed_pending(session)
+    if elastic.configured():
+        # 선택 검색 엔진(ES) 동기화 — 검색 설정이 아직 pg 여도 미리 올려 둬 전환 시 바로 쓰게 한다. ES 문제가 색인 작업을 막지 않는다(설계 §21.18)
+        try:
+            out["es"] = elastic.sync(session, limit=int(setting_dict(session, "knowledge.search", SEARCH_DEFAULT).get("es_sync_max_per_run", 2000)))
+            session.commit()
+        except Exception as exc:  # noqa: BLE001 — ES 동기화 실패는 경고만, 다음 주기에 다시
+            session.rollback()
+            log.warning("ES 동기화 중 오류: %s", exc)
+            out["es"] = {"skipped": f"오류 — {type(exc).__name__}: {str(exc)[:120]}"}
     sig = _signature(session)
     if sig != get_state(session).get("graph_signature"):
         emit(session, "kb.indexed", {"signature": sig}, "knowledge")
