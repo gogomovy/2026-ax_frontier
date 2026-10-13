@@ -200,8 +200,20 @@ def _psi(base: list[float], cur: list[float]) -> float:
     return float(r["value"] if isinstance(r, dict) else r)
 
 
+MODEL_ROWS_JSON = os.path.join(HERE, "model_rows.json")
+
+
 def model_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """(기준시점 2025-08-31 행, 비교시점 2026-08-31 행) — 소기업 모형(기존 시나리오) + 5개 모형(목표 AR · PSI 에 맞춘 결정적 생성)."""
+    """(기준시점 2025-08-31 행, 비교시점 2026-08-31 행) — 보정 결과를 고정한 `model_rows.json` 을 읽는다.
+    보정(지수 함수 · 이분법 → 반올림)은 부동소수 수학 라이브러리 차이로 운영체제마다 마지막 자리가 달라 건수가 1 바뀔 수 있다
+    (CI 리눅스에서 저장소 사본과 어긋남을 확인). 값을 바꾸려면 `calibrate_model_rows()` 로 다시 만들어 JSON 을 고친다."""
+    with open(MODEL_ROWS_JSON, encoding="utf-8") as fh:
+        d = json.load(fh)
+    return d["base"], d["cur"]
+
+
+def calibrate_model_rows() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """소기업 모형(기존 시나리오) + 5개 모형(목표 AR · PSI 에 맞춘 결정적 생성) — `model_rows.json` 을 다시 만들 때만 쓴다."""
     raw = _raw()
     grades = raw["micro_grades"]
     buckets = {b["bucket"]: b for b in raw["micro_psi_buckets"]}

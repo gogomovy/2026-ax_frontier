@@ -1,0 +1,1267 @@
+{
+ "note": "calibrate_model_rows() 결과 고정(Phase I) — 운영체제마다 부동소수 반올림이 달라지지 않게",
+ "base": [
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "3A",
+   "grade_seq": 1,
+   "obs_count": 3214,
+   "default_count": null,
+   "obs_share": 7.8
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "3B",
+   "grade_seq": 2,
+   "obs_count": 4285,
+   "default_count": null,
+   "obs_share": 10.4
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "4A",
+   "grade_seq": 3,
+   "obs_count": 6015,
+   "default_count": null,
+   "obs_share": 14.6
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "4B",
+   "grade_seq": 4,
+   "obs_count": 7086,
+   "default_count": null,
+   "obs_share": 17.2
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "5A",
+   "grade_seq": 5,
+   "obs_count": 7004,
+   "default_count": null,
+   "obs_share": 17
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "5B",
+   "grade_seq": 6,
+   "obs_count": 5191,
+   "default_count": null,
+   "obs_share": 12.6
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "5C",
+   "grade_seq": 7,
+   "obs_count": 3461,
+   "default_count": null,
+   "obs_share": 8.4
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "6A",
+   "grade_seq": 8,
+   "obs_count": 2142,
+   "default_count": null,
+   "obs_share": 5.2
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "6B",
+   "grade_seq": 9,
+   "obs_count": 1401,
+   "default_count": null,
+   "obs_share": 3.4
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "7A",
+   "grade_seq": 10,
+   "obs_count": 824,
+   "default_count": null,
+   "obs_share": 2
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "7B",
+   "grade_seq": 11,
+   "obs_count": 412,
+   "default_count": null,
+   "obs_share": 1
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "8",
+   "grade_seq": 12,
+   "obs_count": 165,
+   "default_count": null,
+   "obs_share": 0.4
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "1",
+   "grade_seq": 1,
+   "obs_count": 60,
+   "default_count": 0,
+   "obs_share": 1.89
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "2A",
+   "grade_seq": 2,
+   "obs_count": 126,
+   "default_count": 0,
+   "obs_share": 3.96
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "2B",
+   "grade_seq": 3,
+   "obs_count": 226,
+   "default_count": 0,
+   "obs_share": 7.11
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "3A",
+   "grade_seq": 4,
+   "obs_count": 347,
+   "default_count": 0,
+   "obs_share": 10.91
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "3B",
+   "grade_seq": 5,
+   "obs_count": 455,
+   "default_count": 1,
+   "obs_share": 14.31
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "4A",
+   "grade_seq": 6,
+   "obs_count": 510,
+   "default_count": 1,
+   "obs_share": 16.04
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "4B",
+   "grade_seq": 7,
+   "obs_count": 488,
+   "default_count": 1,
+   "obs_share": 15.35
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "5A",
+   "grade_seq": 8,
+   "obs_count": 400,
+   "default_count": 2,
+   "obs_share": 12.58
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "5B",
+   "grade_seq": 9,
+   "obs_count": 279,
+   "default_count": 2,
+   "obs_share": 8.77
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "5C",
+   "grade_seq": 10,
+   "obs_count": 167,
+   "default_count": 2,
+   "obs_share": 5.25
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "6A",
+   "grade_seq": 11,
+   "obs_count": 85,
+   "default_count": 2,
+   "obs_share": 2.67
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "6B",
+   "grade_seq": 12,
+   "obs_count": 37,
+   "default_count": 1,
+   "obs_share": 1.16
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "2A",
+   "grade_seq": 1,
+   "obs_count": 168,
+   "default_count": 0,
+   "obs_share": 2.04
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "2B",
+   "grade_seq": 2,
+   "obs_count": 348,
+   "default_count": 0,
+   "obs_share": 4.23
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "3A",
+   "grade_seq": 3,
+   "obs_count": 616,
+   "default_count": 1,
+   "obs_share": 7.49
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "3B",
+   "grade_seq": 4,
+   "obs_count": 931,
+   "default_count": 1,
+   "obs_share": 11.33
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "4A",
+   "grade_seq": 5,
+   "obs_count": 1201,
+   "default_count": 3,
+   "obs_share": 14.61
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "4B",
+   "grade_seq": 6,
+   "obs_count": 1323,
+   "default_count": 5,
+   "obs_share": 16.09
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "5A",
+   "grade_seq": 7,
+   "obs_count": 1246,
+   "default_count": 8,
+   "obs_share": 15.16
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "5B",
+   "grade_seq": 8,
+   "obs_count": 1003,
+   "default_count": 11,
+   "obs_share": 12.2
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "5C",
+   "grade_seq": 9,
+   "obs_count": 689,
+   "default_count": 13,
+   "obs_share": 8.38
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "6A",
+   "grade_seq": 10,
+   "obs_count": 405,
+   "default_count": 12,
+   "obs_share": 4.93
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "6B",
+   "grade_seq": 11,
+   "obs_count": 203,
+   "default_count": 10,
+   "obs_share": 2.47
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_MID",
+   "grade": "6C",
+   "grade_seq": 12,
+   "obs_count": 87,
+   "default_count": 8,
+   "obs_share": 1.06
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "2B",
+   "grade_seq": 1,
+   "obs_count": 481,
+   "default_count": 0,
+   "obs_share": 2.29
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "3A",
+   "grade_seq": 2,
+   "obs_count": 974,
+   "default_count": 1,
+   "obs_share": 4.64
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "3B",
+   "grade_seq": 3,
+   "obs_count": 1684,
+   "default_count": 4,
+   "obs_share": 8.03
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "4A",
+   "grade_seq": 4,
+   "obs_count": 2488,
+   "default_count": 9,
+   "obs_share": 11.86
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "4B",
+   "grade_seq": 5,
+   "obs_count": 3140,
+   "default_count": 19,
+   "obs_share": 14.97
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "5A",
+   "grade_seq": 6,
+   "obs_count": 3385,
+   "default_count": 32,
+   "obs_share": 16.13
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "5B",
+   "grade_seq": 7,
+   "obs_count": 3116,
+   "default_count": 46,
+   "obs_share": 14.85
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "5C",
+   "grade_seq": 8,
+   "obs_count": 2454,
+   "default_count": 58,
+   "obs_share": 11.7
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "6A",
+   "grade_seq": 9,
+   "obs_count": 1650,
+   "default_count": 61,
+   "obs_share": 7.86
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "6B",
+   "grade_seq": 10,
+   "obs_count": 948,
+   "default_count": 55,
+   "obs_share": 4.52
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "6C",
+   "grade_seq": 11,
+   "obs_count": 465,
+   "default_count": 43,
+   "obs_share": 2.22
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "7A",
+   "grade_seq": 12,
+   "obs_count": 195,
+   "default_count": 28,
+   "obs_share": 0.93
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "1",
+   "grade_seq": 1,
+   "obs_count": 4167,
+   "default_count": 49,
+   "obs_share": 2.36
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "2",
+   "grade_seq": 2,
+   "obs_count": 9883,
+   "default_count": 162,
+   "obs_share": 5.59
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "3",
+   "grade_seq": 3,
+   "obs_count": 18682,
+   "default_count": 423,
+   "obs_share": 10.56
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "4",
+   "grade_seq": 4,
+   "obs_count": 28150,
+   "default_count": 881,
+   "obs_share": 15.91
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "5",
+   "grade_seq": 5,
+   "obs_count": 33811,
+   "default_count": 1461,
+   "obs_share": 19.11
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "6",
+   "grade_seq": 6,
+   "obs_count": 32368,
+   "default_count": 1932,
+   "obs_share": 18.3
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "7",
+   "grade_seq": 7,
+   "obs_count": 24705,
+   "default_count": 2037,
+   "obs_share": 13.97
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "8",
+   "grade_seq": 8,
+   "obs_count": 15029,
+   "default_count": 1712,
+   "obs_share": 8.5
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "9",
+   "grade_seq": 9,
+   "obs_count": 7288,
+   "default_count": 1146,
+   "obs_share": 4.12
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "10",
+   "grade_seq": 10,
+   "obs_count": 2817,
+   "default_count": 612,
+   "obs_share": 1.59
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "1",
+   "grade_seq": 1,
+   "obs_count": 24596,
+   "default_count": 0,
+   "obs_share": 2.03
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "2",
+   "grade_seq": 2,
+   "obs_count": 60319,
+   "default_count": 0,
+   "obs_share": 4.99
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "3",
+   "grade_seq": 3,
+   "obs_count": 117915,
+   "default_count": 2,
+   "obs_share": 9.75
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "4",
+   "grade_seq": 4,
+   "obs_count": 183738,
+   "default_count": 12,
+   "obs_share": 15.18
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "5",
+   "grade_seq": 5,
+   "obs_count": 228219,
+   "default_count": 51,
+   "obs_share": 18.86
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "6",
+   "grade_seq": 6,
+   "obs_count": 225957,
+   "default_count": 182,
+   "obs_share": 18.67
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "7",
+   "grade_seq": 7,
+   "obs_count": 178328,
+   "default_count": 512,
+   "obs_share": 14.74
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "8",
+   "grade_seq": 8,
+   "obs_count": 112185,
+   "default_count": 1150,
+   "obs_share": 9.27
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "9",
+   "grade_seq": 9,
+   "obs_count": 56256,
+   "default_count": 2058,
+   "obs_share": 4.65
+  },
+  {
+   "as_of": "2025-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "10",
+   "grade_seq": 10,
+   "obs_count": 22487,
+   "default_count": 2935,
+   "obs_share": 1.86
+  }
+ ],
+ "cur": [
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "3A",
+   "grade_seq": 1,
+   "obs_count": 1842,
+   "default_count": 3,
+   "obs_share": 4.18,
+   "ks": 5.2,
+   "sdr_rank": 12,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "3B",
+   "grade_seq": 2,
+   "obs_count": 3104,
+   "default_count": 9,
+   "obs_share": 7.04,
+   "ks": 11.4,
+   "sdr_rank": 11,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "4A",
+   "grade_seq": 3,
+   "obs_count": 5271,
+   "default_count": 27,
+   "obs_share": 11.96,
+   "ks": 19.6,
+   "sdr_rank": 10,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "4B",
+   "grade_seq": 4,
+   "obs_count": 6940,
+   "default_count": 62,
+   "obs_share": 15.75,
+   "ks": 27.8,
+   "sdr_rank": 9,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "5A",
+   "grade_seq": 5,
+   "obs_count": 7382,
+   "default_count": 118,
+   "obs_share": 16.75,
+   "ks": 34.1,
+   "sdr_rank": 8,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "5B",
+   "grade_seq": 6,
+   "obs_count": 6517,
+   "default_count": 171,
+   "obs_share": 14.79,
+   "ks": 37.4,
+   "sdr_rank": 7,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "5C",
+   "grade_seq": 7,
+   "obs_count": 4983,
+   "default_count": 196,
+   "obs_share": 11.31,
+   "ks": 35.6,
+   "sdr_rank": 6,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "6A",
+   "grade_seq": 8,
+   "obs_count": 3468,
+   "default_count": 199,
+   "obs_share": 7.87,
+   "ks": 28.9,
+   "sdr_rank": 5,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "6B",
+   "grade_seq": 9,
+   "obs_count": 2472,
+   "default_count": 196,
+   "obs_share": 5.61,
+   "ks": 19.4,
+   "sdr_rank": 4,
+   "exposure_amt": 48200
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "7A",
+   "grade_seq": 10,
+   "obs_count": 1286,
+   "default_count": 132,
+   "obs_share": 2.92,
+   "ks": 11.2,
+   "sdr_rank": 3,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "7B",
+   "grade_seq": 11,
+   "obs_count": 624,
+   "default_count": 79,
+   "obs_share": 1.42,
+   "ks": 5.1,
+   "sdr_rank": 1,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MICRO",
+   "grade": "8",
+   "grade_seq": 12,
+   "obs_count": 178,
+   "default_count": 21,
+   "obs_share": 0.4,
+   "ks": 0,
+   "sdr_rank": 2,
+   "exposure_amt": null
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "1",
+   "grade_seq": 1,
+   "obs_count": 43,
+   "default_count": 0,
+   "obs_share": 1.33
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "2A",
+   "grade_seq": 2,
+   "obs_count": 96,
+   "default_count": 0,
+   "obs_share": 2.96
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "2B",
+   "grade_seq": 3,
+   "obs_count": 184,
+   "default_count": 0,
+   "obs_share": 5.68
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "3A",
+   "grade_seq": 4,
+   "obs_count": 301,
+   "default_count": 0,
+   "obs_share": 9.29
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "3B",
+   "grade_seq": 5,
+   "obs_count": 422,
+   "default_count": 0,
+   "obs_share": 13.02
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "4A",
+   "grade_seq": 6,
+   "obs_count": 505,
+   "default_count": 1,
+   "obs_share": 15.59
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "4B",
+   "grade_seq": 7,
+   "obs_count": 517,
+   "default_count": 2,
+   "obs_share": 15.96
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "5A",
+   "grade_seq": 8,
+   "obs_count": 451,
+   "default_count": 2,
+   "obs_share": 13.92
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "5B",
+   "grade_seq": 9,
+   "obs_count": 336,
+   "default_count": 3,
+   "obs_share": 10.37
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "5C",
+   "grade_seq": 10,
+   "obs_count": 214,
+   "default_count": 3,
+   "obs_share": 6.6
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "6A",
+   "grade_seq": 11,
+   "obs_count": 117,
+   "default_count": 2,
+   "obs_share": 3.61
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_LARGE",
+   "grade": "6B",
+   "grade_seq": 12,
+   "obs_count": 54,
+   "default_count": 2,
+   "obs_share": 1.67
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "2A",
+   "grade_seq": 1,
+   "obs_count": 111,
+   "default_count": 0,
+   "obs_share": 1.31
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "2B",
+   "grade_seq": 2,
+   "obs_count": 250,
+   "default_count": 0,
+   "obs_share": 2.96
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "3A",
+   "grade_seq": 3,
+   "obs_count": 480,
+   "default_count": 0,
+   "obs_share": 5.67
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "3B",
+   "grade_seq": 4,
+   "obs_count": 787,
+   "default_count": 1,
+   "obs_share": 9.3
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "4A",
+   "grade_seq": 5,
+   "obs_count": 1102,
+   "default_count": 3,
+   "obs_share": 13.03
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "4B",
+   "grade_seq": 6,
+   "obs_count": 1319,
+   "default_count": 5,
+   "obs_share": 15.59
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "5A",
+   "grade_seq": 7,
+   "obs_count": 1348,
+   "default_count": 8,
+   "obs_share": 15.93
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "5B",
+   "grade_seq": 8,
+   "obs_count": 1177,
+   "default_count": 12,
+   "obs_share": 13.91
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "5C",
+   "grade_seq": 9,
+   "obs_count": 879,
+   "default_count": 14,
+   "obs_share": 10.39
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "6A",
+   "grade_seq": 10,
+   "obs_count": 560,
+   "default_count": 15,
+   "obs_share": 6.62
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "6B",
+   "grade_seq": 11,
+   "obs_count": 305,
+   "default_count": 13,
+   "obs_share": 3.61
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_MID",
+   "grade": "6C",
+   "grade_seq": 12,
+   "obs_count": 142,
+   "default_count": 10,
+   "obs_share": 1.68
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "2B",
+   "grade_seq": 1,
+   "obs_count": 285,
+   "default_count": 0,
+   "obs_share": 1.32
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "3A",
+   "grade_seq": 2,
+   "obs_count": 640,
+   "default_count": 1,
+   "obs_share": 2.96
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "3B",
+   "grade_seq": 3,
+   "obs_count": 1228,
+   "default_count": 3,
+   "obs_share": 5.67
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "4A",
+   "grade_seq": 4,
+   "obs_count": 2013,
+   "default_count": 7,
+   "obs_share": 9.3
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "4B",
+   "grade_seq": 5,
+   "obs_count": 2819,
+   "default_count": 14,
+   "obs_share": 13.03
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "5A",
+   "grade_seq": 6,
+   "obs_count": 3374,
+   "default_count": 27,
+   "obs_share": 15.59
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "5B",
+   "grade_seq": 7,
+   "obs_count": 3447,
+   "default_count": 44,
+   "obs_share": 15.93
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "5C",
+   "grade_seq": 8,
+   "obs_count": 3012,
+   "default_count": 60,
+   "obs_share": 13.92
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "6A",
+   "grade_seq": 9,
+   "obs_count": 2247,
+   "default_count": 70,
+   "obs_share": 10.38
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "6B",
+   "grade_seq": 10,
+   "obs_count": 1432,
+   "default_count": 70,
+   "obs_share": 6.62
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "6C",
+   "grade_seq": 11,
+   "obs_count": 780,
+   "default_count": 60,
+   "obs_share": 3.6
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "CORP_SMALL",
+   "grade": "7A",
+   "grade_seq": 12,
+   "obs_count": 363,
+   "default_count": 44,
+   "obs_share": 1.68
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "1",
+   "grade_seq": 1,
+   "obs_count": 2880,
+   "default_count": 35,
+   "obs_share": 1.58
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "2",
+   "grade_seq": 2,
+   "obs_count": 7464,
+   "default_count": 125,
+   "obs_share": 4.09
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "3",
+   "grade_seq": 3,
+   "obs_count": 15420,
+   "default_count": 353,
+   "obs_share": 8.45
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "4",
+   "grade_seq": 4,
+   "obs_count": 25394,
+   "default_count": 796,
+   "obs_share": 13.92
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "5",
+   "grade_seq": 5,
+   "obs_count": 33336,
+   "default_count": 1430,
+   "obs_share": 18.28
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "6",
+   "grade_seq": 6,
+   "obs_count": 34882,
+   "default_count": 2046,
+   "obs_share": 19.12
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "7",
+   "grade_seq": 7,
+   "obs_count": 29096,
+   "default_count": 2335,
+   "obs_share": 15.95
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "8",
+   "grade_seq": 8,
+   "obs_count": 19345,
+   "default_count": 2123,
+   "obs_share": 10.61
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "9",
+   "grade_seq": 9,
+   "obs_count": 10252,
+   "default_count": 1539,
+   "obs_share": 5.62
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_AS",
+   "grade": "10",
+   "grade_seq": 10,
+   "obs_count": 4331,
+   "default_count": 889,
+   "obs_share": 2.37
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "1",
+   "grade_seq": 1,
+   "obs_count": 19671,
+   "default_count": 0,
+   "obs_share": 1.58
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "2",
+   "grade_seq": 2,
+   "obs_count": 50985,
+   "default_count": 0,
+   "obs_share": 4.09
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "3",
+   "grade_seq": 3,
+   "obs_count": 105336,
+   "default_count": 3,
+   "obs_share": 8.45
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "4",
+   "grade_seq": 4,
+   "obs_count": 173473,
+   "default_count": 15,
+   "obs_share": 13.92
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "5",
+   "grade_seq": 5,
+   "obs_count": 227723,
+   "default_count": 64,
+   "obs_share": 18.28
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "6",
+   "grade_seq": 6,
+   "obs_count": 238288,
+   "default_count": 219,
+   "obs_share": 19.12
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "7",
+   "grade_seq": 7,
+   "obs_count": 198756,
+   "default_count": 602,
+   "obs_share": 15.95
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "8",
+   "grade_seq": 8,
+   "obs_count": 132147,
+   "default_count": 1319,
+   "obs_share": 10.61
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "9",
+   "grade_seq": 9,
+   "obs_count": 70035,
+   "default_count": 2302,
+   "obs_share": 5.62
+  },
+  {
+   "as_of": "2026-08-31",
+   "model_code": "RETAIL_BS",
+   "grade": "10",
+   "grade_seq": 10,
+   "obs_count": 29586,
+   "default_count": 3201,
+   "obs_share": 2.37
+  }
+ ]
+}
