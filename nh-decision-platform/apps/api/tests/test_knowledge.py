@@ -215,7 +215,7 @@ def fake_embedder(monkeypatch, db):
     """임베딩 모델 대신 결정적 가짜 벡터(낱말 해시 주머니 32차원) — 시험이 끝나면 청크 임베딩을 비운다."""
     llm = SimpleNamespace(model="fake-emb", agent_code="embedder")
     fake = lambda session, cfg, texts, **kw: [_fake_vec(t) for t in texts]  # noqa: E731
-    for mod in ("maintenance", "search"):
+    for mod in ("maintenance", "search", "calibration"):
         monkeypatch.setattr(f"nhdip.knowledge.{mod}.resolve", lambda session, code, _l=llm: _l)
         monkeypatch.setattr(f"nhdip.knowledge.{mod}.embed", fake)
     yield llm
@@ -555,6 +555,155 @@ def test_vector_channel_with_embedding_backfill(db, fake_embedder):
         assert any("vector_rank" in h["signals"] for h in ret.analysis)
 
 
+def test_knowledge_features_work_under_dml_only_app_role(db):
+    """운영의 API 는 DML 전용 DB 계정(B.33)으로 접속한다 — 색인 · 검색 · 대조가 그 권한으로 되고, 인덱스 생성(DDL)은 소유자만 된다."""
+    import secrets as _s
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.exc import DBAPIError
+    from sqlalchemy.orm import Session
+
+    from nhdip.config import get_settings
+    from nhdip.dbrole import ensure_app_role
+    from nhdip.knowledge.indexer import index_artifacts
+    from nhdip.knowledge.maintenance import ensure_hnsw, reconcile, status as kb_status
+    from nhdip.knowledge.search import retrieve
+
+    owner = create_engine(get_settings().database_url, future=True)
+    user, pw = "nhdip_app_kb", "K" + _s.token_hex(8)
+    try:
+        ensure_app_role(owner, user, pw)
+        app = create_engine(make_url(get_settings().database_url).set(username=user, password=pw), future=True)
+        try:
+            with Session(app) as s:
+                scope = _admin_scope(s)
+                assert retrieve(s, scope, "포용금융 충당금 비중은 얼마인가요?").analysis  # 검색 (SELECT)
+                st1 = index_artifacts(s, ["terms"])  # 색인 (INSERT · UPDATE · DELETE + 시퀀스 + 권고 잠금)
+                st2 = reconcile(s, full=True)
+                s.commit()
+                assert st1.errors == [] and st2.errors == [] and st2.inserted == 0
+                assert kb_status(s)["totals"]["chunks"] >= 100
+                with pytest.raises(DBAPIError) as ei:  # 인덱스 생성은 표 소유자만 — 운영에서는 CLI 를 소유자 계정으로 돌린다
+                    ensure_hnsw(s, 32)
+                assert "must be owner" in str(ei.value).lower() or "permission denied" in str(ei.value).lower()
+                s.rollback()
+        finally:
+            app.dispose()
+    finally:
+        with owner.begin() as c:
+            c.execute(text(f"DROP OWNED BY {user}"))
+            c.execute(text(f"DROP ROLE IF EXISTS {user}"))
+        owner.dispose()
+
+
+def test_convex_fusion_prefers_a_strong_single_channel_match_over_two_mediocre_ones():
+    """실제 다국어 임베딩으로 바꿔 말한 질문을 시험했을 때 RRF 는 순위만 봐서, 두 채널에 어중간하게 걸린 후보가 한 채널에서 아주 잘 맞는 후보를 이겼다."""
+    from nhdip.knowledge.search import convex_fuse, rrf_fuse
+
+    def row(ref, raw, **sig):
+        return {"ref": ref, "src": "kb", "raw": raw, "sig": sig, "title": str(ref)}
+
+    strong = row("strong", 0.20, cosine_distance=0.20)  # 의미 1위, 거리 아주 가까움
+    kw = [row("meh", 1.05, keyword_score=1.05)]  # 4어절 중 1어절만 겹침
+    vec = [strong] + [row(f"v{i}", 0.5) for i in range(18)] + [row("meh", 0.55, cosine_distance=0.55)]  # 'meh' 는 의미로도 20위
+    ch = {"keyword": kw, "vector": vec, "graph": []}
+    w = {"keyword": 1.0, "vector": 1.0, "graph": 0.8}
+    rrf = sorted(rrf_fuse(ch, w, 60).values(), key=lambda x: x["score"], reverse=True)
+    cvx = sorted(convex_fuse(ch, w, n_tok=4, t_dist=0.6, g_norm=0).values(), key=lambda x: x["score"], reverse=True)
+    assert rrf[0]["ref"] == "meh"  # 문제의 재현
+    assert cvx[0]["ref"] == "strong"  # 점수 기반 융합은 가까운 의미 일치를 앞세운다
+    assert 0.0 <= min(c["score"] for c in cvx) and max(c["score"] for c in cvx) <= 2.01
+    far = convex_fuse({"vector": [row("far", 0.9, cosine_distance=0.9)]}, w, n_tok=1, t_dist=0.6, g_norm=0)["far"]
+    assert far["score"] < 0.001  # 임계값 밖의 거리는 점수에 기여하지 않는다(동점 정리용 항만)
+
+
+def test_garbage_and_off_topic_queries_return_nothing(db):
+    """낱말도 개념도 없는 질문('ㅋㅋㅋㅋ')은 의미 검색이 엉뚱한 가장 가까운 글을 주지 않게 아무것도 찾지 않고, 낱말 하나만 겹치는 문서는 붙이지 않는다."""
+    from nhdip.knowledge.search import retrieve
+
+    with db() as s:
+        scope = _admin_scope(s)
+        empty = retrieve(s, scope, "ㅋㅋㅋㅋㅋ")
+        assert not empty.analysis and not empty.documents and empty.diagnostics["emptyQuery"] is True
+        assert empty.diagnostics["channels"]["vector"]["reason"].startswith("질문에서 검색할 낱말")
+        # 개념을 직접 넘기면(후속 질문 재작성 등) 낱말이 없어도 개념 채널은 동작한다
+        assert retrieve(s, scope, "ㅋㅋㅋㅋㅋ", concepts=["포용금융"]).analysis
+        # '방법' 한 낱말만 문서(통계방법론…)와 겹치는 엉뚱한 질문 — 이전에는 문서가 붙었다
+        r = retrieve(s, scope, "비 오는 날 우산 없이 가는 방법")
+        assert not r.documents and not r.analysis, [(h["title"], h["signals"]) for h in [*r.documents, *r.analysis]]
+        assert any("신호 기준 미달" in x.get("reason", "") for x in r.rejected)
+
+
+def test_calibration_decision_is_conservative():
+    """엉뚱한 질문과 정상 질문의 거리가 갈릴 때만 추천값을 쓰고, 겹치거나 재료가 모자라면 값을 바꾸지 않는다."""
+    from nhdip.knowledge.calibration import MARGIN, decide
+
+    pos = [0.20 + 0.01 * i for i in range(20)]  # 0.20 ~ 0.39
+    neg = [0.55 + 0.02 * i for i in range(16)]  # 0.55 ~ 0.85
+    ok = decide(pos, neg)
+    assert ok["confident"] and ok["suggested"] == round(sorted(neg)[round(0.25 * 15)] - MARGIN, 2) and ok["suggested"] > ok["positives"]["p90"]
+    overlap = decide([0.5 + 0.01 * i for i in range(20)], [0.45 + 0.02 * i for i in range(16)])
+    assert overlap["confident"] is False and "겹칩니다" in overlap["note"]
+    few = decide([0.3, 0.4], [0.7, 0.8])
+    assert few["suggested"] is None and few["confident"] is False
+
+
+def test_calibrate_command_and_admin_api(db, fake_embedder):
+    from nhdip.knowledge.calibration import CALIBRATION_KEY as CAL_KEY
+    from nhdip.knowledge.calibration import apply_calibration, calibrate, calibrated_model
+    from nhdip.knowledge.maintenance import embed_pending
+    from nhdip.models import Setting
+
+    with db() as s:
+        embed_pending(s, limit=100_000)
+        rep = calibrate(s)
+        assert rep["model"] == "fake-emb" and rep["dim"] == 32 and rep["negatives"]["n"] == 16 and rep["positives"]["n"] >= 5
+        before = s.get(Setting, "knowledge.search").value.get("max_cosine_distance")
+        ev_before = s.get(Setting, "evidence.policy").value
+        # 확신 없는 결과는 어떤 경우에도 적용하지 않는다(설정 · 보정 기록 모두 그대로)
+        with pytest.raises(ValueError):
+            apply_calibration(s, {**rep, "confident": False, "suggested": 0.31}, "tester")
+        assert calibrated_model(s) is None
+        # 확신할 수 있는 결과(합성) — 청크 검색과 문서 근거 선별이 같은 기준을 쓰도록 둘 다 갱신하고, 보정한 모델을 기록
+        apply_calibration(s, {**rep, "confident": True, "suggested": 0.31, "note": "ok"}, "tester")
+        s.commit()
+        assert s.get(Setting, "knowledge.search").value["max_cosine_distance"] == 0.31
+        assert s.get(Setting, "evidence.policy").value["max_cosine_distance"] == 0.31
+        assert {k: v for k, v in s.get(Setting, "evidence.policy").value.items() if k != "max_cosine_distance"} == {k: v for k, v in ev_before.items() if k != "max_cosine_distance"}
+        assert calibrated_model(s) == "fake-emb"
+        from nhdip.preflight import run_checks
+
+        item = {i["key"]: i for i in run_checks(s)["items"]}["knowledge_index"]
+        assert "보정 때와 다름" not in item["message"] and "미보정" not in item["message"]
+        # 임베딩 모델이 보정 때와 달라지면 경고(눈금이 모델마다 달라 의미 기준이 어긋남)
+        s.get(Setting, CAL_KEY).value = {**s.get(Setting, CAL_KEY).value, "model": "other-emb"}
+        s.commit()
+        item = {i["key"]: i for i in run_checks(s)["items"]}["knowledge_index"]
+        assert item["level"] == "warn" and "보정 때와 다름(other-emb → fake-emb)" in item["message"] and "kb-calibrate" in item["fix"]
+        # 되돌림 — 다른 시험에 영향이 없도록
+        s.get(Setting, "knowledge.search").value = {**s.get(Setting, "knowledge.search").value, "max_cosine_distance": before}
+        s.get(Setting, "evidence.policy").value = ev_before
+        s.delete(s.get(Setting, CAL_KEY))
+        s.commit()
+    admin = _admin()
+    r = admin.post("/admin/knowledge/calibrate", json={"apply": False})
+    assert r.status_code == 200 and r.json()["model"] == "fake-emb" and "applied" not in r.json()
+    with db() as s:
+        assert s.get(Setting, "knowledge.search").value.get("max_cosine_distance") == before  # 측정만 했으므로 설정은 그대로
+    st = admin.get("/admin/knowledge/status").json()
+    assert st["distance"]["fusion"] == "convex" and isinstance(st["distance"]["threshold"], float)
+
+
+def test_calibrate_without_embedding_model_is_a_conflict_not_an_error(db):
+    admin = _admin()
+    r = admin.post("/admin/knowledge/calibrate", json={"apply": False})
+    assert r.status_code == 409 and "임베딩" in r.json()["detail"]
+    from nhdip.cli import main
+
+    assert main(["kb-calibrate"]) == 2  # 모델이 없으면 종료 코드 2 + 안내
+
+
 def test_keyword_channel_stems_and_relaxation_stages():
     """키워드 채널은 어절(접두 낱말) 단위로 세고, 많이 맞춘 후보부터 단계적으로 찾는다(대량 데이터에서 전체 OR 순위 계산을 피함)."""
     from nhdip.knowledge.search import MAX_RELAX_TERMS, _relax_stages, _stems
@@ -568,6 +717,35 @@ def test_keyword_channel_stems_and_relaxation_stages():
     assert [len(x) for x in _relax_stages(list("abcde"))] == [1, 5, 10, 10]  # 5어절 — 최소 단계는 2어절
     assert [len(x) for x in _relax_stages(list("abcdef"))] == [1, 6, 15, 20]  # 6어절 → 3어절까지(20조합)
     assert MAX_RELAX_TERMS == 7
+
+
+def test_keyword_channel_prunes_stems_missing_from_the_index_without_changing_results(db, monkeypatch):
+    """색인에 한 건도 없는 어절은 조합에서 빼도 결과가 같고(없는 어절이 든 AND 조합은 결과가 없다), 최소 어절 수에 못 미치면 후보 자체가 없다."""
+    from nhdip.knowledge import search as S
+    from nhdip.knowledge.access import kb_filter
+
+    with db() as s:
+        scope = _admin_scope(s)
+        filt, fp = kb_filter(scope)
+        stems = ["포용금융", "충당금", "비중", "쿼쿼없는낱말", "퀴퀴없는낱말"]
+        assert S._live_stems(s, filt, fp, stems) == ["포용금융", "충당금", "비중"]
+        assert S._live_stems(s, filt, fp, []) == []
+        for q in ("포용금융 충당금 비중 쿼쿼없는낱말", "포용금융 충당금 비중 쿼쿼없는낱말 퀴퀴없는낱말", "소기업 6B 등급 부도율은 예측 대비 어떤가요", "기업여신 증가율 목표 대비 이탈 존재안함낱말"):
+            terms = terms_of(q)
+            pruned = S._kb_keyword(s, scope, terms, 8, 3000)
+            monkeypatch.setattr(S, "_live_stems", lambda session, f, p, st: list(st))  # 가지치기 끔 = 이전 동작
+            full = S._kb_keyword(s, scope, terms, 8, 3000)
+            monkeypatch.undo()
+            assert [round(r["raw"], 6) for r in pruned] == [round(r["raw"], 6) for r in full], q  # 같은 점수 분포
+            if pruned:  # 마지막 점수와 동점인 후보는 어느 것이 잘려도 같은 결과이므로, 그보다 높은 점수의 후보가 같은지 본다
+                last = pruned[-1]["raw"]
+                assert {r["ref"] for r in pruned if r["raw"] > last} == {r["ref"] for r in full if r["raw"] > last}, q
+        # 살아 있는 어절이 최소 어절 수(원래 어절의 34%)에 못 미치면 조회 없이 빈 결과
+        assert S._kb_keyword(s, scope, terms_of("포용금융 쿼쿼없는낱말 퀴퀴없는낱말 쿠쿠없는낱말"), 8, 3000) == []
+    # 최소 단계는 원래 어절 수 기준(7어절의 34% 올림 = 3) — 살아 있는 어절이 그보다 적으면 조합이 없고, 같으면 전부 맞춤 한 단계뿐
+    assert S._relax_stages(["a", "b"], 0.34, total=7) == []
+    assert S._relax_stages(["a", "b", "c"], 0.34, total=7) == [["a:* & b:* & c:*"]]
+    assert [len(x) for x in S._relax_stages(list("abcde"), 0.34, total=7)] == [1, 5, 10]
 
 
 def test_keyword_candidate_cap_and_expand_timing(db):
@@ -726,3 +904,416 @@ def test_assist_fallback_lists_analysis_results_without_llm(db):
     assert r["mode"] == "fallback" and r["analysis"] and any(ln.startswith("분석 결과 —") for ln in r["answer"].splitlines())
     nothing = _ask(risk, "ㅋㅋㅋ ㅎㅎㅎ")
     assert nothing["analysis"] == [] and "찾지 못했습니다" in nothing["answer"]
+
+
+# ═════════════════════════ 운영 보강 — 속도 제한 · 개인정보 가림 · 품질 지표 · 경보 ═════════════════════════
+def _set_setting(db, key: str, patch: dict) -> dict:
+    """설정 사전의 일부 키를 바꾸고 바꾸기 전 값을 돌려준다(시험이 끝나면 되돌리기 위해)."""
+    from nhdip.models import Setting
+
+    with db() as s:
+        st = s.get(Setting, key)
+        before = dict(st.value)
+        st.value = {**st.value, **patch}
+        s.commit()
+    return before
+
+
+def _restore_setting(db, key: str, before: dict) -> None:
+    from nhdip.models import Setting
+
+    with db() as s:
+        s.get(Setting, key).value = before
+        s.commit()
+
+
+def test_feedback_and_scope_are_rate_limited_per_user(db):
+    from nhdip.models import AuditLog
+
+    admin = _admin()
+    risk, hq = _user(admin, "20269102", "T211"), _user(admin, "20269101", "T121")
+    def count_fb() -> int:
+        with db() as s:
+            return s.execute(select(func.count()).select_from(AuditLog).where(AuditLog.action == "assist.feedback", AuditLog.actor.in_(["20269102", "20269101"]))).scalar() or 0
+
+    base_fb = count_fb()  # 감사 기록은 시험 사이에 쌓이므로(추가만 가능) 이 시험이 더한 만큼으로 센다
+    before = _set_setting(db, "auth.rate_limits", {"assist_feedback": [2, 60], "assist_scope": [3, 60]})
+    try:
+        fb = {"question": "포용금융 충당금 비중은?", "helpful": True, "mode": "fallback", "sourceCount": 2}
+        assert [risk.post("/assist/feedback", json=fb).status_code for _ in range(3)] == [200, 200, 429]
+        r = risk.post("/assist/feedback", json=fb)
+        assert r.status_code == 429 and int(r.headers["Retry-After"]) >= 1
+        assert hq.post("/assist/feedback", json=fb).status_code == 200  # 사용자별로 따로 센다
+        assert [risk.get("/assist/scope").status_code for _ in range(4)] == [200, 200, 200, 429]
+    finally:
+        _restore_setting(db, "auth.rate_limits", before)
+    assert count_fb() - base_fb == 3  # 거부된 요청은 감사 기록을 부풀리지 않는다 (허용된 2건 + 다른 사용자 1건만)
+    # 새 제한 이름은 기존 DB 의 설정에 없어도 기본값으로 동작한다(대조가 없는 키는 기본값을 쓴다)
+    from nhdip import ratelimit
+
+    assert ratelimit.DEFAULTS["assist_feedback"] and ratelimit.DEFAULTS["assist_scope"]
+
+
+def test_assist_audit_masks_personal_data_in_questions(db):
+    from nhdip.models import AuditLog
+
+    admin = _admin()
+    risk = _user(admin, "20269102", "T211")
+    pii_q = "주민번호 900101-1234567 고객 연락처 010-1234-5678 의 포용금융 충당금 비중은?"
+    assert _ask(risk, pii_q)["question"] == pii_q  # 답변 처리에는 질문 원문 그대로(검색 · 서술) — 기록만 가린다
+    assert risk.post("/assist/feedback", json={"question": pii_q, "helpful": False, "mode": "fallback", "sourceCount": 0}).status_code == 200
+    assert admin.post("/admin/knowledge/search", json={"query": pii_q}).status_code == 200
+    with db() as s:  # 감사 기록은 시험 사이에 쌓이므로(추가만 가능) 전부 보고, 이 시험의 기록은 가림 표시로 찾는다
+        rows = s.execute(select(AuditLog.action, AuditLog.detail).where(AuditLog.action.in_(["assist.ask", "assist.feedback", "admin.knowledge.search"]))).all()
+        mine: dict[str, str] = {}
+        for a, d in rows:
+            t = json.dumps(d, ensure_ascii=False)
+            assert "900101-1234567" not in t and "010-1234-5678" not in t, a  # 어느 기록에도 원문이 없다
+            if "주민등록번호 가림" in t:
+                mine[a] = t
+        assert set(mine) == {"assist.ask", "assist.feedback", "admin.knowledge.search"}
+        assert all("휴대전화 가림" in t and "포용금융" in t for t in mine.values())  # 가린 자리만 바뀌고 나머지 질문은 남아 운영에 쓸 수 있다
+    # 가림을 끄면(설정 privacy.policy.mask_assist_audit=false) 원문 — 관리자의 선택
+    before = _set_setting(db, "privacy.policy", {"mask_assist_audit": False})
+    try:
+        assert risk.post("/assist/feedback", json={"question": "연락처 010-9999-8888", "helpful": True}).status_code == 200
+        with db() as s:
+            assert s.execute(select(func.count()).select_from(AuditLog).where(AuditLog.action == "assist.feedback", AuditLog.detail["question"].astext.like("%010-9999-8888%"))).scalar() == 1
+    finally:
+        _restore_setting(db, "privacy.policy", before)
+
+
+def test_quality_metrics_from_audit_records(db):
+    from nhdip.knowledge.quality import quality
+    from nhdip.models import AuditLog
+
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+
+    from nhdip.knowledge.quality import _rate
+
+    # 감사 기록은 추가만 가능하고 시험 사이에 쌓이므로(트리거로 수정 · 삭제 금지) 이 시험이 더한 만큼의 변화로 확인한다
+    mark = f"품질시험{uuid4().hex[:8]}"
+    u1, u2 = f"qa-{uuid4().hex[:6]}", f"qa-{uuid4().hex[:6]}"
+
+    def add(action, actor, at=None, **detail):
+        with db() as s:
+            row = AuditLog(actor=actor, action=action, target_kind="assist", detail=detail)
+            if at is not None:
+                row.at = at
+            s.add(row)
+            s.commit()
+
+    with db() as s:
+        b = quality(s, 7)
+    for _ in range(3):
+        add("assist.ask", u1, question=f"{mark} 없는 자료 질문", mode="fallback", sources=0, verified=True, semantic=False, rewritten=False)
+    add("assist.ask", u2, question="포용금융 충당금 비중은?", mode="llm", sources=4, verified=True, semantic=True, rewritten=True)
+    add("assist.ask", u2, question=f"{mark} 연락처 010-1234-5678 확인", mode="llm", sources=0, verified=False, semantic=True, rewritten=False)  # 가림 설정 이전에 쌓인 원문 기록
+    add("assist.feedback", u1, question=f"{mark} 없는 자료 질문", helpful=False, mode="fallback", sourceCount=0)
+    add("assist.feedback", u2, question="포용금융 충당금 비중은?", helpful=True, mode="llm", sourceCount=4)
+    add("assist.feedback", u2, question="포용금융 충당금 비중은?", helpful=True, mode="llm", sourceCount=4)
+    with db() as s:
+        q = quality(s, 7)
+    a, f = q["ask"], q["feedback"]
+    d = {k: a[k] - b["ask"][k] for k in ("total", "users", "noSource", "fallback", "unverified")}
+    assert d == {"total": 5, "users": 2, "noSource": 4, "fallback": 3, "unverified": 1}
+    assert a["noSourceRate"] == round(a["noSource"] / a["total"], 3) and a["fallbackRate"] == round(a["fallback"] / a["total"], 3)  # 비율은 같은 기간 합계 기준
+    assert {k: f[k] - b["feedback"][k] for k in ("total", "helpful", "unhelpful")} == {"total": 3, "helpful": 2, "unhelpful": 1}
+    assert f["helpfulRate"] == round(f["helpful"] / (f["helpful"] + f["unhelpful"]), 3)
+    top = {x["question"]: x for x in q["unanswered"]}
+    assert top[f"{mark} 없는 자료 질문"]["count"] == 3  # 같은 질문은 합쳐 센다
+    assert not any("010-1234-5678" in x["question"] for x in q["unanswered"])  # 읽을 때도 가린다(가림 설정 이전 원문 기록 대비)
+    assert any(mark in x["question"] and "휴대전화 가림" in x["question"] for x in q["unanswered"])
+    assert [x["question"] for x in q["unhelpful"] if mark in x["question"]] == [f"{mark} 없는 자료 질문"]
+    assert q["daily"] and sum(x["total"] for x in q["daily"]) == a["total"]
+    # 기간 밖(40일 전) 기록은 7일 집계에 들지 않고 90일에는 든다
+    add("assist.ask", u1, at=datetime.now(timezone.utc) - timedelta(days=40), question=f"{mark} 오래된 질문", mode="llm", sources=0, verified=True, semantic=False, rewritten=False)
+    with db() as s:
+        assert quality(s, 7)["ask"]["total"] == a["total"] and quality(s, 90)["ask"]["total"] == quality(s, 30)["ask"]["total"] + 1
+    assert _rate(0, 0) is None and _rate(1, 3) == 0.333  # 0 으로 나누지 않는다
+    # 관리자 API — 기간 검증 · 권한
+    admin = _admin()
+    r = admin.get("/admin/knowledge/quality", params={"days": 30})
+    assert r.status_code == 200 and r.json()["days"] == 30 and r.json()["ask"]["total"] >= a["total"]
+    assert admin.get("/admin/knowledge/quality", params={"days": 0}).status_code == 422 and admin.get("/admin/knowledge/quality", params={"days": 91}).status_code == 422
+    risk = _user(admin, "20269102", "T211")
+    assert risk.get("/admin/knowledge/quality").status_code == 403
+
+
+def test_knowledge_stale_alerts_fire_once_per_episode(db):
+    from datetime import datetime, timedelta, timezone
+
+    from nhdip import alerts
+    from nhdip.knowledge.maintenance import get_state, set_state
+    from nhdip.models import KbChunk
+    from nhdip.models.runtime import Alert
+
+    def kinds():
+        with db() as s:
+            return [a.dedupe_key for a in s.execute(select(Alert).where(Alert.kind == "knowledge_stale")).scalars()]
+
+    now = datetime.now(timezone.utc)
+    with db() as s:
+        set_state(s, reconciled_at=now.isoformat(), stale_since=None)
+        s.commit()
+        alerts.scan(s)
+    assert kinds() == []  # 정상 — 대조가 방금 돌았고 뒤처진 것이 없다
+    # (1) 대조가 멈춤
+    old = (now - timedelta(minutes=40)).isoformat()
+    with db() as s:
+        set_state(s, reconciled_at=old)
+        s.commit()
+        assert alerts.scan(s) >= 1
+        alerts.scan(s)  # 같은 사건은 한 번만
+    assert kinds() == [f"knowledge_stale:reconcile:{old}"]
+    # (2) 대조는 도는데 뒤처진 산출물이 남음 — 처음 본 때를 기록하고, 기준 시간이 지나야 알린다
+    with db() as s:
+        set_state(s, reconciled_at=now.isoformat())
+        s.execute(update(KbChunk).where(KbChunk.source_key == "goals").values(source_generation=-1))  # 산출물 세대와 달라져 '뒤처짐'
+        s.commit()
+        alerts.scan(s)
+        since = get_state(s)["stale_since"]
+        assert since and len(kinds()) == 1  # 아직 기준 시간 전
+        set_state(s, stale_since=(now - timedelta(minutes=30)).isoformat())
+        s.commit()
+        alerts.scan(s)
+        alerts.scan(s)
+    assert len([k for k in kinds() if k.startswith("knowledge_stale:behind:")]) == 1
+    # 따라잡으면 표지를 지운다(다음 지연은 새 사건)
+    with db() as s:
+        from nhdip.knowledge.maintenance import reconcile
+
+        reconcile(s)
+        s.commit()
+        alerts.scan(s)
+        assert get_state(s).get("stale_since") is None
+        s.execute(delete(Alert).where(Alert.kind == "knowledge_stale"))
+        set_state(s, reconciled_at=old)
+        s.commit()
+    # 끄면 점검하지 않는다
+    before = _set_setting(db, "alerts.policy", {"rules": {"knowledge_stale": {"enabled": False}}})
+    try:
+        with db() as s:
+            alerts.scan(s)
+        assert kinds() == []
+    finally:
+        _restore_setting(db, "alerts.policy", before)
+        with db() as s:
+            set_state(s, reconciled_at=datetime.now(timezone.utc).isoformat())
+            s.execute(delete(Alert).where(Alert.kind == "knowledge_stale"))
+            s.commit()
+
+
+# ═════════════════════════ 스트리밍 응답 (SSE) ═════════════════════════
+class _FakeStream:
+    """httpx.stream 대역 — 상태 코드와 SSE 줄을 돌려준다. fail_after 가 있으면 그만큼 줄을 낸 뒤 연결 오류."""
+
+    def __init__(self, lines, status=200, fail_after=None):
+        self.lines, self.status_code, self.fail_after, self.closed = lines, status, fail_after, False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.closed = True
+        return False
+
+    def read(self):
+        return "\n".join(self.lines).encode()
+
+    def iter_lines(self):
+        for i, ln in enumerate(self.lines):
+            if self.fail_after is not None and i >= self.fail_after:
+                raise httpx.ReadError("연결 끊김")
+            yield ln
+
+
+def _sse_lines(pieces, usage=None, finish="stop", tool_calls=None):
+    out = [f"data: {json.dumps({'choices': [{'delta': {'content': p}}]}, ensure_ascii=False)}" for p in pieces]
+    for i, tc in enumerate(tool_calls or []):
+        out.append(f"data: {json.dumps({'choices': [{'delta': {'tool_calls': [{'index': i, **tc}]}}]})}")
+    out.append(f"data: {json.dumps({'choices': [{'delta': {}, 'finish_reason': finish}]})}")
+    if usage:
+        out.append(f"data: {json.dumps({'choices': [], 'usage': usage})}")
+    out.append("data: [DONE]")
+    return out
+
+
+def _events(body: str) -> list[tuple[str, dict]]:
+    out = []
+    for block in body.split("\n\n"):
+        ev, data = None, None
+        for ln in block.splitlines():
+            if ln.startswith("event: "):
+                ev = ln[7:]
+            elif ln.startswith("data: "):
+                data = json.loads(ln[6:])
+        if ev:
+            out.append((ev, data))
+    return out
+
+
+def test_verify_numbers_ignores_markdown_list_and_citation_numbers():
+    from nhdip.api.assist import verify_numbers
+
+    ans = "## 1. 요약\n1. 충당금 비중은 9.16% 입니다 [1]\n10. 추가 설명 [12]\n- 증가율 4.04%\n| 항목 | 값 |\n|---|---|\n| 비중 | 9.16 |"
+    ok = verify_numbers(ans, ["충당금 비중 9.16 증가율 4.04"])
+    assert ok["passed"], ok  # 목록 번호(1. · 10.) · 인용 번호([1] · [12]) 는 답변이 말한 숫자가 아니다
+    bad = verify_numbers("1. 비중은 77.7% 입니다 [3]", ["충당금 비중 9.16"])
+    assert not bad["passed"] and bad["unverified"] == ["77.7"]  # 진짜 숫자는 그대로 검증
+
+
+def test_chat_stream_collects_deltas_tool_calls_usage_and_logs_the_call(db, monkeypatch):
+    from nhdip.llm import chat_stream, resolve
+    from nhdip.llm.client import LlmError
+    from nhdip.models import Agent, LlmCall, LlmProfile
+
+    with db() as s:
+        s.execute(select(LlmProfile).where(LlmProfile.name == "default")).scalar().model = "coder.general.multimodal"
+        s.get(Agent, "query_assistant").override = {"tools_enabled": True}
+        s.commit()
+    seen = {}
+
+    def fake(method, url, headers=None, json=None, timeout=None):  # noqa: A002
+        seen["body"] = json
+        seen["streams"] = seen.get("streams", [])
+        st = _FakeStream(_sse_lines(["포용", "금융 ", "9.16%"], usage={"prompt_tokens": 11, "completion_tokens": 5}))
+        seen["streams"].append(st)
+        return st
+
+    monkeypatch.setattr("nhdip.llm.client.httpx.stream", fake)
+    try:
+        with db() as s:
+            cfg = resolve(s, "query_assistant")
+            ev = list(chat_stream(s, cfg, [{"role": "user", "content": "안녕"}], purpose="assist"))
+        assert [k for k, _ in ev[:-1]] == ["delta"] * 3 and "".join(v for k, v in ev if k == "delta") == "포용금융 9.16%"
+        kind, res = ev[-1]
+        assert kind == "result" and res.text == "포용금융 9.16%" and res.tool_calls == [] and res.message["content"] == res.text
+        assert seen["body"]["stream"] is True and seen["body"]["stream_options"] == {"include_usage": True} and seen["streams"][0].closed
+        with db() as s:
+            row = s.get(LlmCall, res.call_id)
+            assert row.status == "ok" and row.prompt_tokens == 11 and row.completion_tokens == 5 and row.output_text == "포용금융 9.16%" and row.params["stream"] is True
+
+        # 도구 호출 조각(이름 · 인자가 여러 조각으로 옴)을 하나로 모은다
+        tc = [{"id": "c1", "type": "function", "function": {"name": "calc_", "arguments": '{"a":'}}, {"id": "", "function": {"name": "growth", "arguments": ' 1}'}}]
+        lines = _sse_lines([], tool_calls=[tc[0]], finish="tool_calls")
+        lines.insert(2, f"data: {json.dumps({'choices': [{'delta': {'tool_calls': [{'index': 0, **tc[1]}]}}]})}")
+        monkeypatch.setattr("nhdip.llm.client.httpx.stream", lambda *a, **k: _FakeStream(lines))
+        with db() as s:
+            ev = list(chat_stream(s, resolve(s, "query_assistant"), [{"role": "user", "content": "x"}], tools=[{"type": "function", "function": {"name": "calc_growth"}}]))
+        call = ev[-1][1].tool_calls[0]
+        assert call["id"] == "c1" and call["function"] == {"name": "calc_growth", "arguments": '{"a": 1}'}
+
+        # 첫 글자 전의 5xx 는 재시도, 글자를 낸 뒤의 끊김은 되돌릴 수 없으므로 LlmError (글이 겹치지 않게)
+        monkeypatch.setattr("nhdip.llm.client.time.sleep", lambda s: None)
+        tries = []
+
+        def flaky(*a, **k):
+            tries.append(1)
+            return _FakeStream(["boom"], status=503) if len(tries) == 1 else _FakeStream(_sse_lines(["다시 ", "성공"]))
+
+        monkeypatch.setattr("nhdip.llm.client.httpx.stream", flaky)
+        with db() as s:
+            ev = list(chat_stream(s, resolve(s, "query_assistant"), [{"role": "user", "content": "x"}]))
+        assert len(tries) == 2 and ev[-1][1].text == "다시 성공"
+        monkeypatch.setattr("nhdip.llm.client.httpx.stream", lambda *a, **k: _FakeStream(_sse_lines(["일부 ", "글", "끝"]), fail_after=2))
+        got = []
+        with pytest.raises(LlmError):
+            with db() as s:
+                for k, v in chat_stream(s, resolve(s, "query_assistant"), [{"role": "user", "content": "x"}]):
+                    got.append((k, v))
+        assert [v for k, v in got] == ["일부 ", "글"]  # 글자를 낸 뒤 끊기면 재시도하지 않는다(같은 글이 겹쳐 나오지 않게)
+    finally:
+        _llm_off(db)
+
+
+def test_assist_stream_fallback_has_stages_meta_and_done_like_plain_response(db):
+    from nhdip.models import AuditLog
+
+    admin = _admin()
+    risk = _user(admin, "20269102", "T211")
+    q = "포용금융 충당금 비중은 얼마인가요?"
+    plain = _ask(risk, q)
+    r = risk.post("/assist/stream", json={"question": q})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream") and r.headers["cache-control"] == "no-cache, no-transform"
+    ev = _events(r.text)
+    names = [e for e, _ in ev]
+    assert names[:3] == ["stage", "stage", "stage"] and names.index("meta") > names.index("stage") and names[-1] == "done" and "delta" not in names  # LLM 꺼짐 → 정리 답은 done 에 한 번에
+    assert [d["stage"] for e, d in ev if e == "stage"] == ["scope", "understand", "search"]
+    meta, done = dict(ev)["meta"], dict(ev)["done"]
+    assert "answer" not in meta and meta["sources"] == plain["sources"] and meta["scope"] == plain["scope"]  # 출처 카드는 답보다 먼저
+    assert done["mode"] == "fallback" and done["answer"] == plain["answer"] and set(done) >= set(plain) - {"llmCallIds"}
+    with db() as s:  # 스트림 끝에 감사 기록(질문 · 컬렉션)이 남는다
+        last = s.execute(select(AuditLog).where(AuditLog.action == "assist.ask", AuditLog.actor == "20269102").order_by(AuditLog.id.desc())).scalars().first()
+        assert last.detail["sources"] == len(plain["sources"]) and last.detail["mode"] == "fallback"
+    # 접근 범위는 /assist 와 같다 — 신용리스크 컬렉션은 종합기획부 사용자의 스트림에 나오지 않는다
+    hq = _user(admin, "20269101", "T121")
+    q_risk = "소기업 6B 등급 실제부도율은 예측 대표값 대비 어떤가요?"
+    hq_meta = dict(_events(hq.post("/assist/stream", json={"question": q_risk}).text))["meta"]
+    hq_keys = {a["sourceKey"] for a in hq_meta["analysis"]}
+    assert hq_keys == {a["sourceKey"] for a in _ask(hq, q_risk)["analysis"]} and not (hq_keys & RISK_KEYS)
+    # 속도 제한 · 인증 · 검증은 /assist 와 같다
+    assert _client().post("/assist/stream", json={"question": "포용금융"}).status_code in (401, 403)
+    assert risk.post("/assist/stream", json={"question": "x"}).status_code == 422
+
+
+def test_assist_stream_llm_streams_markdown_and_verifies_numbers(db, monkeypatch):
+    from nhdip.models import LlmCall
+
+    seen = _llm_on(db, monkeypatch, "미사용")
+    answer = "충당금 비중은 **9.16%** 입니다.\n\n1. 근거 수치 확인 [지표:share_now]\n2. 증가율 확인\n\n| 항목 | 값 |\n|---|---|\n| 비중 | 9.16 |"
+    pieces = [answer[i : i + 7] for i in range(0, len(answer), 7)]
+    def capture(*a, **k):
+        seen["stream_body"] = k.get("json")
+        return _FakeStream(_sse_lines(pieces, usage={"prompt_tokens": 50, "completion_tokens": 30}))
+
+    monkeypatch.setattr("nhdip.llm.client.httpx.stream", capture)
+    try:
+        admin = _admin()
+        ev = _events(admin.post("/assist/stream", json={"question": "포용금융 충당금 비중은 얼마인가요?"}).text)
+        names = [e for e, _ in ev]
+        assert names.count("delta") == len(pieces) and names[-1] == "done" and "answer" in [d["stage"] for e, d in ev if e == "stage"]
+        assert names.index("meta") < names.index("delta")  # 출처는 글자보다 먼저
+        streamed = "".join(d["text"] for e, d in ev if e == "delta")
+        done = ev[-1][1]
+        assert streamed == answer == done["answer"] and done["mode"] == "llm"
+        assert done["verification"]["passed"] is True, done["verification"]  # 목록 번호 · 표의 9.16 은 확정 수치에 있다
+        prompt = seen["stream_body"]["messages"][1]["content"]
+        assert "마크다운" in prompt and "[분석:" in prompt and prompt.count("<<자료>>") >= 3 and seen["stream_body"]["stream"] is True
+        with db() as s:
+            row = s.get(LlmCall, done["llmCallIds"][0])
+            assert row.purpose == "assist" and row.params["stream"] is True and row.status == "ok"
+
+        # 글자를 낸 뒤 LLM 연결이 끊기면: reset 으로 화면의 글을 비우고 결정론 정리로 끝낸다
+        monkeypatch.setattr("nhdip.llm.client.time.sleep", lambda s: None)
+        monkeypatch.setattr("nhdip.llm.client.httpx.stream", lambda *a, **k: _FakeStream(_sse_lines(["반쯤 ", "쓰다가 ", "끊김"]), fail_after=2))
+        ev = _events(admin.post("/assist/stream", json={"question": "포용금융 충당금 비중은 얼마인가요?"}).text)
+        names = [e for e, _ in ev]
+        assert "reset" in names and names.index("reset") > names.index("delta") and names[-1] == "done"
+        assert ev[-1][1]["mode"] == "fallback" and "반쯤" not in ev[-1][1]["answer"]
+    finally:
+        _llm_off(db)
+
+
+def test_chat_stream_records_cancelled_call_when_consumer_stops(db, monkeypatch):
+    from nhdip.llm import chat_stream, resolve
+    from nhdip.models import Agent, LlmCall, LlmProfile
+
+    with db() as s:
+        s.execute(select(LlmProfile).where(LlmProfile.name == "default")).scalar().model = "coder.general.multimodal"
+        s.get(Agent, "query_assistant").override = {}
+        s.commit()
+    st = _FakeStream(_sse_lines(["가", "나", "다", "라"]))
+    monkeypatch.setattr("nhdip.llm.client.httpx.stream", lambda *a, **k: st)
+    try:
+        with db() as s:
+            g = chat_stream(s, resolve(s, "query_assistant"), [{"role": "user", "content": "x"}], purpose="assist_cancel_test")
+            assert next(g) == ("delta", "가") and next(g) == ("delta", "나")
+            g.close()  # 사용자가 [중지] → 연결을 닫고 호출 기록을 cancelled 로 남긴다
+        assert st.closed
+        with db() as s:
+            row = s.execute(select(LlmCall).where(LlmCall.purpose == "assist_cancel_test").order_by(LlmCall.created_at.desc())).scalars().first()
+            assert row.status == "cancelled" and row.output_text == "가나"
+    finally:
+        _llm_off(db)
