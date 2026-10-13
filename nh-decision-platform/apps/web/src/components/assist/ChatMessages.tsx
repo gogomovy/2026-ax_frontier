@@ -8,7 +8,7 @@ import { numberCites, type AssistAnalysis, type AssistEvidence, type AssistMeta,
 import { copyText } from "@/lib/clipboard";
 import { collectCites, parseMarkdown, plainForCopy } from "@/lib/markdown";
 import { Markdown, type CiteApi } from "./Markdown";
-import { IconCheck, IconChevron, IconCopy, IconRefresh, IconSpark, IconThumbDown, IconThumbUp } from "./icons";
+import { IconBot, IconCheck, IconChevron, IconCopy, IconRefresh, IconThumbDown, IconThumbUp } from "./icons";
 
 const SEVERITY_LABEL: Record<string, string> = { info: "정보", watch: "관찰", caution: "주의", critical: "심각" };
 const SEVERITY_TONE: Record<string, "info" | "attention" | "warning" | "critical"> = { info: "info", watch: "attention", caution: "warning", critical: "critical" };
@@ -17,7 +17,7 @@ const MISSING_LABEL: Record<string, string> = { external_policy: "외부 정책"
 export function Avatar() {
   return (
     <span aria-hidden="true" className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-circle bg-ink-deep text-white">
-      <IconSpark size={16} />
+      <IconBot size={17} />
     </span>
   );
 }
@@ -194,7 +194,7 @@ export function AssistantMessage({ m, isLast, busy, onRegenerate, onFeedback }: 
   const streaming = m.status === "streaming";
   const meta: AssistMeta | undefined = m.final ?? m.meta;
   const srcId = useId();
-  const [open, setOpen] = useState<boolean | null>(null); // null = 기본값(정리 답이면 펼침)
+  const [open, setOpen] = useState<boolean | null>(null); // null = 기본값(접힘)
   const [showInfo, setShowInfo] = useState(false);
   const [hot, setHot] = useState<{ no?: number; code?: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -211,9 +211,9 @@ export function AssistantMessage({ m, isLast, busy, onRegenerate, onFeedback }: 
     return { src: out, metric: byMetric };
   }, [numbered]);
 
-  const fallback = m.final?.mode === "fallback";
   const sourceCount = (meta?.analysis.length ?? 0) + (meta?.evidence.length ?? 0);
-  const sourcesOpen = open ?? (fallback && !streaming);
+  // 출처는 기본 접힘 — 답이 먼저 보이고, 번호 칩이나 [출처 N건] 을 눌렀을 때 펼친다 (LLM 미연결 정리 답도 같다 — 인용 번호가 본문에 달려 있다)
+  const sourcesOpen = open ?? false;
 
   const cites: CiteApi = {
     resolve: (kind, ref) => numbered.get(`${kind}:${ref}`),

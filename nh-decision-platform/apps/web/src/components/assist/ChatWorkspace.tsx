@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/primitives";
 import { apiGetC } from "@/lib/api-client";
 import type { ScopeItem } from "@/lib/assist-chat";
 import { AssistantMessage, UserMessage } from "./ChatMessages";
-import { IconArrowDown, IconClose, IconCollapse, IconExpand, IconList, IconPlus, IconSend, IconSpark, IconStop, IconTrash } from "./icons";
+import { ASSIST_NAME } from "./brand";
+import { IconArrowDown, IconBot, IconClose, IconCollapse, IconExpand, IconList, IconPlus, IconSend, IconStop, IconTrash } from "./icons";
 import type { useAssistChat } from "./useAssistChat";
 
 const EXAMPLES = [
@@ -142,8 +143,11 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
         >
           <IconList />
         </button>
-        <h2 id={titleId} className="text-[15px] font-bold text-ink-deep">
-          질문하기
+        <h2 id={titleId} className="flex items-center gap-2 text-[15px] font-bold text-ink-deep">
+          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-circle bg-ink-deep text-white">
+            <IconBot size={17} />
+          </span>
+          {ASSIST_NAME}
         </h2>
         <span className="hidden truncate text-[11.5px] text-stone sm:inline">확정 수치(계산 커널) · 우리 팀 분석 결과 · 근거 문서만으로 답합니다</span>
         <div className="ml-auto flex items-center gap-0.5">
@@ -209,11 +213,13 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
             <div className="mx-auto flex w-full max-w-[780px] flex-col gap-6 px-4 py-6">
               {!messages.length ? (
                 <div className="flex flex-col items-center pt-6 text-center">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-circle bg-ink-deep text-white">
-                    <IconSpark size={24} />
+                  <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-circle bg-ink-deep text-white shadow-panel">
+                    <IconBot size={30} />
                   </span>
-                  <p className="mt-4 text-[22px] font-bold text-ink-deep">무엇이 궁금하세요?</p>
-                  <p className="mt-1 max-w-[520px] text-[13px] leading-relaxed text-steel">확정된 수치와 우리 팀 분석 결과, 근거 문서에서 찾아 출처와 함께 답해요. 권한이 있는 범위만 검색합니다.</p>
+                  <p className="mt-4 text-[22px] font-bold text-ink-deep">안녕하세요, 무엇을 도와드릴까요?</p>
+                  <p className="mt-1 max-w-[520px] text-[13px] leading-relaxed text-steel">
+                    저는 {ASSIST_NAME}예요. 확정된 수치와 우리 팀 분석 결과, 근거 문서에서 찾아 출처와 함께 답해요. 권한이 있는 범위만 검색합니다.
+                  </p>
                   {scope ? (
                     <div className="mt-4 flex max-w-[600px] flex-wrap justify-center gap-1.5" role="group" aria-label="질문할 수 있는 범위">
                       {scope.map((c) => (

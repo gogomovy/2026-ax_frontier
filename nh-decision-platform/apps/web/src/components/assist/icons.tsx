@@ -13,6 +13,19 @@ export const IconChat = ({ size }: { size?: number }) => (
     <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h7A2.5 2.5 0 0 1 16 5.5v5a2.5 2.5 0 0 1-2.5 2.5H9l-3.5 3v-3H6.5A2.5 2.5 0 0 1 4 10.5z" />
   </Svg>
 );
+/** AI 챗봇 얼굴 — 안테나 · 둥근 머리 · 눈 · 귀, 오른쪽 위의 작은 반짝임(AI) */
+export const IconBot = ({ size }: { size?: number }) => (
+  <Svg size={size}>
+    <path d="M10 5V3.4" />
+    <circle cx="10" cy="2.7" r="0.9" fill="currentColor" stroke="none" />
+    <rect x="3.6" y="5" width="12.8" height="10.4" rx="3.6" />
+    <path d="M2 8.8v3.4M18 8.8v3.4" />
+    <circle cx="7.4" cy="10.1" r="1.15" fill="currentColor" stroke="none" />
+    <circle cx="12.6" cy="10.1" r="1.15" fill="currentColor" stroke="none" />
+    <path d="M8.2 12.9c.5.5 1.1.7 1.8.7s1.3-.2 1.8-.7" />
+    <path d="M7 15.4l-.9 2.3 3-1.7" />
+  </Svg>
+);
 export const IconSend = ({ size }: { size?: number }) => (
   <Svg size={size}>
     <path d="M10 16V4M5 9l5-5 5 5" strokeWidth={2} />

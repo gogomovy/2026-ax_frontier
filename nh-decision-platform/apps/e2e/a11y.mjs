@@ -2,7 +2,7 @@
 //   make a11y   (또는  cd apps/e2e && E2E_ADMIN_EMP=... E2E_ADMIN_PW=... node a11y.mjs)
 //
 // 자동 점검은 WCAG 준수를 판정하지 않는다 — 대비 · 이름 · 구조 같은 기계로 볼 수 있는 규칙만 본다.
-// 화면 낭독기 실사용 테스트와 전문가 검토는 별도로 필요하다. 질문하기 패널의 키보드 전용 흐름은 keyboard.mjs(make keyboard)가 자동으로 본다.
+// 화면 낭독기 실사용 테스트와 전문가 검토는 별도로 필요하다. AI 어시스턴트 패널의 키보드 전용 흐름은 keyboard.mjs(make keyboard)가 자동으로 본다.
 // 기본은 serious · critical 위반이 있으면 실패. A11Y_LEVEL=moderate 로 기준을 낮출 수 있다.
 import fs from "node:fs";
 import os from "node:os";

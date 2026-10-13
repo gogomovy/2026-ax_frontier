@@ -158,8 +158,8 @@ export default function KnowledgeAdmin() {
 
   return (
     <AdminPage
-      title="질문하기 색인"
-      description="질문하기가 찾는 자료(분석 결과 · 문서 · 용어)를 팀별 컬렉션으로 나누어 관리합니다. 담당 팀과 공개 범위를 바꾸면 다음 질문부터 적용되고, 포함 규칙을 바꾸면 워커가 1분 안에 다시 색인합니다."
+      title="AI 어시스턴트 색인"
+      description="AI 어시스턴트가 찾는 자료(분석 결과 · 문서 · 용어)를 팀별 컬렉션으로 나누어 관리합니다. 담당 팀과 공개 범위를 바꾸면 다음 질문부터 적용되고, 포함 규칙을 바꾸면 워커가 1분 안에 다시 색인합니다."
       actions={
         <>
           <Button size="sm" variant="quiet" onClick={status.reload}>
@@ -350,7 +350,7 @@ function QualityTab() {
   return (
     <>
       <Card
-        title="질문하기 품질"
+        title="AI 어시스턴트 품질"
         actions={
           <Select
             ariaLabel="집계 기간"
@@ -366,7 +366,7 @@ function QualityTab() {
       >
         <Loading error={q.error} loading={!d && q.loading} />
         {d ? (
-          <StatGrid columns={4} label="질문하기 품질 요약">
+          <StatGrid columns={4} label="AI 어시스턴트 품질 요약">
             <StatCard dataKey="q-total" label="질문 수" value={d.ask.total.toLocaleString("ko-KR")} unit="건" hint={`질문한 사람 ${d.ask.users}명 · 후속 질문 재작성 ${pctText(d.ask.rewrittenRate)}%`} />
             <StatCard
               dataKey="q-nosource"
@@ -542,7 +542,7 @@ function DiagnoseTab() {
     <>
       <Card title="사용자 관점으로 검색해 보기">
         <p className="mb-md text-[12.5px] text-steel">
-          그 사용자가 질문하기에서 같은 질문을 했을 때 어떤 컬렉션에서 무엇이 어떤 근거로 나오는지 봅니다. 읽기 전용이며 감사 로그에 남습니다. 사번을 비우면 관리자(전체 범위) 관점입니다.
+          그 사용자가 AI 어시스턴트에서 같은 질문을 했을 때 어떤 컬렉션에서 무엇이 어떤 근거로 나오는지 봅니다. 읽기 전용이며 감사 로그에 남습니다. 사번을 비우면 관리자(전체 범위) 관점입니다.
         </p>
         <form onSubmit={submit} className="grid grid-cols-1 gap-md md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
           <TextInput label="질문" value={query} onChange={setQuery} placeholder="예: 포용금융 충당금 비중은?" />

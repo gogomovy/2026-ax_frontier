@@ -24,7 +24,7 @@ const LABEL: Record<string, string> = {
   narration: "서술 숫자 출처(마커)",
   retrieval: "근거 검색",
   assist: "질의 지표 선택",
-  knowledge: "팀별 질문하기 범위",
+  knowledge: "팀별 AI 어시스턴트 범위",
 };
 
 /** 골든셋 평가 (작업 8.1) — 시나리오 기준값 · 추천안 결정값과 현재 계산 · 화면 · 검색 결과를 대조 */

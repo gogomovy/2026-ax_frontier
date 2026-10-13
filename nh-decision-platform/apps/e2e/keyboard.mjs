@@ -1,9 +1,9 @@
-// 질문하기 패널 키보드 전용 점검 (ASK-04 · 접근성) — 마우스 없이 Tab · Shift+Tab · Enter · Space · Esc · Alt+Q 만으로 쓸 수 있는지 확인한다.
+// AI 어시스턴트 패널 키보드 전용 점검 (ASK-04 · 접근성) — 마우스 없이 Tab · Shift+Tab · Enter · Space · Esc · Alt+Q 만으로 쓸 수 있는지 확인한다.
 //   make keyboard   (또는  cd apps/e2e && E2E_ADMIN_EMP=... E2E_ADMIN_PW=... node keyboard.mjs)
 //
-// 보는 것: ① 로그인 폼을 키보드로 제출 ② 화면 어디서든 Tab 만으로 '질문하기' 버튼에 닿고 포커스 표시가 보임 ③ Enter 로 열면 포커스가 패널 안으로 들어감
+// 보는 것: ① 로그인 폼을 키보드로 제출 ② 화면 어디서든 Tab 만으로 'AI 어시스턴트' 버튼에 닿고 포커스 표시가 보임 ③ Enter 로 열면 포커스가 패널 안으로 들어감
 //          ④ Tab · Shift+Tab 이 패널 밖으로 나가지 않음(포커스 가둠) ⑤ 질문을 키보드로 입력 · 제출하면 답이 나오고 피드백 버튼에 Tab 으로 닿음
-//          ⑥ Esc 로 닫히고 포커스가 '질문하기' 버튼으로 돌아옴 ⑦ Space 로도 다시 열림, 단축키 Alt+Q 로 어디서든 열고 닫음 ⑧ Shift+Enter 줄바꿈 · 다시 생성도 키보드로
+//          ⑥ Esc 로 닫히고 포커스가 'AI 어시스턴트' 버튼으로 돌아옴 ⑦ Space 로도 다시 열림, 단축키 Alt+Q 로 어디서든 열고 닫음 ⑧ Shift+Enter 줄바꿈 · 다시 생성도 키보드로
 // 화면 낭독기로 읽히는지는 자동으로 알 수 없다 — 낭독기 실사용은 별도로 필요하다. 이 점검은 키보드 흐름이 끊기지 않는지만 본다.
 import fs from "node:fs";
 import os from "node:os";
@@ -78,14 +78,14 @@ try {
   await Promise.all([press("Enter"), page.waitForNavigation({ waitUntil: "networkidle0", timeout: 30000 })]);
   ok("로그인: 키보드(Tab · Enter)로 제출", page.url().endsWith(START), page.url());
 
-  // ② 질문하기 버튼까지 Tab 만으로 — 뒤로(Shift+Tab)로 바로 닿는 위치(문서 끝)가 아니라 앞에서부터
+  // ② AI 어시스턴트 버튼까지 Tab 만으로 — 뒤로(Shift+Tab)로 바로 닿는 위치(문서 끝)가 아니라 앞에서부터
   await page.evaluate(() => {
     document.activeElement?.blur?.();
     window.scrollTo(0, 0);
   });
-  const toBtn = await tabUntil((f) => f.label.includes("질문하기") && f.tag === "BUTTON", 120);
-  ok("질문하기 버튼: Tab 으로 닿음", toBtn.n > 0, toBtn.n > 0 ? `${toBtn.n}번째 Tab` : `닿지 못함 (마지막 포커스: ${toBtn.f.label})`);
-  ok("질문하기 버튼: 포커스 표시가 보임", toBtn.f.indicator === true);
+  const toBtn = await tabUntil((f) => f.label.includes("AI 어시스턴트") && f.tag === "BUTTON", 120);
+  ok("AI 어시스턴트 버튼: Tab 으로 닿음", toBtn.n > 0, toBtn.n > 0 ? `${toBtn.n}번째 Tab` : `닿지 못함 (마지막 포커스: ${toBtn.f.label})`);
+  ok("AI 어시스턴트 버튼: 포커스 표시가 보임", toBtn.f.indicator === true);
 
   // ③ Enter 로 열기 → 포커스가 패널 안으로
   await press("Enter");
@@ -151,13 +151,13 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('[role="dialog"] article[data-status="done"]').length === 1 && document.querySelectorAll('[role="dialog"] article').length === 1, { timeout: 60000 }).catch(() => undefined);
   ok("Enter 로 다시 생성: 답이 새로 만들어짐(답 1개 유지)", await page.evaluate(() => document.querySelectorAll('[role="dialog"] article[data-status="done"]').length === 1 && document.querySelectorAll('[role="dialog"] [data-role="user"]').length === 1));
 
-  // ⑥ Esc 로 닫기 → 포커스가 질문하기 버튼으로 복귀
+  // ⑥ Esc 로 닫기 → 포커스가 AI 어시스턴트 버튼으로 복귀
   await press("Escape");
   await sleep(300);
   const closed = await page.evaluate(() => !document.querySelector('[role="dialog"]'));
   ok("Esc: 패널이 닫힘", closed);
   const back = await focused();
-  ok("닫힌 뒤 포커스가 '질문하기' 버튼으로 복귀", back.label?.includes("질문하기") === true && back.tag === "BUTTON", back.label ?? "(없음)");
+  ok("닫힌 뒤 포커스가 'AI 어시스턴트' 버튼으로 복귀", back.label?.includes("AI 어시스턴트") === true && back.tag === "BUTTON", back.label ?? "(없음)");
 
   // ⑦ Space 로 다시 열기 · Esc · 단축키 Alt+Q 로 열고 닫기(어디서든)
   await press("Space");
@@ -172,7 +172,7 @@ try {
   ok("Alt+Q: 어디서든 열림 + 입력칸으로 포커스", (await page.evaluate(() => !!document.querySelector('[role="dialog"]'))) && (await sleep(200), (await focused()).id === "assist-q"));
   await press("Alt+KeyQ");
   await sleep(250);
-  ok("Alt+Q: 다시 누르면 닫히고 포커스가 버튼으로", (await page.evaluate(() => !document.querySelector('[role="dialog"]'))) && (await focused()).label?.includes("질문하기") === true);
+  ok("Alt+Q: 다시 누르면 닫히고 포커스가 버튼으로", (await page.evaluate(() => !document.querySelector('[role="dialog"]'))) && (await focused()).label?.includes("AI 어시스턴트") === true);
 
   ok("페이지 오류 없음", errors.length === 0, errors.slice(0, 2).join(" | "));
   await page.screenshot({ path: path.join(OUT, "keyboard-final.png") });

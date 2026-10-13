@@ -6,7 +6,8 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useApiSession } from "@/components/providers/SessionProvider";
 import { useFocusTrap } from "@/lib/a11y";
 import { ChatWorkspace } from "./ChatWorkspace";
-import { IconChat } from "./icons";
+import { ASSIST_NAME } from "./brand";
+import { IconBot } from "./icons";
 import { useAssistChat } from "./useAssistChat";
 
 /**
@@ -77,10 +78,13 @@ export function AssistPanel() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-keyshortcuts="Alt+Q"
-        title="질문하기 (Alt+Q)"
+        title={`${ASSIST_NAME} (Alt+Q)`}
       >
         {/* 좁은 화면은 아이콘 단추(이름은 화면 낭독기용으로 유지) — 내용을 덜 가린다 (Phase E · LAY-01) */}
-        <IconChat size={18} /> <span className="max-sm:sr-only">질문하기</span>
+        <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-circle bg-white/15">
+          <IconBot size={19} />
+        </span>
+        <span className="max-sm:sr-only">{ASSIST_NAME}</span>
         {working && !open ? (
           <span className="flex items-center gap-1 rounded-pill bg-white/20 px-2 py-0.5 text-[11px] font-medium">
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-circle bg-white motion-safe:animate-pulse" />

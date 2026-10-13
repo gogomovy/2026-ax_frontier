@@ -132,7 +132,7 @@ try {
 
   // 5) 질의 패널 (LLM 미연결이면 수치·근거만, 권한 밖 지표 제외)
   await u.goto(`${BASE}/hq/overview`, { waitUntil: "networkidle0" });
-  await u.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.innerText.includes("질문하기")).click());
+  await u.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.innerText.includes("AI 어시스턴트")).click());
   await u.waitForSelector("#assist-q");
   await u.type("#assist-q", "기업여신 증가율과 목표 대비 이탈은?");
   await u.evaluate(() => [...document.querySelectorAll("form button")].find((b) => b.innerText.trim() === "질문").click());
