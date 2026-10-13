@@ -32,7 +32,33 @@ def _norm(s: Any) -> str:
     return re.sub(r"[\s_\-()·./]+", "", str(s or "")).lower()
 
 
-def _read_table(content: bytes, filename: str, parser: dict[str, Any]) -> list[dict[str, Any]]:
+_NOTE_RE = re.compile(r"^\s*(?:※|주\s*\)|\*|출처\s*[:：]|자료\s*[:：]|비고\s*[:：])")
+
+
+def header_candidates(ds: Dataset) -> set[str]:
+    """정의 컬럼의 이름 · 라벨 · 별칭(정규화) — 머리글 줄 찾기용."""
+    return {_norm(c) for col in ds.columns for c in [col["name"], col.get("label", ""), *col.get("aliases", [])] if c}
+
+
+def _header_index(rows: list[Any], cands: set[str] | None, max_scan: int = 20) -> int:
+    """제목 · 기준 · 단위 줄 아래의 머리글 줄 — 정의 컬럼과 가장 많이(2개 이상) 맞는 첫 줄. 없으면 첫 줄(RD-09)."""
+    if not cands:
+        return 0
+    best, best_n = 0, 0
+    for i, r in enumerate(rows[:max_scan]):
+        n = sum(1 for v in (r or []) if v is not None and _norm(v) in cands)
+        if n > best_n:
+            best, best_n = i, n
+    return best if best_n >= 2 else 0
+
+
+def _is_note(cells: Any) -> bool:
+    """빈 줄 또는 주석 줄(첫 칸만 '※ · 주) · * · 출처:' 로 시작) — 행으로 읽지 않는다."""
+    vals = [v for v in cells if v is not None and str(v).strip() != ""]
+    return not vals or (len(vals) == 1 and bool(_NOTE_RE.match(str(vals[0]))))
+
+
+def _read_table(content: bytes, filename: str, parser: dict[str, Any], cands: set[str] | None = None) -> list[dict[str, Any]]:
     name = filename.lower()
     if name.endswith(".json"):
         data = json.loads(content.decode("utf-8-sig"))
@@ -47,11 +73,13 @@ def _read_table(content: bytes, filename: str, parser: dict[str, Any]) -> list[d
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
         ws = wb[parser["sheet"]] if parser.get("sheet") in wb.sheetnames else wb.worksheets[0]
         rows = list(ws.iter_rows(values_only=True))
-        header_idx = int(parser.get("header_row", 1)) - 1
+        if not rows:
+            return []
+        header_idx = int(parser["header_row"]) - 1 if parser.get("header_row") else _header_index(rows, cands)
         header = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(rows[header_idx])]
         out = []
         for r in rows[header_idx + 1 :]:
-            if r is None or all(v is None or str(v).strip() == "" for v in r):
+            if r is None or _is_note(r):
                 continue
             out.append({header[i]: r[i] for i in range(min(len(header), len(r)))})
         return out
@@ -60,7 +88,14 @@ def _read_table(content: bytes, filename: str, parser: dict[str, Any]) -> list[d
         delim = "\t" if name.endswith(".tsv") else parser.get("delimiter", ",")
         skip = int(parser.get("skip_rows", 0))
         lines = text.splitlines()[skip:]
-        return [dict(r) for r in csv.DictReader(lines, delimiter=delim)]
+        if "skip_rows" not in parser and cands:
+            lines = lines[_header_index(list(csv.reader(lines[:20], delimiter=delim)), cands) :]
+        out = []
+        for r in csv.DictReader(lines, delimiter=delim):
+            r = {k: v for k, v in r.items() if k is not None}
+            if not _is_note(r.values()):
+                out.append(r)
+        return out
     raise IngestError("지원 형식: .csv · .tsv · .xlsx · .json")
 
 
@@ -278,9 +313,10 @@ def ingest_rows(
     ).scalar()
     commit = quality["status"] != "failed" or force
     if not as_of and ds.as_of_column:
-        vals = {r.get(ds.as_of_column) for r in rows if r.get(ds.as_of_column) is not None}
-        if len(vals) == 1:
-            as_of = to_date(next(iter(vals)))
+        # 버전 기준일 = 파일 안 마지막 기간(Q141) — 여러 달이 든 파일(2020 원본 1~12월 · 월별 부도율)이 서로를 밀어내지 않게
+        vals = {to_date(r.get(ds.as_of_column)) for r in rows if r.get(ds.as_of_column) is not None} - {None}
+        if vals:
+            as_of = max(vals)
     v = t.version(
         dataset_code=ds.code,
         version=(last or 0) + 1,
@@ -339,7 +375,7 @@ def _read_any(content: bytes, filename: str, ds: Dataset) -> tuple[list[dict[str
             if not parsed.rows:
                 raise IngestError(f"{parsed.adapter}: 읽은 값이 없습니다")
             return parsed.rows, {"adapter": parsed.adapter, "meta": parsed.meta, "notes": parsed.notes}
-    return _read_table(content, filename, ds.parser or {}), None
+    return _read_table(content, filename, ds.parser or {}, header_candidates(ds)), None
 
 
 def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **kw):
@@ -394,6 +430,25 @@ def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
     emit(session, "dataset.committed", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": target.version, "version_id": target.id, "rollback": True}, actor)
     audit(session, actor, "dataset.rollback", "dataset", ds.code, {"to_version": target.version, "as_of": str(target.as_of) if target.as_of else None})
     return target
+
+
+def latest_as_of(session: Session) -> str | None:
+    """올라온 자료의 최신 기준일(현재 확정 버전 중 가장 늦은 날, ISO) — 없으면 None."""
+    from sqlalchemy import func
+
+    dates = [session.execute(select(func.max(source(o).version.as_of)).where(source(o).version.is_current)).scalar() for o in ("bank", "ext")]
+    dates = [d for d in dates if d]
+    return max(dates).isoformat() if dates else None
+
+
+def display_as_of(session: Session) -> str | None:
+    """화면 기준일 — 설정 ui.as_of 를 관리자가 정했으면 그 값, 비어 있으면 자료의 최신 기준일 (Phase I · 하드코딩 제거)."""
+    from nhdip.models import Setting
+
+    s = session.get(Setting, "ui.as_of")
+    if s is not None and s.value:
+        return str(s.value)
+    return latest_as_of(session)
 
 
 def current_versions(session: Session, ds: Dataset) -> list[Any]:

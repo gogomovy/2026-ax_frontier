@@ -215,7 +215,7 @@ export function GoalsWorkspace({
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13.5px] font-bold leading-snug text-ink-deep">{g.title}</span>
                       <span className="mt-0.5 block text-[11.5px] text-stone">
-                        {g.periodLabel ?? "2026 연간"} · 목표 {g.targetLabel}
+                        {g.periodLabel || "–"} · 목표 {g.targetLabel}
                         {g.metricLabel ? ` · ${g.metricLabel}` : ""}
                       </span>
                     </span>

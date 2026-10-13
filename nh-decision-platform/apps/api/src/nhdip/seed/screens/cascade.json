@@ -2,7 +2,7 @@
  {
   "id": "goal-corp-growth",
   "kind": "goal",
-  "label": "기업여신 전년 대비 +7.0% 이상 확대",
+  "label": "기업여신 전년 대비 – 이상 확대",
   "detail": "종합기획부 · 2026 연간 · v3",
   "org": "종합기획부",
   "children": [
@@ -16,9 +16,10 @@
      {
       "id": "bt-corp-metro1",
       "kind": "branch_target",
-      "label": "수도권1지역본부 — 기업여신 신규 취급 1.24조원",
+      "label": "수도권1지역본부 — 기업여신 신규 취급 –",
       "detail": "가이드: 5C 이상 차주 중심, 정책자금 연계 우선",
-      "org": "수도권1지역본부"
+      "org": "수도권1지역본부",
+      "labelTpl": "수도권1지역본부 — 기업여신 신규 취급 [[fig:bt1_target]]"
      },
      {
       "id": "bt-corp-central",
@@ -28,12 +29,13 @@
      }
     ]
    }
-  ]
+  ],
+  "labelTpl": "기업여신 전년 대비 [[fig:corp_goal|signed]] 이상 확대"
  },
  {
   "id": "goal-hh-control",
   "kind": "goal",
-  "label": "가계여신 전년 대비 +4.0% 이하 관리",
+  "label": "가계여신 전년 대비 – 이하 관리",
   "detail": "종합기획부 · 2026 연간 · v2",
   "org": "종합기획부",
   "children": [
@@ -47,13 +49,16 @@
      {
       "id": "bt-hh-metro1",
       "kind": "branch_target",
-      "label": "수도권1지역본부 — 가계여신 월 취급 한도 2,400억원",
-      "detail": "가이드: 잔액 한도 소진율 99.2% — 신규 취급 사전승인",
-      "org": "수도권1지역본부"
+      "label": "수도권1지역본부 — 가계여신 월 취급 한도 –",
+      "detail": "가이드: 잔액 한도 소진율 – — 신규 취급 사전승인",
+      "org": "수도권1지역본부",
+      "labelTpl": "수도권1지역본부 — 가계여신 월 취급 한도 [[fig:bt2_target]]",
+      "detailTpl": "가이드: 잔액 한도 소진율 [[fig:hh_bal_usage]] — 신규 취급 사전승인"
      }
     ]
    }
-  ]
+  ],
+  "labelTpl": "가계여신 전년 대비 [[fig:hh_goal|signed]] 이하 관리"
  },
  {
   "id": "goal-inclusive-new",

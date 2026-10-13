@@ -35,7 +35,7 @@ from nhdip.models import (
 )
 from nhdip.security import decrypt_secret, encrypt_secret, hash_password, mask_secret, password_policy_error
 
-from .deps import client_ip, require_admin, user_json
+from .deps import client_ip, is_data_admin, require_admin, user_json
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
@@ -96,6 +96,8 @@ class UserPatch(BaseModel):
     position: str | None = None
     # 부서 데이터 책임자 지정 (UPL-04 · Q107)
     data_steward: bool | None = None
+    # 데이터 관리자 지정 (Phase J · DEL-01 · Q143) — 업로드 자료 삭제 권한. 데이터 관리자만 바꿀 수 있다
+    data_admin: bool | None = None
 
 
 class PasswordReset(BaseModel):
@@ -145,6 +147,20 @@ def user_action(emp: str, action: str, request: Request, session: Session = Depe
     return user_json(session, u)
 
 
+def _check_data_admin_change(session: Session, actor: AppUser, target: AppUser, grant: bool, role: str) -> None:
+    """데이터 관리자 지정 · 해제 (Q143) — 데이터 관리자만 바꾸고, 관리자에게만 주며, 마지막 데이터 관리자는 해제할 수 없다."""
+    if not is_data_admin(actor):
+        raise HTTPException(403, "데이터 관리자 지정은 데이터 관리자만 바꿀 수 있습니다")
+    if grant and role != "admin":
+        raise HTTPException(422, "데이터 관리자는 관리자 역할인 사용자에게만 지정할 수 있습니다")
+    if not grant:
+        others = session.execute(
+            select(func.count()).select_from(AppUser).where(AppUser.data_admin, AppUser.role == "admin", AppUser.status == "active", AppUser.emp_no != target.emp_no)
+        ).scalar()
+        if not others:
+            raise HTTPException(409, "마지막 데이터 관리자는 해제할 수 없습니다 — 다른 관리자를 먼저 지정하세요")
+
+
 @router.patch("/users/{emp}")
 def user_patch(emp: str, body: UserPatch, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     u = _user(session, emp)
@@ -155,6 +171,11 @@ def user_patch(emp: str, body: UserPatch, request: Request, session: Session = D
         raise HTTPException(422, "role 은 admin | user")
     if emp == admin.emp_no and patch.get("role") == "user":
         raise HTTPException(400, "본인 관리자 권한은 해제할 수 없습니다")
+    if "data_admin" in patch and bool(patch["data_admin"]) != bool(u.data_admin):
+        _check_data_admin_change(session, admin, u, bool(patch["data_admin"]), patch.get("role", u.role))
+    if patch.get("role") == "user" and u.data_admin:
+        _check_data_admin_change(session, admin, u, False, "user")
+        patch["data_admin"] = False  # 관리자 권한을 회수하면 데이터 관리자 지정도 함께 해제
     for k, v in patch.items():
         setattr(u, k, v)
     audit(session, admin.emp_no, "admin.user.update", "user", emp, patch, client_ip(request))

@@ -1,0 +1,6 @@
+# 시연 자료 패키지 사본(Phase I) — 바이트 그대로 보관(줄 끝 변환 금지: PDF 교차 참조 · 엑셀 압축이 깨진다)
+sample-data/** -text
+*.pdf binary
+*.xlsx binary
+*.hwp binary
+*.hwpx binary

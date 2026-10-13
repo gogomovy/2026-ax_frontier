@@ -1,9 +1,11 @@
 import { Chart, TargetGauge } from "@/components/charts/Chart";
 import { FigureText } from "@/components/data/FigureText";
-import { MetricStrip } from "@/components/data/MetricStrip";
+import { MetricStrip, type MetricStripItem } from "@/components/data/MetricStrip";
 import { AgentNote } from "@/components/domain/AgentNote";
 import { Badge, SectionHead, TextLink } from "@/components/ui/primitives";
-import type { LoanSegmentDetail } from "@/lib/types";
+import { pointCount } from "@/lib/loanView";
+import { NO_VALUE, periodOf } from "@/lib/period";
+import type { Figure, LoanSegmentDetail } from "@/lib/types";
 
 const VERDICT = {
   on_track: { label: "목표 정상 진행", tone: "success" as const },
@@ -12,48 +14,60 @@ const VERDICT = {
   breach: { label: "관리목표 초과", tone: "critical" as const },
 };
 
-/** 기업여신 / 가계여신 상세 (요구사항 LOAN-04 ~ LOAN-09) */
-export function SegmentDetail({ segment }: { segment: LoanSegmentDetail }) {
+/**
+ * 기업여신 / 가계여신 상세 (요구사항 LOAN-04 ~ LOAN-09).
+ * 기간 라벨은 산출물 기준일(asOf)에서, 차트 단위는 잔액 수치의 단위에서 정한다 — 목표 · 이탈 수치가 없으면 해당 칸을 그리지 않는다.
+ */
+export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; asOf?: string | null }) {
   const isHousehold = segment.key === "household";
   const verdict = segment.gapVerdict ? VERDICT[segment.gapVerdict] : null;
   const offTrack = segment.gapVerdict === "below" || segment.gapVerdict === "breach";
+  const p = periodOf(asOf);
+  const monthEnd = p.month === NO_VALUE ? NO_VALUE : `${p.month}말`;
+  const yearLabel = p.year === NO_VALUE ? NO_VALUE : `${p.year}년`;
+  // 연도별 비교 시점 수 — 값이 있는 시점만 센다 (예: 3개년)
+  const years = pointCount(segment.yearly);
+  const yearlyLabel = `${years ? `${years}개년 ` : ""}${monthEnd} 잔액`;
+  const { gap, goalValue } = segment;
+
+  const items: MetricStripItem[] = [
+    {
+      label: `${segment.name} 잔액 (${p.ym === NO_VALUE ? NO_VALUE : `${p.ym}말`})`,
+      figure: segment.balance,
+      delta: segment.growth,
+      positiveIsGood: !isHousehold,
+    },
+    { label: "구성비 (기업+가계 기준)", figure: segment.share },
+    { label: `이자수익 (${p.month} 누계)`, figure: segment.interestRevenue, caption: "2633 손익계산서" },
+  ];
+  if (gap) {
+    items.push({
+      label: isHousehold ? "관리목표 대비" : "성장목표 대비",
+      figure: gap,
+      signed: true,
+      caption: segment.goalLabel,
+      tone: offTrack ? "critical" : "attention",
+    });
+  }
+
+  const noteFigures: Record<string, Figure> = {
+    [segment.balance.id]: segment.balance,
+    [segment.growth.id]: segment.growth,
+    [segment.share.id]: segment.share,
+    [segment.interestRevenue.id]: segment.interestRevenue,
+    ...(goalValue ? { [goalValue.id]: goalValue } : {}),
+    ...(gap ? { [gap.id]: gap } : {}),
+  };
+  const balanceUnit = segment.balance.unit;
+  const balanceDecimals = segment.balance.decimals ?? 2;
+  const showGauge = segment.growth.value != null && goalValue?.value != null;
 
   return (
     <>
-      <MetricStrip
-        items={[
-          {
-            label: `${segment.name} 잔액 (2026.08말)`,
-            figure: segment.balance,
-            delta: segment.growth,
-            positiveIsGood: !isHousehold,
-          },
-          { label: "구성비 (기업+가계 기준)", figure: segment.share },
-          { label: "이자수익 (8월 누계)", figure: segment.interestRevenue, caption: "2633 손익계산서" },
-          {
-            label: isHousehold ? "관리목표 대비" : "성장목표 대비",
-            figure: segment.gap!,
-            signed: true,
-            caption: segment.goalLabel,
-            tone: offTrack ? "critical" : "attention",
-          },
-        ]}
-      />
+      <MetricStrip items={items} columns={items.length === 4 ? 4 : 3} />
 
       <section className="grid grid-cols-1 gap-xl xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
-        <AgentNote
-          text={segment.narrative}
-          figures={{
-            [segment.balance.id]: segment.balance,
-            [segment.growth.id]: segment.growth,
-            [segment.share.id]: segment.share,
-            [segment.interestRevenue.id]: segment.interestRevenue,
-            [segment.goalValue!.id]: segment.goalValue!,
-            [segment.gap!.id]: segment.gap!,
-          }}
-          evidence={segment.evidence}
-          evidenceTitle={`${segment.name} 해설 근거`}
-        />
+        <AgentNote text={segment.narrative} figures={noteFigures} evidence={segment.evidence} evidenceTitle={`${segment.name} 해설 근거`} />
 
         {/* 현재 경영목표 대비 (LOAN-06 / LOAN-09) */}
         <div className="rounded-2xl border border-hairline-soft px-lg py-lg">
@@ -71,23 +85,31 @@ export function SegmentDetail({ segment }: { segment: LoanSegmentDetail }) {
             <div className="flex items-baseline justify-between gap-2 border-t border-hairline-soft pt-3">
               <dt className="text-[12.5px] text-steel">경영목표</dt>
               <dd className="text-[20px] font-bold text-charcoal">
-                <FigureText figure={segment.goalValue!} />
-                <span className="ml-1 text-[12px] font-normal text-steel">{isHousehold ? "이하" : "이상"}</span>
+                {goalValue ? (
+                  <>
+                    <FigureText figure={goalValue} />
+                    <span className="ml-1 text-[12px] font-normal text-steel">{isHousehold ? "이하" : "이상"}</span>
+                  </>
+                ) : (
+                  <span className="text-stone">{NO_VALUE}</span>
+                )}
               </dd>
             </div>
             <div className="flex items-center justify-between gap-2 border-t border-hairline-soft pt-3">
               <dt className="text-[12.5px] text-steel">판정</dt>
-              <dd>{verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : null}</dd>
+              <dd>{verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : <span className="text-[12px] text-stone">{NO_VALUE}</span>}</dd>
             </div>
           </dl>
-          <TargetGauge
-            actual={segment.growth.value ?? 0}
-            target={segment.goalValue?.value ?? 0}
-            unit="PCT"
-            decimals={1}
-            tone={offTrack ? "critical" : "primary"}
-            targetLabel="목표"
-          />
+          {showGauge ? (
+            <TargetGauge
+              actual={segment.growth.value ?? 0}
+              target={goalValue?.value ?? 0}
+              unit={goalValue?.unit ?? segment.growth.unit}
+              decimals={goalValue?.decimals ?? 1}
+              tone={offTrack ? "critical" : "primary"}
+              targetLabel="목표"
+            />
+          ) : null}
           <p className="mt-4 text-[11.5px] leading-snug text-stone">
             {isHousehold
               ? "관리목표는 상한 개념입니다. 실적이 목표를 넘으면 관리 강화 대상입니다."
@@ -97,14 +119,14 @@ export function SegmentDetail({ segment }: { segment: LoanSegmentDetail }) {
       </section>
 
       <section>
-        <SectionHead title="추이" hint="월별 잔액(당해) · 3개년 8월말 잔액" />
+        <SectionHead title="추이" hint={`월별 잔액(당해) · ${yearlyLabel}`} />
         <div className="grid grid-cols-1 gap-xl xl:grid-cols-2">
           <div className="rounded-2xl border border-hairline-soft p-lg">
             <Chart
               kind="line"
-              title={`${segment.name} 월별 잔액 (2026년)`}
-              unit="KRW_TN"
-              decimals={2}
+              title={`${segment.name} 월별 잔액 (${yearLabel})`}
+              unit={balanceUnit}
+              decimals={balanceDecimals}
               series={[{ name: segment.name, points: segment.monthly }]}
               zeroBased={false}
             />
@@ -112,9 +134,9 @@ export function SegmentDetail({ segment }: { segment: LoanSegmentDetail }) {
           <div className="rounded-2xl border border-hairline-soft p-lg">
             <Chart
               kind="bar"
-              title={`${segment.name} 3개년 8월말 잔액`}
-              unit="KRW_TN"
-              decimals={2}
+              title={`${segment.name} ${yearlyLabel}`}
+              unit={balanceUnit}
+              decimals={balanceDecimals}
               series={[{ name: segment.name, points: segment.yearly }]}
             />
           </div>

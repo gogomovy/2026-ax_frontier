@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useIsDataAdmin } from "@/components/admin/DataDelete";
 import { AdminPage, C, Card, Check, Loading, Select, StatusBadge, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { useConfirm } from "@/components/providers/UiProvider";
 import { Button } from "@/components/ui/primitives";
@@ -22,6 +23,8 @@ interface UserRow {
   /** 부서 데이터 책임자 (UPL-04 · Q107) */
   dataSteward?: boolean;
   stewardScope?: { code: string; name: string } | null;
+  /** 데이터 관리자 — 업로드 자료 삭제 권한 (Phase J · DEL-01 · Q143) */
+  dataAdmin?: boolean;
 }
 interface OrgRow {
   code: string;
@@ -63,6 +66,16 @@ export default function UsersAdmin() {
     );
     if (ok) await run(() => apiPatch(`/admin/users/${u.empNo}`, { role }), "역할을 바꿨습니다", users.reload);
   };
+  // 데이터 관리자 (Phase J · Q143) — 업로드 자료 삭제 권한. 데이터 관리자만 바꿀 수 있다(서버가 최종 판정)
+  const iAmDataAdmin = useIsDataAdmin();
+  const changeDataAdmin = async (u: UserRow, v: boolean) => {
+    const ok = await confirm(
+      v
+        ? { title: "데이터 관리자로 지정할까요?", body: `${u.name}(${u.empNo})은(는) 업로드된 데이터셋 버전 · 문서를 삭제할 수 있게 됩니다. 삭제는 되돌릴 수 없습니다.`, confirmLabel: "지정", tone: "danger" }
+        : { title: "데이터 관리자 지정을 해제할까요?", body: `${u.name}(${u.empNo})은(는) 업로드 자료를 삭제할 수 없게 됩니다.`, confirmLabel: "해제" },
+    );
+    if (ok) await run(() => apiPatch(`/admin/users/${u.empNo}`, { data_admin: v }), v ? "데이터 관리자로 지정했습니다" : "데이터 관리자 지정을 해제했습니다", users.reload);
+  };
   const disable = async (u: UserRow) => {
     const ok = await confirm({ title: "사용을 중지할까요?", body: `${u.name}(${u.empNo})의 로그인 세션이 바로 끊기고 다시 로그인할 수 없습니다. [재사용]으로 되돌릴 수 있습니다.`, confirmLabel: "중지", tone: "danger" });
     if (ok) await act(u.empNo, "disable", "중지했습니다(세션 폐기)");
@@ -84,7 +97,7 @@ export default function UsersAdmin() {
   return (
     <AdminPage
       title="사용자"
-      description="사번(8자리)으로 가입한 사용자를 승인하고, 소속(부 > 국 > 팀)과 역할을 관리합니다. 화면 권한은 소속 조직 기준으로 상속됩니다. '데이터 책임자' 로 지정하면 자기 부서 사용자가 올린 자료를 [자료 올리기 > 승인할 자료]에서 승인 · 반려합니다."
+      description="사번(8자리)으로 가입한 사용자를 승인하고, 소속(부 > 국 > 팀)과 역할을 관리합니다. 화면 권한은 소속 조직 기준으로 상속됩니다. '데이터 책임자' 로 지정하면 자기 부서 사용자가 올린 자료를 [자료 올리기 > 승인할 자료]에서 승인 · 반려합니다. '데이터 관리자'(관리자 중 지정)만 업로드된 데이터셋 버전 · 문서를 삭제할 수 있고, 지정 · 해제도 데이터 관리자만 합니다."
     >
       <Tabs
         active={tab}
@@ -99,7 +112,7 @@ export default function UsersAdmin() {
       />
       <Card>
         <Loading error={users.error} loading={!users.data && users.loading} />
-        <Table head={["사번", "이름 · 직급", "소속", "역할", "데이터 책임자", "상태", "가입 · 최근 로그인", "작업"]}>
+        <Table head={["사번", "이름 · 직급", "소속", "역할", "데이터 책임자", "데이터 관리자", "상태", "가입 · 최근 로그인", "작업"]}>
           {list.map((u) => (
             <tr key={u.empNo}>
               <C mono>{u.empNo}</C>
@@ -121,6 +134,22 @@ export default function UsersAdmin() {
                   onChange={(v) => run(() => apiPatch(`/admin/users/${u.empNo}`, { data_steward: v }), v ? "부서 데이터 책임자로 지정했습니다" : "데이터 책임자 지정을 해제했습니다", users.reload)}
                 />
                 {u.dataSteward && u.stewardScope ? <p className="mt-0.5 text-[10.5px] text-stone">{u.stewardScope.name} 자료 승인</p> : null}
+              </C>
+              <C className="min-w-[120px]">
+                {u.role === "admin" ? (
+                  <>
+                    <Check
+                      label={u.dataAdmin ? "지정" : ""}
+                      ariaLabel={`${u.name} 데이터 관리자`}
+                      checked={Boolean(u.dataAdmin)}
+                      disabled={!iAmDataAdmin || busy}
+                      onChange={(v) => void changeDataAdmin(u, v)}
+                    />
+                    {u.dataAdmin ? <p className="mt-0.5 text-[10.5px] text-stone">업로드 자료 삭제</p> : null}
+                  </>
+                ) : (
+                  <span className="text-[11px] text-stone">관리자만</span>
+                )}
               </C>
               <C>
                 <StatusBadge status={u.status} label={STATUS_LABEL[u.status]} />

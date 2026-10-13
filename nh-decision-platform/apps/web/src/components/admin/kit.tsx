@@ -180,6 +180,7 @@ const STATUS_TONE: Record<string, "success" | "info" | "attention" | "critical" 
   ingested: "info",
   skipped: "neutral",
   rolled_back: "neutral",
+  deleted: "neutral",
   disabled: "neutral",
   failed: "critical",
   error: "critical",
@@ -304,10 +305,10 @@ export function Select({ label, value, onChange, options, className, ariaLabel }
   );
 }
 
-export function Check({ label, checked, onChange, ariaLabel }: { label: string; checked: boolean; onChange: (v: boolean) => void; ariaLabel?: string }) {
+export function Check({ label, checked, onChange, ariaLabel, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; ariaLabel?: string; disabled?: boolean }) {
   return (
     <label className="inline-flex items-center gap-1.5 text-[12.5px] text-charcoal">
-      <input type="checkbox" aria-label={ariaLabel} checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <input type="checkbox" aria-label={ariaLabel} checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
   );

@@ -1,460 +1,88 @@
 {
- "asOf": "2026-08-31",
- "generatedAt": "2026-08-31T06:22:00+09:00",
+ "asOf": null,
+ "generatedAt": null,
  "corpSegments": [
   {
    "key": "corp_large",
    "label": "대기업",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 0.412
-    },
-    {
-     "label": "2025.10",
-     "value": 0.408
-    },
-    {
-     "label": "2025.11",
-     "value": 0.401
-    },
-    {
-     "label": "2025.12",
-     "value": 0.396
-    },
-    {
-     "label": "2026.01",
-     "value": 0.389
-    },
-    {
-     "label": "2026.02",
-     "value": 0.392
-    },
-    {
-     "label": "2026.03",
-     "value": 0.388
-    },
-    {
-     "label": "2026.04",
-     "value": 0.381
-    },
-    {
-     "label": "2026.05",
-     "value": 0.377
-    },
-    {
-     "label": "2026.06",
-     "value": 0.374
-    },
-    {
-     "label": "2026.07",
-     "value": 0.371
-    },
-    {
-     "label": "2026.08",
-     "value": 0.368
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_corp_large_latest",
-    "label": "대기업 부도율(2026.08)",
-    "value": 0.368,
+    "label": "대기업 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_large",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "대기업 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_corp_large_delta",
     "label": "대기업 부도율 증감(2025.09 대비)",
-    "value": -0.044,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_large_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "0.368%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "0.412%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "info"
   },
   {
    "key": "corp_audited",
    "label": "외감",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 0.884
-    },
-    {
-     "label": "2025.10",
-     "value": 0.891
-    },
-    {
-     "label": "2025.11",
-     "value": 0.902
-    },
-    {
-     "label": "2025.12",
-     "value": 0.918
-    },
-    {
-     "label": "2026.01",
-     "value": 0.931
-    },
-    {
-     "label": "2026.02",
-     "value": 0.944
-    },
-    {
-     "label": "2026.03",
-     "value": 0.958
-    },
-    {
-     "label": "2026.04",
-     "value": 0.971
-    },
-    {
-     "label": "2026.05",
-     "value": 0.986
-    },
-    {
-     "label": "2026.06",
-     "value": 1.004
-    },
-    {
-     "label": "2026.07",
-     "value": 1.021
-    },
-    {
-     "label": "2026.08",
-     "value": 1.038
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_corp_audited_latest",
-    "label": "외감 부도율(2026.08)",
-    "value": 1.038,
+    "label": "외감 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_audited",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "외감 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_corp_audited_delta",
     "label": "외감 부도율 증감(2025.09 대비)",
-    "value": 0.154,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_audited_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "1.038%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "0.884%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "watch"
   },
   {
    "key": "corp_unaudited",
    "label": "비외감",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 1.642
-    },
-    {
-     "label": "2025.10",
-     "value": 1.668
-    },
-    {
-     "label": "2025.11",
-     "value": 1.701
-    },
-    {
-     "label": "2025.12",
-     "value": 1.736
-    },
-    {
-     "label": "2026.01",
-     "value": 1.772
-    },
-    {
-     "label": "2026.02",
-     "value": 1.814
-    },
-    {
-     "label": "2026.03",
-     "value": 1.858
-    },
-    {
-     "label": "2026.04",
-     "value": 1.901
-    },
-    {
-     "label": "2026.05",
-     "value": 1.947
-    },
-    {
-     "label": "2026.06",
-     "value": 1.994
-    },
-    {
-     "label": "2026.07",
-     "value": 2.041
-    },
-    {
-     "label": "2026.08",
-     "value": 2.088
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_corp_unaudited_latest",
-    "label": "비외감 부도율(2026.08)",
-    "value": 2.088,
+    "label": "비외감 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_unaudited",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "비외감 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_corp_unaudited_delta",
     "label": "비외감 부도율 증감(2025.09 대비)",
-    "value": 0.446,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_unaudited_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "2.088%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "1.642%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "caution"
   },
   {
    "key": "corp_micro",
    "label": "소기업",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 2.481
-    },
-    {
-     "label": "2025.10",
-     "value": 2.523
-    },
-    {
-     "label": "2025.11",
-     "value": 2.571
-    },
-    {
-     "label": "2025.12",
-     "value": 2.618
-    },
-    {
-     "label": "2026.01",
-     "value": 2.664
-    },
-    {
-     "label": "2026.02",
-     "value": 2.702
-    },
-    {
-     "label": "2026.03",
-     "value": 2.738
-    },
-    {
-     "label": "2026.04",
-     "value": 2.761
-    },
-    {
-     "label": "2026.05",
-     "value": 2.774
-    },
-    {
-     "label": "2026.06",
-     "value": 2.781
-    },
-    {
-     "label": "2026.07",
-     "value": 2.766
-    },
-    {
-     "label": "2026.08",
-     "value": 2.753
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_corp_micro_latest",
-    "label": "소기업 부도율(2026.08)",
-    "value": 2.753,
+    "label": "소기업 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_micro",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "소기업 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_corp_micro_delta",
     "label": "소기업 부도율 증감(2025.09 대비)",
-    "value": 0.272,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_micro_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "2.753%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "2.481%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "caution",
    "note": "6B 등급 특이사항 발생 구간"
@@ -462,114 +90,21 @@
   {
    "key": "corp_soho",
    "label": "기업형소호",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 3.128
-    },
-    {
-     "label": "2025.10",
-     "value": 3.182
-    },
-    {
-     "label": "2025.11",
-     "value": 3.246
-    },
-    {
-     "label": "2025.12",
-     "value": 3.311
-    },
-    {
-     "label": "2026.01",
-     "value": 3.384
-    },
-    {
-     "label": "2026.02",
-     "value": 3.462
-    },
-    {
-     "label": "2026.03",
-     "value": 3.541
-    },
-    {
-     "label": "2026.04",
-     "value": 3.618
-    },
-    {
-     "label": "2026.05",
-     "value": 3.694
-    },
-    {
-     "label": "2026.06",
-     "value": 3.768
-    },
-    {
-     "label": "2026.07",
-     "value": 3.841
-    },
-    {
-     "label": "2026.08",
-     "value": 3.912
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_corp_soho_latest",
-    "label": "기업형소호 부도율(2026.08)",
-    "value": 3.912,
+    "label": "기업형소호 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_soho",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "기업형소호 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_corp_soho_delta",
     "label": "기업형소호 부도율 증감(2025.09 대비)",
-    "value": 0.784,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_corp_soho_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "3.912%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "3.128%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "critical"
   }
@@ -578,570 +113,105 @@
   {
    "key": "pool_1",
    "label": "풀 1 (임시)",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 1.214
-    },
-    {
-     "label": "2025.10",
-     "value": 1.228
-    },
-    {
-     "label": "2025.11",
-     "value": 1.241
-    },
-    {
-     "label": "2025.12",
-     "value": 1.259
-    },
-    {
-     "label": "2026.01",
-     "value": 1.272
-    },
-    {
-     "label": "2026.02",
-     "value": 1.288
-    },
-    {
-     "label": "2026.03",
-     "value": 1.301
-    },
-    {
-     "label": "2026.04",
-     "value": 1.318
-    },
-    {
-     "label": "2026.05",
-     "value": 1.332
-    },
-    {
-     "label": "2026.06",
-     "value": 1.347
-    },
-    {
-     "label": "2026.07",
-     "value": 1.361
-    },
-    {
-     "label": "2026.08",
-     "value": 1.374
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_pool_1_latest",
-    "label": "풀 1 (임시) 부도율(2026.08)",
-    "value": 1.374,
+    "label": "풀 1 (임시) 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_1",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "풀 1 (임시) 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_pool_1_delta",
     "label": "풀 1 (임시) 부도율 증감(2025.09 대비)",
-    "value": 0.16,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_1_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "1.374%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "1.214%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "watch"
   },
   {
    "key": "pool_2",
    "label": "풀 2 (임시)",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 0.682
-    },
-    {
-     "label": "2025.10",
-     "value": 0.679
-    },
-    {
-     "label": "2025.11",
-     "value": 0.674
-    },
-    {
-     "label": "2025.12",
-     "value": 0.671
-    },
-    {
-     "label": "2026.01",
-     "value": 0.668
-    },
-    {
-     "label": "2026.02",
-     "value": 0.664
-    },
-    {
-     "label": "2026.03",
-     "value": 0.661
-    },
-    {
-     "label": "2026.04",
-     "value": 0.658
-    },
-    {
-     "label": "2026.05",
-     "value": 0.654
-    },
-    {
-     "label": "2026.06",
-     "value": 0.651
-    },
-    {
-     "label": "2026.07",
-     "value": 0.648
-    },
-    {
-     "label": "2026.08",
-     "value": 0.644
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_pool_2_latest",
-    "label": "풀 2 (임시) 부도율(2026.08)",
-    "value": 0.644,
+    "label": "풀 2 (임시) 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_2",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "풀 2 (임시) 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_pool_2_delta",
     "label": "풀 2 (임시) 부도율 증감(2025.09 대비)",
-    "value": -0.038,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_2_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "0.644%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "0.682%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "info"
   },
   {
    "key": "pool_3",
    "label": "풀 3 (임시)",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 2.341
-    },
-    {
-     "label": "2025.10",
-     "value": 2.388
-    },
-    {
-     "label": "2025.11",
-     "value": 2.442
-    },
-    {
-     "label": "2025.12",
-     "value": 2.501
-    },
-    {
-     "label": "2026.01",
-     "value": 2.564
-    },
-    {
-     "label": "2026.02",
-     "value": 2.628
-    },
-    {
-     "label": "2026.03",
-     "value": 2.691
-    },
-    {
-     "label": "2026.04",
-     "value": 2.758
-    },
-    {
-     "label": "2026.05",
-     "value": 2.822
-    },
-    {
-     "label": "2026.06",
-     "value": 2.889
-    },
-    {
-     "label": "2026.07",
-     "value": 2.954
-    },
-    {
-     "label": "2026.08",
-     "value": 3.018
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_pool_3_latest",
-    "label": "풀 3 (임시) 부도율(2026.08)",
-    "value": 3.018,
+    "label": "풀 3 (임시) 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_3",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "풀 3 (임시) 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_pool_3_delta",
     "label": "풀 3 (임시) 부도율 증감(2025.09 대비)",
-    "value": 0.677,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_3_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "3.018%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "2.341%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "critical"
   },
   {
    "key": "pool_4",
    "label": "풀 4 (임시)",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 1.882
-    },
-    {
-     "label": "2025.10",
-     "value": 1.901
-    },
-    {
-     "label": "2025.11",
-     "value": 1.918
-    },
-    {
-     "label": "2025.12",
-     "value": 1.934
-    },
-    {
-     "label": "2026.01",
-     "value": 1.951
-    },
-    {
-     "label": "2026.02",
-     "value": 1.962
-    },
-    {
-     "label": "2026.03",
-     "value": 1.974
-    },
-    {
-     "label": "2026.04",
-     "value": 1.981
-    },
-    {
-     "label": "2026.05",
-     "value": 1.988
-    },
-    {
-     "label": "2026.06",
-     "value": 1.994
-    },
-    {
-     "label": "2026.07",
-     "value": 1.998
-    },
-    {
-     "label": "2026.08",
-     "value": 2.004
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_pool_4_latest",
-    "label": "풀 4 (임시) 부도율(2026.08)",
-    "value": 2.004,
+    "label": "풀 4 (임시) 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_4",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "풀 4 (임시) 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_pool_4_delta",
     "label": "풀 4 (임시) 부도율 증감(2025.09 대비)",
-    "value": 0.122,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_4_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "2.004%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "1.882%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "caution"
   },
   {
    "key": "pool_5",
    "label": "풀 5 (임시)",
-   "points": [
-    {
-     "label": "2025.09",
-     "value": 0.944
-    },
-    {
-     "label": "2025.10",
-     "value": 0.951
-    },
-    {
-     "label": "2025.11",
-     "value": 0.958
-    },
-    {
-     "label": "2025.12",
-     "value": 0.962
-    },
-    {
-     "label": "2026.01",
-     "value": 0.971
-    },
-    {
-     "label": "2026.02",
-     "value": 0.978
-    },
-    {
-     "label": "2026.03",
-     "value": 0.984
-    },
-    {
-     "label": "2026.04",
-     "value": 0.991
-    },
-    {
-     "label": "2026.05",
-     "value": 0.998
-    },
-    {
-     "label": "2026.06",
-     "value": 1.004
-    },
-    {
-     "label": "2026.07",
-     "value": 1.011
-    },
-    {
-     "label": "2026.08",
-     "value": 1.018
-    }
-   ],
+   "points": [],
    "latest": {
     "id": "dr_pool_5_latest",
-    "label": "풀 5 (임시) 부도율(2026.08)",
-    "value": 1.018,
+    "label": "풀 5 (임시) 부도율(–)",
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_5",
-     "formulaId": "DEFAULT_RATE",
-     "formulaVersion": 1,
-     "expression": "부도건수 ÷ 관측건수 × 100",
-     "inputs": [
-      {
-       "key": "default_count",
-       "label": "부도건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      },
-      {
-       "key": "obs_count",
-       "label": "관측건수",
-       "value": "집계값",
-       "source": "fact.default_rate_monthly"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "월별 신규 부도 발생 기준 · 12개월 이동"
-    }
+    "labelTpl": "풀 5 (임시) 부도율([[ym:MODEL_MONITORING_GRADE:$latest|dot]])"
    },
    "deltaPP": {
     "id": "dr_pool_5_delta",
     "label": "풀 5 (임시) 부도율 증감(2025.09 대비)",
-    "value": 0.074,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc_dr_pool_5_d",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "당월 부도율 − 기준월 부도율",
-     "inputs": [
-      {
-       "key": "now",
-       "label": "2026.08",
-       "value": "1.018%",
-       "source": "calc.metric_value"
-      },
-      {
-       "key": "base",
-       "label": "2025.09",
-       "value": "0.944%",
-       "source": "calc.metric_value"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    },
    "severity": "watch"
   }
@@ -1163,7 +233,7 @@
    "category": "internal_direction",
    "label": "신용평가모형 모니터링 기준(부도율 산출)",
    "sourceKind": "doc_chunk",
-   "relevance": 0.82,
+   "relevance": null,
    "doc": {
     "title": "붙임. 통계방법론 및 용어 해설",
     "issuer": "신용리스크관리부",

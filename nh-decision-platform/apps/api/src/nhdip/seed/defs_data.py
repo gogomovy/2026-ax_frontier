@@ -1,20 +1,11 @@
-"""데이터셋 정의 · 시뮬레이션 버전(목데이터) · 지표 · 바인딩 · 워크플로우 시드.
+"""데이터셋 정의 · 지표 · 바인딩 · 워크플로우 시드 (정의만 — Phase I · Q135).
 
-목데이터는 화면 목데이터(apps/web/src/mock)에서 추출한 원천 값(mock_raw.json)으로 만든다.
+업무 수치는 시드가 넣지 않는다. 시연 자료는 `nhdip.sample` 이 실제 파일(엑셀 · PDF)로 만들어 업로드 경로로 올린다.
 실데이터가 오면 같은 데이터셋 정의로 파일만 업로드하면 된다(정의가 다르면 관리자 화면에서 컬럼·별칭 수정).
 """
 from __future__ import annotations
 
-import json
-import os
 from typing import Any
-
-HERE = os.path.dirname(__file__)
-
-
-def _raw() -> dict[str, Any]:
-    with open(os.path.join(HERE, "mock_raw.json"), encoding="utf-8") as fh:
-        return json.load(fh)
 
 
 def col(name, label, type_="str", required=False, aliases=None):
@@ -103,95 +94,19 @@ DATASETS = [
 ]
 
 
-# ═════════════════════════ 시뮬레이션 버전 (목데이터) ═════════════════════════
-RAW_FIN = {
-    "TOTAL_REVENUE": ("전체 수익", "Sheet1!D12", {"202408": 4_371_940, "202508": 4_603_180, "202608": 4_812_360}),
-    "LOAN_NIM": ("여신(일반)부문 이자마진 수익", "Sheet1!D118", {"202408": 2_034_120, "202508": 2_112_880, "202608": 2_186_540}),
-    "CORP_INTEREST": ("기업자금대출금이자", "Sheet1!D131", {"202408": 1_003_560, "202508": 1_048_900, "202608": 1_089_820}),
-    "HH_INTEREST": ("가계자금대출금이자", "Sheet1!D140", {"202408": 812_300, "202508": 852_110, "202608": 909_960}),
-    "HH_ETC_INTEREST": ("기타가계자금대출이자", "Sheet1!D144", {"202608": 106_200}),
-    "HOUSE_INTEREST": ("주택자금대출이자", "Sheet1!D146", {"202608": 486_000}),
-    "PUBLIC_INTEREST": ("공공자금대출이자", "Sheet1!D150", {"202608": 114_000}),
-}
-RAW_BAL = {
-    "CORP": ("기업자금대출금", "Sheet1!E21", {"202408": 106_240_000, "202508": 110_860_000, "202608": 115_340_000}),
-    "HH": ("가계자금대출금", "Sheet1!E29", {"202408": 88_120_000, "202508": 93_180_000, "202608": 99_240_000}),
-    "HH_ETC": ("기타가계자금대출금", "Sheet1!E33", {"202608": 12_340_000}),
-    "HOUSE": ("주택자금대출금", "Sheet1!E31", {"202608": 62_480_000}),
-    "PUBLIC": ("공공자금대출금", "Sheet1!E37", {"202608": 18_620_000}),
-}
-PROVISION_TOTAL = {"202601": (3_284_600, "X314"), "202608": (3_412_180, "X318")}
-DR_MONTHS = ["202509", "202510", "202511", "202512", "202601", "202602", "202603", "202604", "202605", "202606", "202607", "202608"]
-DR_SERIES = [
-    ("corp_large", "대기업", "corp", [0.412, 0.408, 0.401, 0.396, 0.389, 0.392, 0.388, 0.381, 0.377, 0.374, 0.371, 0.368]),
-    ("corp_audited", "외감", "corp", [0.884, 0.891, 0.902, 0.918, 0.931, 0.944, 0.958, 0.971, 0.986, 1.004, 1.021, 1.038]),
-    ("corp_unaudited", "비외감", "corp", [1.642, 1.668, 1.701, 1.736, 1.772, 1.814, 1.858, 1.901, 1.947, 1.994, 2.041, 2.088]),
-    ("corp_micro", "소기업", "corp", [2.481, 2.523, 2.571, 2.618, 2.664, 2.702, 2.738, 2.761, 2.774, 2.781, 2.766, 2.753]),
-    ("corp_soho", "기업형소호", "corp", [3.128, 3.182, 3.246, 3.311, 3.384, 3.462, 3.541, 3.618, 3.694, 3.768, 3.841, 3.912]),
-    ("pool_1", "풀 1 (임시)", "retail", [1.214, 1.228, 1.241, 1.259, 1.272, 1.288, 1.301, 1.318, 1.332, 1.347, 1.361, 1.374]),
-    ("pool_2", "풀 2 (임시)", "retail", [0.682, 0.679, 0.674, 0.671, 0.668, 0.664, 0.661, 0.658, 0.654, 0.651, 0.648, 0.644]),
-    ("pool_3", "풀 3 (임시)", "retail", [2.341, 2.388, 2.442, 2.501, 2.564, 2.628, 2.691, 2.758, 2.822, 2.889, 2.954, 3.018]),
-    ("pool_4", "풀 4 (임시)", "retail", [1.882, 1.901, 1.918, 1.934, 1.951, 1.962, 1.974, 1.981, 1.988, 1.994, 1.998, 2.004]),
-    ("pool_5", "풀 5 (임시)", "retail", [0.944, 0.951, 0.958, 0.962, 0.971, 0.978, 0.984, 0.991, 0.998, 1.004, 1.011, 1.018]),
+# 월별 부도율 구분 (키 · 라벨 · 포트폴리오) — 값은 업로드 자료(DEFAULT_RATE_MONTHLY)
+DR_SEGMENTS = [
+    ("corp_large", "대기업", "corp"),
+    ("corp_audited", "외감", "corp"),
+    ("corp_unaudited", "비외감", "corp"),
+    ("corp_micro", "소기업", "corp"),
+    ("corp_soho", "기업형소호", "corp"),
+    ("pool_1", "풀 1 (임시)", "retail"),
+    ("pool_2", "풀 2 (임시)", "retail"),
+    ("pool_3", "풀 3 (임시)", "retail"),
+    ("pool_4", "풀 4 (임시)", "retail"),
+    ("pool_5", "풀 5 (임시)", "retail"),
 ]
-CAPITAL_ITEMS = [
-    ("ASSET_GROWTH_MAX", "총자산 최대 증가율(지주 한도)", 8.2, "%"),
-    ("BANK_ASSET_TARGET", "은행 목표 총자산 증가율", 7.4, "%"),
-    ("RWA_NET_LIMIT", "RWA 순증 한도", 12.4, "조원"),
-    ("RWA_DEPT_TOTAL", "부서별 배분 합계", 8.6, "조원"),
-    ("RWA_CORP_ALLOC", "기업 부문 신용RWA 배분", 4.9, "조원"),
-    ("RWA_CORP_USED", "기업 부문 신용RWA 사용", 3.42, "조원"),
-    ("RWA_HH_ALLOC", "가계 부문 신용RWA 배분", 3.1, "조원"),
-    ("RWA_HH_USED", "가계 부문 신용RWA 사용", 2.86, "조원"),
-    ("RWA_ETC_ALLOC", "기타 부문 신용RWA 배분", 0.6, "조원"),
-    ("RWA_ETC_USED", "기타 부문 신용RWA 사용", 0.31, "조원"),
-    ("BIS_TOTAL", "BIS 총자본비율", 14.8, "%"),
-]
-PD_MIN_6B = 6.412
-
-
-def dataset_versions() -> list[dict[str, Any]]:
-    """[{dataset, file_name, as_of, rows}] — 파일 단위 버전 (화면 데이터 목록과 동일한 파일명)."""
-    raw = _raw()
-    out: list[dict[str, Any]] = []
-    for ym in ("202408", "202508", "202608"):
-        rows = [{"ym": ym, "item_code": code, "item_name": name, "amount": vals[ym], "src_ref": cell} for code, (name, cell, vals) in RAW_FIN.items() if ym in vals]
-        out.append({"dataset": "PL_PRODUCT_SEGMENT", "file_name": f"({ym})2633_상품부문별손익계산서.xlsx", "rows": rows})
-        rows = [{"ym": ym, "account_code": code, "account_name": name, "balance": vals[ym], "src_ref": cell} for code, (name, cell, vals) in RAW_BAL.items() if ym in vals]
-        out.append({"dataset": "LOAN_BALANCE_MONTHLY", "file_name": f"({ym})2020 과목별 월별 여신현황.xlsx", "rows": rows})
-    products = raw["inclusive_products"]
-    out.append({"dataset": "INCLUSIVE_PRODUCTS", "file_name": "포용금융 대상 상품 운영기준(상품코드).xlsx", "rows": [{"product_code": p["productCode"], "product_name": p["productName"], "product_group": p["productGroup"]} for p in sorted(products, key=lambda x: x["productCode"])]})
-    for ym, key in (("202601", "provisionBase"), ("202608", "provisionNow")):
-        total, cell = PROVISION_TOTAL[ym]
-        rows = [{"ym": ym, "product_code": p["productCode"], "product_name": p["productName"], "provision": p[key], "is_total": False, "src_ref": f"X{100 + i}"} for i, p in enumerate(sorted(products, key=lambda x: x["productCode"]))]
-        # 포용금융 외 상품 합계(시뮬레이션) — 합계 행과 상세 합이 맞도록 구성
-        others = total - sum(p[key] for p in products)
-        rows.append({"ym": ym, "product_code": "OTHERS", "product_name": "그 외 상품 합계", "provision": others, "is_total": False, "src_ref": "X121:X313"})
-        rows.append({"ym": ym, "product_code": "TOTAL", "product_name": "합계", "provision": total, "is_total": True, "src_ref": cell})
-        out.append({"dataset": "PROVISION_BY_PRODUCT", "file_name": f"({ym})7790_상품별_충당금.xlsx", "rows": rows})
-    grades = raw["micro_grades"]
-    buckets = {b["bucket"]: b for b in raw["micro_psi_buckets"]}
-    base_total = 41_200  # 기준시점 관측건수(시뮬레이션) — 구성비만 PSI 에 사용
-    out.append({
-        "dataset": "MODEL_MONITORING_GRADE", "file_name": "(20250831)소기업모형_등급별_집계(기준분포).csv",
-        "rows": [{"as_of": "2025-08-31", "model_code": "CORP_MICRO", "grade": g["gradeCode"], "grade_seq": i + 1, "obs_count": round(base_total * buckets[g["gradeCode"]]["baseShare"] / 100), "default_count": None, "obs_share": buckets[g["gradeCode"]]["baseShare"]} for i, g in enumerate(grades)],
-    })
-    out.append({
-        "dataset": "MODEL_MONITORING_GRADE", "file_name": "(20260831)소기업모형_등급별_집계.csv",
-        "rows": [{"as_of": "2026-08-31", "model_code": "CORP_MICRO", "grade": g["gradeCode"], "grade_seq": i + 1, "obs_count": g["obsCount"], "default_count": g["defaultCount"], "obs_share": g["obsShare"], "ks": g.get("ks"), "sdr_rank": g.get("sdrRank"), "exposure_amt": 48_200 if g["gradeCode"] == "6B" else None} for i, g in enumerate(grades)],
-    })
-    out.append({
-        "dataset": "PD_MASTER_SCALE", "file_name": "PD_Master_Scale_소기업모형.xlsx",
-        "rows": [{"model_code": "CORP_MICRO", "grade": g["gradeCode"], "pd_min": PD_MIN_6B if g["gradeCode"] == "6B" else None, "pd_mid": g["pdMid"], "pd_max": g["pdMax"]} for g in grades],
-    })
-    rows = []
-    for key, label, portfolio, values in DR_SERIES:
-        for ym, rate in zip(DR_MONTHS, values):
-            rows.append({"ym": ym, "segment_key": key, "segment_label": label, "portfolio": portfolio, "default_count": round(rate * 1000), "obs_count": 100_000})
-    out.append({"dataset": "DEFAULT_RATE_MONTHLY", "file_name": "월별_부도율_집계(202509-202608).csv", "rows": rows})
-    out.append({"dataset": "CAPITAL_CONSTRAINT", "file_name": "2026 하반기 자본·한도 제약.xlsx", "rows": [{"ym": "202608", "item_code": c, "item_name": n, "value": v, "unit": u} for c, n, v, u in CAPITAL_ITEMS]})
-    out.append({"dataset": "PEER_BANK_STATS", "file_name": "타행_공시_비교(2026Q2).csv", "rows": [{"ym": "202606", "stat_code": "MID_LOW_CREDIT_SHARE", "stat_name": "개인여신 중 중·저신용자 비중(타행 평균)", "value": 17.2, "issuer": "은행연합회 공시"}]})
-    return out
 
 
 # ═════════════════════════ 지표 정의 ═════════════════════════
@@ -248,7 +163,7 @@ def metrics() -> list[dict[str, Any]]:
                description="Q22 추천안 적용 — 계산 AR 과 같은 기준의 하락률. 개발시점 AR 은 규칙 MDL_AR_BASELINE(시뮬레이션 가정)"),
     ]
     # 월별 부도율 추이 (10개 구분 × 최신·기준·증감)
-    for key, label, _, _ in DR_SERIES:
+    for key, label, _ in DR_SEGMENTS:
         w_last = {"segment_key": key, "ym": "$latest"}
         w_first = {"segment_key": key, "ym": "$earliest"}
         M += [
@@ -344,12 +259,15 @@ def metrics() -> list[dict[str, Any]]:
         metric("bis_total", "BIS 총자본비율", "VALUE", {"value": cc("BIS_TOTAL", "BIS 총자본비율", "%")}, wf=HQ, unit="PCT", decimals=1, sort=50),
         metric("peer_share", "타행 평균 비중(참고, 외부)", "VALUE", {"value": q("PEER_BANK_STATS", {"stat_code": "MID_LOW_CREDIT_SHARE", "ym": "$latest"}, "value", label="타행 평균(외부 공시)", unit="%")}, wf=HQ, unit="PCT", decimals=1, sort=51),
     ]
-    return M
+    from .defs_real import extend, metrics as real_metrics  # Phase I — 원천 없던 화면 수치(모형 카드 · 포용금융 · 비교표 · 제약)
+
+    return extend(M + real_metrics())
 
 
 # ═════════════════════════ 표·차트 바인딩 ═════════════════════════
 GRADE_P = {"dataset": "MODEL_MONITORING_GRADE", "where": {"model_code": "CORP_MICRO", "as_of": "$latest"}, "master": "PD_MASTER_SCALE", "master_where": {"model_code": "CORP_MICRO"}, "verdict_labels": {"above_mid_within_max": "대표값 초과 · 최대값 이내", "above_max": "최대값 초과", "monotonic_break": "서열화 균열", "within_mid": "예측 범위 내"}}
-PSI_P = {"dataset": "MODEL_MONITORING_GRADE", "base_where": {"model_code": "CORP_MICRO", "as_of": "$earliest"}, "current_where": {"model_code": "CORP_MICRO", "as_of": "$latest"}, "names": ["2025.08(기준)", "2026.08(비교)"]}
+PSI_P = {"dataset": "MODEL_MONITORING_GRADE", "base_where": {"model_code": "CORP_MICRO", "as_of": "$earliest"}, "current_where": {"model_code": "CORP_MICRO", "as_of": "$latest"},
+         "names": ["[[ym:MODEL_MONITORING_GRADE:$earliest|dot]](기준)", "[[ym:MODEL_MONITORING_GRADE:$latest|dot]](비교)"]}
 INC_P = {"dataset": "PROVISION_BY_PRODUCT", "master": "INCLUSIVE_PRODUCTS", "base_ym": {"ref": {"rule": "INC_PROVISION_SHARE_TREND", "path": "base_ym"}}, "now_ym": "$latest", "group_order": ["새희망홀씨대출", "햇살론", "사잇돌"]}
 
 
@@ -366,9 +284,11 @@ def bindings() -> list[dict[str, Any]]:
         dict(workflow_code=IR, artifact_key="inclusive", path="groupSummary", builder="inclusive_groups", params=INC_P),
         dict(workflow_code=IR, artifact_key="report.inclusive-risk", path="table:상품별 충당금 증감 및 기여도 (상위 10건)", builder="inclusive_product_table", params={**INC_P, "limit": 10}),
     ]
-    for key, _, _, _ in DR_SERIES:
+    for key, _, _ in DR_SEGMENTS:
         B.append(dict(workflow_code=MM, artifact_key="default_rate_trend", path=f"series:{key}", builder="series_points", params={"dataset": "DEFAULT_RATE_MONTHLY", "where": {"segment_key": key}, "order_by": "ym", "formula": "DEFAULT_RATE", "args": {"default_count": "default_count", "obs_count": "obs_count"}, "decimals": 3}))
-    return B
+    from .defs_real import bindings as real_bindings
+
+    return B + real_bindings()
 
 
 # ═════════════════════════ 워크플로우 ═════════════════════════
@@ -431,7 +351,7 @@ WORKFLOWS = [
                 ("guides", "수행방안 가이드 선택(규칙)", "select_guides", None, {"rule": "GUIDE_CATALOG", "plans": ["plan-micro-recalibration"]}),
             ],
         ),
-        triggers=[("cron", "0 6 * * *"), ("dataset", "MODEL_MONITORING_GRADE"), ("dataset", "PD_MASTER_SCALE"), ("dataset", "DEFAULT_RATE_MONTHLY"), ("doc_class", "model_method"), ("rule", "MDL_PSI_BANDS"), ("rule", "MDL_CHI_TEST"), ("setting", "risk.segment_labels"), ("setting", "risk.retail_pool_note"), ("rule", "GUIDE_CATALOG")],
+        triggers=[("cron", "0 6 * * *"), ("dataset", "MODEL_MONITORING_GRADE"), ("dataset", "PD_MASTER_SCALE"), ("dataset", "DEFAULT_RATE_MONTHLY"), ("doc_class", "model_method"), ("rule", "MDL_PSI_BANDS"), ("rule", "MDL_CHI_TEST"), ("rule", "MDL_AR_DECLINE_BANDS"), ("rule", "MDL_AR_BASELINE"), ("rule", "MDL_MODEL_VERDICT"), ("setting", "risk.segment_labels"), ("setting", "risk.retail_pool_note"), ("rule", "GUIDE_CATALOG")],
     ),
     dict(
         code="wf_inclusive_risk", name="포용금융 신용리스크", sort=2,
@@ -447,7 +367,7 @@ WORKFLOWS = [
                 ("guides", "수행방안 가이드 선택(규칙)", "select_guides", None, {"rule": "GUIDE_CATALOG", "plans": ["plan-inclusive-risk"]}),
             ],
         ),
-        triggers=[("cron", "10 6 * * *"), ("dataset", "PROVISION_BY_PRODUCT"), ("master", "INCLUSIVE_PRODUCTS"), ("doc_class", "gov_policy"), ("doc_class", "mgmt_decision"), ("rule", "INC_PROVISION_SHARE_TREND"), ("rule", "GUIDE_CATALOG")],
+        triggers=[("cron", "10 6 * * *"), ("dataset", "PROVISION_BY_PRODUCT"), ("master", "INCLUSIVE_PRODUCTS"), ("dataset", "RETAIL_POOL_SUMMARY"), ("master", "RETAIL_POOL_MASTER"), ("doc_class", "gov_policy"), ("doc_class", "mgmt_decision"), ("rule", "INC_PROVISION_SHARE_TREND"), ("rule", "GUIDE_CATALOG")],
     ),
     dict(
         code="wf_hq_goal_review", name="종합기획부 경영목표 검토", sort=3,
@@ -458,7 +378,7 @@ WORKFLOWS = [
             [{"insight_id": "ins-divergence", "instruction": "기업여신과 가계여신의 목표 대비 이탈 방향 차이를 서술한다."}],
             {"query": "기업여신 확대 가계부채 관리 경영목표 RWA 한도", "concepts": ["기업여신 확대", "가계부채 관리", "RWA 순증 한도"], "doc_classes": ["gov_policy", "mgmt_decision"], "k": 4},
         ),
-        triggers=[("cron", "20 6 * * *"), ("event", "contract.changed"), ("dataset", "HQ_PLAN_KPI"), ("dataset", "PL_PRODUCT_SEGMENT"), ("dataset", "LOAN_BALANCE_MONTHLY"), ("dataset", "CAPITAL_CONSTRAINT"), ("dataset", "PEER_BANK_STATS"), ("doc_class", "gov_policy"), ("doc_class", "mgmt_decision"), ("event", "goal.confirmed"), ("rule", "GOAL_TARGETS"), ("rule", "GOAL_REC_POLICY"), ("rule", "ATTENTION_SCORE")],
+        triggers=[("cron", "20 6 * * *"), ("event", "contract.changed"), ("dataset", "HQ_PLAN_KPI"), ("dataset", "PL_PRODUCT_SEGMENT"), ("dataset", "LOAN_BALANCE_MONTHLY"), ("dataset", "CAPITAL_CONSTRAINT"), ("dataset", "PEER_BANK_STATS"), ("dataset", "RETAIL_POOL_SUMMARY"), ("master", "RETAIL_POOL_MASTER"), ("rule", "CAPITAL_FLOORS"), ("rule", "PROPOSAL_IMPACT"), ("doc_class", "gov_policy"), ("doc_class", "mgmt_decision"), ("event", "goal.confirmed"), ("rule", "GOAL_TARGETS"), ("rule", "GOAL_REC_POLICY"), ("rule", "ATTENTION_SCORE")],
     ),
     dict(
         code="wf_graph_projection", name="그래프 투영 · 문서 구조화", sort=9,
@@ -518,6 +438,9 @@ PARSERS = {
     },
     "PROVISION_BY_PRODUCT": {"adapter": "auto", "total_header": "손실충당금 및 충당부채 총계", "total_col": "X"},
 }
+from .defs_real import DATASETS as _REAL_DATASETS  # noqa: E402 — Phase I 신설 데이터셋(소매 Pool 월별 집계)
+
+DATASETS += [d for d in _REAL_DATASETS if d["code"] not in {x["code"] for x in DATASETS}]
 for _d in DATASETS:
     if _d["code"] in PARSERS:
         _d["parser"] = {**(_d.get("parser") or {}), **PARSERS[_d["code"]]}

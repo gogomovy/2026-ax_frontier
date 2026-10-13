@@ -1,12 +1,5 @@
 {
- "office": {
-  "code": "001068",
-  "name": "수원영통지점",
-  "region": "경기",
-  "sigungu": "수원시",
-  "regionHq": "수도권1지역본부",
-  "orgCode": "001068"
- },
+ "office": [],
  "current": [
   {
    "tabKey": "prime-corp",

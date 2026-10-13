@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { API_MODE } from "@/lib/config";
 import { registerTerms } from "@/lib/terms";
 import type { ActionPlan, CascadeNode, Goal, Term } from "@/lib/types";
 
@@ -30,6 +29,8 @@ export interface SessionUser {
   /** 부서 데이터 책임자 (UPL-04 · Q107) */
   dataSteward?: boolean;
   stewardScope?: { code: string; name: string } | null;
+  /** 데이터 관리자 — 업로드 자료 삭제 권한 (Phase J · DEL-01 · Q143) */
+  dataAdmin?: boolean;
 }
 export interface MenuPayload {
   user: SessionUser;
@@ -66,8 +67,8 @@ export function useSession() {
   return useContext(SessionContext);
 }
 
-/** API 모드 여부와 로그인 여부 */
+/** 로그인 사용자와 서버 메뉴 */
 export function useApiSession() {
   const s = useSession();
-  return { apiMode: API_MODE, user: s.menu?.user ?? null, menu: s.menu };
+  return { user: s.menu?.user ?? null, menu: s.menu };
 }

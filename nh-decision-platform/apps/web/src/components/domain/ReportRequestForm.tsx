@@ -2,11 +2,9 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Field, FormError } from "@/components/auth/AuthFrame";
-import { Badge, Button, RowEmpty } from "@/components/ui/primitives";
+import { Badge, Button } from "@/components/ui/primitives";
 import { api, apiPost } from "@/lib/api-client";
 import type { ReportRequest } from "@/lib/types";
-
-const API_MODE = process.env.NEXT_PUBLIC_DATA_SOURCE === "api";
 
 /**
  * 확인 · 보고 요청 등록 (B.32) — 영업점 · 사업부서가 본부(설정 request.to_org)로 올린다.
@@ -34,15 +32,10 @@ export function ReportRequestForm() {
   );
 
   useEffect(() => {
-    if (!API_MODE) return;
     Promise.all([api<{ value: string; label: string }[]>("/state/report-requests/types"), api<ReportRequest[]>("/state/report-requests/mine")])
       .then(apply)
       .catch((e: Error) => setError(e.message));
   }, [apply]);
-
-  if (!API_MODE) {
-    return <RowEmpty title="요청 등록은 서버 연결 모드에서 사용합니다" description="등록된 요청은 종합기획부 경영목표 설정 화면의 확인·보고 요청으로 전달됩니다." />;
-  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();

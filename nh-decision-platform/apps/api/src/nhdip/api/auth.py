@@ -266,7 +266,8 @@ def my_menu(user: AppUser = Depends(current_user), session: Session = Depends(ge
             "countKey": s.count_key,
         }
         (sec["flow"] if s.kind == "flow" else sec["reference"]).append(item)
-    ui_as_of = session.get(Setting, "ui.as_of")
+    from nhdip.data.datasets import display_as_of
+
     batch = session.get(Setting, "ui.batch_label")
     return {
         "user": user_json(session, user),
@@ -274,7 +275,7 @@ def my_menu(user: AppUser = Depends(current_user), session: Session = Depends(ge
         "sections": sorted(sections.values(), key=lambda x: x["sort"]),
         "screens": sorted(codes),
         "counts": menu_counts(session, user),
-        "asOf": ui_as_of.value if ui_as_of else get_settings().as_of_default,
+        "asOf": display_as_of(session),  # 관리자 지정 기준일 또는 올라온 자료의 최신 기준일 (자료가 없으면 null)
         "batchLabel": batch.value if batch else "",
         "dataOrigin": _data_origin(session),
     }

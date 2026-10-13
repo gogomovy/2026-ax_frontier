@@ -4,8 +4,8 @@
  * ReportDoc 모델을 그대로 직렬화하므로 화면 DOM 상태와 무관하게 같은 결과가 나온다.
  * 수치는 계산 결과(Figure)를 포맷해 넣고, 마커가 해결되지 않으면 그 사실을 본문에 남긴다
  * (리터럴 숫자 생성 금지 원칙 — PRIN-05).
- * 목업 모드는 자체 완결 HTML 을 브라우저에서 만들고, API 모드는 서버 변환
- * (`GET /reports/{tabKey}/export?format=pdf|hwpx|hwp|html`, F.17)을 내려받는다.
+ * 분석 탭 보고서는 서버 변환(`GET /reports/{tabKey}/export?format=pdf|hwpx|hwp|html`, F.17)을 내려받고,
+ * 그 밖의 보고서는 자체 완결 HTML 을 브라우저에서 만든다.
  */
 import { EVIDENCE_CATEGORY_LABEL, formatDateTime, formatFigure } from "./format";
 import type { Evidence, Figure, ReportBlock, ReportDoc } from "./types";

@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { usePlanState } from "@/components/providers/PlanStateProvider";
 import { useSession } from "@/components/providers/SessionProvider";
-import { api } from "@/lib/api-client";
-import { API_MODE } from "@/lib/config";
 import { UNIT_LABEL } from "@/lib/format";
-import { CASCADE as MOCK_CASCADE, GOALS as MOCK_GOALS } from "@/mock/goals";
 import type { CascadeNode, Goal } from "@/lib/types";
 
 const NO_NODES: CascadeNode[] = [];
@@ -16,8 +13,8 @@ const NO_GOALS: Goal[] = [];
 /**
  * 전파 경로 트리를 현재 상태로 다시 계산한다 (요구사항 PROP-01 ~ PROP-04).
  *
- * API 모드에서는 서버 계산 결과(`GET /cascade/tree`, F.16)를 쓴다. 상태가 바뀌면 다시 받고,
- * 응답 전까지는 같은 규칙의 클라이언트 계산을 낙관적 표시로 쓴다(마지막 요청만 반영).
+ * 기준은 레이아웃이 서버에서 받은 전파 트리 · 경영목표(session.cascade · session.goals) — 없으면 빈 트리.
+ * 그 위에 현재 목표 · 수행방안 처리 상태를 반영한다.
  *
  * 반영 대상
  *  - 종합기획부에서 수정·신설한 경영목표 → 목표 노드 라벨·신규 노드
@@ -28,8 +25,9 @@ export function useCascadeModel(): CascadeNode[] {
   const { overrides, addedGoals } = useGoalState();
   const { inProgressPlans } = usePlanState();
   const session = useSession();
-  const CASCADE = API_MODE ? (session.cascade ?? NO_NODES) : MOCK_CASCADE;
-  const GOALS = API_MODE ? (session.goals ?? NO_GOALS) : MOCK_GOALS;
+  const CASCADE = session.cascade ?? NO_NODES;
+  const GOALS = session.goals ?? NO_GOALS;
+  const userOrg = session.menu?.user.org.name ?? "";
 
   return useMemo(() => {
     /* 1) 목표 노드 라벨을 현재 목표값으로 갱신 */
@@ -40,24 +38,27 @@ export function useCascadeModel(): CascadeNode[] {
 
       const unit = UNIT_LABEL[goal.unit];
       const decimals = goal.decimals ?? 1;
-      const before = `${goal.targetValue?.toFixed(decimals)}${unit}`;
+      // 기존 목표값이 없으면(빈 템플릿) 라벨은 그대로 두고 변경 내용만 덧붙인다
+      const before = goal.targetValue != null ? `${goal.targetValue.toFixed(decimals)}${unit}` : null;
       const after = `${override.targetValue.toFixed(decimals)}${unit}`;
       return {
         ...node,
-        label: node.label.replace(before, after),
-        detail: `${node.detail ?? ""} · 목표 변경 ${before} → ${after}`.replace(/^ · /, ""),
+        label: before ? node.label.replace(before, after) : node.label,
+        detail: `${node.detail ?? ""} · 목표 변경 ${before ?? "–"} → ${after}`.replace(/^ · /, ""),
       };
     });
 
     /* 2) 종합기획부에서 신설한 목표 추가 */
     addedGoals.forEach((added) => {
       if (nodes.some((n) => n.id === added.id || n.label === added.title)) return;
+      // 담당조직 — 목표에 적힌 조직, 없으면 로그인 사용자 소속
+      const org = added.ownerOrg || userOrg || "–";
       nodes.push({
         id: added.id,
         kind: "goal",
         label: added.title,
-        detail: `종합기획부 · 신규 확정 · 목표 ${added.targetLabel}`,
-        org: "종합기획부",
+        detail: `${org} · 신규 확정 · 목표 ${added.targetLabel}`,
+        org,
         children: [],
       });
     });
@@ -117,5 +118,5 @@ export function useCascadeModel(): CascadeNode[] {
     }
 
     return nodes;
-  }, [overrides, addedGoals, inProgressPlans, CASCADE, GOALS]);
+  }, [overrides, addedGoals, inProgressPlans, CASCADE, GOALS, userOrg]);
 }

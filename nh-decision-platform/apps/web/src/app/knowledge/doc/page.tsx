@@ -25,7 +25,7 @@ export default async function DocumentViewerPage(props: { searchParams: Promise<
         <PageHeader crumbs={[{ label: "데이터베이스", href: "/knowledge" }, { label: "원본 문서" }]} title="원본 문서 뷰어" />
         <div className="shell">
           <p className="panel px-xl py-lg text-[13px] text-steel">
-            원본 문서 뷰어는 백엔드 연결(API 모드)에서 제공됩니다. 목업 모드에는 원본 저장소가 없습니다.
+            문서를 찾지 못했습니다. 문서가 아직 올라오지 않았거나 열람 권한 밖일 수 있습니다.
           </p>
         </div>
       </>

@@ -50,7 +50,16 @@ def db():
     from nhdip.seed.run import run_seed
 
     with SessionLocal() as s:
-        run_seed(s, with_precompute=True)
+        run_seed(s, with_precompute=True)  # 정의만 (Phase I · Q135)
+    # 시연 자료 패키지(엑셀 · CSV · PDF)를 실제 업로드 엔드포인트로 올린다 (Q137) — 이후 시험은 업로드된 자료 위에서 돈다
+    from fastapi.testclient import TestClient
+
+    from nhdip.main import app
+    from nhdip.sample.build import build
+    from nhdip.sample.load import upload_http
+
+    rep = upload_http("http://testserver", "00000001", "Admin1234!", build(), client=TestClient(app))
+    assert rep.ok, rep.failed
     yield SessionLocal
 
 

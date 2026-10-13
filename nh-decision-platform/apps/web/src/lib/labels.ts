@@ -39,6 +39,7 @@ const STATUS: Record<string, string> = {
   committed: "확정",
   staged: "확정 전",
   rolled_back: "되돌림",
+  deleted: "삭제됨",
   rejected: "반려",
   approved: "승인",
   superseded: "대체됨",

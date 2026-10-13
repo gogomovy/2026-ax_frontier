@@ -106,6 +106,51 @@ def section_paths(chunks: list[str]) -> list[str | None]:
     return [tr.chunk_path(c) for c in chunks]
 
 
+# 문서 업로드 메타(RD-08) — 허용 키만 저장한다. 값 형식이 틀리면 거절
+DOC_META_KEYS: dict[str, type] = {
+    "docType": str, "isOfficial": bool, "accessClass": str, "domainLabels": list, "tags": list,
+    "effectiveDate": str, "dbClassLabel": str, "pageCount": int,
+}
+ACCESS_CLASSES = ("public", "internal", "dept_only")
+
+
+def clean_doc_meta(raw: dict[str, Any] | None, origin: str) -> dict[str, Any]:
+    """업로드 폼의 문서 메타 → 저장할 메타. 모르는 키는 버리고, 형식이 틀리면 DocumentError."""
+    out: dict[str, Any] = {"docType": "업로드 문서", "isOfficial": origin == "ext"}
+    if raw is None:
+        return out
+    if not isinstance(raw, dict):
+        raise DocumentError("문서 메타는 JSON 객체여야 합니다")
+    for k, typ in DOC_META_KEYS.items():
+        v = raw.get(k)
+        if v is None or v == "":
+            continue
+        if typ is list:
+            if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+                raise DocumentError(f"문서 메타 {k} 는 문자열 목록이어야 합니다")
+            v = [x.strip()[:40] for x in v if x.strip()][:20]
+        elif typ is bool:
+            if not isinstance(v, bool):
+                raise DocumentError(f"문서 메타 {k} 는 true/false 여야 합니다")
+        elif typ is int:
+            if isinstance(v, bool) or not isinstance(v, int) or not 1 <= v <= 10_000:
+                raise DocumentError(f"문서 메타 {k} 는 1~10000 정수여야 합니다")
+        else:
+            if not isinstance(v, str):
+                raise DocumentError(f"문서 메타 {k} 는 문자열이어야 합니다")
+            v = v.strip()[:120]
+        out[k] = v
+    if out.get("accessClass") not in (None, *ACCESS_CLASSES):
+        raise DocumentError(f"열람 등급(accessClass)은 {' · '.join(ACCESS_CLASSES)} 중 하나")
+    if out.get("effectiveDate"):
+        try:
+            date.fromisoformat(out["effectiveDate"][:10])
+        except ValueError as exc:
+            raise DocumentError("시행일(effectiveDate)은 YYYY-MM-DD") from exc
+        out["effectiveDate"] = out["effectiveDate"][:10]
+    return out
+
+
 def chunk_text(pages: list[tuple[int, str]], size: int = 700, overlap: int = 100) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
     for page, text in pages:
@@ -145,8 +190,10 @@ def ingest_document(
 ):
     t = source(origin)
     sha = path = mime = None
+    meta = dict(meta or {})
     if content is not None and filename:
         text, pages = extract_text(filename, content)
+        meta.setdefault("pageCount", len(pages))  # 원본 면 수 (청크 수가 아니라)
         sha = hashlib.sha256(content).hexdigest()
         low = filename.lower()
         mime = "application/pdf" if low.endswith(".pdf") else "application/hwp+zip" if low.endswith(".hwpx") else "application/x-hwp" if low.endswith(".hwp") else "text/plain"
@@ -178,7 +225,7 @@ def ingest_document(
         file_path=path,
         mime=mime,
         text=text or "",
-        meta=meta or {},
+        meta=meta,
         status="ingested",
         uploaded_by=actor,
     )

@@ -653,7 +653,11 @@ def test_ar_decline_uses_computed_ar(db):
     assert abs(ard - (65.12 - ar) / 65.12 * 100) < 0.06
     assert row["arDecline"]["calc"]["formulaId"] == "AR_DECLINE"
     assert 10 <= ard < 30  # 판정 구간(하락 주의) 유지
-    assert "[[fig:ard_micro]]" in row["verdictBasis"] and "[[fig:psi_micro]]" in row["verdictBasis"]
+    # 판정 근거 문구 = 서식 문구(Tpl)를 계산 수치로 채운 글 (Phase I · Q138) — 화면 틀의 값 없는 자리(–)가 남지 않고, 서식 원문은 응답에 없다
+    psi = row["psi"]["value"] if isinstance(row.get("psi"), dict) else None
+    assert f"AR 하락률 {ard:.1f}%" in row["verdictBasis"] and "–" not in row["verdictBasis"], row["verdictBasis"]
+    assert psi is None or f"PSI {psi:.3f}" in row["verdictBasis"]
+    assert "verdictBasisTpl" not in row
 
 
 def test_highlights_fragments():
@@ -668,7 +672,7 @@ def test_highlights_fragments():
 
 
 def test_document_viewer_excerpt_and_file(db):
-    """F.12 — 시드 문서는 근거 면 발췌 + 인용 하이라이트, 업로드 PDF 는 면별 본문 + 원본 파일."""
+    """F.12 — 화면 근거 문서(시연 자료 패키지 PDF, Phase I)와 업로드 PDF 모두 면별 본문 + 인용 하이라이트 + 원본 파일."""
     import json
     import os
 
@@ -687,7 +691,8 @@ def test_document_viewer_excerpt_and_file(db):
             stack.extend(o)
     assert ev
     v = c.get("/documents/view", params={"file": ev["doc"]["fileName"], "title": ev["doc"]["title"], "page": ev["doc"]["page"], "q": ev["snippet"]}).json()
-    assert v["source"] == "excerpt" and v["matched"] and v["focusPage"] == ev["doc"]["page"]
+    # 시드가 문서를 넣지 않으므로(Q135) 근거 문서는 업로드된 PDF — 발췌가 아니라 원본 면 본문에서 인용을 찾는다
+    assert v["source"] == "file" and v["hasFile"] and v["matched"] and v["focusPage"] == ev["doc"]["page"], {k: v.get(k) for k in ("source", "matched", "focusPage")}
     focus = next(p for p in v["pages"] if p["page"] == v["focusPage"])
     h = focus["highlights"][0]
     assert ev["snippet"][:10] in focus["text"][h["start"]:h["end"]]
@@ -1545,7 +1550,8 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert spec["space"] == "risk" and spec["metrics"] and all(m["formula"] in ("SUM", "VALUE") for m in spec["metrics"])
     assert {q["q"]["dataset"] for m in spec["metrics"] for q in m["args"].values()} == {"PROVISION_BY_PRODUCT"}
     assert spec["tables"] and spec["tables"][0]["group_by"] == "product_name"
-    assert "그 외 상품 합계" in spec["tables"][0].get("exclude", [])  # 집계 행은 순위 표에서 뺀다(실 LLM 시험에서 발견)
+    # 집계 행은 순위 표에서 뺀다(실 LLM 시험에서 발견). 시연 7790 원본(Phase I)은 그 외 상품을 28개 상품으로 풀어 '합계' 행만 집계 행
+    assert "합계" in spec["tables"][0].get("exclude", [])
     # 허용 목록 밖 · 숫자 본문 · 없는 열은 빠지고 사유가 남는다
     bad = {**spec, "metrics": spec["metrics"] + [{"key": "x1", "label": "x", "formula": "EXEC", "args": {}}, {"key": "x2", "label": "y", "formula": "SUM", "args": {"values": {"q": {"dataset": "NOPE", "col": "a", "agg": "list"}}}}],
            "sections": spec["sections"] + [{"heading": "메모", "blocks": [{"type": "text", "text": "충당금은 123억"}, {"type": "html", "html": "<script>"}]}]}
@@ -1557,13 +1563,14 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     top1 = {"key": "top1", "label": "최대 상품 충당금", "formula": "VALUE", "args": {"value": {"q": {"dataset": "PROVISION_BY_PRODUCT", "col": "provision", "agg": "max", "where": {"ym": "$latest"}}}}, "unit": "KRW_MN", "decimals": 0}
     vm = u.post("/analysis-agents/validate", json={"space": "risk", "spec": {**spec, "metrics": spec["metrics"] + [top1]}}).json()
     w = next(m for m in vm["spec"]["metrics"] if m["key"] == "top1")["args"]["value"]["q"]["where"]
-    assert {"그 외 상품 합계", "합계"} <= set(w["product_name"]["nin"]) and {"OTHERS", "TOTAL"} <= set(w["product_code"]["nin"]), w
+    # 집계 행 값은 현재 자료에서 찾는다 — 시연 7790(Phase I)은 그 외 상품을 풀어 써 '합계 · TOTAL' 만 남는다
+    assert "합계" in w["product_name"]["nin"] and "TOTAL" in w["product_code"]["nin"], w
     assert any("집계 행" in i["message"] for i in vm["validation"]["issues"])
     # 실행 조건이 없는 명세(실 LLM 시험에서 발견 — 승인 422) → 기본값 '자료가 바뀌면 다시 계산' 으로 두고 알린다
     vs = u.post("/analysis-agents/validate", json={"space": "risk", "spec": {**spec, "schedule": {"cron": None, "on_data_change": False}}}).json()
     assert vs["spec"]["schedule"] == {"cron": None, "on_data_change": True} and any(i["path"] == "schedule" for i in vs["validation"]["issues"])
     rc = next(m for m in vm["spec"]["metrics"] if m["key"] == "row_count")["args"]["value"]["q"]["where"]
-    assert "OTHERS" in rc["product_code"]["nin"], rc  # 건수도 항목만(합계 · 그 외 행 제외)
+    assert "TOTAL" in rc["product_code"]["nin"], rc  # 건수도 항목만(합계 행 제외 — 시연 7790 은 그 외 상품을 풀어 써 OTHERS 행이 없다)
     with db() as s:
         _, prov = current_rows(s, s.get(Dataset, "PROVISION_BY_PRODUCT"))
     ym = max(str(r["ym"]) for r in prov)

@@ -3187,3 +3187,88 @@ Windows 압축본 Elasticsearch 9.5.4 + analysis-nori(단일 노드 · 보안 �
 - 로컬에 Docker 가 없어 **ES 컨테이너(`infra/elasticsearch` 이미지 빌드 · 보안 켬 · 헬스체크)는 CI e2e 에서만** 확인했다 — run `38358147787`: `kb-es --check` ok · E2E 3-way 항목(분석 결과 · 문서 = es, 그래프 = neo4j) · 골든셋 retrieval 7/7 · knowledge 4/4. 첫 실행은 디스크 비율 기준(90%) 때문에 보안 색인이 배치되지 않아 실패했고 남은 용량 기준으로 고쳤다(§24.6). 로컬 확인은 Windows 압축본 ES 9.5.4 + analysis-nori(보안 끔).
 - 운영 규모(수백만 건) · 다중 노드 · 복제본 · TLS 는 §21.18 과 같이 미확인. 실제 운영 임베딩 모델 벡터의 ES kNN 품질도 모델 확정 후 `kb-calibrate` 와 함께 다시 잰다.
 - 사용자 사전의 분해 규칙은 별칭 사전 낱말 기준이다 — 별칭에 없는 고유명사('일반기업모형' 등)는 기본 nori 분해를 따른다(별칭을 보강하면 다음 동기화에서 색인이 다시 만들어진다).
+## 25. 시연 자료를 실제 파일 업로드로 — 하드코딩 제거 (Phase I · 요구사항 §25 · Q135~Q142)
+### 25.1 흐름
+```
+ 정의(seed/defs_*) ─┐                         ┌─ sample-data/202608/ (저장소 사본 · 사람이 열어 봄)
+ 시나리오(sample/) ─┴▶ nhdip.sample.build ────┤
+                     (결정적 · 기준월 인자)     └─ 메모리 패키지 ─┐
+                                                                 │ 실제 업로드
+  CI · E2E : python -m nhdip.sample upload --base-url (HTTP · 관리자 로그인)
+  개발     : nhdip load-sample (check_upload → ingest_file / ingest_document)
+  pytest   : TestClient → /admin/datasets/{code}/upload · /admin/documents/upload
+                                                                 ▼
+ dataset.committed · document.ingested 이벤트 → 워크플로(build_views: 수치 패치 · 바인딩 · Tpl 렌더 · asOf) → 화면
+                                                                 ▼
+  nhdip sample verify   : 엑셀을 독립 계산(openpyxl) → 화면 API 값 대조
+  nhdip sample selftest : 빈 DB → 시드 → 패키지 → 교란 패키지 → 바뀌지 않은 데이터 자리 = 하드코딩(예외 목록 밖 0건)
+```
+### 25.2 패키지 구성 (`apps/api/src/nhdip/sample/`)
+| 모듈 | 내용 |
+|---|---|
+| `scenario.py` | 시나리오 원천 값 — 지금까지 `seed/defs_*.py` · `mock_raw.json` 에 있던 행 생성 코드(손익 · 잔액 · 충당금 · 모형 등급 · 부도율 · 자본 · 타행 · KPI · 영업점 생성기)를 옮겨 온 것 + 새 자료(6개 모형 등급 집계 · 소매 Pool 월별 집계). `rows(ym)` → `{데이터셋: [(파일명, 행)]}` |
+| `excel.py` | 실무형 엑셀 작성기 — 제목(병합 · 굵게) · 기준/단위/작성부서 줄 · 머리글(채움 · 테두리 · 틀 고정) · 천 단위 · 소수 서식 · 코드는 문자열 셀 · 합계 줄 · 주석(`※ 시연용 가상 자료`). 원본 양식 3종: 2633(계층 항목 · 들여쓰기 · `N월 누계`), 2020(과목구분 · 1~12월 · 머리글 블록 · `[1,000,000]원` 단위), 7790(다단 병합 헤더 · X 열 총계 · 합계 행) |
+| `docs.py` | 문서 PDF(reportlab, 한글 글꼴은 보고서 내보내기와 같은 규칙 — 나눔고딕, 없으면 내장 CID) — 표지(제목 · 발행처 · 시행일 · 분류 · 시연용 표기), 인용된 면에 절 제목 + 인용문, 면 수 = 정의된 면 수(인용 없는 면은 비움 → 청크 없음) |
+| `build.py` | `build(ym="202608") -> Package(files=[SampleFile(name, kind, dataset|doc meta, bytes)], manifest)`; `write(dir)`; `perturb(pkg, seed)` — 셀마다 다른 결정적 비율(1.02~1.13, 키 · 컬럼 해시)로 수치를 바꾼 패키지(교란 검사용, 개수 · 코드 · 플래그는 유지) |
+| `load.py` | `load_local(session, pkg)` · `upload_http(base_url, user, pw, pkg)` — 순서: 마스터 → 사실 자료(기간순) → 문서. 같은 체크섬 파일이 이미 있으면 건너뜀. 응답 `status != committed` 는 실패 |
+| `verify.py` | 기대값 계산(플랫폼 calc 미사용 — 엑셀 셀을 직접 읽어 Decimal 로) → `/screens/*` 값과 비교. 교란 검사(`selftest`)와 예외 목록(`EXEMPT` — 경로 패턴 · 이유) |
+`manifest.json`: `{ym, generatedBy, files:[{name, kind: dataset|document, dataset, origin, dataOrigin, asOf?, note} | {name, kind: document, origin, docCode, docClass, title, issuer, publishedAt, meta:{docType, isOfficial, accessClass, domainLabels, tags}}]}`.
+### 25.3 업로드 경로 보강
+- 일반 표 파서(`_read_table`): `parser.header_row` 가 없으면 앞 20줄에서 **정의 컬럼(이름 · 라벨 · 별칭)과 가장 많이 맞는 줄**(2개 이상)을 머리글로. 머리글 아래에서 첫 칸이 `※` · `주)` · `*` · `출처` 로 시작하고 나머지가 빈 줄, 빈 줄은 건너뜀. CSV 도 같은 규칙(앞 줄 제목 허용).
+- 버전 기준일(`ingest_rows`): 행 기준일 값이 하나면 그 날, 여럿이면 **가장 늦은 날**(Q141).
+- 문서 업로드(`/admin/documents/upload`): 폼 `meta`(JSON) — 허용 키 `docType · isOfficial · accessClass(public|internal|dept_only) · domainLabels[] · tags[] · effectiveDate · dbClassLabel · pageCount` 만 저장, 나머지는 버림. `published_at` 이 없으면 `effectiveDate`.
+### 25.4 화면 틀(template)과 서식 문구(Tpl)
+- 시드 `seed_artifacts` 는 `screens/*.json` 을 `views.template.to_template()` 으로 바꿔 게시: Figure(`id·label·unit·value`) → `value: null`, `calc · sourceRef · dataOrigin · stale` 제거. 바인딩 대상(`table:` rows · `chart:` series · `series:` points · 경로)은 빈 목록. 시연 전용 내용(다른 부서 요청 `report_requests` · 대시보드 `requests` · 검토 대기 `review_queue`)은 빈 목록(사용자가 만든 요청만). 마지막에 Tpl 렌더(값 없음 → `–`).
+- Tpl 규칙: 어떤 dict 든 `xxxTpl` 문자열이 있으면 `build_views` 가 `xxx` 를 렌더 결과로 바꾼다. 표식:
+  | 표식 | 결과 |
+  |---|---|
+  | `[[fig:ID]]` | 수치 표시(값 · 자릿수 · 단위 — 보고서 내보내기 `format_figure` 와 같음). 값이 없으면 `–` |
+  | `[[fig:ID\|signed]]` · `[[fig:ID\|num]]` · `[[fig:ID\|verdict]]` | 부호 붙임 · 단위 없는 숫자 · 판정 문구(BAND · 검정 결과) |
+  | `[[ym:데이터셋:토큰\|형식]]` | 데이터셋 현재 행의 기간(`$latest` · `$latest-12` · `$earliest` …) — 형식 `dot`(2026.08) · `month`(8월) · `year`(2026) · `ym`(202608) · `date`(2026.08.31) |
+  | `[[rule:코드.경로\|형식]]` | 규칙 값(목표 · 임계값) |
+  수치는 **모든 산출물에 이미 반영된 Figure 값**(id 별)으로 렌더하므로 다른 워크플로가 계산한 수치도 쓸 수 있다. `[[fig:]]` 를 해석하는 RichText 필드(statement · judgement · 문단 text)는 지금처럼 프론트가 렌더하고, 평문 필드(캡션 · 근거 snippet · verdictBasis · rankBasis · note · 라벨 · 머리글)는 Tpl 로.
+- `asOf`: 워크플로 출력 산출물의 최상위 `asOf` 와 이번 실행이 수치를 고친 의견(statement 가 있는 dict)의 `asOf` 를 입력 데이터셋 현재 버전 기준일 중 가장 늦은 날로.
+- Figure 패치에 `verdict` · `severity`(결과 extra 의 문자열) 전달 — 판정 칩 · `verdictSeverity` 를 Tpl 로.
+### 25.5 원천 없던 수치 (Q142)
+| 화면 | 수치 | 원천 · 지표 |
+|---|---|---|
+| 신용리스크 대시보드 모형 카드 | 6개 모형 AR · AUROC · K-S · PSI · AR 하락률 · 판정 | `MODEL_MONITORING_GRADE` 6개 모형 × 2시점(기준 · 비교, 부도건수 포함 — 전기 AR 도 계산), 지표 `auroc_<m>` · `ar_<m>` · `ks_<m>` · `psi_<m>` · `ard_<m>` · `verdict_<m>`(BAND), 개발시점 AR 규칙 `MDL_AR_BASELINE` 모형별 |
+| 포용금융 · 대시보드 | 익스포저 건수 · 증가율 · 금액 · 평균 등급 · 연체율, 소매 평균 등급 | `RETAIL_POOL_SUMMARY`(std_ym · pool_id · 건수 · 금액 · 평균 CB 등급 · 연체금액 · 신규취급 누계) × Pool 마스터 상품군 `서민금융` |
+| 제안(포용금융 신설) | 중·저신용자 공급액(누계) · 증가율 · 개인여신 중 비중 | `RETAIL_POOL_SUMMARY` 저신용 Pool, 타행 평균은 `PEER_BANK_STATS` |
+| 자본 · 한도 | CET1 · 관리기준(CET1 · BIS) · 지주 한도 | `CAPITAL_CONSTRAINT` 항목 추가(`CET1_RATIO` · `CET1_FLOOR` · `BIS_FLOOR`) |
+| 여신 종합 · 비교 | 전체 수익 · 이자마진 · 기업/가계 이자 · 잔액 × (당기 · 전년 · 전전년 · 증감 · 증감률) | `PL_PRODUCT_SEGMENT` · `LOAN_BALANCE_MONTHLY` 지표 추가(`$latest-24`, DIFF) — 기존 지표의 figure id 확장 |
+| 제안 제약 | 제안 반영 후 소진율 · 여유 · 상한 | `PROPOSED_USAGE` · `DIFF` + `PROPOSAL_IMPACT` 규칙 · `CAPITAL_CONSTRAINT` |
+### 25.6 하드코딩 검출(교란 검사)
+1. 빈 DB → 시드 → 패키지(2026.08) 업로드 → 워크플로 → 산출물 A.
+2. `perturb(pkg)` 업로드(같은 기간 · 같은 키, 수치만 셀마다 다른 비율) → 워크플로 → 산출물 B.
+3. A 와 B 를 같은 경로로 비교: 숫자(정수 0·1 제외) · 숫자가 든 문자열(날짜 · 조항 번호 제외)이 같으면 하드코딩 후보. `EXEMPT` 경로 패턴(규칙 · 설정 값 · 정의서 기대값 · 용어 예시 · 문서 인용 · 기획 입력 · 건수 기반 값)은 제외. 남은 후보가 0이어야 통과.
+4. 같은 패키지로 `verify` 의 기대값도 다시 계산해 B 와 맞는지 본다(계산이 바뀐 자료를 따라가는지).
+### 25.7 프론트
+- `lib/data.ts` 는 API 호출만. `lib/config.ts` 의 `DATA_SOURCE · API_MODE` 제거, `AppShell` 의 페르소나 · 정적 메뉴 · 목데이터 기준일, `PlanStateProvider` 의 로컬 저장 · 고정 날짜, `useCascadeModel` 의 목데이터 대체를 없앤다. `next.config.mjs` · `proxy.ts` · Dockerfile · compose · CI 의 모드 분기 제거.
+- 기간 · 결론 문구: 산출물 필드(`periodLabels` · `caption` · `asOf` 등, Tpl 로 서버가 채움)를 읽는다. 값이 없으면 `formatFigure` 의 '미제공', 목록이 비면 빈 상태.
+
+## 26. 업로드 자료 삭제 (Phase J · 요구사항 §26 · Q143~Q147)
+### 26.1 흐름
+```
+관리자 [데이터셋 · 문서] 삭제 → GET …/delete-preview (현재 여부 · 승격 대상 · 다시 도는 워크플로우)
+  → 사유 입력 확인 → POST …/delete
+     [한 트랜잭션] 잠금(ds:<origin>:<code> · doc:<origin>:<doc_code>)
+       행 · 청크(pgvector) · 추출 이슈 삭제, 본문 · 추출 비움, 버전/문서 = status deleted + 삭제자 · 시각 · 사유
+       현재였으면 직전 버전 승격 + purge_task(es · neo4j) + 이벤트 dataset.deleted · document.deleted + 감사
+     [응답 뒤 백그라운드] 원본 파일 정리(아무도 안 쓰면) · purge_task 즉시 1회
+  워커(30초) → 남은 purge_task 재시도 · 이벤트 → 계산 · 화면 · 그래프 재투영 · 색인 동기화
+```
+### 26.2 저장소별 처리
+| 저장소 | 대상 | 방법 |
+|---|---|---|
+| PostgreSQL 원장 | `row_store` · `chunk`(임베딩 · tsv) · `extraction_issue` · 문서 본문/추출 | 같은 트랜잭션 삭제. 버전/문서 행은 삭제 표시(버전 번호 재사용 방지) |
+| 파일 저장소 | 데이터셋 · 문서 원본, 자료 요청(UPL) 원본 | 커밋 뒤, 파일 저장소 안 · 다른 버전/문서/대기 요청이 같은 경로를 쓰지 않을 때만(내용 주소 저장) |
+| Elasticsearch | 문서 청크 색인 `_id = <origin>:<chunk_id>` | purge_task(es) — `_bulk delete`(404 는 성공). 미구성이면 skipped. 청크 id 는 다시 쓰지 않는다. 동기화(`sync_docs`) 차이 삭제가 이중 안전장치 |
+| Neo4j | `Document {key: <origin>:<doc_code>}`(승격 없을 때) · `DatasetVersion {key: <code>:v<n>}` · 이 문서에서만 나온 추출 개체(관계 없는 관리 노드) | purge_task(neo4j) — `DETACH DELETE`. 같은 문서 코드가 다시 현재가 되면 skipped. 재투영(세대 정리)이 이중 안전장치 |
+| 분석 결과 색인(`kb_chunk`) | 지운 자료로 계산된 화면 | 이벤트로 워크플로우가 산출물을 다시 게시 → 색인 갱신(기존 경로) |
+### 26.3 권한 · 화면
+- `require_data_admin` = `role == admin and data_admin`. `/me` · 사용자 목록에 `dataAdmin`. 지정 · 해제(`PATCH /admin/users/{emp}` `data_admin`)는 데이터 관리자만, 관리자에게만, 마지막 한 명은 해제 불가(409). 관리자 권한 회수 시 함께 해제.
+- [관리자 > 데이터셋] 버전 표에 [삭제](데이터 관리자만 보임), 삭제된 버전은 '삭제됨'(사유 · 삭제자). [문서] 표에 [삭제], '삭제된 문서 보기' 선택. '삭제 반영 상태'(색인 · 그래프 작업) 표와 [지금 다시 실행].
+- API: `GET/POST /admin/datasets/{code}/versions/{vid}/delete-preview|delete`, `GET/POST /admin/documents/{origin}/{did}/delete-preview|delete`(`all_versions`), `GET /admin/purge-tasks`, `POST /admin/purge-tasks/run`.
+### 26.4 시험
+- 권한(관리자 · 데이터 관리자 아님 → 403), 사유 누락 422, 두 번 삭제 409, 현재 버전 삭제 → 직전 버전 현재 · 화면 값 되돌아감 · 버전 번호 재사용 없음, 문서 삭제 → 청크 · 이슈 0 · 기본 목록 제외 · purge_task 생성, Elasticsearch 가짜 전송으로 `_bulk delete` 확인, Neo4j 대체 함수로 Cypher 확인 · 재업로드 시 건너뜀, 파일 정리(공유 파일은 남김).

@@ -11,6 +11,7 @@
 .env.*
 !.env.example
 node_modules/
+npm-cache/
 .next/
 __pycache__/
 .coverage

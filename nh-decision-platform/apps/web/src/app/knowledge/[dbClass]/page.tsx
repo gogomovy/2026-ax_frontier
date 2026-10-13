@@ -3,7 +3,6 @@ import { notFound } from "next/navigation";
 import { TermText } from "@/components/data/TermText";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Badge, DataTable, SectionHead, Td } from "@/components/ui/primitives";
-import { API_MODE } from "@/lib/config";
 import { formatDate } from "@/lib/format";
 import { getDocuments, getTerms } from "@/lib/data";
 
@@ -71,13 +70,9 @@ export default async function KnowledgeDbPage(props: { params: Promise<{ dbClass
             {docs.map((doc) => (
               <tr key={doc.docId}>
                 <Td strong>
-                  {API_MODE ? (
-                    <Link href={`/knowledge/doc?id=${encodeURIComponent(doc.docId)}`} className="hover:underline" data-doc-link>
-                      {doc.title}
-                    </Link>
-                  ) : (
-                    doc.title
-                  )}
+                  <Link href={`/knowledge/doc?id=${encodeURIComponent(doc.docId)}`} className="hover:underline" data-doc-link>
+                    {doc.title}
+                  </Link>
                   <span className="mt-0.5 block text-[10.5px] font-normal text-stone">{doc.fileName}</span>
                   <span className="mt-1 flex flex-wrap gap-1">
                     {doc.tags.slice(0, 3).map((t) => (

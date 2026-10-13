@@ -2,9 +2,9 @@
  "id": "rep-inclusive-202608",
  "kind": "inclusive_risk",
  "title": "포용금융 확대 관련 신용리스크 분석",
- "subtitle": "2026.01 대비 2026.08 충당금 변화 · 대상 상품코드 21건",
- "asOf": "2026-08-31",
- "generatedAt": "2026-08-31T06:22:00+09:00",
+ "subtitle": "– 대비 – 충당금 변화 · 대상 상품코드 –",
+ "asOf": null,
+ "generatedAt": null,
  "dataOrigin": "simulated",
  "toc": [
   {
@@ -46,220 +46,96 @@
  "figures": {
   "share_base": {
    "id": "share_base",
-   "label": "포용금융 충당금 비중(2026.01)",
-   "value": 7.97,
+   "label": "포용금융 충당금 비중(–)",
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2,
-   "calc": {
-    "calcId": "calc-share-base",
-    "formulaId": "PROVISION_SHARE",
-    "formulaVersion": 1,
-    "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
-    "inputs": [
-     {
-      "key": "numerator",
-      "label": "포용금융 상품 충당금 합계(21개 상품코드)",
-      "value": "261,840",
-      "unit": "백만원",
-      "source": "(202601)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
-     },
-     {
-      "key": "denominator",
-      "label": "전체 충당금(합계 row)",
-      "value": "3,284,600",
-      "unit": "백만원",
-      "source": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "labelTpl": "포용금융 충당금 비중([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]])"
   },
   "share_now": {
    "id": "share_now",
-   "label": "포용금융 충당금 비중(2026.08)",
-   "value": 9.16,
+   "label": "포용금융 충당금 비중(–)",
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2,
-   "calc": {
-    "calcId": "calc-share-now",
-    "formulaId": "PROVISION_SHARE",
-    "formulaVersion": 1,
-    "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
-    "inputs": [
-     {
-      "key": "numerator",
-      "label": "포용금융 상품 충당금 합계(21개 상품코드)",
-      "value": "312,470",
-      "unit": "백만원",
-      "source": "(202608)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
-     },
-     {
-      "key": "denominator",
-      "label": "전체 충당금(합계 row)",
-      "value": "3,412,180",
-      "unit": "백만원",
-      "source": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "labelTpl": "포용금융 충당금 비중([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
   },
   "share_delta_pp": {
    "id": "share_delta_pp",
    "label": "비중 증감",
-   "value": 1.19,
+   "value": null,
    "unit": "PP",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-share-delta-pp",
-    "formulaId": "SHARE_DELTA_PP",
-    "formulaVersion": 1,
-    "expression": "비교시점 비중 − 기준시점 비중",
-    "inputs": [
-     {
-      "key": "share1",
-      "label": "2026.08 비중",
-      "value": "9.1575",
-      "unit": "%",
-      "source": "calc-share-now"
-     },
-     {
-      "key": "share0",
-      "label": "2026.01 비중",
-      "value": "7.9717",
-      "unit": "%",
-      "source": "calc-share-base"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 2
   },
   "share_delta_pct": {
    "id": "share_delta_pct",
    "label": "비중 증가율",
-   "value": 14.9,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
-   "decimals": 1,
-   "calc": {
-    "calcId": "calc-share-delta-pct",
-    "formulaId": "GROWTH_RATE",
-    "formulaVersion": 1,
-    "expression": "(비교시점 비중 − 기준시점 비중) / 기준시점 비중 × 100",
-    "inputs": [
-     {
-      "key": "v0",
-      "label": "2026.01 비중",
-      "value": "7.9717",
-      "unit": "%",
-      "source": "calc-share-base"
-     },
-     {
-      "key": "v1",
-      "label": "2026.08 비중",
-      "value": "9.1575",
-      "unit": "%",
-      "source": "calc-share-now"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 1
   },
   "prov_inclusive_now": {
    "id": "prov_inclusive_now",
-   "label": "포용금융 상품 충당금(2026.08)",
-   "value": 312470,
+   "label": "포용금융 상품 충당금(–)",
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
-   "sourceRef": "(202608)7790_상품별_충당금.xlsx · X열 21행 합계"
+   "labelTpl": "포용금융 상품 충당금([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
   },
   "prov_total_now": {
    "id": "prov_total_now",
-   "label": "전체 충당금(2026.08)",
-   "value": 3412180,
+   "label": "전체 충당금(–)",
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
-   "sourceRef": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
+   "labelTpl": "전체 충당금([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
   },
   "prov_inclusive_base": {
    "id": "prov_inclusive_base",
-   "label": "포용금융 상품 충당금(2026.01)",
-   "value": 261840,
+   "label": "포용금융 상품 충당금(–)",
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
-   "sourceRef": "(202601)7790_상품별_충당금.xlsx · X열 21행 합계"
+   "labelTpl": "포용금융 상품 충당금([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]])"
   },
   "prov_total_base": {
    "id": "prov_total_base",
-   "label": "전체 충당금(2026.01)",
-   "value": 3284600,
+   "label": "전체 충당금(–)",
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
-   "sourceRef": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
+   "labelTpl": "전체 충당금([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]])"
   },
   "inc_exposure_cnt_now": {
    "id": "inc_exposure_cnt_now",
-   "label": "포용금융 익스포저 건수(2026.08)",
-   "value": 213480,
+   "label": "포용금융 익스포저 건수(–)",
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
-   "calc": {
-    "calcId": "calc-inc-cnt",
-    "formulaId": "SUM",
-    "formulaVersion": 1,
-    "expression": "포용금융 상품코드 21건 익스포저 건수 합계",
-    "inputs": [
-     {
-      "key": "base",
-      "label": "2026.01 건수",
-      "value": "184,260",
-      "unit": "건",
-      "source": "(202601) 여신 익스포저 집계"
-     },
-     {
-      "key": "now",
-      "label": "2026.08 건수",
-      "value": "213,480",
-      "unit": "건",
-      "source": "(202608) 여신 익스포저 집계"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "labelTpl": "포용금융 익스포저 건수([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
   },
   "inc_exposure_cnt_growth": {
    "id": "inc_exposure_cnt_growth",
    "label": "익스포저 건수 증가율",
-   "value": 15.9,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "inc_exposure_amt_now": {
    "id": "inc_exposure_amt_now",
-   "label": "포용금융 익스포저 규모(2026.08)",
-   "value": 3.42,
+   "label": "포용금융 익스포저 규모(–)",
+   "value": null,
    "unit": "KRW_TN",
-   "dataOrigin": "simulated",
-   "decimals": 2
+   "decimals": 2,
+   "labelTpl": "포용금융 익스포저 규모([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
   },
   "inc_avg_grade": {
    "id": "inc_avg_grade",
    "label": "해당 풀 평균 신용등급(소매 기준)",
-   "value": 6.8,
+   "value": null,
    "unit": "RATIO",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "retail_avg_grade": {
    "id": "retail_avg_grade",
    "label": "소매 익스포저 전체 평균 신용등급",
-   "value": 4.9,
+   "value": null,
    "unit": "RATIO",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "inc_delinquency": {
@@ -267,8 +143,35 @@
    "label": "해당 풀 연체율",
    "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "undefinedLabel": "데이터 미제공"
+  },
+  "inc_product_cnt": {
+   "id": "inc_product_cnt",
+   "label": "포용금융 대상 상품코드 수",
+   "value": null,
+   "unit": "CNT",
+   "decimals": 0
+  },
+  "inc_grp_saehope_delta": {
+   "id": "inc_grp_saehope_delta",
+   "label": "새희망홀씨대출 비중 증감",
+   "value": null,
+   "unit": "PP",
+   "decimals": 2
+  },
+  "inc_grp_sunshine_delta": {
+   "id": "inc_grp_sunshine_delta",
+   "label": "햇살론 비중 증감",
+   "value": null,
+   "unit": "PP",
+   "decimals": 2
+  },
+  "inc_grp_saitdol_delta": {
+   "id": "inc_grp_saitdol_delta",
+   "label": "사잇돌 비중 증감",
+   "value": null,
+   "unit": "PP",
+   "decimals": 2
   }
  },
  "opinions": [
@@ -281,225 +184,101 @@
    "title": "포용금융 확대 관련 신용리스크 분석 결과",
    "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
    "severity": "caution",
-   "asOf": "2026-08-31",
+   "asOf": null,
    "dataOrigin": "simulated",
    "figures": {
     "share_base": {
      "id": "share_base",
-     "label": "포용금융 충당금 비중(2026.01)",
-     "value": 7.97,
+     "label": "포용금융 충당금 비중(–)",
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 2,
-     "calc": {
-      "calcId": "calc-share-base",
-      "formulaId": "PROVISION_SHARE",
-      "formulaVersion": 1,
-      "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
-      "inputs": [
-       {
-        "key": "numerator",
-        "label": "포용금융 상품 충당금 합계(21개 상품코드)",
-        "value": "261,840",
-        "unit": "백만원",
-        "source": "(202601)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
-       },
-       {
-        "key": "denominator",
-        "label": "전체 충당금(합계 row)",
-        "value": "3,284,600",
-        "unit": "백만원",
-        "source": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "labelTpl": "포용금융 충당금 비중([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]])"
     },
     "share_now": {
      "id": "share_now",
-     "label": "포용금융 충당금 비중(2026.08)",
-     "value": 9.16,
+     "label": "포용금융 충당금 비중(–)",
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 2,
-     "calc": {
-      "calcId": "calc-share-now",
-      "formulaId": "PROVISION_SHARE",
-      "formulaVersion": 1,
-      "expression": "포용금융 상품 충당금 합계 / 전체 충당금(합계 row) × 100",
-      "inputs": [
-       {
-        "key": "numerator",
-        "label": "포용금융 상품 충당금 합계(21개 상품코드)",
-        "value": "312,470",
-        "unit": "백만원",
-        "source": "(202608)7790_상품별_충당금.xlsx · 손실충당금 및 충당부채 총계(X열) 21행 합계"
-       },
-       {
-        "key": "denominator",
-        "label": "전체 충당금(합계 row)",
-        "value": "3,412,180",
-        "unit": "백만원",
-        "source": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "labelTpl": "포용금융 충당금 비중([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
     },
     "share_delta_pp": {
      "id": "share_delta_pp",
      "label": "비중 증감",
-     "value": 1.19,
+     "value": null,
      "unit": "PP",
-     "dataOrigin": "simulated",
-     "decimals": 2,
-     "calc": {
-      "calcId": "calc-share-delta-pp",
-      "formulaId": "SHARE_DELTA_PP",
-      "formulaVersion": 1,
-      "expression": "비교시점 비중 − 기준시점 비중",
-      "inputs": [
-       {
-        "key": "share1",
-        "label": "2026.08 비중",
-        "value": "9.1575",
-        "unit": "%",
-        "source": "calc-share-now"
-       },
-       {
-        "key": "share0",
-        "label": "2026.01 비중",
-        "value": "7.9717",
-        "unit": "%",
-        "source": "calc-share-base"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "decimals": 2
     },
     "share_delta_pct": {
      "id": "share_delta_pct",
      "label": "비중 증가율",
-     "value": 14.9,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
-     "decimals": 1,
-     "calc": {
-      "calcId": "calc-share-delta-pct",
-      "formulaId": "GROWTH_RATE",
-      "formulaVersion": 1,
-      "expression": "(비교시점 비중 − 기준시점 비중) / 기준시점 비중 × 100",
-      "inputs": [
-       {
-        "key": "v0",
-        "label": "2026.01 비중",
-        "value": "7.9717",
-        "unit": "%",
-        "source": "calc-share-base"
-       },
-       {
-        "key": "v1",
-        "label": "2026.08 비중",
-        "value": "9.1575",
-        "unit": "%",
-        "source": "calc-share-now"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "decimals": 1
     },
     "prov_inclusive_now": {
      "id": "prov_inclusive_now",
-     "label": "포용금융 상품 충당금(2026.08)",
-     "value": 312470,
+     "label": "포용금융 상품 충당금(–)",
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)7790_상품별_충당금.xlsx · X열 21행 합계"
+     "labelTpl": "포용금융 상품 충당금([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
     },
     "prov_total_now": {
      "id": "prov_total_now",
-     "label": "전체 충당금(2026.08)",
-     "value": 3412180,
+     "label": "전체 충당금(–)",
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)7790_상품별_충당금.xlsx!X318 (합계 row)"
+     "labelTpl": "전체 충당금([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
     },
     "prov_inclusive_base": {
      "id": "prov_inclusive_base",
-     "label": "포용금융 상품 충당금(2026.01)",
-     "value": 261840,
+     "label": "포용금융 상품 충당금(–)",
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202601)7790_상품별_충당금.xlsx · X열 21행 합계"
+     "labelTpl": "포용금융 상품 충당금([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]])"
     },
     "prov_total_base": {
      "id": "prov_total_base",
-     "label": "전체 충당금(2026.01)",
-     "value": 3284600,
+     "label": "전체 충당금(–)",
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202601)7790_상품별_충당금.xlsx!X314 (합계 row)"
+     "labelTpl": "전체 충당금([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]])"
     },
     "inc_exposure_cnt_now": {
      "id": "inc_exposure_cnt_now",
-     "label": "포용금융 익스포저 건수(2026.08)",
-     "value": 213480,
+     "label": "포용금융 익스포저 건수(–)",
+     "value": null,
      "unit": "CNT",
-     "dataOrigin": "simulated",
-     "calc": {
-      "calcId": "calc-inc-cnt",
-      "formulaId": "SUM",
-      "formulaVersion": 1,
-      "expression": "포용금융 상품코드 21건 익스포저 건수 합계",
-      "inputs": [
-       {
-        "key": "base",
-        "label": "2026.01 건수",
-        "value": "184,260",
-        "unit": "건",
-        "source": "(202601) 여신 익스포저 집계"
-       },
-       {
-        "key": "now",
-        "label": "2026.08 건수",
-        "value": "213,480",
-        "unit": "건",
-        "source": "(202608) 여신 익스포저 집계"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "labelTpl": "포용금융 익스포저 건수([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
     },
     "inc_exposure_cnt_growth": {
      "id": "inc_exposure_cnt_growth",
      "label": "익스포저 건수 증가율",
-     "value": 15.9,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "inc_exposure_amt_now": {
      "id": "inc_exposure_amt_now",
-     "label": "포용금융 익스포저 규모(2026.08)",
-     "value": 3.42,
+     "label": "포용금융 익스포저 규모(–)",
+     "value": null,
      "unit": "KRW_TN",
-     "dataOrigin": "simulated",
-     "decimals": 2
+     "decimals": 2,
+     "labelTpl": "포용금융 익스포저 규모([[ym:PROVISION_BY_PRODUCT:$latest|dot]])"
     },
     "inc_avg_grade": {
      "id": "inc_avg_grade",
      "label": "해당 풀 평균 신용등급(소매 기준)",
-     "value": 6.8,
+     "value": null,
      "unit": "RATIO",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "retail_avg_grade": {
      "id": "retail_avg_grade",
      "label": "소매 익스포저 전체 평균 신용등급",
-     "value": 4.9,
+     "value": null,
      "unit": "RATIO",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "inc_delinquency": {
@@ -507,7 +286,6 @@
      "label": "해당 풀 연체율",
      "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "undefinedLabel": "데이터 미제공"
     }
    },
@@ -515,11 +293,13 @@
     {
      "id": "ev-inc-data",
      "category": "bank_data",
-     "label": "상품별 충당금 2시점 비교(2026.01 / 2026.08)",
+     "label": "상품별 충당금 2시점 비교(– / –)",
      "sourceKind": "calc_run",
-     "snippet": "포용금융 312,470백만원 / 전체 3,412,180백만원 = 9.16% (1월 7.97%)",
+     "snippet": "포용금융 – / 전체 – = – (– –)",
      "figureId": "share_now",
-     "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)"
+     "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
+     "labelTpl": "상품별 충당금 2시점 비교([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] / [[ym:PROVISION_BY_PRODUCT:$latest|dot]])",
+     "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])"
     },
     {
      "id": "ev-inc-products",
@@ -527,7 +307,7 @@
      "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
      "sourceKind": "doc_chunk",
      "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-     "relevance": 0.95,
+     "relevance": null,
      "doc": {
       "title": "포용금융 대상 상품 운영기준",
       "issuer": "여신정책협의회",
@@ -544,7 +324,7 @@
      "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
      "sourceKind": "doc_chunk",
      "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-     "relevance": 0.93,
+     "relevance": null,
      "doc": {
       "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
       "issuer": "NH농협금융지주 기획조정부",
@@ -561,7 +341,7 @@
      "label": "포용금융 확대방안(금융위원회)",
      "sourceKind": "doc_chunk",
      "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-     "relevance": 0.9,
+     "relevance": null,
      "doc": {
       "title": "포용금융 확대방안",
       "issuer": "금융위원회",
@@ -599,19 +379,21 @@
    "reportKind": "inclusive_risk",
    "reportAnchor": "i3-share",
    "tabKey": "inclusive-risk",
-   "rankScore": 81.2,
-   "rankBasis": "심각도(주의) × 충당금 비중 증가 폭 1.18%p × 경영목표 연관성(포용금융 제안)"
+   "rankScore": null,
+   "rankBasis": null
   }
  ],
  "evidence": [
   {
    "id": "ev-inc-data",
    "category": "bank_data",
-   "label": "상품별 충당금 2시점 비교(2026.01 / 2026.08)",
+   "label": "상품별 충당금 2시점 비교(– / –)",
    "sourceKind": "calc_run",
-   "snippet": "포용금융 312,470백만원 / 전체 3,412,180백만원 = 9.16% (1월 7.97%)",
+   "snippet": "포용금융 – / 전체 – = – (– –)",
    "figureId": "share_now",
-   "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)"
+   "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
+   "labelTpl": "상품별 충당금 2시점 비교([[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] / [[ym:PROVISION_BY_PRODUCT:$latest|dot]])",
+   "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])"
   },
   {
    "id": "ev-inc-products",
@@ -619,7 +401,7 @@
    "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
    "sourceKind": "doc_chunk",
    "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-   "relevance": 0.95,
+   "relevance": null,
    "doc": {
     "title": "포용금융 대상 상품 운영기준",
     "issuer": "여신정책협의회",
@@ -636,7 +418,7 @@
    "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
    "sourceKind": "doc_chunk",
    "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-   "relevance": 0.93,
+   "relevance": null,
    "doc": {
     "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
     "issuer": "NH농협금융지주 기획조정부",
@@ -653,7 +435,7 @@
    "label": "포용금융 확대방안(금융위원회)",
    "sourceKind": "doc_chunk",
    "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-   "relevance": 0.9,
+   "relevance": null,
    "doc": {
     "title": "포용금융 확대방안",
     "issuer": "금융위원회",
@@ -668,8 +450,7 @@
  ],
  "limitations": [
   "해당 풀의 연체율 데이터가 제공되지 않아 산출하지 않았습니다(추정치 생성 금지).",
-  "부도율 영향 분석은 익스포저 단위 부도여부 데이터 확보 후 수행 예정입니다.",
-  "(202608)7790 파일에 마스터 미등록 신규 상품 2건이 있으나 포용금융 대상 코드에는 해당하지 않습니다(충당금 영향 0.03%)."
+  "부도율 영향 분석은 익스포저 단위 부도여부 데이터 확보 후 수행 예정입니다."
  ],
  "sections": [
   {
@@ -679,7 +460,7 @@
    "blocks": [
     {
      "type": "p",
-     "text": "포용금융 대상은 「포용금융 대상 상품 대상자」로 규정하고, 경영 의사결정 DB의 포용금융 대상 상품 운영기준과 지주 성과평가 방안 5p 실적 인정 기준(은행 해당 취약계층 상품)을 근거로 상품코드 21건을 식별했습니다."
+     "text": "포용금융 대상은 「포용금융 대상 상품 대상자」로 규정하고, 경영 의사결정 DB의 포용금융 대상 상품 운영기준과 지주 성과평가 방안 5p 실적 인정 기준(은행 해당 취약계층 상품)을 근거로 상품코드 [[fig:inc_product_cnt]]을 식별했습니다."
     },
     {
      "type": "table",
@@ -697,13 +478,15 @@
        },
        {
         "key": "base",
-        "label": "2026.01 충당금(백만원)",
-        "align": "right"
+        "label": "– 충당금(백만원)",
+        "align": "right",
+        "labelTpl": "[[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] 충당금(백만원)"
        },
        {
         "key": "now",
-        "label": "2026.08 충당금(백만원)",
-        "align": "right"
+        "label": "– 충당금(백만원)",
+        "align": "right",
+        "labelTpl": "[[ym:PROVISION_BY_PRODUCT:$latest|dot]] 충당금(백만원)"
        },
        {
         "key": "deltaPP",
@@ -711,30 +494,8 @@
         "align": "right"
        }
       ],
-      "rows": [
-       {
-        "group": "새희망홀씨대출",
-        "codes": 6,
-        "base": "83,080",
-        "now": "97,220",
-        "deltaPP": "+0.32"
-       },
-       {
-        "group": "햇살론",
-        "codes": 13,
-        "base": "127,560",
-        "now": "151,480",
-        "deltaPP": "+0.56"
-       },
-       {
-        "group": "사잇돌",
-        "codes": 2,
-        "base": "51,200",
-        "now": "63,770",
-        "deltaPP": "+0.31"
-       }
-      ],
-      "note": "상품코드 21건 전건 매칭(미매칭 0건)."
+      "rows": [],
+      "note": ""
      }
     }
    ]
@@ -749,11 +510,13 @@
      "kv": [
       {
        "label": "기준시점 데이터",
-       "value": "(202601)7790_상품별_충당금.xlsx"
+       "value": "(–)7790_상품별_충당금.xlsx",
+       "valueTpl": "([[rule:INC_PROVISION_SHARE_TREND.base_ym|ym]])7790_상품별_충당금.xlsx"
       },
       {
        "label": "비교시점 데이터",
-       "value": "(202608)7790_상품별_충당금.xlsx"
+       "value": "(–)7790_상품별_충당금.xlsx",
+       "valueTpl": "([[ym:PROVISION_BY_PRODUCT:$latest|ym]])7790_상품별_충당금.xlsx"
       },
       {
        "label": "기준 값",
@@ -773,7 +536,8 @@
     {
      "type": "callout",
      "tone": "info",
-     "text": "2026년 1월 이후 포용금융 확대 정부기조를 반영한 당행 운영 이후의 변화를 보기 위해 1월을 기준시점으로 설정했습니다."
+     "text": "2026년 – 이후 포용금융 확대 정부기조를 반영한 당행 운영 이후의 변화를 보기 위해 1월을 기준시점으로 설정했습니다.",
+     "textTpl": "2026년 [[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] 이후 포용금융 확대 정부기조를 반영한 당행 운영 이후의 변화를 보기 위해 1월을 기준시점으로 설정했습니다."
     }
    ]
   },
@@ -790,23 +554,12 @@
      "type": "chart",
      "chart": {
       "kind": "bar",
-      "title": "포용금융 충당금 비중 — 2026.01 vs 2026.08",
+      "title": "포용금융 충당금 비중 — – vs –",
       "unit": "PCT",
-      "series": [
-       {
-        "name": "충당금 비중",
-        "points": [
-         {
-          "label": "2026.01",
-          "value": 7.97
-         },
-         {
-          "label": "2026.08",
-          "value": 9.16
-         }
-        ]
-       }
-      ]
+      "series": [],
+      "titleTpl": "포용금융 충당금 비중 — [[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] vs [[ym:PROVISION_BY_PRODUCT:$latest|dot]]",
+      "bindKey": "포용금융 충당금 비중 — – vs –",
+      "bindKeyTpl": "포용금융 충당금 비중 — [[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] vs [[ym:PROVISION_BY_PRODUCT:$latest|dot]]"
      }
     }
    ]
@@ -820,49 +573,18 @@
      "type": "chart",
      "chart": {
       "kind": "bar",
-      "title": "상품군별 충당금 — 2026.01 vs 2026.08 (백만원)",
+      "title": "상품군별 충당금 — – vs – (백만원)",
       "unit": "KRW_MN",
-      "series": [
-       {
-        "name": "2026.01",
-        "points": [
-         {
-          "label": "새희망홀씨대출",
-          "value": 83080
-         },
-         {
-          "label": "햇살론",
-          "value": 127560
-         },
-         {
-          "label": "사잇돌",
-          "value": 51200
-         }
-        ]
-       },
-       {
-        "name": "2026.08",
-        "points": [
-         {
-          "label": "새희망홀씨대출",
-          "value": 97220
-         },
-         {
-          "label": "햇살론",
-          "value": 151480
-         },
-         {
-          "label": "사잇돌",
-          "value": 63770
-         }
-        ]
-       }
-      ]
+      "series": [],
+      "titleTpl": "상품군별 충당금 — [[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] vs [[ym:PROVISION_BY_PRODUCT:$latest|dot]] (백만원)",
+      "bindKey": "상품군별 충당금 — – vs – (백만원)",
+      "bindKeyTpl": "상품군별 충당금 — [[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] vs [[ym:PROVISION_BY_PRODUCT:$latest|dot]] (백만원)"
      }
     },
     {
      "type": "p",
-     "text": "비중 상승 기여는 햇살론(+0.56%p) · 새희망홀씨대출(+0.32%p) · 사잇돌(+0.31%p) 순으로 확인됩니다. 특정 상품군에 집중된 흐름이 아니라 대상 상품 전반의 취급 확대와 함께 나타난 변화입니다."
+     "textTpl": "상품군별 비중 상승 기여: 햇살론 [[fig:inc_grp_sunshine_delta|signed]] · 새희망홀씨대출 [[fig:inc_grp_saehope_delta|signed]] · 사잇돌 [[fig:inc_grp_saitdol_delta|signed]]. 상품별 기여는 아래 표(상위 10건)에서 확인합니다.",
+     "text": "상품군별 비중 상승 기여: 햇살론 – · 새희망홀씨대출 – · 사잇돌 –. 상품별 기여는 아래 표(상위 10건)에서 확인합니다."
     }
    ]
   },
@@ -890,13 +612,15 @@
        },
        {
         "key": "base",
-        "label": "2026.01",
-        "align": "right"
+        "label": "–",
+        "align": "right",
+        "labelTpl": "[[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]]"
        },
        {
         "key": "now",
-        "label": "2026.08",
-        "align": "right"
+        "label": "–",
+        "align": "right",
+        "labelTpl": "[[ym:PROVISION_BY_PRODUCT:$latest|dot]]"
        },
        {
         "key": "diff",
@@ -909,98 +633,7 @@
         "align": "right"
        }
       ],
-      "rows": [
-       {
-        "code": "2001109170002",
-        "name": "사잇돌중금리대출Ⅱ",
-        "group": "사잇돌",
-        "base": "20,780",
-        "now": "27,530",
-        "diff": "+6,750",
-        "contribution": "13.3"
-       },
-       {
-        "code": "2001109170001",
-        "name": "사잇돌중금리대출",
-        "group": "사잇돌",
-        "base": "30,420",
-        "now": "36,240",
-        "diff": "+5,820",
-        "contribution": "11.5"
-       },
-       {
-        "code": "2001108220001",
-        "name": "새희망홀씨대출(일반)",
-        "group": "새희망홀씨대출",
-        "base": "28,420",
-        "now": "33,180",
-        "diff": "+4,760",
-        "contribution": "9.4"
-       },
-       {
-        "code": "2001107820007",
-        "name": "햇살론(근로자)",
-        "group": "햇살론",
-        "base": "21,340",
-        "now": "25,620",
-        "diff": "+4,280",
-        "contribution": "8.5"
-       },
-       {
-        "code": "2001108220005",
-        "name": "새희망홀씨대출(생계자금)",
-        "group": "새희망홀씨대출",
-        "base": "19,860",
-        "now": "23,940",
-        "diff": "+4,080",
-        "contribution": "8.1"
-       },
-       {
-        "code": "2001107820008",
-        "name": "햇살론(자영업자)",
-        "group": "햇살론",
-        "base": "18,760",
-        "now": "22,180",
-        "diff": "+3,420",
-        "contribution": "6.8"
-       },
-       {
-        "code": "2001107820010",
-        "name": "햇살론(생계자금)",
-        "group": "햇살론",
-        "base": "15,420",
-        "now": "18,340",
-        "diff": "+2,920",
-        "contribution": "5.8"
-       },
-       {
-        "code": "2001107820011",
-        "name": "햇살론(사업운영자금)",
-        "group": "햇살론",
-        "base": "13,280",
-        "now": "15,860",
-        "diff": "+2,580",
-        "contribution": "5.1"
-       },
-       {
-        "code": "2001107820012",
-        "name": "햇살론(창업자금)",
-        "group": "햇살론",
-        "base": "11,640",
-        "now": "13,720",
-        "diff": "+2,080",
-        "contribution": "4.1"
-       },
-       {
-        "code": "2001108220006",
-        "name": "새희망홀씨대출(사업자금)",
-        "group": "새희망홀씨대출",
-        "base": "12,340",
-        "now": "14,020",
-        "diff": "+1,680",
-        "contribution": "3.3"
-       }
-      ],
+      "rows": [],
       "note": "단위 백만원. 기여도 = 상품 증감 / 포용금융 전체 증감 × 100"
      }
     }
@@ -1037,6 +670,11 @@
       "월 단위 연체 발생 건수·금액 및 연체율 추이 모니터링(소매모형 스코어 구간별)",
       "신규 취급 후 3·6개월 경과 시점의 초기 연체(Vintage) 지표 관리",
       "충당금 비중 임계(설정값 +0.5%p) 초과 시 중점관리사항으로 상향 보고"
+     ],
+     "itemsTpl": [
+      "월 단위 연체 발생 건수·금액 및 연체율 추이 모니터링(소매모형 스코어 구간별)",
+      "신규 취급 후 3·6개월 경과 시점의 초기 연체(Vintage) 지표 관리",
+      "충당금 비중 임계(설정값 [[rule:INC_PROVISION_SHARE_TREND.bands.1.max|+d1]]%p) 초과 시 중점관리사항으로 상향 보고"
      ]
     },
     {
@@ -1046,5 +684,6 @@
     }
    ]
   }
- ]
+ ],
+ "subtitleTpl": "[[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] 대비 [[ym:PROVISION_BY_PRODUCT:$latest|dot]] 충당금 변화 · 대상 상품코드 [[fig:inc_product_cnt]]"
 }

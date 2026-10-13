@@ -25,7 +25,7 @@ export function ChangeFeedPanel({ feed, title = "최근 감지된 변화" }: { f
                 {i.kind === "data" ? `${formatFigure(fig(i, i.before, "CNT"))} → ${formatFigure(fig(i, i.after, "CNT"))} 행` : `${formatFigure(fig(i, i.before))} → ${formatFigure(fig(i, i.after))}`}
                 <span className={i.direction === "down" ? "ml-1.5 text-critical" : "ml-1.5 text-primary"}>
                   ({formatSigned(fig(i, i.delta, i.kind === "data" ? "CNT" : i.unit))}
-                  {i.deltaPct !== null ? ` · ${i.deltaPct > 0 ? "+" : ""}${i.deltaPct.toFixed(1)}%` : ""})
+                  {typeof i.deltaPct === "number" ? ` · ${i.deltaPct > 0 ? "+" : ""}${i.deltaPct.toFixed(1)}%` : ""})
                 </span>
               </span>
               <span className="w-full text-[11.5px] text-stone md:w-auto">

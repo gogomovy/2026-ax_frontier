@@ -837,8 +837,10 @@ def retrieve(
 
 
 def _ref_date(session: Session) -> date:
-    s = session.get(Setting, "ui.as_of")
+    from nhdip.data.datasets import display_as_of
+
+    v = display_as_of(session)
     try:
-        return date.fromisoformat(str(s.value)[:10]) if s is not None and s.value else date.today()
+        return date.fromisoformat(v[:10]) if v else date.today()
     except ValueError:
         return date.today()

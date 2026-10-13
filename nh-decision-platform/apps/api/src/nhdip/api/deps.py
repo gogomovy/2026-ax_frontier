@@ -128,6 +128,17 @@ def require_admin(user: AppUser = Depends(current_user)) -> AppUser:
     return user
 
 
+def is_data_admin(user: AppUser) -> bool:
+    """데이터 관리자 (Phase J · DEL-01 · Q143) — 관리자 중 지정된 사람. 업로드 자료(데이터셋 버전 · 문서) 삭제 권한."""
+    return user.role == "admin" and bool(getattr(user, "data_admin", False))
+
+
+def require_data_admin(user: AppUser = Depends(current_user)) -> AppUser:
+    if not is_data_admin(user):
+        raise HTTPException(403, "데이터 관리자 권한이 필요합니다(업로드 자료 삭제는 [사용자]에서 '데이터 관리자'로 지정된 관리자만 할 수 있습니다)")
+    return user
+
+
 def require_resource(resource: str):
     def dep(user: AppUser = Depends(current_user), session: Session = Depends(get_session)) -> AppUser:
         allowed = user_resources(session, user)
@@ -152,6 +163,7 @@ def user_json(session: Session, user: AppUser) -> dict[str, Any]:
         "org": {"code": user.org_code, "name": chain[0].name if chain else user.org_code},
         "orgPath": [{"code": o.code, "name": o.name, "level": o.level, "unitType": o.unit_type, "levelLabel": labels.get(o.unit_type or "", "조직")} for o in reversed(chain)],
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at else None,
+        "dataAdmin": is_data_admin(user),
         **_steward_json(session, user),
     }
 

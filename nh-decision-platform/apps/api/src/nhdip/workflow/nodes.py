@@ -100,21 +100,39 @@ def n_judge(ctx: RunContext, node: WorkflowNode) -> NodeResult:
 
 
 def _resolve_target(payload: Any, path: str) -> list[tuple[str, str]]:
-    """바인딩 경로 → [(dotted path, field)] — 'table:캡션' · 'chart:제목' · 점 표기 경로 지원."""
-    if path.startswith("table:"):
-        cap = path[6:]
-        return [(p, "rows") for p in find_paths(payload, lambda d: d.get("caption") == cap and "rows" in d)]
-    if path.startswith("table_note:"):
-        cap = path[11:]
-        return [(p, "note") for p in find_paths(payload, lambda d: d.get("caption") == cap and "rows" in d)]
-    if path.startswith("chart:"):
-        title = path[6:]
-        return [(p, "series") for p in find_paths(payload, lambda d: d.get("title") == title and "series" in d)]
-    if path.startswith("series:"):
-        key = path[7:]
-        return [(p, "points") for p in find_paths(payload, lambda d: d.get("key") == key and "points" in d)]
-    parts = path.rsplit(".", 1)
-    return [(parts[0], parts[1])] if len(parts) == 2 else [("", path)]
+    """바인딩 경로 → [(dotted path, field)] — 'table:캡션' · 'chart:제목' · 점 표기 경로 (서식 캡션이면 처음 캡션 bindKey 로도)."""
+    from nhdip.views.template import binding_targets
+
+    return binding_targets(payload, path)
+
+
+def _as_of_stamp(ctx: RunContext, arts: dict[str, Any], computed: set[str]) -> None:
+    """산출물 기준일(asOf) = 입력 데이터셋 현재 버전 기준일 중 가장 늦은 날 (RD-06). 출력 산출물 최상위 + 이번 실행이 수치를 고친 의견."""
+    dates = [vs.as_of for vs, _, _ in ctx.eval.rows.values() if getattr(vs, "as_of", None)]
+    if not dates:
+        return
+    iso = max(dates).isoformat()
+    outputs = set(ctx.workflow.outputs or [])
+    for key, payload in arts.items():
+        if key not in outputs or not isinstance(payload, dict):
+            continue
+        hit = False
+        if "asOf" in payload and payload["asOf"] != iso:
+            payload["asOf"] = iso
+            hit = True
+        stack = list(payload.values())
+        while stack:
+            o = stack.pop()
+            if isinstance(o, dict):
+                figs = o.get("figures")
+                if "asOf" in o and "statement" in o and isinstance(figs, dict) and set(figs) & computed and o["asOf"] != iso:
+                    o["asOf"] = iso
+                    hit = True
+                stack.extend(o.values())
+            elif isinstance(o, list):
+                stack.extend(o)
+        if hit:
+            ctx.changed.add(key)
 
 
 @node_impl("build_views", "계산 결과로 화면 산출물의 수치(Figure)·표·차트를 갱신 (세대 교체 전 단계)")
@@ -133,6 +151,9 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         if oc.decimals == 0:
             val = int(oc.display)
         payload = {"value": val, "dataOrigin": oc.data_origin, "decimals": oc.decimals, **({"unit": oc.unit} if oc.unit in fig_units else {})}
+        for k in ("verdict", "severity"):  # 판정형 수식(BAND · 검정)의 문구 — 화면 칩 · 서식 문구 [[fig:ID|verdict]] (RD-07)
+            if isinstance((oc.extra or {}).get(k), str):
+                payload[k] = oc.extra[k]
         if oc.formula != "VALUE":
             payload["calc"] = oc.trace
         else:
@@ -167,7 +188,21 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                 ctx.changed.add(b.artifact_key)
         bind_out.append({"id": b.id, "artifact": b.artifact_key, "builder": b.builder, "targets": len(targets)})
     ctx.changes += changes
-    return NodeResult({"figures_patched": len(changes), "figure_changes": changes[:200], "bindings": bind_out}, "degraded" if any("error" in x for x in bind_out) else "succeeded")
+    # 기준일 · 서식 문구(Tpl) — 수치 · 기간이 든 평문(캡션 · 근거 · 판정 근거 · 표 머리글 · 라벨)을 계산 결과로 (설계 §25.4)
+    from nhdip.views.template import apply_metric_fields, figure_index, render_templates
+
+    _as_of_stamp(ctx, arts, {fid for oc in ctx.eval.outcomes.values() if not oc.error for fid in oc.figure_ids})
+    for key, payload in arts.items():
+        if apply_metric_fields(payload, ctx.eval.outcomes):
+            ctx.changed.add(key)
+    units = _setting(ctx.session, "format.unit_labels", None)
+    idx = figure_index(arts)
+    rendered = 0
+    for key, payload in arts.items():
+        if render_templates(payload, idx, ctx.eval, units if isinstance(units, dict) else None):
+            ctx.changed.add(key)
+            rendered += 1
+    return NodeResult({"figures_patched": len(changes), "figure_changes": changes[:200], "bindings": bind_out, "templates_rendered": rendered}, "degraded" if any("error" in x for x in bind_out) else "succeeded")
 
 
 # ═════════════════════════ 근거 검색 · LLM ═════════════════════════
@@ -218,7 +253,9 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     if sdiag.get("esFallback") and sdiag.get("esFallback") != "ES 아직 동기화 전":
         note.append(f"검색 엔진 폴백(PostgreSQL): {sdiag['esFallback']}")
     # 근거 선별(3.6) — 시스템 실행이라 권한 단계는 통과, 부문 · 시점 · 문서유형 · 의미 · 개념경로 게이팅 후 우선순위 · 범주 균형
-    ranked = rank_evidence(ctx.session, cand, k=k, as_of=_setting(ctx.session, "ui.as_of"), domain=cfg.get("domain"), doc_classes=cfg.get("doc_classes"), doc_filter=doc_filter, query_terms=len(query_terms(cfg.get("query", ""))))
+    from nhdip.data.datasets import display_as_of
+
+    ranked = rank_evidence(ctx.session, cand, k=k, as_of=display_as_of(ctx.session), domain=cfg.get("domain"), doc_classes=cfg.get("doc_classes"), doc_filter=doc_filter, query_terms=len(query_terms(cfg.get("query", ""))))
     hits = ranked["hits"]
     if ranked["missingCategories"]:
         note.append("근거 범주 부재: " + ", ".join(ranked["missingCategories"]))

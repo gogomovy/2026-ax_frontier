@@ -11,15 +11,14 @@ import { VerificationRow } from "@/components/domain/Verification";
 import { useUi } from "@/components/providers/UiProvider";
 import { Button, DataTable, IconArrowUp, IconChevron, IconDownload, SeverityBadge, Td } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
-import { API_MODE } from "@/lib/config";
 import { formatDateTime } from "@/lib/format";
 import { downloadReport, downloadServerReport, EXPORT_FORMAT_LABEL } from "@/lib/reportExport";
 import type { ReportBlock, ReportDoc } from "@/lib/types";
 
 /**
  * 보고서 변환·인쇄 — 화면 머리말 우측에 둔다 (MDL-07 / MDL-14)
- *  - 목업 모드: 브라우저에서 HTML 생성
- *  - API 모드: 서버 변환(F.17) — 관리자 설정 `report.export_formats` 로 켠 형식만 메뉴에 보인다
+ *  - 분석 탭 보고서(tabKey 있음): 서버 변환(F.17) — 관리자 설정 `report.export_formats` 로 켠 형식만 메뉴에 보인다
+ *  - 그 밖의 보고서: 브라우저에서 HTML 생성
  */
 
 export function ReportActions({ report, tabKey, office }: { report: ReportDoc; tabKey?: string; office?: string | null }) {
@@ -28,7 +27,7 @@ export function ReportActions({ report, tabKey, office }: { report: ReportDoc; t
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const remote = API_MODE && Boolean(tabKey);
+  const remote = Boolean(tabKey);
   useEffect(() => {
     if (!remote) return;
     api<string[]>("/reports/formats")

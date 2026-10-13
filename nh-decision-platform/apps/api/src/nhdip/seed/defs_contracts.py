@@ -24,32 +24,6 @@ DATASET = dict(
     quality_rules=[{"rule": "min_rows", "value": 1}],
 )
 
-# (item_code, 이름, 값, 단위, 조직, 원천 문서, 정의서 컬럼)
-ITEMS = [
-    ("LOAN_NIM_ANNUAL_TARGET", "여신 이자마진 연간 승인 목표", 3_300_000, "백만원", None, "경영의사결정 DB/종합기획부 경영계획", "LOAN_NIM_ANNUAL_TARGET_AMT"),
-    ("Q3_LOAN_INCOME_ACTUAL", "3분기 여신 수익 현재값(8월까지)", 1_210_000, "백만원", None, "2633 상품부문별 손익계산서 3분기 누계 (Q19: T03 은 2020 으로 표기)", "Q3_LOAN_INCOME_AMT"),
-    ("Q3_LOAN_INCOME_TARGET", "3분기 여신 수익 목표", 1_750_000, "백만원", None, "경영의사결정 DB/종합기획부 경영계획", "Q3_LOAN_INCOME_TARGET_AMT"),
-    ("HH_LOAN_BAL_LIMIT", "가계여신 잔액 관리 상한", 100_000_000, "백만원", None, "경영의사결정 DB/종합기획부 경영계획", "HH_LOAN_BAL_LIMIT_AMT"),
-    ("GRADE_5C_PLUS_RT", "5C 이상 차주 비중", 61.4, "%", None, "2025_일반기업모형 모니터링 보고서_F", "GRADE_5C_PLUS_BORROWER_RT"),
-    ("GRADE_5C_PLUS_TARGET", "5C 이상 차주 비중 목표(62%대 유지)", 62.0, "%", None, "2025_일반기업모형 모니터링 보고서_F", "GRADE_5C_PLUS_TARGET_RT"),
-    ("D300_CORP_NEW_TARGET", "수도권지역본부 기업여신 신규취급 목표", 1_240_000, "백만원", "D300", "경영의사결정 DB/경영계획", "CAPITAL_CORP_NEW_LOAN_TARGET_AMT"),
-    ("D300_CORP_NEW_ACTUAL", "수도권지역본부 기업여신 신규취급 실적", 780_000, "백만원", "D300", "지역본부 신규취급 집계 (Q18: 정의서 원천 7790 재확인)", "CAPITAL_CORP_NEW_LOAN_CURRENT_AMT"),
-    ("D500_CORP_NEW_TARGET", "충북지역본부 기업여신 신규취급 목표", 620_000, "백만원", "D500", "경영의사결정 DB/경영계획", "CHUNGBUK_CORP_NEW_LOAN_TARGET_AMT"),
-    ("D500_CORP_NEW_ACTUAL", "충북지역본부 기업여신 신규취급 실적", 410_000, "백만원", "D500", "지역본부 신규취급 집계 (Q18)", "CHUNGBUK_CORP_NEW_LOAN_CURRENT_AMT"),
-    ("D300_HH_NEW_LIMIT", "수도권지역본부 가계여신 월 신규취급 한도", 240_000, "백만원", "D300", "경영의사결정 DB/경영계획", "CAPITAL_HH_NEW_LOAN_LIMIT_AMT"),
-    ("D300_HH_NEW_ACTUAL", "수도권지역본부 가계여신 8월 신규취급", 228_600, "백만원", "D300", "지역본부 신규취급 집계 (Q18)", "CAPITAL_HH_NEW_LOAN_CURRENT_AMT"),
-    ("INCLUSIVE_SUPPLY_PY", "포용금융(중·저신용) 공급 전년 실적", 2_950_000, "백만원", None, "2026년 생산적·포용적 금융 부문 성과평가 방안 기준 실적 (Q15 추천안 입력)", "INCLUSIVE_FIN_SUPPLY_PROPOSAL_AMT"),
-]
-
-
-def dataset_version() -> dict[str, Any]:
-    return {
-        "dataset": K,
-        "file_name": "(202608)종기부_경영계획KPI(컬럼정의서v2_결정반영).xlsx",
-        "rows": [{"ym": "202608", "item_code": c, "item_name": n, "value": v, "unit": u, "org_code": o, "source_doc": s, "contract_column": cc} for c, n, v, u, o, s, cc in ITEMS],
-    }
-
-
 def kpi(item: str, label: str, unit: str = "백만원"):
     return q(K, {"item_code": item, "ym": "$latest"}, "value", label=label, unit=unit)
 
@@ -60,6 +34,12 @@ LB = "LOAN_BALANCE_MONTHLY"
 
 
 def metrics() -> list[dict[str, Any]]:
+    from .defs_real import extend
+
+    return extend(_metrics())
+
+
+def _metrics() -> list[dict[str, Any]]:
     cc = lambda item, label: q(CC, {"item_code": item, "ym": "$latest"}, "value", label=label, unit="조원")  # noqa: E731
     return [
         # T01 — RWA
@@ -127,7 +107,7 @@ def metrics() -> list[dict[str, Any]]:
 
 RULE_IMPACT = ("PROPOSAL_IMPACT", "제안 반영 영향 가정 (시뮬레이션 가정 · Q15/Q17 추천안)", "threshold",
                "제안 목표를 반영했을 때 RWA·총자산 영향을 계산하는 환산계수. 실측 계수(신규 취급의 평균 위험가중치, 총자산 구성비)로 교체",
-               {"corp_rwa_factor": 0.19, "inclusive_rwa_factor": 0.49, "corp_loan_asset_weight": 0.3, "inclusive_supply_growth": {"low": 5, "high": 12},
+               {"corp_rwa_factor": 0.19, "inclusive_rwa_factor": 0.49, "hh_rwa_factor": 0.35, "corp_loan_asset_weight": 0.3, "inclusive_supply_growth": {"low": 5, "high": 12},
                 "note": "corp_rwa_factor 0.19 · inclusive_rwa_factor 0.49 는 정의서 목업값(86.4% · 96.2%)을 재현하도록 맞춘 가정값"})
 
 RULE_BODY_V1 = {"corp_loan_growth": {"low_delta": 0.5, "high_delta": 1.0, "ceiling": 8.0}, "hh_loan_growth": {"low_delta": -1.0, "high_delta": -0.5, "floor": 0}}

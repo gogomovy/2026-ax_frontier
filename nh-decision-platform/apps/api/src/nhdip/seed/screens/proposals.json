@@ -62,112 +62,38 @@
    "corp_growth": {
     "id": "corp_growth",
     "label": "기업여신 증가율(전년 동기 대비)",
-    "value": 4.04,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-corp-growth",
-     "formulaId": "GROWTH_RATE",
-     "formulaVersion": 1,
-     "expression": "(당기 − 전기) / |전기| × 100",
-     "inputs": [
-      {
-       "key": "v0",
-       "label": "기업자금대출금 (전년 동기)",
-       "value": "110,860,000",
-       "unit": "백만원",
-       "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
-      },
-      {
-       "key": "v1",
-       "label": "기업자금대출금 (당기)",
-       "value": "115,340,000",
-       "unit": "백만원",
-       "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-    }
+    "decimals": 2
    },
    "corp_goal": {
     "id": "corp_goal",
     "label": "현재 경영목표",
-    "value": 7,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "actual",
     "decimals": 1
    },
    "corp_gap": {
     "id": "corp_gap",
     "label": "목표 대비 이탈",
-    "value": -2.96,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-corp-gap",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "실적 증가율 − 목표 증가율",
-     "inputs": [
-      {
-       "key": "v1",
-       "label": "실적 증가율",
-       "value": "4.0411",
-       "unit": "%",
-       "source": "calc-corp-growth"
-      },
-      {
-       "key": "v0",
-       "label": "목표 증가율",
-       "value": "7.0000",
-       "unit": "%",
-       "source": "goal.goal_version(goal-corp-growth, v3)"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 2
    },
    "ros_gap": {
     "id": "ros_gap",
     "label": "수익률 격차(기업−가계)",
-    "value": 0.028,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
     "decimals": 3
    },
    "corp_share_delta": {
     "id": "corp_share_delta",
-    "label": "기업여신 구성비 증감(2024→2026)",
-    "value": -0.91,
+    "label": "기업여신 구성비 증감(–→–)",
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
     "decimals": 2,
-    "calc": {
-     "calcId": "calc-corp-share-delta",
-     "formulaId": "SHARE_DELTA_PP",
-     "formulaVersion": 1,
-     "expression": "2026 구성비 − 2024 구성비",
-     "inputs": [
-      {
-       "key": "share1",
-       "label": "2026.08 구성비",
-       "value": "53.7515",
-       "unit": "%",
-       "source": "calc-corp-share"
-      },
-      {
-       "key": "share0",
-       "label": "2024.08 구성비",
-       "value": "54.6615",
-       "unit": "%",
-       "source": "fact.loan_balance_monthly(202408)"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "labelTpl": "기업여신 구성비 증감([[ym:LOAN_BALANCE_MONTHLY:$latest-24|year]]→[[ym:LOAN_BALANCE_MONTHLY:$latest|year]])"
    }
   },
   "evidence": [
@@ -176,9 +102,10 @@
     "category": "bank_data",
     "label": "기업여신 실적·구성비·수익률(3개년)",
     "sourceKind": "calc_run",
-    "snippet": "증가율 4.04% · 구성비 53.75%(2024년 대비 −0.91%p) · 규모 대비 수익률 0.945%",
+    "snippet": "증가율 – · 구성비 –(2024년 대비 –) · 규모 대비 수익률 –",
     "figureId": "corp_growth",
-    "tableRef": "calc.calc_run(GROWTH_RATE, SHARE, RETURN_ON_SCALE)"
+    "tableRef": "calc.calc_run(GROWTH_RATE, SHARE, RETURN_ON_SCALE)",
+    "snippetTpl": "증가율 [[fig:corp_growth]] · 구성비 [[fig:corp_share]](2024년 대비 [[fig:corp_share_delta]]) · 규모 대비 수익률 [[fig:ros_corp]]"
    },
    {
     "id": "ev-prop-corp-policy",
@@ -186,7 +113,7 @@
     "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
     "sourceKind": "doc_chunk",
     "snippet": "생산적 부문에 대한 기업여신 공급 확대를 지속 추진한다는 정책 방향.",
-    "relevance": 0.88,
+    "relevance": null,
     "doc": {
      "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
      "issuer": "금융위원회",
@@ -204,7 +131,7 @@
     "label": "2026년 하반기 경영전략회의 결과",
     "sourceKind": "doc_chunk",
     "snippet": "기업여신 확대 기조 유지, 하반기 취급 목표 상향 검토 지시.",
-    "relevance": 0.93,
+    "relevance": null,
     "doc": {
      "title": "2026년 하반기 경영전략회의 결과",
      "issuer": "경영전략회의",
@@ -221,7 +148,7 @@
     "label": "지주 총자산 최대 증가율 한도",
     "sourceKind": "doc_chunk",
     "snippet": "은행 총자산 최대 증가율 8.2% — 목표는 한도 이내에서 설정한다.",
-    "relevance": 0.9,
+    "relevance": null,
     "doc": {
      "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
      "issuer": "NH농협금융지주",
@@ -239,56 +166,23 @@
     "ceiling": {
      "id": "cc_corp_ceiling",
      "label": "환산 상한",
-     "value": 8,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "actual",
      "decimals": 1
     },
     "proposed": {
      "id": "cc_corp_proposed",
      "label": "추천 상한",
-     "value": 8,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "headroom": {
      "id": "cc_corp_headroom",
      "label": "여유",
-     "value": 0,
+     "value": null,
      "unit": "PP",
-     "dataOrigin": "simulated",
-     "decimals": 1,
-     "calc": {
-      "calcId": "calc-corp-ceiling",
-      "formulaId": "CAP_HEADROOM",
-      "formulaVersion": 1,
-      "expression": "한도 − 제안값",
-      "inputs": [
-       {
-        "key": "cap_asset",
-        "label": "지주 총자산 최대 증가율",
-        "value": "8.2",
-        "unit": "%",
-        "source": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf p.1"
-       },
-       {
-        "key": "safety_margin",
-        "label": "안전 마진(설정값)",
-        "value": "0.2",
-        "unit": "%p",
-        "source": "rule_engine.settings.safety_margin"
-       },
-       {
-        "key": "ceiling",
-        "label": "환산 상한",
-        "value": "8.0",
-        "unit": "%",
-        "source": "calc-corp-ceiling"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "decimals": 1
     },
     "passed": true,
     "basisDoc": {
@@ -306,25 +200,22 @@
     "ceiling": {
      "id": "cc_rwa_corp_ceiling",
      "label": "한도",
-     "value": 100,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "actual",
      "decimals": 1
     },
     "proposed": {
      "id": "cc_rwa_corp_proposed",
      "label": "제안 반영 후 소진율",
-     "value": 86.4,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "headroom": {
      "id": "cc_rwa_corp_headroom",
      "label": "여유",
-     "value": 13.6,
+     "value": null,
      "unit": "PP",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "passed": true,
@@ -383,7 +274,7 @@
   "targetGoalId": "goal-hh-control",
   "domainCode": "loan",
   "title": "가계여신 관리목표 강화 검토",
-  "judgement": "가계여신 증가율은 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과했습니다. 잔액 기준으로도 관리 한도 100.00조원의 99.2%를 소진했고, 가계 부문 신용RWA 소진율은 92.3%입니다. 정부 가계부채 관리 기조와 내부 경영 의사결정 모두 증가율 관리 방향이므로, 관리목표 수준을 낮추고 월별 취급 한도 관리를 강화하는 검토가 필요합니다.",
+  "judgement": "가계여신 증가율은 –로 관리목표 – 이하를 – 초과했습니다. 잔액 기준으로도 관리 한도 –의 –를 소진했고, 가계 부문 신용RWA 소진율은 –입니다. 정부 가계부채 관리 기조와 내부 경영 의사결정 모두 증가율 관리 방향이므로, 관리목표 수준을 낮추고 월별 취급 한도 관리를 강화하는 검토가 필요합니다.",
   "recommendation": {
    "mode": "range",
    "low": 3,
@@ -435,104 +326,30 @@
    "hh_growth": {
     "id": "hh_growth",
     "label": "가계여신 증가율(전년 동기 대비)",
-    "value": 6.5,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-hh-growth",
-     "formulaId": "GROWTH_RATE",
-     "formulaVersion": 1,
-     "expression": "(당기 − 전기) / |전기| × 100",
-     "inputs": [
-      {
-       "key": "v0",
-       "label": "가계자금대출금 (전년 동기)",
-       "value": "93,180,000",
-       "unit": "백만원",
-       "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
-      },
-      {
-       "key": "v1",
-       "label": "가계자금대출금 (당기)",
-       "value": "99,240,000",
-       "unit": "백만원",
-       "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-    }
+    "decimals": 2
    },
    "hh_goal": {
     "id": "hh_goal",
     "label": "현재 관리목표",
-    "value": 4,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "actual",
     "decimals": 1
    },
    "hh_gap": {
     "id": "hh_gap",
     "label": "관리목표 대비 초과",
-    "value": 2.5,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-hh-gap",
-     "formulaId": "DIFF",
-     "formulaVersion": 1,
-     "expression": "실적 증가율 − 관리목표 상한",
-     "inputs": [
-      {
-       "key": "v1",
-       "label": "실적 증가율",
-       "value": "6.5035",
-       "unit": "%",
-       "source": "calc-hh-growth"
-      },
-      {
-       "key": "v0",
-       "label": "관리목표 상한",
-       "value": "4.0000",
-       "unit": "%",
-       "source": "goal.goal_version(goal-hh-control, v2)"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 2
    },
    "ros_hh": {
     "id": "ros_hh",
     "label": "가계여신 규모 대비 수익률",
-    "value": 0.917,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 3,
-    "calc": {
-     "calcId": "calc-ros-hh",
-     "formulaId": "RETURN_ON_SCALE",
-     "formulaVersion": 1,
-     "expression": "이자수익 / 잔액 × 100",
-     "inputs": [
-      {
-       "key": "revenue",
-       "label": "가계자금대출금이자(8월 누계)",
-       "value": "909,960",
-       "unit": "백만원",
-       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
-      },
-      {
-       "key": "balance",
-       "label": "가계자금대출금(8월말)",
-       "value": "99,240,000",
-       "unit": "백만원",
-       "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 3
    }
   },
   "evidence": [
@@ -541,9 +358,10 @@
     "category": "bank_data",
     "label": "가계여신 실적·잔액 소진율·RWA 소진율",
     "sourceKind": "calc_run",
-    "snippet": "증가율 6.50% · 잔액 99.24조원(한도 대비 99.2%) · 가계 RWA 소진율 92.3%",
+    "snippet": "증가율 – · 잔액 –(한도 대비 –) · 가계 RWA 소진율 –",
     "figureId": "hh_growth",
-    "tableRef": "calc.calc_run(GROWTH_RATE, CAP_HEADROOM)"
+    "tableRef": "calc.calc_run(GROWTH_RATE, CAP_HEADROOM)",
+    "snippetTpl": "증가율 [[fig:hh_growth]] · 잔액 [[fig:cmp_hh_bal_cur]](한도 대비 [[fig:hh_bal_usage]]) · 가계 RWA 소진율 [[fig:rwa_hh_usage]]"
    },
    {
     "id": "ev-prop-hh-policy",
@@ -551,7 +369,7 @@
     "label": "가계부채 관리방안(2026년)",
     "sourceKind": "doc_chunk",
     "snippet": "가계대출 증가율을 명목 성장률 이내로 관리하도록 요구.",
-    "relevance": 0.91,
+    "relevance": null,
     "doc": {
      "title": "가계부채 관리방안(2026년)",
      "issuer": "금융위원회·금융감독원",
@@ -569,7 +387,7 @@
     "label": "2026년 하반기 경영전략회의 결과",
     "sourceKind": "doc_chunk",
     "snippet": "가계여신은 증가율 관리 기조를 유지하고 취급 기준을 재점검한다.",
-    "relevance": 0.87,
+    "relevance": null,
     "doc": {
      "title": "2026년 하반기 경영전략회의 결과",
      "issuer": "경영전략회의",
@@ -587,25 +405,22 @@
     "ceiling": {
      "id": "cc_hh_ceiling",
      "label": "관리 한도",
-     "value": 100,
+     "value": null,
      "unit": "KRW_TN",
-     "dataOrigin": "actual",
      "decimals": 2
     },
     "proposed": {
      "id": "cc_hh_proposed",
      "label": "제안 반영 시 연말 추정 잔액",
-     "value": 99.86,
+     "value": null,
      "unit": "KRW_TN",
-     "dataOrigin": "simulated",
      "decimals": 2
     },
     "headroom": {
      "id": "cc_hh_headroom",
      "label": "여유",
-     "value": 0.14,
+     "value": null,
      "unit": "KRW_TN",
-     "dataOrigin": "simulated",
      "decimals": 2
     },
     "passed": true,
@@ -624,25 +439,22 @@
     "ceiling": {
      "id": "cc_rwa_hh_ceiling",
      "label": "한도",
-     "value": 100,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "actual",
      "decimals": 1
     },
     "proposed": {
      "id": "cc_rwa_hh_proposed",
      "label": "제안 반영 후 소진율",
-     "value": 94.1,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "headroom": {
      "id": "cc_rwa_hh_headroom",
      "label": "여유",
-     "value": 5.9,
+     "value": null,
      "unit": "PP",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "passed": true,
@@ -664,7 +476,12 @@
     "경영 의사결정 DB — 2026년 하반기 경영전략회의",
     "종합기획부 경영계획 — 잔액 100조원 이하 관리"
    ],
-   "conflicts": []
+   "conflicts": [],
+   "matchedTpl": [
+    "정부정책 DB — 가계부채 관리방안(2026년)",
+    "경영 의사결정 DB — 2026년 하반기 경영전략회의",
+    "종합기획부 경영계획 — 잔액 [[fig:hh_bal_limit]] 이하 관리"
+   ]
   },
   "verifications": [
    {
@@ -693,7 +510,8 @@
     "detail": "상위 기준과 정합"
    }
   ],
-  "asOf": "2026-08-31"
+  "asOf": "2026-08-31",
+  "judgementTpl": "가계여신 증가율은 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과했습니다. 잔액 기준으로도 관리 한도 [[fig:cc_hh_ceiling]]의 [[fig:hh_bal_usage]]를 소진했고, 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]입니다. 정부 가계부채 관리 기조와 내부 경영 의사결정 모두 증가율 관리 방향이므로, 관리목표 수준을 낮추고 월별 취급 한도 관리를 강화하는 검토가 필요합니다."
  },
  {
   "id": "prop-inclusive-new",
@@ -751,57 +569,31 @@
    "mid_low_share": {
     "id": "mid_low_share",
     "label": "개인여신 중 중·저신용자 비중",
-    "value": 15.8,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 1
    },
    "peer_share": {
     "id": "peer_share",
     "label": "타행 평균 비중(참고)",
-    "value": 17.2,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
     "decimals": 1
    },
    "mid_low_supply": {
     "id": "mid_low_supply",
-    "label": "중·저신용자 여신 공급액(8월 누계)",
-    "value": 2.64,
+    "label": "중·저신용자 여신 공급액(– 누계)",
+    "value": null,
     "unit": "KRW_TN",
-    "dataOrigin": "simulated",
-    "decimals": 2
+    "decimals": 2,
+    "labelTpl": "중·저신용자 여신 공급액([[ym:LOAN_BALANCE_MONTHLY:$latest|month]] 누계)"
    },
    "mid_low_growth": {
     "id": "mid_low_growth",
     "label": "공급액 증가율(전년 동기 대비)",
-    "value": 14.3,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 1,
-    "calc": {
-     "calcId": "calc-inclusive-supply-growth",
-     "formulaId": "GROWTH_RATE",
-     "formulaVersion": 1,
-     "expression": "(당기 − 전기) / |전기| × 100",
-     "inputs": [
-      {
-       "key": "v0",
-       "label": "2025.08 누계 공급액",
-       "value": "2,310,000",
-       "unit": "백만원",
-       "source": "(202508) 여신 공급 집계"
-      },
-      {
-       "key": "v1",
-       "label": "2026.08 누계 공급액",
-       "value": "2,640,000",
-       "unit": "백만원",
-       "source": "(202608) 여신 공급 집계"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 1
    }
   },
   "evidence": [
@@ -810,9 +602,10 @@
     "category": "bank_data",
     "label": "중·저신용자 여신 공급 현황 및 신용등급 분포",
     "sourceKind": "metric_value",
-    "snippet": "공급액 2.64조원(8월 누계, +14.3%) · 개인여신 중 비중 15.8% · 타행 평균 17.2%(참고)",
+    "snippet": "공급액 –(– 누계, –) · 개인여신 중 비중 – · 타행 평균 –(참고)",
     "figureId": "mid_low_supply",
-    "tableRef": "fact.provision_by_product / 개인여신 등급 분포"
+    "tableRef": "fact.provision_by_product / 개인여신 등급 분포",
+    "snippetTpl": "공급액 [[fig:mid_low_supply]]([[ym:LOAN_BALANCE_MONTHLY:$latest|month]] 누계, [[fig:mid_low_growth|signed]]) · 개인여신 중 비중 [[fig:mid_low_share]] · 타행 평균 [[fig:peer_share]](참고)"
    },
    {
     "id": "ev-prop-inc-policy",
@@ -820,7 +613,7 @@
     "label": "포용금융 확대방안(금융위원회)",
     "sourceKind": "doc_chunk",
     "snippet": "서민·취약계층에 대한 금융공급 확대와 공급 목표의 명시적 설정을 요구.",
-    "relevance": 0.94,
+    "relevance": null,
     "doc": {
      "title": "포용금융 확대방안",
      "issuer": "금융위원회",
@@ -838,7 +631,7 @@
     "label": "금융당국, 서민금융 공급 목표 상향 주문(보조자료)",
     "sourceKind": "doc_chunk",
     "snippet": "공식 자료를 보조하는 참고 기사. 판단의 주된 근거로는 사용하지 않았습니다.",
-    "relevance": 0.61,
+    "relevance": null,
     "doc": {
      "title": "금융당국, 서민금융 공급 목표 상향 주문",
      "issuer": "연합뉴스",
@@ -854,7 +647,7 @@
     "label": "지주 성과평가 방안 — 포용금융 배점 및 실적 인정 기준",
     "sourceKind": "doc_chunk",
     "snippet": "포용금융 추진 배점 1.3점, 은행 해당 (취약계층) 상품 기준으로 실적을 인정.",
-    "relevance": 0.92,
+    "relevance": null,
     "doc": {
      "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
      "issuer": "NH농협금융지주 기획조정부",
@@ -871,7 +664,7 @@
     "label": "2026년 하반기 경영전략회의 — 포용금융 확대",
     "sourceKind": "doc_chunk",
     "snippet": "포용금융 대상 상품 적극 추진을 하반기 과제로 포함.",
-    "relevance": 0.86,
+    "relevance": null,
     "doc": {
      "title": "2026년 하반기 경영전략회의 결과",
      "issuer": "경영전략회의",
@@ -889,25 +682,22 @@
     "ceiling": {
      "id": "cc_inc_ceiling",
      "label": "한도",
-     "value": 100,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "actual",
      "decimals": 1
     },
     "proposed": {
      "id": "cc_inc_proposed",
      "label": "제안 반영 후 소진율",
-     "value": 96.2,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "headroom": {
      "id": "cc_inc_headroom",
      "label": "여유",
-     "value": 3.8,
+     "value": null,
      "unit": "PP",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "passed": true,

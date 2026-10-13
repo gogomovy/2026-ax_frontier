@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -44,7 +44,7 @@ from nhdip.views.builders import DESCRIPTIONS as BUILDER_DESC
 from nhdip.workflow.dispatcher import match_event
 from nhdip.workflow.engine import NODE_DESCRIPTIONS
 
-from .deps import client_ip, require_admin
+from .deps import client_ip, require_admin, require_data_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 MAX_UPLOAD = 200 * 1024 * 1024  # 읽기 상한(메모리 보호) — 실제 허용 크기는 설정 upload.policy.max_mb
@@ -299,7 +299,11 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True) -> dict[s
         # 최근 30개 밖으로 밀린 현재 버전도 항상 포함 (되돌리기 · 정정이 쌓여도 기준일별 현재 버전이 보이도록)
         have = {v.id for v in vs}
         vs = [*vs, *[v for v in session.execute(select(t.version).where(t.version.dataset_code == d.code, t.version.is_current)).scalars() if v.id not in have]]
-        out["versions"] = [{"id": v.id, "version": v.version, "asOf": _iso(v.as_of), "status": v.status, "isCurrent": v.is_current, "dataOrigin": v.data_origin, "fileName": v.file_name, "sha256": v.file_sha256, "rows": v.row_count, "quality": v.quality, "uploadedBy": v.uploaded_by, "createdAt": _iso(v.created_at), "committedAt": _iso(v.committed_at), "note": v.note} for v in vs]
+        out["versions"] = [
+            {"id": v.id, "version": v.version, "asOf": _iso(v.as_of), "status": v.status, "isCurrent": v.is_current, "dataOrigin": v.data_origin, "fileName": v.file_name, "sha256": v.file_sha256, "rows": v.row_count, "quality": v.quality, "uploadedBy": v.uploaded_by, "createdAt": _iso(v.created_at), "committedAt": _iso(v.committed_at), "note": v.note,
+             "deletedAt": _iso(v.deleted_at), "deletedBy": v.deleted_by, "deleteReason": v.delete_reason}
+            for v in vs
+        ]
     return out
 
 
@@ -411,17 +415,89 @@ def dataset_rows(code: str, vid: int, limit: int = 200, session: Session = Depen
     return {"columns": [c["name"] for c in d.columns], "rows": [r.data for r in rows]}
 
 
+# ═════════════════════════ 업로드 자료 삭제 (Phase J · DEL-01~08) ═════════════════════════
+class DeleteIn(BaseModel):
+    reason: str
+    all_versions: bool = False
+
+
+def _matched(session: Session, event_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """삭제 이벤트가 깨우는 워크플로우 — 실제 디스패처 매칭 로직으로 미리보기."""
+    names = {w.code: w.name for w in session.execute(select(Workflow)).scalars()}
+    hit = match_event(session, OutboxEvent(id=0, type=event_type, payload=payload))
+    return [{"code": code, "name": names.get(code, code), "reasons": reasons} for code, reasons in sorted(hit.items())]
+
+
+def _after_delete(background: BackgroundTasks, res: Any) -> None:
+    from nhdip.data.deletion import after_commit
+    from nhdip.db import SessionLocal
+
+    if res.files or res.purge_ids:
+        background.add_task(after_commit, SessionLocal, list(res.files), list(res.purge_ids))
+
+
+@router.get("/datasets/{code}/versions/{vid}/delete-preview")
+def dataset_version_delete_preview(code: str, vid: int, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    from nhdip.data.deletion import DeleteError, preview_dataset_version
+
+    d = _ds(session, code)
+    try:
+        out = preview_dataset_version(session, d, vid)
+    except DeleteError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    out["workflows"] = _matched(session, "dataset.deleted", {"dataset": d.code, "origin": d.origin, "kind": d.kind}) if out["isCurrent"] else []
+    return out
+
+
+@router.post("/datasets/{code}/versions/{vid}/delete")
+def dataset_version_delete(code: str, vid: int, body: DeleteIn, request: Request, background: BackgroundTasks, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    """데이터셋 버전 삭제 — 행 · 원본 파일 삭제, 현재 버전이면 같은 기준일의 직전 버전을 현재로, 그래프 · 계산 재반영 (DEL-02 · DEL-03)."""
+    from nhdip.data.deletion import DeleteError, delete_dataset_version
+
+    d = _ds(session, code)
+    try:
+        res = delete_dataset_version(session, d, vid, admin.emp_no, body.reason, client_ip(request))
+    except DeleteError as exc:
+        session.rollback()
+        raise HTTPException(404 if "없음" in str(exc) else 409 if "이미" in str(exc) else 422, str(exc)) from exc
+    session.commit()
+    _after_delete(background, res)
+    return res.as_dict()
+
+
+@router.get("/purge-tasks")
+def purge_tasks(limit: int = 50, session: Session = Depends(get_session)):
+    """삭제 반영 상태 — Elasticsearch 색인 · Neo4j 그래프 삭제 작업(대기 · 완료 · 건너뜀)."""
+    from nhdip.data.deletion import purge_status
+
+    return purge_status(session, limit)
+
+
+@router.post("/purge-tasks/run")
+def purge_tasks_run(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    from nhdip.data.deletion import run_purge_tasks
+
+    stats = run_purge_tasks(session)
+    audit(session, admin.emp_no, "admin.purge.run", "purge_task", None, stats, client_ip(request))
+    session.commit()
+    return stats
+
+
 # ═════════════════════════ 문서 ═════════════════════════
 @router.get("/documents")
-def admin_documents(session: Session = Depends(get_session)):
+def admin_documents(include_deleted: bool = False, session: Session = Depends(get_session)):
     out = []
     for origin in ("bank", "ext"):
         t = source(origin)
-        for d in session.execute(select(t.document).order_by(t.document.created_at.desc())).scalars():
+        q = select(t.document).order_by(t.document.created_at.desc())
+        if not include_deleted:
+            q = q.where(t.document.status != "deleted")  # 삭제 표시만 남은 문서는 기본 목록에서 뺀다 (DEL-06)
+        for d in session.execute(q).scalars():
             chunks = session.execute(select(func.count(), func.count(t.chunk.embedding)).where(t.chunk.document_id == d.id)).one()
             issues = session.execute(select(func.count()).select_from(ExtractionIssue).where(ExtractionIssue.origin == origin, ExtractionIssue.document_id == d.id, ExtractionIssue.status == "open")).scalar()
             ex = d.extraction or {}
-            out.append({"origin": origin, "id": d.id, "docCode": d.doc_code, "version": d.version, "isCurrent": d.is_current, "title": d.title, "docClass": d.doc_class, "issuer": d.issuer, "publishedAt": _iso(d.published_at), "fileName": d.file_name, "status": d.status, "chunks": chunks[0], "embedded": chunks[1], "extraction": {"by": ex.get("by"), "entities": len(ex.get("entities") or []), "relations": len(ex.get("relations") or []), "issues": ex.get("issues"), "fallbackReason": ex.get("fallback_reason")}, "openIssues": issues, "uploadedBy": d.uploaded_by, "createdAt": _iso(d.created_at)})
+            out.append({"origin": origin, "id": d.id, "docCode": d.doc_code, "version": d.version, "isCurrent": d.is_current, "title": d.title, "docClass": d.doc_class, "issuer": d.issuer, "publishedAt": _iso(d.published_at), "fileName": d.file_name, "status": d.status, "chunks": chunks[0], "embedded": chunks[1], "extraction": {"by": ex.get("by"), "entities": len(ex.get("entities") or []), "relations": len(ex.get("relations") or []), "issues": ex.get("issues"), "fallbackReason": ex.get("fallback_reason")}, "openIssues": issues, "uploadedBy": d.uploaded_by, "createdAt": _iso(d.created_at),
+                        "deletedAt": _iso(d.deleted_at), "deletedBy": d.deleted_by, "deleteReason": d.delete_reason})
     return out
 
 
@@ -435,18 +511,28 @@ async def document_upload(
     issuer: str | None = Form(None),
     published_at: str | None = Form(None),
     text: str | None = Form(None),
+    meta: str | None = Form(None),
     file: UploadFile | None = File(None),
     session: Session = Depends(get_session),
     admin: AppUser = Depends(require_admin),
 ):
     if origin not in ("bank", "ext"):
         raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
+    import json
     import re
 
+    from nhdip.data.documents import clean_doc_meta
+
     code = doc_code or "doc-" + re.sub(r"[^0-9A-Za-z가-힣]+", "-", title)[:60].strip("-").lower()
+    if not re.fullmatch(r"[0-9A-Za-z가-힣_\-.]{1,80}", code):
+        raise HTTPException(422, "문서 코드는 영문 · 숫자 · 한글 · - _ . 80자 이내")
+    try:
+        doc_meta = clean_doc_meta(json.loads(meta) if meta else None, origin)  # 문서 메타(RD-08) — 열람 등급 · 업무 영역 · 주제어 · 문서 유형 · 시행일
+    except ValueError as exc:  # JSON 오류 · DocumentError
+        raise HTTPException(422, str(exc) if isinstance(exc, DocumentError) else "meta 는 JSON 객체여야 합니다") from exc
     name, content = await _read(file, "document", session, request, admin.emp_no) if file else (None, None)
     try:
-        doc = ingest_document(session, origin=origin, doc_code=code, title=title, doc_class=doc_class, text=text, filename=name, content=content, issuer=issuer, published_at=published_at or None, meta={"docType": "업로드 문서", "isOfficial": origin == "ext"}, actor=admin.emp_no)
+        doc = ingest_document(session, origin=origin, doc_code=code, title=title, doc_class=doc_class, text=text, filename=name, content=content, issuer=issuer, published_at=published_at or doc_meta.get("effectiveDate") or None, meta=doc_meta, actor=admin.emp_no)
     except (DocumentError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc
@@ -460,11 +546,47 @@ def document_reextract(origin: str, did: int, request: Request, session: Session
     d = session.get(t.document, did)
     if not d:
         raise HTTPException(404, "문서 없음")
+    if d.status == "deleted":
+        raise HTTPException(409, "삭제된 문서는 재구조화할 수 없습니다")
     d.status = "ingested"
     emit(session, "document.ingested", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "reextract": True}, admin.emp_no)
     audit(session, admin.emp_no, "admin.document.reextract", "document", f"{origin}:{did}", None, client_ip(request))
     session.commit()
     return {"queued": True}
+
+
+def _origin(origin: str) -> str:
+    if origin not in ("bank", "ext"):
+        raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
+    return origin
+
+
+@router.get("/documents/{origin}/{did}/delete-preview")
+def document_delete_preview(origin: str, did: int, all_versions: bool = False, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    from nhdip.data.deletion import DeleteError, preview_document
+
+    try:
+        out = preview_document(session, _origin(origin), did, all_versions)
+    except DeleteError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    d = session.get(source(origin).document, did)
+    out["workflows"] = _matched(session, "document.deleted", {"origin": origin, "doc_code": d.doc_code, "doc_class": d.doc_class}) if out["isCurrent"] else []
+    return out
+
+
+@router.post("/documents/{origin}/{did}/delete")
+def document_delete(origin: str, did: int, body: DeleteIn, request: Request, background: BackgroundTasks, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    """문서 삭제 — 본문 · 청크(pgvector) · 추출 · 원본 파일 삭제, 색인(Elasticsearch) · 그래프(Neo4j) 삭제 작업 (DEL-02 · DEL-04)."""
+    from nhdip.data.deletion import DeleteError, delete_document
+
+    try:
+        res = delete_document(session, _origin(origin), did, admin.emp_no, body.reason, client_ip(request), all_versions=body.all_versions)
+    except DeleteError as exc:
+        session.rollback()
+        raise HTTPException(404 if "없음" in str(exc) else 409 if "이미" in str(exc) or "없습니다" in str(exc) else 422, str(exc)) from exc
+    session.commit()
+    _after_delete(background, res)
+    return res.as_dict()
 
 
 @router.get("/documents/{origin}/{did}")

@@ -6,7 +6,6 @@ import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
 import { Button, IconCheck, IconWarn } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
-import { API_MODE } from "@/lib/config";
 
 interface Step {
   key: string;
@@ -63,7 +62,6 @@ export function AgentProgress({ progress }: { progress: Progress }) {
 
 /**
  * 온디맨드 분석 (F.9) — 버튼 → `POST /analysis/run` → `GET /analysis/stream` (SSE) 로 단계 진행 표시 → 완료 시 화면 새로고침.
- * 목업 모드에서는 표시하지 않는다.
  */
 export function OnDemandAnalysis({ workflow, label = "분석 다시 실행" }: { workflow: string; label?: string }) {
   const router = useRouter();
@@ -107,7 +105,6 @@ export function OnDemandAnalysis({ workflow, label = "분석 다시 실행" }: {
     }
   }, [workflow, router, showToast]);
 
-  if (!API_MODE) return null;
   const running = progress && (progress.phase === "queued" || progress.phase === "running");
   return (
     <div className="relative" data-on-demand={workflow}>

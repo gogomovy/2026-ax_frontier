@@ -126,10 +126,17 @@ def b_psi_table(ctx: EvalContext, p: dict[str, Any]):
     ]
 
 
+def _label(ctx: EvalContext, text: str) -> str:
+    """서식 표식([[ym:…]] · [[rule:…]])이 든 라벨 — 데이터 기간을 따른다 (Phase I)."""
+    from nhdip.views.template import render_text
+
+    return render_text(text, {}, ctx) if "[[" in (text or "") else text
+
+
 @builder("psi_series", "등급별 구성비 — 기준시점 vs 비교시점 차트")
 def b_psi_series(ctx: EvalContext, p: dict[str, Any]):
     base, cur, col, _ = _psi_parts(ctx, p)
-    names = p.get("names") or ["기준", "비교"]
+    names = [_label(ctx, n) for n in (p.get("names") or ["기준", "비교"])]
     return [
         {"name": names[0], "points": [{"label": r["grade"], "value": float(r[col])} for r in base]},
         {"name": names[1], "points": [{"label": r["grade"], "value": float(r[col])} for r in cur]},
@@ -226,10 +233,64 @@ def b_inclusive_groups(ctx: EvalContext, p: dict[str, Any]):
     return out
 
 
+@builder("inclusive_group_table", "상품군별 요약 표 (보고서 — 상품코드 수 · 기준/비교 충당금 · 비중 증감 %p, 표시 문자열)")
+def b_inclusive_group_table(ctx: EvalContext, p: dict[str, Any]):
+    return [
+        {"group": g["group"], "codes": g["codes"], "base": _fmt(g["base"]), "now": _fmt(g["now"]), "deltaPP": "-" if g["deltaPP"] is None else _fmt(g["deltaPP"], 2, sign=True)}
+        for g in b_inclusive_groups(ctx, p)
+    ]
+
+
+@builder("inclusive_match_note", "대상 상품코드 매칭 결과 문장 (마스터 코드 중 최근 충당금 자료에 있는 코드 수)")
+def b_inclusive_match_note(ctx: EvalContext, p: dict[str, Any]):
+    master = {r["product_code"] for r in _rows(ctx, p["master"])}
+    prov = _rows(ctx, p["dataset"])
+    latest = max((str(r.get("ym")) for r in prov), default=None)
+    have = {r["product_code"] for r in prov if str(r.get("ym")) == latest}
+    miss = len(master - have)
+    return f"상품코드 {len(master)}건 {'전건 매칭' if not miss else f'중 {len(master) - miss}건 매칭'}(미매칭 {miss}건)."
+
+
+@builder("data_quality", "데이터 품질 요약 [{label, status, note}] — 데이터셋 최근 버전 품질 검사 · 마스터 매칭 · 미제공 자료")
+def b_data_quality(ctx: EvalContext, p: dict[str, Any]):
+    from nhdip.calc.metrics import ResolveError
+
+    out = []
+    for it in p.get("items") or []:
+        # dataset = 이 바인딩의 워크플로가 맡은 자료(계보 대상), ref_dataset = 다른 워크플로 자료(표시만 — 계보로 이 워크플로를 깨우지 않음)
+        ds_code = it.get("dataset") or it.get("ref_dataset")
+        label = _label(ctx, it.get("label") or ds_code or "")
+        kind = it.get("kind", "dataset")
+        try:
+            if kind == "missing":
+                if ds_code:
+                    ctx.dataset(ds_code)  # 정의 · 자료가 생기면 아래 dataset 판정으로 바뀐다
+                    kind = "dataset"
+                else:
+                    raise ResolveError("미제공")
+            if kind == "master_match":
+                note = b_inclusive_match_note(ctx, {**it, "dataset": ds_code})
+                out.append({"label": label, "status": "passed" if "전건 매칭" in note else "warning", "note": note.rstrip(".")})
+                continue
+            vs, rows, _ = ctx.dataset(ds_code)
+            v = vs.versions[0]
+            q = v.quality or {}
+            bad = [c for c in q.get("checks") or [] if not c.get("passed")]
+            note = " · ".join(c.get("detail") or c.get("rule") for c in bad[:2]) if bad else f"품질 검사 통과 · {v.row_count:,}행 · {v.file_name}"
+            out.append({"label": label, "status": q.get("status") or "passed", "note": note[:200]})
+        except ResolveError:
+            out.append({"label": label, "status": "failed", "note": it.get("note") or "데이터 미제공 — 분석에서 제외"})
+    return out
+
+
 # ═════════════════════════ 부도율 추이 ═════════════════════════
-@builder("series_points", "월별 시계열 포인트 [{label, value}] — 데이터셋 행에서 수식으로 계산")
+@builder("series_points", "월별 시계열 포인트 [{label, value}] — 데이터셋 행에서 수식으로 계산 (latest_year: 최근 연도만 · label_fmt: month · scale: 단위 환산)")
 def b_series_points(ctx: EvalContext, p: dict[str, Any]):
     rows = _rows(ctx, p["dataset"], p.get("where"), p.get("order_by", "ym"))
+    lc = p.get("label_col", "ym")
+    if p.get("latest_year") and rows:
+        year = max(str(r.get(lc))[:4] for r in rows)
+        rows = [r for r in rows if str(r.get(lc)).startswith(year)]
     out = []
     for r in rows:
         if p.get("formula"):
@@ -237,9 +298,33 @@ def b_series_points(ctx: EvalContext, p: dict[str, Any]):
             val = execute(p["formula"], args).value
         else:
             val = Decimal(str(r.get(p["col"]))) if r.get(p["col"]) is not None else None
-        ym = str(r.get(p.get("label_col", "ym")))
-        label = f"{ym[:4]}.{ym[4:6]}" if len(ym) == 6 and ym.isdigit() else ym
+        if val is not None and p.get("scale"):
+            val = val / Decimal(str(p["scale"]))
+        ym = str(r.get(lc))
+        if p.get("label_fmt") == "month" and len(ym) >= 6 and ym[:6].isdigit():
+            label = f"{int(ym[4:6])}월"
+        else:
+            label = f"{ym[:4]}.{ym[4:6]}" if len(ym) == 6 and ym.isdigit() else ym
         out.append({"label": label, "value": None if val is None else float(_r(val, int(p.get("decimals", 3))))})
+    return out
+
+
+@builder("metric_series", "지표 결과로 만든 차트 시리즈 [{name, points}] — 시점 비교 막대(이름 · 라벨은 데이터 기간 표식)")
+def b_metric_series(ctx: EvalContext, p: dict[str, Any]):
+    return [{"name": _label(ctx, s.get("name") or ""), "points": b_metric_points(ctx, {"points": s.get("points") or []})} for s in p.get("series") or []]
+
+
+@builder("metric_points", "지표 결과로 만든 점 [{label, value}] — 연도별 비교 차트(라벨은 데이터 기간 표식)")
+def b_metric_points(ctx: EvalContext, p: dict[str, Any]):
+    out = []
+    for pt in p.get("points") or []:
+        oc = ctx.outcomes.get(pt["metric"])
+        val = None if oc is None or oc.error or oc.display is None else float(oc.display)
+        out.append({"label": _label(ctx, pt.get("label") or pt["metric"]), "value": val})
+    if all(x["value"] is None for x in out):
+        from nhdip.calc.metrics import ResolveError
+
+        raise ResolveError("지표 값 없음: " + ", ".join(pt["metric"] for pt in p.get("points") or []))
     return out
 
 

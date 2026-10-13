@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useState } from "react";
 import clsx from "clsx";
 import { FigureText } from "@/components/data/FigureText";
-import { MetricStrip } from "@/components/data/MetricStrip";
+import { MetricStrip, type MetricStripItem } from "@/components/data/MetricStrip";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { Badge, IconArrowRight, NextStep, ProgressBar, SectionHead, TextLink } from "@/components/ui/primitives";
-import { UNIT_LABEL } from "@/lib/format";
+import { formatFigure, formatSigned } from "@/lib/format";
 import { resolveGoal } from "@/lib/goalView";
+import { lastStep, revenueRowsOf, trendPhrase } from "@/lib/loanView";
+import { NO_VALUE, periodOf } from "@/lib/period";
 import type { CapitalView, DomainCardInfo, Figure, Goal, LoanOverview } from "@/lib/types";
 import { ScrollRegion } from "@/components/ui/ScrollRegion";
 
@@ -36,9 +38,31 @@ export function OverviewWorkspace({
   const domainGoals = goals.filter((g) => g.domainCode === selected);
   const openProposals = Math.max(0, pending.proposals - Object.keys(proposalActions).length);
 
-  const rwaUsed = capital.rwaAllocation.reduce((acc, r) => acc + (r.used.value ?? 0), 0);
-  const rwaAllocated = capital.rwaAllocation.reduce((acc, r) => acc + (r.allocated.value ?? 0), 0);
   const revenueGoal = goals.find((g) => g.id === "goal-annual-revenue");
+  // 기간 · 추세 문구는 산출물 기준일과 계열 값에서 계산한다 (Phase I · 하드코딩 제거)
+  const p = periodOf(loan.asOf);
+  const nimRow = revenueRowsOf(loan.revenue.rows).nim;
+  const shareTrend = trendPhrase(loan.revenue.nimShareTrend);
+  const shareStep = lastStep(loan.revenue.nimShareTrend);
+  const loanItems: MetricStripItem[] = [
+    ...(nimRow ? [{ label: "여신 이자마진 수익", figure: nimRow.current, delta: nimRow.diffRate, caption: `${p.month} 누계` }] : []),
+    {
+      label: "전체 수익 중 비중",
+      figure: loan.revenue.nimShare,
+      caption: shareTrend ?? undefined,
+      tone: shareStep === "축소" ? "attention" : "default",
+    },
+    { label: "기업여신 잔액", figure: loan.corporate.balance, delta: loan.corporate.growth },
+    {
+      label: "가계여신 잔액",
+      figure: loan.household.balance,
+      delta: loan.household.growth,
+      positiveIsGood: false,
+    },
+  ];
+  const { bankTarget } = capital;
+  const ceiling = bankTarget.ceiling.value;
+  const bankProgress = bankTarget.value.value != null && ceiling ? (bankTarget.value.value / ceiling) * 100 : 0;
 
   return (
     <div className="shell flex flex-col gap-xxl">
@@ -92,9 +116,7 @@ export function OverviewWorkspace({
                   {domain.name}
                 </span>
                 <span className={clsx("text-[12px] tnum", on ? "text-white/75" : ready ? "text-steel" : "text-stone")}>
-                  {ready
-                    ? `${domain.headline?.value?.toFixed(2)}${UNIT_LABEL[domain.headline?.unit ?? "NONE"]}`
-                    : "준비 중"}
+                  {ready ? (domain.headline ? formatFigure(domain.headline) : NO_VALUE) : "준비 중"}
                 </span>
               </button>
             );
@@ -122,32 +144,10 @@ export function OverviewWorkspace({
           <section>
             <SectionHead
               title="여신 부문 현황"
-              hint="2026.08 기준"
+              hint={`${p.ym} 기준`}
               right={<TextLink href="/hq/analysis">상세 분석</TextLink>}
             />
-            <MetricStrip
-              items={[
-                {
-                  label: "여신 이자마진 수익",
-                  figure: loan.revenue.rows[1].current,
-                  delta: loan.revenue.rows[1].diffRate,
-                  caption: "8월 누계",
-                },
-                {
-                  label: "전체 수익 중 비중",
-                  figure: loan.revenue.nimShare,
-                  caption: "3개년 연속 축소",
-                  tone: "attention",
-                },
-                { label: "기업여신 잔액", figure: loan.corporate.balance, delta: loan.corporate.growth },
-                {
-                  label: "가계여신 잔액",
-                  figure: loan.household.balance,
-                  delta: loan.household.growth,
-                  positiveIsGood: false,
-                },
-              ]}
-            />
+            <MetricStrip items={loanItems} columns={loanItems.length === 4 ? 4 : 3} />
           </section>
 
           {/* 현재 경영목표 */}
@@ -216,28 +216,16 @@ export function OverviewWorkspace({
             <div className="grid grid-cols-1 gap-md md:grid-cols-3">
               <TargetCard
                 label="총자산 증가율 목표"
-                value={capital.bankTarget.value}
-                sub={`지주 한도 ${capital.bankTarget.ceiling.value}% · 여유 +${capital.bankTarget.headroom.value}%p`}
-                progress={((capital.bankTarget.value.value ?? 0) / (capital.bankTarget.ceiling.value ?? 1)) * 100}
+                value={bankTarget.value}
+                sub={`${bankTarget.ceiling.label} ${formatFigure(bankTarget.ceiling)} · 여유 ${formatSigned(bankTarget.headroom)}`}
+                progress={bankProgress}
               />
-              <TargetCard
-                label="여신 신용RWA 소진"
-                value={{
-                  id: "ov_rwa",
-                  label: "여신 부문 RWA 사용",
-                  value: Number(rwaUsed.toFixed(2)),
-                  unit: "KRW_TN",
-                  decimals: 2,
-                  dataOrigin: "simulated",
-                }}
-                sub={`배분 ${rwaAllocated.toFixed(1)}조원 · 소진율 ${((rwaUsed / rwaAllocated) * 100).toFixed(1)}%`}
-                progress={(rwaUsed / rwaAllocated) * 100}
-              />
+              <RwaCard rows={capital.rwaAllocation} />
               {revenueGoal?.actual ? (
                 <TargetCard
                   label="여신 이자마진 수익"
                   value={revenueGoal.actual}
-                  sub={`연간 목표 ${revenueGoal.targetValue?.toFixed(2)}조원 · 진행률 ${revenueGoal.gap?.value}%`}
+                  sub={`연간 목표 ${revenueGoal.targetFigure ? formatFigure(revenueGoal.targetFigure) : NO_VALUE} · ${revenueGoal.gapLabel ?? "진행률"} ${revenueGoal.gap ? formatFigure(revenueGoal.gap) : NO_VALUE}`}
                   progress={revenueGoal.gap?.value ?? 0}
                 />
               ) : null}
@@ -252,6 +240,38 @@ export function OverviewWorkspace({
         description="여신 실적을 AI 해설과 함께 확인하고, 목표 조정이 필요한 지점을 찾습니다."
         href="/hq/analysis"
       />
+    </div>
+  );
+}
+
+/**
+ * 여신 신용RWA 소진 — 서버가 계산한 부서별 배분 · 사용 · 소진율 수치만 그린다(화면에서 합계 수치를 만들지 않는다).
+ * 사용 수치가 하나도 없으면(업로드 전) 빈 상태.
+ */
+function RwaCard({ rows }: { rows: CapitalView["rwaAllocation"] }) {
+  const filled = rows.filter((r) => r.used.value != null || r.usageRate.value != null);
+  return (
+    <div className="rounded-2xl border border-hairline-soft px-lg py-base" data-rwa-card>
+      <p className="text-[12px] text-steel">여신 신용RWA 소진</p>
+      {filled.length === 0 ? (
+        <p className="mt-3 text-[12.5px] leading-snug text-stone">신용RWA 배분 · 사용 자료가 없습니다. 자료를 올리면 계산됩니다.</p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-2">
+          {filled.map((r) => (
+            <li key={r.org}>
+              <div className="flex items-baseline justify-between gap-2 text-[12px]">
+                <span className="font-bold text-charcoal">{r.org}</span>
+                <span className="text-steel">
+                  <FigureText figure={r.used} /> / <FigureText figure={r.allocated} /> · <FigureText figure={r.usageRate} />
+                </span>
+              </div>
+              <div className="mt-1">
+                <ProgressBar value={r.usageRate.value ?? 0} tone={(r.usageRate.value ?? 0) > 90 ? "critical" : "primary"} />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

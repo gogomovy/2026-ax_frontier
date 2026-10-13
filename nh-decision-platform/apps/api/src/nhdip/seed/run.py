@@ -12,7 +12,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nhdip.config import get_settings
-from nhdip.data.datasets import ingest_rows, quality_check
 from nhdip.data.documents import ingest_document
 from nhdip.events import audit, emit
 from nhdip.models import (
@@ -46,6 +45,7 @@ from . import defs_contracts as DC
 from . import defs_core as C
 from . import defs_data as D
 from . import defs_knowledge as K
+from . import defs_real as R
 
 log = logging.getLogger("nhdip.seed")
 HERE = os.path.dirname(__file__)
@@ -94,7 +94,7 @@ def seed_iam(s: Session, out: dict[str, Any]) -> None:
         s.add(Setting(key="screen.resources", value=res, description="화면 → 화면 API 리소스 (권한 판정)"))
     st = get_settings()
     if st.bootstrap_admin_password and not s.get(AppUser, st.bootstrap_admin_emp_no):
-        s.add(AppUser(emp_no=st.bootstrap_admin_emp_no, name="시스템 관리자", password_hash=hash_password(st.bootstrap_admin_password), org_code="T911", position="관리자", role="admin", status="active", approved_by="bootstrap"))
+        s.add(AppUser(emp_no=st.bootstrap_admin_emp_no, name="시스템 관리자", password_hash=hash_password(st.bootstrap_admin_password), org_code="T911", position="관리자", role="admin", data_admin=True, status="active", approved_by="bootstrap"))
         audit(s, "bootstrap", "user.bootstrap_admin", "user", st.bootstrap_admin_emp_no)
         out["admin"] = st.bootstrap_admin_emp_no
     demo_pw = os.environ.get("DEMO_USER_PASSWORD", "")
@@ -110,7 +110,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
     for key, (value, desc) in C.SETTINGS.items():
         if not s.get(Setting, key):
             s.add(Setting(key=key, value=value, description=desc))
-    for code, name, kind, desc, body in [*C.RULES, DC.RULE, DC.RULE_IMPACT, *B.RULES]:
+    for code, name, kind, desc, body in [*C.RULES, DC.RULE, DC.RULE_IMPACT, *B.RULES, *R.RULES]:
         if not s.get(Rule, code):
             s.add(Rule(code=code, name=name, kind=kind, description=desc, active_version=1))
             s.flush()
@@ -300,6 +300,17 @@ def seed_contracts(s: Session, out: dict[str, Any]) -> None:
     out["contracts"] = import_workbook(s, spec["tables"], spec["source_file"], DC.BINDINGS, "seed")
 
 
+def _template_bindings() -> list[dict[str, Any]]:
+    return [*D.bindings(), *B.bindings()]
+
+
+def template_payload(key: str, payload: Any) -> Any:
+    """화면 JSON → 값 없는 틀 (Phase I · Q138) — 시드 · 보강이 게시하는 0세대는 모두 이 틀이다."""
+    from nhdip.views.template import to_template
+
+    return to_template(key, payload, _template_bindings())
+
+
 def seed_artifacts(s: Session, out: dict[str, Any]) -> None:
     if s.execute(select(func.count()).select_from(ViewArtifact)).scalar():
         out["artifacts"] = "exists"
@@ -314,7 +325,7 @@ def seed_artifacts(s: Session, out: dict[str, Any]) -> None:
             raw = fh.read()
         for old, new in fixes.get(key, []):
             raw = raw.replace(json.dumps(old, ensure_ascii=False)[1:-1], json.dumps(new, ensure_ascii=False)[1:-1])
-        publish(s, key, json.loads(raw), produced_by="seed")
+        publish(s, key, template_payload(key, json.loads(raw)), produced_by="seed")
         n += 1
     out["artifacts"] = n
 
@@ -479,53 +490,17 @@ def backfill_section_paths(s: Session, out: dict[str, Any]) -> None:
 
 
 def seed_documents(s: Session, out: dict[str, Any]) -> None:
+    """시드는 문서를 넣지 않는다(Q135 — 문서는 업로드로). 예전 시드가 넣은 문서가 있는 DB 만 면별 발췌를 보강한다."""
     if s.execute(select(source("bank").document.id).limit(1)).first() or s.execute(select(source("ext").document.id).limit(1)).first():
         out["documents"] = "exists"
         upgrade_seed_documents(s, out)
         return
-    with open(os.path.join(_screens_dir(), "documents.json"), encoding="utf-8") as fh:
-        docs = json.load(fh)
-    snippets = _collect_snippets()
-    n = 0
-    for d in docs:
-        origin = "ext" if d["dbClass"] == "gov_policy" else "bank"
-        doc_snips = snippets.get(d["title"], [])
-        pages = _doc_pages(d, doc_snips)
-        ingest_document(
-            s,
-            origin=origin,
-            doc_code=d["docId"],
-            title=d["title"],
-            doc_class=d["dbClass"],
-            text=_doc_text(d, doc_snips),
-            # 청크: 첫 면에 문서 머리글(제목 · 발행 · 주제어)을 붙여 검색에 쓰이게 한다
-            pages=[(p["page"], ("\n".join(_doc_head(d)) + "\n\n" + p["text"]) if i == 0 else p["text"]) for i, p in enumerate(pages)] or None,
-            issuer=d.get("issuer"),
-            published_at=d.get("effectiveDate"),
-            meta={**d, "pages": pages} if pages else d,
-            actor="seed",
-            emit_event=False,
-        )
-        n += 1
-    out["documents"] = n
+    out["documents"] = 0
 
 
-def seed_datasets(s: Session, out: dict[str, Any]) -> None:
-    n = 0
-    for spec in [*D.dataset_versions(), DC.dataset_version(), *B.dataset_versions()]:
-        ds = s.get(Dataset, spec["dataset"])
-        t = source(ds.origin)
-        exists = s.execute(select(t.version.id).where(t.version.dataset_code == ds.code, t.version.file_name == spec["file_name"]).limit(1)).first()
-        if exists:
-            continue
-        rows = [dict(r) for r in spec["rows"]]
-        # 정의에 없는 키는 버리고 누락 키는 None
-        names = [c["name"] for c in ds.columns]
-        rows = [{k: r.get(k) for k in names} for r in rows]
-        quality = quality_check(ds, rows, [])
-        ingest_rows(s, ds, rows, quality=quality, file_name=spec["file_name"], data_origin="simulated", actor="seed", note="목데이터 시뮬레이션 버전", force=True)
-        n += 1
-    out["dataset_versions"] = n
+def has_business_data(s: Session) -> bool:
+    """확정된 데이터셋 버전이 하나라도 있는지 — 없으면(정의만 있는 새 DB) 선계산을 걸지 않는다."""
+    return any(s.execute(select(source(o).version.id).where(source(o).version.is_current).limit(1)).first() for o in ("bank", "ext"))
 
 
 def branch_upgrade(s: Session, out: dict[str, Any], first: bool) -> None:
@@ -566,16 +541,17 @@ def branch_upgrade(s: Session, out: dict[str, Any], first: bool) -> None:
         path = os.path.join(_screens_dir(), f"{key}.json")
         if os.path.exists(path) and not s.execute(select(ViewArtifact.id).where(ViewArtifact.key == key).limit(1)).first():
             with open(path, encoding="utf-8") as fh:
-                publish(s, key, json.load(fh), produced_by="seed")
+                publish(s, key, template_payload(key, json.load(fh)), produced_by="seed")
             n += 1
     done["artifacts"] = n
-    # 문서 — 영업점 기준 · 공문 (없는 문서만)
-    with open(os.path.join(_screens_dir(), "documents.json"), encoding="utf-8") as fh:
-        docs = {d["docId"]: d for d in json.load(fh)}
+    # 문서 — 영업점 기준 · 공문: 예전 시드 문서가 있던 운영 DB 만(없는 문서만). 새 DB 는 업로드로(Q135)
+    from nhdip.sample.docs import catalog
+
+    docs = {d["docId"]: d for d in catalog()}
     have_docs = {c for o in ("bank", "ext") for c in s.execute(select(source(o).document.doc_code)).scalars()}
     snippets = _collect_snippets()
     nd = 0
-    for doc_id in B.DOC_IDS:
+    for doc_id in B.DOC_IDS if (not first and have_docs) else []:
         d = docs.get(doc_id)
         if not d or doc_id in have_docs:
             continue
@@ -924,6 +900,80 @@ def admin_counts_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["admin_counts_upgrade"] = done
 
 
+def _add_missing(cur: Any, seed: Any) -> Any:
+    """규칙 본문 보강 — 관리자가 바꾼 값은 두고, 새로 정의된 키만 더한다(중첩 사전까지)."""
+    if not isinstance(cur, dict) or not isinstance(seed, dict):
+        return cur
+    out = dict(cur)
+    for k, v in seed.items():
+        out[k] = _add_missing(cur[k], v) if k in cur else v
+    return out
+
+
+PHASE_I_RULES = ("MDL_AR_BASELINE", "PROPOSAL_IMPACT")
+
+
+def phase_i_upgrade(s: Session, out: dict[str, Any], first: bool) -> None:
+    """Phase I (Q135~Q142) — 운영 DB 보강(1회). 새 DB 는 정의가 이미 최신이라 표시만 남긴다.
+    - 지표: 정의에 새로 생긴 수치 id(figure_ids)를 더한다(기존 id · 산식은 그대로)
+    - 화면 바인딩: (워크플로우, 산출물, 경로) 가 없는 것만 더한다
+    - 규칙: MDL_AR_BASELINE(모형 5개 추가) · PROPOSAL_IMPACT(hh_rwa_factor) — 없는 키만 더해 새 버전
+    - 설정 ui.as_of: 예전 고정값(2026-08-31)이면 비운다(올라온 자료의 최신 기준일)"""
+    if _applied(s, "phase-i-v1") or first:
+        return
+    n_fig = 0
+    for m in [*D.metrics(), *DC.metrics(), *B.metrics()]:
+        cur = s.get(Metric, m["code"])
+        if cur is None:
+            continue
+        want = [f for f in (m.get("figure_ids") or []) if f not in (cur.figure_ids or [])]
+        if want:
+            cur.figure_ids = [*(cur.figure_ids or []), *want]
+            n_fig += len(want)
+    have = {(b.workflow_code, b.artifact_key, b.path) for b in s.execute(select(ViewBinding)).scalars()}
+    n_bind = 0
+    for b in _template_bindings():
+        if (b["workflow_code"], b["artifact_key"], b["path"]) not in have:
+            s.add(ViewBinding(**b, enabled=True))
+            have.add((b["workflow_code"], b["artifact_key"], b["path"]))
+            n_bind += 1
+    n_rule = 0
+    seeds = {code: body for code, _n, _k, _d, body in [*C.RULES, DC.RULE, DC.RULE_IMPACT, *B.RULES, *R.RULES]}
+    for code in PHASE_I_RULES:
+        rule = s.get(Rule, code)
+        if rule is None or code not in seeds:
+            continue
+        cur = s.execute(select(RuleVersion).where(RuleVersion.rule_code == code, RuleVersion.version == rule.active_version)).scalar()
+        if cur is None:
+            continue
+        merged = _add_missing(cur.body, seeds[code])
+        if merged != cur.body:
+            last = s.execute(select(func.max(RuleVersion.version)).where(RuleVersion.rule_code == code)).scalar() or rule.active_version
+            s.add(RuleVersion(rule_code=code, version=last + 1, body=merged, note="Phase I: 새 키 추가(기존 값 유지)", created_by="seed"))
+            rule.active_version = last + 1
+            emit(s, "rule.changed", {"rule": code, "version": last + 1}, "seed")
+            n_rule += 1
+    st = s.get(Setting, "ui.as_of")
+    as_of_cleared = bool(st and st.value == "2026-08-31")
+    if as_of_cleared:
+        st.value = ""
+    s.flush()
+    out["phase_i"] = {"figure_ids": n_fig, "bindings": n_bind, "rules": n_rule, "ui_as_of_cleared": as_of_cleared}
+
+
+def data_admin_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """Phase J (DEL-01 · Q143) — 운영 DB 에 데이터 관리자가 한 명도 없으면 부트스트랩 관리자를 지정(1회). 이후 지정 · 해제는 [사용자] 화면."""
+    if _applied(s, "data-admin-v1"):
+        return
+    if s.execute(select(AppUser.emp_no).where(AppUser.data_admin, AppUser.role == "admin").limit(1)).first():
+        return
+    u = s.get(AppUser, get_settings().bootstrap_admin_emp_no)
+    if u is not None and u.role == "admin":
+        u.data_admin = True
+        audit(s, "seed", "user.data_admin", "user", u.emp_no, {"granted": True, "reason": "Phase J 데이터 관리자 초기 지정"})
+        out["data_admin"] = u.emp_no
+
+
 def seed_knowledge(s: Session, out: dict[str, Any]) -> None:
     """질문하기 통합 지식 색인(Phase D · 요구사항 §21) — 컬렉션 정의(없는 코드만, 관리자 편집 보존) + 분석 결과 색인 대조.
     새 DB · 업그레이드 · 직접 게시 경로를 모두 보강한다(멱등 — 이미 색인된 것은 건드리지 않음). 임베딩은 워커가 채운다."""
@@ -952,12 +1002,12 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     s.flush()
     seed_artifacts(s, out)
     s.flush()  # 새로 게시한 산출물에도 문구 교정이 보이도록 (autoflush 꺼짐)
-    fix_live_texts(s, out)
-    fix_markers(s, out)
+    if not first:  # 예전 시드 문구가 남은 운영 DB 만 — 새 DB 의 틀은 이미 수치 마커 · 서식 문구(Phase I)
+        fix_live_texts(s, out)
+        fix_markers(s, out)
     seed_documents(s, out)
     s.flush()
     backfill_section_paths(s, out)
-    seed_datasets(s, out)
     seed_contracts(s, out)
     s.flush()
     branch_upgrade(s, out, first)
@@ -974,6 +1024,8 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     analysis_spaces_upgrade(s, out)
     analysis_agents_upgrade(s, out)
     admin_counts_upgrade(s, out)
+    phase_i_upgrade(s, out, first)
+    data_admin_upgrade(s, out)
     s.flush()
     seed_knowledge(s, out)
     s.flush()
@@ -981,7 +1033,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.
-    if first and with_precompute:
+    if first and with_precompute and has_business_data(s):
         from nhdip.models import OutboxEvent
 
         s.query(OutboxEvent).filter(OutboxEvent.dispatched_at.is_(None)).update({"dispatched_at": func.now(), "matched": [{"note": "seed — 수동 실행 이벤트로 대체"}]}, synchronize_session=False)

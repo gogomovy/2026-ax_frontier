@@ -143,10 +143,15 @@ def _code_for(path: list[str], mapping: dict[str, str]) -> str | None:
 
 
 
-def _tidy(sheet: Sheet) -> bool:
-    """첫 행이 정리된 표 헤더(기준년월 · ym 등)인지."""
-    first = {_norm(sheet.text(0, c)) for c in range(len(sheet.cells[0]))} if sheet.cells else set()
-    return bool(first & {"ym", "기준년월", "기준월", "yyyymm", "accountcode", "itemcode", "productcode"})
+TIDY_HEADS = {"ym", "기준년월", "기준월", "기준년월가정", "yyyymm", "accountcode", "itemcode", "productcode", "stdym"}
+
+
+def _tidy(sheet: Sheet, max_rows: int = 20) -> bool:
+    """정리된 표인지 — 앞 20줄 안에 정리표 머리글 칸(기준년월 · ym · 코드 컬럼)이 있으면. 제목 · 기준 · 단위 줄이 위에 있는 실무형 표도 포함(RD-09)."""
+    for r in range(min(max_rows, len(sheet.cells))):
+        if {_norm(sheet.text(r, c)) for c in range(len(sheet.cells[r]))} & TIDY_HEADS:
+            return True
+    return False
 
 # ═════════════════════════ 어댑터 ═════════════════════════
 class Adapter:

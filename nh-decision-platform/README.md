@@ -7,14 +7,15 @@
 | 스펙 | `.kiro/specs/nh-decision-ai-platform/` — `requirements.md`(§16) · `design.md`(§19) · `tasks.md`(Phase B) |
 | 프론트엔드 | Next.js 16 · React 19 — 업무 화면 3개 부서(종합기획부 · 신용리스크관리부 · 영업점) + 로그인·가입 + 관리자 화면 25종(묶음 6개 · 관리자 홈) |
 | 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), 3-way 검색(PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프), 외부 LiteLLM 연동, 변경 기반 워크플로우 |
-| 데이터 | 목데이터(시뮬레이션 버전)로 시드 — 실데이터는 관리자 화면에서 같은 데이터셋 정의로 업로드 |
+| 데이터 | 프론트는 항상 백엔드 API 만 쓴다(목데이터 모드 없음) — 자료를 올리기 전에는 수치 없는 화면 템플릿, 올린 뒤에는 모든 수치 · 기간을 업로드 자료로 계산. 시연 자료 패키지는 `python -m nhdip.cli load-sample` 또는 `python -m nhdip.sample upload` 로 올리고, 실데이터는 관리자 화면에서 같은 데이터셋 정의로 업로드 |
 
 ---
 
 ## 1. 실행 (Docker, 5개 서비스)
 
 ```bash
-make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 최초 마이그레이션·시드·계산 자동
+make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 마이그레이션 · 정의 시드 → 시연 자료 패키지 업로드(LOAD_SAMPLE_ON_START=1, 같은 파일은 건너뜀) → 계산
+make sample      # 시연 자료 패키지(엑셀 · CSV · PDF 43개)를 실제 업로드 API 로 올리기 · make sample-verify 엑셀 독립 계산 ↔ 화면 대조
 make admin-pass  # 최초 관리자 사번·비밀번호
 make ps | logs | down | reset(볼륨 삭제) | test(백엔드 테스트) | e2e(브라우저 E2E, 기동 중인 스택 대상)
 make wait-idle   # 이벤트 · 작업 처리가 끝날 때까지 대기 (기동 직후 선계산 확인)
@@ -40,11 +41,12 @@ make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트
    LLM 이 설정되지 않아도 모든 수치·화면은 동작하며, 서술 노드만 기존 문장으로 폴백(degraded)합니다.
 2. 사용자는 `/signup` 에서 사번 8자리 + 소속(본부 > 부 > 국 > 팀 또는 지역본부 > 영업점)으로 가입 → 관리자가 `/admin/users` 에서 승인.
 3. 화면 권한은 `/admin/screens` 에서 조직 단위로 부여합니다(하위 조직이 상속). 기본: 종합기획부 · 신용리스크관리부 · 수도권1지역본부 · 중부지역본부(영업점 포함).
-4. 실데이터는 `/admin/datasets` 에서 업로드(당행/외부 구분 확인) → 품질 검증 → 확정 시 관련 워크플로우만 재계산.
+4. 실데이터는 `/admin/datasets` 에서 업로드(당행/외부 구분 확인) → 품질 검증 → 확정 시 관련 워크플로우만 재계산. 시연 자료 원본은 `sample-data/202608/`(직접 열어 보고 화면에서 올려도 같은 결과).
+5. 잘못 올린 자료는 **데이터 관리자**(관리자 중 `/admin/users` 에서 지정 — 부트스트랩 관리자는 처음부터)가 `/admin/datasets` 의 버전 · 문서 표에서 [삭제]합니다. 삭제 사유를 받고, 현재 버전이면 직전 버전이 현재가 되며, 행 · 청크(임베딩) · 원본 파일과 검색 색인(Elasticsearch) · 그래프(Neo4j)에서도 지웁니다(저장소가 멈춰 있으면 워커가 끝날 때까지 재시도 — '삭제 반영 상태').
 
 시연용 사용자(선택): `.env` 에 `DEMO_USER_PASSWORD` 를 넣고 최초 기동하면 20250001(종합기획부) · 20250002(신용리스크관리부) · 20250003(영업점 · 수원영통지점 001068)이 생성됩니다.
 
-**프론트만 (목데이터, 도커 없이)**: `make web-dev` → http://localhost:3000 (로그인 없이 페르소나 전환)
+**프론트만 (도커 없이)**: `make web-dev` → http://localhost:3000 — 백엔드 API(`API_INTERNAL_URL`, 기본 http://localhost:8000)가 떠 있어야 하고 로그인이 필요합니다.
 
 ---
 
@@ -139,9 +141,8 @@ apps/
 ├─ web/src/
 │  ├─ app/              # 업무 화면 · login · signup · forbidden · admin/*
 │  ├─ components/       # ui · layout · data · evidence · domain · providers · admin(kit) · auth
-│  ├─ lib/              # data.ts(api/mock 이중 모드) · api-server · api-client · terms · types
-│  ├─ proxy.ts          # (Next 16 proxy) 세션 쿠키 없으면 /login
-│  └─ mock/             # 목데이터 (mock 모드 · 백엔드 시드 원천)
+│  ├─ lib/              # data.ts(백엔드 화면 API) · api-server · api-client · terms · types
+│  └─ proxy.ts          # (Next 16 proxy) 세션 쿠키 없으면 /login
 ├─ e2e/              # 브라우저 E2E (puppeteer) — make e2e
 └─ api/src/nhdip/
    ├─ models/           # iam · cfg · bank/ext(source) · calc/app/ops/audit(runtime)
@@ -152,12 +153,14 @@ apps/
    ├─ workflow/         # 엔진 · 노드 구현 · 디스패처
    ├─ views/            # 화면 산출물 저장(세대) · 표/차트 빌더
    ├─ api/              # auth · screens · state · admin
-   └─ seed/             # 초기 설정 · 목데이터 시뮬레이션 버전 · screens/*.json(화면 목데이터 추출본)
-infra/  postgres init · litellm config · scripts(ensure-env, export-mock)
+   ├─ sample/           # 시연 자료 패키지 생성기(시나리오 → 실무형 엑셀 · 원본 양식 · PDF) · 업로드 · 엑셀 대조 · 교란 검사
+   └─ seed/             # 초기 설정 · 데이터 정의(업무 수치 없음) · screens/*.json(수치 없는 화면 템플릿 + 서식 문구)
+sample-data/202608/  시연 자료 패키지 저장소 사본(생성기와 같은지 CI 가 확인)
+infra/  postgres init · litellm config · scripts(ensure-env 등)
 .github/workflows/ci.yml  pytest · tsc · eslint · build · audit · e2e
 ```
 
-화면 목데이터를 바꿨다면 `node infra/scripts/export-mock.mjs` 로 시드(`apps/api/src/nhdip/seed/screens`)를 다시 추출합니다.
+화면 수치 · 기간은 업로드 자료에서만 옵니다. 시연 자료 패키지는 `python -m nhdip.cli load-sample`(api 컨테이너 안) 또는 `python -m nhdip.sample upload --base-url URL --user 사번`(업로드 API 경유)으로 올립니다. 하드코딩 검사는 `python -m nhdip.sample selftest`(빈 DB — 정의 시드 → 업로드 → 엑셀 대조 → 셀마다 다른 비율로 바꾼 패키지 두 벌 업로드 → 그대로인 데이터 자리 0 이어야 통과, CI api 잡).
 
 ---
 
@@ -167,7 +170,7 @@ infra/  postgres init · litellm config · scripts(ensure-env, export-mock)
 - LLM 키는 AES-GCM 암호화 저장(`CONFIG_ENC_KEY`), 화면에는 마스킹. `.env` 는 커밋하지 않습니다.
 - api(8000) · neo4j(7474/7687) · (선택) litellm(4000) 포트는 기본으로 이 컴퓨터(127.0.0.1)에서만 열립니다(`ADMIN_BIND`). web 은 `WEB_BIND`(기본 0.0.0.0). HTTPS 환경이면 `COOKIE_SECURE=1`(HSTS 포함).
 - api 는 데이터 조작만 가능한 DB 계정(`nhdip_app`, 비밀번호 `APP_DB_PASSWORD`)으로 접속해 감사 로그를 고치거나 지울 수 없습니다. 마이그레이션 · 시드 · 워커는 소유자 계정. 비우면 이전 방식.
-- 속도 제한은 DB 에서 함께 셉니다(API 여러 개 가능). 사용자 IP 는 앞단 프록시(`TRUSTED_PROXIES`)가 넘긴 X-Forwarded-For 로 판정합니다. API 모드 화면은 요청마다 nonce 를 쓰는 CSP 로 스크립트를 제한합니다.
+- 속도 제한은 DB 에서 함께 셉니다(API 여러 개 가능). 사용자 IP 는 앞단 프록시(`TRUSTED_PROXIES`)가 넘긴 X-Forwarded-For 로 판정합니다. 화면은 요청마다 nonce 를 쓰는 CSP 로 스크립트를 제한합니다.
 - 변경 요청(POST 등)은 같은 출처만 받습니다. 다른 주소(리버스 프록시 · 도메인)로 서비스하면 `TRUSTED_ORIGINS=https://<웹 주소>` 를 넣으세요. 운영(`NHDIP_ENV=prod`)에서는 기본 · 짧은 `SESSION_SECRET` 으로 기동하지 않습니다.
 - 로그인 · 가입 · 질의 속도 제한(설정 `auth.rate_limits`), 잠금은 30분 뒤 자동 해제(`auth.lockout_minutes`, 0 = 관리자만). 보안 헤더(CSP · X-Frame-Options 등)는 web · api 모두 붙습니다.
 - 개인정보: 적재할 데이터에 주민등록번호 · 휴대전화 · 이메일 · 카드번호 형식 값이 있으면 품질 검증에서 거부하고, 차주명은 화면에서 가립니다(설정 `privacy.policy`). LLM 호출 기록에도 같은 형식 값을 가려 저장합니다.
@@ -180,7 +183,7 @@ infra/  postgres init · litellm config · scripts(ensure-env, export-mock)
 
 ---
 
-## 6. 목데이터 기준값 (시나리오 정의 반영)
+## 6. 시연 자료 기준값 (시나리오 정의 반영 · 시연 자료 패키지를 올린 뒤의 값)
 
 | 항목 | 값 |
 |---|---|

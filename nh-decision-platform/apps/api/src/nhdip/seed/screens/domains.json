@@ -7,9 +7,8 @@
   "headline": {
    "id": "dom_loan_head",
    "label": "여신 잔액(기업+가계)",
-   "value": 214.58,
+   "value": null,
    "unit": "KRW_TN",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "sub": [
@@ -17,11 +16,10 @@
     "label": "여신 이자마진 수익",
     "figure": {
      "id": "nim_2026",
-     "label": "여신(일반)부문 이자마진 수익(2026.08 누계)",
-     "value": 21865,
+     "label": "여신(일반)부문 이자마진 수익(– 누계)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+     "labelTpl": "여신(일반)부문 이자마진 수익([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]] 누계)"
     }
    },
    {
@@ -29,33 +27,9 @@
     "figure": {
      "id": "nim_share_2026",
      "label": "전체 수익 중 여신 이자마진 비중",
-     "value": 45.44,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
-     "decimals": 2,
-     "calc": {
-      "calcId": "calc-nim-share-2026",
-      "formulaId": "SHARE",
-      "formulaVersion": 1,
-      "expression": "분자 / 분모 × 100",
-      "inputs": [
-       {
-        "key": "numerator",
-        "label": "여신(일반)부문 이자마진 수익",
-        "value": "2,186,540",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-       },
-       {
-        "key": "denominator",
-        "label": "전체 수익",
-        "value": "4,812,360",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "decimals": 2
     }
    }
   ]

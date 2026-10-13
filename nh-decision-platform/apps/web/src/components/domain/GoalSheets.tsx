@@ -7,13 +7,14 @@ import { RichText } from "@/components/data/RichText";
 import { EvidenceSummary } from "@/components/evidence/EvidenceChips";
 import { AlignmentPanel, VerificationRow } from "@/components/domain/Verification";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 import { useUi } from "@/components/providers/UiProvider";
 import { Sheet, SheetSection } from "@/components/ui/Sheet";
 import { Badge, Button, IconCalc, IconCheck, IconChevron, SeverityBadge } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
-import { API_MODE } from "@/lib/config";
 import { UNIT_LABEL, formatDate, formatDateTime } from "@/lib/format";
 import { resolveGoal } from "@/lib/goalView";
+import { goalPeriodOptions } from "@/lib/period";
 import type { Goal, Insight, Proposal, ReportRequest } from "@/lib/types";
 
 export const SUB_LABEL: Record<string, string> = {
@@ -252,9 +253,11 @@ export function GoalSheet({
   const [serverHistory, setServerHistory] = useState<GoalHistoryEntry[] | null>(null);
   const [goalImpact, setGoalImpact] = useState<GoalImpact | null>(null);
   const override = overrides[goal.id];
-  /* API 모드 — 감사 기록 기준 이력(처리자 · 사유 · 강제 확정). 목표 처리 상태가 바뀌면 다시 읽는다 */
+  const { menu } = useSession();
+  // 서버 이력이 오기 전 낙관적 이력의 처리자 — 로그인 사용자
+  const actorLabel = menu ? `${menu.user.name}${menu.user.position ? ` ${menu.user.position}` : ""}` : "–";
+  /* 감사 기록 기준 이력(처리자 · 사유 · 강제 확정). 목표 처리 상태가 바뀌면 다시 읽는다 */
   useEffect(() => {
-    if (!API_MODE) return;
     api<GoalHistoryEntry[]>(`/state/goals/${encodeURIComponent(goal.id)}/history`)
       .then(setServerHistory)
       .catch(() => setServerHistory(null));
@@ -346,7 +349,7 @@ export function GoalSheet({
             <HistoryItem
               current
               title={`v${view.version} · ${view.originalLabel} → ${view.targetLabel}`}
-              meta={`${formatDate(view.updatedAt)} · 이수정 과장 · ${view.changeReason ?? ""}`}
+              meta={`${formatDate(view.updatedAt)} · ${actorLabel}${view.changeReason ? ` · ${view.changeReason}` : ""}`}
             />
           ) : null}
           {(goal.history ?? [])
@@ -408,18 +411,16 @@ export function ProposalSheet({
   const [check, setCheck] = useState<{ mode: "adopt" | "manual_edit"; value?: number; issues: ConsistencyIssue[]; blocked: boolean } | null>(null);
   const [reason, setReason] = useState("");
   const confirm = async (mode: "adopt" | "manual_edit", v?: number) => {
-    if (API_MODE) {
-      try {
-        const r = await api<{ passed: boolean; blocked: boolean; issues: ConsistencyIssue[] }>("/state/goals/check", { method: "POST", json: { proposalId: proposal.id, mode, value: v } });
-        if (!r.passed) {
-          setCheck({ mode, value: v, issues: r.issues, blocked: r.blocked });
-          setReason("");
-          return;
-        }
-      } catch (e) {
-        showToast(`정합성 검증을 하지 못했습니다 — ${(e as Error).message}`);
+    try {
+      const r = await api<{ passed: boolean; blocked: boolean; issues: ConsistencyIssue[] }>("/state/goals/check", { method: "POST", json: { proposalId: proposal.id, mode, value: v } });
+      if (!r.passed) {
+        setCheck({ mode, value: v, issues: r.issues, blocked: r.blocked });
+        setReason("");
         return;
       }
+    } catch (e) {
+      showToast(`정합성 검증을 하지 못했습니다 — ${(e as Error).message}`);
+      return;
     }
     applyProposal(proposal, mode, v);
     showToast(mode === "adopt" ? "AI 제안을 반영했습니다" : "입력한 목표값으로 수정했습니다");
@@ -590,7 +591,7 @@ export function ProposalSheet({
           <div>
             <p className="text-[11.5px] text-steel">현재</p>
             <p className="text-[17px] font-bold leading-tight text-stone tnum">
-              {proposal.recommendation.currentValue !== undefined
+              {typeof proposal.recommendation.currentValue === "number"
                 ? `${proposal.recommendation.currentValue.toFixed(dec)}${unit}`
                 : "미설정"}
             </p>
@@ -682,14 +683,22 @@ export function ProposalSheet({
 }
 
 /* ═══════════════ 목표 직접 추가 ═══════════════ */
+/** 담당조직 선택지 — 로그인 사용자 소속을 맨 앞에 둔다 */
+const OWNER_ORGS = ["종합기획부", "여신관리부", "신용리스크관리부"];
+
 export function NewGoalSheet({ onClose }: { onClose: () => void }) {
   const { addManualGoal } = useGoalState();
   const { showToast } = useUi();
+  const { menu } = useSession();
+  // 적용기간 · 담당조직 기본값 — 기준일 연도(없으면 올해) · 로그인 사용자 소속
+  const periods = goalPeriodOptions(menu?.asOf);
+  const userOrg = menu?.user.org.name ?? "";
+  const owners = userOrg ? [userOrg, ...OWNER_ORGS.filter((o) => o !== userOrg)] : OWNER_ORGS;
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState("");
-  const [period, setPeriod] = useState("2026 연간");
+  const [period, setPeriod] = useState(periods[0]);
   const [metric, setMetric] = useState("");
-  const [owner, setOwner] = useState("종합기획부");
+  const [owner, setOwner] = useState(owners[0]);
 
   const submit = () => {
     addManualGoal({
@@ -726,24 +735,24 @@ export function NewGoalSheet({ onClose }: { onClose: () => void }) {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="예) 중·저신용자 여신 공급액 3.2조원 이상"
+            placeholder="예) 중·저신용자 여신 공급액 ○○조원 이상"
             className="input"
           />
         </FormField>
         <FormField label="목표값 또는 관리방향">
-          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="예) 3.2조원 이상" className="input" />
+          <input value={target} onChange={(e) => setTarget(e.target.value)} placeholder="예) ○○조원 이상" className="input" />
         </FormField>
         <div className="grid grid-cols-1 gap-base sm:grid-cols-2">
           <FormField label="적용기간">
             <select value={period} onChange={(e) => setPeriod(e.target.value)} className="input">
-              {["2026 연간", "2026.4Q", "2027 상반기", "2027 연간"].map((p) => (
+              {periods.map((p) => (
                 <option key={p}>{p}</option>
               ))}
             </select>
           </FormField>
           <FormField label="담당조직">
             <select value={owner} onChange={(e) => setOwner(e.target.value)} className="input">
-              {["종합기획부", "여신관리부", "신용리스크관리부"].map((o) => (
+              {owners.map((o) => (
                 <option key={o}>{o}</option>
               ))}
             </select>

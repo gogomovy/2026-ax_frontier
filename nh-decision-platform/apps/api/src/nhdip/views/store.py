@@ -160,6 +160,9 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
                 obj["dataOrigin"] = f["dataOrigin"]
             if f.get("decimals") is not None:
                 obj["decimals"] = f["decimals"]
+            for k in ("verdict", "severity"):  # 판정형 수식 결과 문구 (Phase I)
+                if f.get(k) is not None:
+                    obj[k] = f[k]
             if before != f["value"]:
                 changes.append({"artifact": key, "figure": obj["id"], "before": before, "after": f["value"]})
             elif was_stale:

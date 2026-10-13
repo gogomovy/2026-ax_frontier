@@ -1,6 +1,6 @@
 {
- "asOf": "2026-08-31",
- "generatedAt": "2026-08-31T06:22:00+09:00",
+ "asOf": null,
+ "generatedAt": null,
  "dataOrigin": "simulated",
  "revenue": {
   "rows": [
@@ -8,605 +8,236 @@
     "label": "전체 수익",
     "current": {
      "id": "total_rev_cur",
-     "label": "전체 수익 (2026.08)",
-     "value": 48124,
+     "label": "전체 수익 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+     "labelTpl": "전체 수익 ([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]])"
     },
     "prior": {
      "id": "total_rev_prior",
-     "label": "전체 수익 (2025.08)",
-     "value": 46032,
+     "label": "전체 수익 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+     "labelTpl": "전체 수익 ([[ym:LOAN_BALANCE_MONTHLY:$latest-12|dot]])"
     },
     "prior2": {
      "id": "total_rev_prior2",
-     "label": "전체 수익 (2024.08)",
-     "value": 43719,
+     "label": "전체 수익 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202408)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+     "labelTpl": "전체 수익 ([[ym:LOAN_BALANCE_MONTHLY:$latest-24|dot]])"
     },
     "diff": {
      "id": "total_rev_diff",
      "label": "전체 수익 증감액",
-     "value": 2092,
-     "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "calc": {
-      "calcId": "calc-total_rev-diff",
-      "formulaId": "DIFF",
-      "formulaVersion": 1,
-      "expression": "당기 − 전기",
-      "inputs": [
-       {
-        "key": "v1",
-        "label": "당기",
-        "value": "4,812,360",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-       },
-       {
-        "key": "v0",
-        "label": "전기",
-        "value": "4,603,180",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "value": null,
+     "unit": "KRW_BN"
     },
     "diffRate": {
      "id": "total_rev_rate",
      "label": "전체 수익 증감률",
-     "value": 4.54,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
-     "decimals": 2,
-     "calc": {
-      "calcId": "calc-total_rev-rate",
-      "formulaId": "GROWTH_RATE",
-      "formulaVersion": 1,
-      "expression": "(당기 − 전기) / |전기| × 100",
-      "inputs": [
-       {
-        "key": "v0",
-        "label": "전체 수익 (전년 동기)",
-        "value": "4,603,180",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-       },
-       {
-        "key": "v1",
-        "label": "전체 수익 (당기)",
-        "value": "4,812,360",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00",
-      "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-     }
+     "decimals": 2
     }
    },
    {
     "label": "여신(일반)부문 이자마진 수익",
     "current": {
      "id": "nim_cur",
-     "label": "여신(일반)부문 이자마진 수익 (2026.08)",
-     "value": 21865,
+     "label": "여신(일반)부문 이자마진 수익 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+     "labelTpl": "여신(일반)부문 이자마진 수익 ([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]])"
     },
     "prior": {
      "id": "nim_prior",
-     "label": "여신(일반)부문 이자마진 수익 (2025.08)",
-     "value": 21129,
+     "label": "여신(일반)부문 이자마진 수익 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+     "labelTpl": "여신(일반)부문 이자마진 수익 ([[ym:LOAN_BALANCE_MONTHLY:$latest-12|dot]])"
     },
     "prior2": {
      "id": "nim_prior2",
-     "label": "여신(일반)부문 이자마진 수익 (2024.08)",
-     "value": 20341,
+     "label": "여신(일반)부문 이자마진 수익 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202408)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+     "labelTpl": "여신(일반)부문 이자마진 수익 ([[ym:LOAN_BALANCE_MONTHLY:$latest-24|dot]])"
     },
     "diff": {
      "id": "nim_diff",
      "label": "여신(일반)부문 이자마진 수익 증감액",
-     "value": 737,
-     "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "calc": {
-      "calcId": "calc-nim-diff",
-      "formulaId": "DIFF",
-      "formulaVersion": 1,
-      "expression": "당기 − 전기",
-      "inputs": [
-       {
-        "key": "v1",
-        "label": "당기",
-        "value": "2,186,540",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-       },
-       {
-        "key": "v0",
-        "label": "전기",
-        "value": "2,112,880",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "value": null,
+     "unit": "KRW_BN"
     },
     "diffRate": {
      "id": "nim_rate",
      "label": "여신(일반)부문 이자마진 수익 증감률",
-     "value": 3.49,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
-     "decimals": 2,
-     "calc": {
-      "calcId": "calc-nim-rate",
-      "formulaId": "GROWTH_RATE",
-      "formulaVersion": 1,
-      "expression": "(당기 − 전기) / |전기| × 100",
-      "inputs": [
-       {
-        "key": "v0",
-        "label": "여신(일반)부문 이자마진 수익 (전년 동기)",
-        "value": "2,112,880",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-       },
-       {
-        "key": "v1",
-        "label": "여신(일반)부문 이자마진 수익 (당기)",
-        "value": "2,186,540",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00",
-      "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-     }
+     "decimals": 2
     }
    },
    {
     "label": "기업자금대출금이자",
     "current": {
      "id": "corp_int_cur",
-     "label": "기업자금대출금이자 (2026.08)",
-     "value": 10898,
+     "label": "기업자금대출금이자 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
+     "labelTpl": "기업자금대출금이자 ([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]])"
     },
     "prior": {
      "id": "corp_int_prior",
-     "label": "기업자금대출금이자 (2025.08)",
-     "value": 10489,
+     "label": "기업자금대출금이자 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
+     "labelTpl": "기업자금대출금이자 ([[ym:LOAN_BALANCE_MONTHLY:$latest-12|dot]])"
     },
     "prior2": {
      "id": "corp_int_prior2",
-     "label": "기업자금대출금이자 (2024.08)",
-     "value": 10036,
+     "label": "기업자금대출금이자 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202408)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
+     "labelTpl": "기업자금대출금이자 ([[ym:LOAN_BALANCE_MONTHLY:$latest-24|dot]])"
     },
     "diff": {
      "id": "corp_int_diff",
      "label": "기업자금대출금이자 증감액",
-     "value": 409,
-     "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "calc": {
-      "calcId": "calc-corp_int-diff",
-      "formulaId": "DIFF",
-      "formulaVersion": 1,
-      "expression": "당기 − 전기",
-      "inputs": [
-       {
-        "key": "v1",
-        "label": "당기",
-        "value": "1,089,820",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
-       },
-       {
-        "key": "v0",
-        "label": "전기",
-        "value": "1,048,900",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "value": null,
+     "unit": "KRW_BN"
     },
     "diffRate": {
      "id": "corp_int_rate",
      "label": "기업자금대출금이자 증감률",
-     "value": 3.9,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
-     "decimals": 2,
-     "calc": {
-      "calcId": "calc-corp_int-rate",
-      "formulaId": "GROWTH_RATE",
-      "formulaVersion": 1,
-      "expression": "(당기 − 전기) / |전기| × 100",
-      "inputs": [
-       {
-        "key": "v0",
-        "label": "기업자금대출금이자 (전년 동기)",
-        "value": "1,048,900",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
-       },
-       {
-        "key": "v1",
-        "label": "기업자금대출금이자 (당기)",
-        "value": "1,089,820",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00",
-      "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-     }
+     "decimals": 2
     }
    },
    {
     "label": "가계자금대출금이자",
     "current": {
      "id": "hh_int_cur",
-     "label": "가계자금대출금이자 (2026.08)",
-     "value": 9100,
+     "label": "가계자금대출금이자 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
+     "labelTpl": "가계자금대출금이자 ([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]])"
     },
     "prior": {
      "id": "hh_int_prior",
-     "label": "가계자금대출금이자 (2025.08)",
-     "value": 8521,
+     "label": "가계자금대출금이자 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
+     "labelTpl": "가계자금대출금이자 ([[ym:LOAN_BALANCE_MONTHLY:$latest-12|dot]])"
     },
     "prior2": {
      "id": "hh_int_prior2",
-     "label": "가계자금대출금이자 (2024.08)",
-     "value": 8123,
+     "label": "가계자금대출금이자 (–)",
+     "value": null,
      "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "sourceRef": "(202408)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
+     "labelTpl": "가계자금대출금이자 ([[ym:LOAN_BALANCE_MONTHLY:$latest-24|dot]])"
     },
     "diff": {
      "id": "hh_int_diff",
      "label": "가계자금대출금이자 증감액",
-     "value": 579,
-     "unit": "KRW_BN",
-     "dataOrigin": "simulated",
-     "calc": {
-      "calcId": "calc-hh_int-diff",
-      "formulaId": "DIFF",
-      "formulaVersion": 1,
-      "expression": "당기 − 전기",
-      "inputs": [
-       {
-        "key": "v1",
-        "label": "당기",
-        "value": "909,960",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
-       },
-       {
-        "key": "v0",
-        "label": "전기",
-        "value": "852,110",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00"
-     }
+     "value": null,
+     "unit": "KRW_BN"
     },
     "diffRate": {
      "id": "hh_int_rate",
      "label": "가계자금대출금이자 증감률",
-     "value": 6.79,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
-     "decimals": 2,
-     "calc": {
-      "calcId": "calc-hh_int-rate",
-      "formulaId": "GROWTH_RATE",
-      "formulaVersion": 1,
-      "expression": "(당기 − 전기) / |전기| × 100",
-      "inputs": [
-       {
-        "key": "v0",
-        "label": "가계자금대출금이자 (전년 동기)",
-        "value": "852,110",
-        "unit": "백만원",
-        "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
-       },
-       {
-        "key": "v1",
-        "label": "가계자금대출금이자 (당기)",
-        "value": "909,960",
-        "unit": "백만원",
-        "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
-       }
-      ],
-      "executedAt": "2026-08-31T06:22:00+09:00",
-      "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-     }
+     "decimals": 2
     }
    }
   ],
   "nimShare": {
    "id": "nim_share_2026",
    "label": "전체 수익 중 여신 이자마진 비중",
-   "value": 45.44,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-nim-share-2026",
-    "formulaId": "SHARE",
-    "formulaVersion": 1,
-    "expression": "분자 / 분모 × 100",
-    "inputs": [
-     {
-      "key": "numerator",
-      "label": "여신(일반)부문 이자마진 수익",
-      "value": "2,186,540",
-      "unit": "백만원",
-      "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-     },
-     {
-      "key": "denominator",
-      "label": "전체 수익",
-      "value": "4,812,360",
-      "unit": "백만원",
-      "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 2
   },
-  "nimShareTrend": [
-   {
-    "label": "2024.08",
-    "value": 46.53
-   },
-   {
-    "label": "2025.08",
-    "value": 45.9
-   },
-   {
-    "label": "2026.08",
-    "value": 45.44
-   }
-  ],
-  "narrative": "2026년 8월 누계 전체 수익은 [[fig:total_rev_2026]]으로 전년 동기 대비 [[fig:total_rev_growth]] 증가했습니다. 같은 기간 여신(일반)부문 이자마진 수익은 [[fig:nim_2026]]으로 [[fig:nim_growth]] 증가하여 전체 수익 증가율을 하회했습니다. 이에 따라 전체 수익 중 여신 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] 낮아졌습니다. 3개년 연속 비중이 축소되는 흐름이 현재 데이터상 확인되는 주요 변화입니다.",
+  "nimShareTrend": [],
+  "narrative": "2026년 – 누계 전체 수익은 –으로 전년 동기 대비 – 증가했습니다. 같은 기간 여신(일반)부문 이자마진 수익은 –으로 – 증가하여 전체 수익 증가율을 하회했습니다. 이에 따라 전체 수익 중 여신 이자마진 비중은 –로 전년 동기 – 대비 – 낮아졌습니다. 3개년 연속 비중이 축소되는 흐름이 현재 데이터상 확인되는 주요 변화입니다.",
   "narrativeFigures": {
    "total_rev_2026": {
     "id": "total_rev_2026",
-    "label": "전체 수익(2026.08 누계)",
-    "value": 48124,
+    "label": "전체 수익(– 누계)",
+    "value": null,
     "unit": "KRW_BN",
-    "dataOrigin": "simulated",
-    "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+    "labelTpl": "전체 수익([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]] 누계)"
    },
    "total_rev_2025": {
     "id": "total_rev_2025",
-    "label": "전체 수익(2025.08 누계)",
-    "value": 46032,
+    "label": "전체 수익(– 누계)",
+    "value": null,
     "unit": "KRW_BN",
-    "dataOrigin": "simulated",
-    "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
+    "labelTpl": "전체 수익([[ym:LOAN_BALANCE_MONTHLY:$latest-12|dot]] 누계)"
    },
    "total_rev_growth": {
     "id": "total_rev_growth",
     "label": "전체 수익 증가율",
-    "value": 4.54,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-rev-growth",
-     "formulaId": "GROWTH_RATE",
-     "formulaVersion": 1,
-     "expression": "(당기 − 전기) / |전기| × 100",
-     "inputs": [
-      {
-       "key": "v0",
-       "label": "전체 수익 (전년 동기)",
-       "value": "4,603,180",
-       "unit": "백만원",
-       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-      },
-      {
-       "key": "v1",
-       "label": "전체 수익 (당기)",
-       "value": "4,812,360",
-       "unit": "백만원",
-       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-    }
+    "decimals": 2
    },
    "nim_2026": {
     "id": "nim_2026",
-    "label": "여신(일반)부문 이자마진 수익(2026.08 누계)",
-    "value": 21865,
+    "label": "여신(일반)부문 이자마진 수익(– 누계)",
+    "value": null,
     "unit": "KRW_BN",
-    "dataOrigin": "simulated",
-    "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+    "labelTpl": "여신(일반)부문 이자마진 수익([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]] 누계)"
    },
    "nim_2025": {
     "id": "nim_2025",
-    "label": "여신(일반)부문 이자마진 수익(2025.08 누계)",
-    "value": 21129,
+    "label": "여신(일반)부문 이자마진 수익(– 누계)",
+    "value": null,
     "unit": "KRW_BN",
-    "dataOrigin": "simulated",
-    "sourceRef": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
+    "labelTpl": "여신(일반)부문 이자마진 수익([[ym:LOAN_BALANCE_MONTHLY:$latest-12|dot]] 누계)"
    },
    "nim_growth": {
     "id": "nim_growth",
     "label": "여신 이자마진 수익 증가율",
-    "value": 3.49,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-nim-growth",
-     "formulaId": "GROWTH_RATE",
-     "formulaVersion": 1,
-     "expression": "(당기 − 전기) / |전기| × 100",
-     "inputs": [
-      {
-       "key": "v0",
-       "label": "여신(일반)부문 이자마진 수익 (전년 동기)",
-       "value": "2,112,880",
-       "unit": "백만원",
-       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-      },
-      {
-       "key": "v1",
-       "label": "여신(일반)부문 이자마진 수익 (당기)",
-       "value": "2,186,540",
-       "unit": "백만원",
-       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00",
-     "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-    }
+    "decimals": 2
    },
    "nim_share_2026": {
     "id": "nim_share_2026",
     "label": "전체 수익 중 여신 이자마진 비중",
-    "value": 45.44,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-nim-share-2026",
-     "formulaId": "SHARE",
-     "formulaVersion": 1,
-     "expression": "분자 / 분모 × 100",
-     "inputs": [
-      {
-       "key": "numerator",
-       "label": "여신(일반)부문 이자마진 수익",
-       "value": "2,186,540",
-       "unit": "백만원",
-       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-      },
-      {
-       "key": "denominator",
-       "label": "전체 수익",
-       "value": "4,812,360",
-       "unit": "백만원",
-       "source": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 2
    },
    "nim_share_2025": {
     "id": "nim_share_2025",
     "label": "전년 동기 비중",
-    "value": 45.9,
+    "value": null,
     "unit": "PCT",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-nim-share-2025",
-     "formulaId": "SHARE",
-     "formulaVersion": 1,
-     "expression": "분자 / 분모 × 100",
-     "inputs": [
-      {
-       "key": "numerator",
-       "label": "여신(일반)부문 이자마진 수익",
-       "value": "2,112,880",
-       "unit": "백만원",
-       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D118"
-      },
-      {
-       "key": "denominator",
-       "label": "전체 수익",
-       "value": "4,603,180",
-       "unit": "백만원",
-       "source": "(202508)2633_상품부문별손익계산서.xlsx!Sheet1!D12"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 2
    },
    "nim_share_delta": {
     "id": "nim_share_delta",
     "label": "비중 증감",
-    "value": -0.46,
+    "value": null,
     "unit": "PP",
-    "dataOrigin": "simulated",
-    "decimals": 2,
-    "calc": {
-     "calcId": "calc-nim-share-delta",
-     "formulaId": "SHARE_DELTA_PP",
-     "formulaVersion": 1,
-     "expression": "당기 비중 − 전기 비중",
-     "inputs": [
-      {
-       "key": "share1",
-       "label": "2026.08 비중",
-       "value": "45.4359",
-       "unit": "%",
-       "source": "calc-nim-share-2026"
-      },
-      {
-       "key": "share0",
-       "label": "2025.08 비중",
-       "value": "45.9004",
-       "unit": "%",
-       "source": "calc-nim-share-2025"
-      }
-     ],
-     "executedAt": "2026-08-31T06:22:00+09:00"
-    }
+    "decimals": 2
    }
   },
   "evidence": [
    {
     "id": "ev-rev-data",
     "category": "bank_data",
-    "label": "2633_상품부문별손익계산서 3개년 8월 누계",
+    "label": "2633_상품부문별손익계산서 3개년 – 누계",
     "sourceKind": "metric_value",
-    "snippet": "전체 수익 48,124억원 · 여신(일반)부문 이자마진 21,865억원 · 비중 45.43%",
+    "snippet": "전체 수익 – · 여신(일반)부문 이자마진 – · 비중 –",
     "figureId": "nim_share_2026",
-    "tableRef": "fact.pl_product_segment"
+    "tableRef": "fact.pl_product_segment",
+    "labelTpl": "2633_상품부문별손익계산서 3개년 [[ym:LOAN_BALANCE_MONTHLY:$latest|month]] 누계",
+    "snippetTpl": "전체 수익 [[fig:total_rev_2026]] · 여신(일반)부문 이자마진 [[fig:nim_2026]] · 비중 [[fig:nim_share_2026]]"
    },
    {
     "id": "ev-rev-plan",
@@ -614,7 +245,7 @@
     "label": "2026년 사업계획(여신 부문) — 수익 목표",
     "sourceKind": "doc_chunk",
     "snippet": "여신(일반)부문 이자마진 수익 연간 3.30조원 이상 달성을 목표로 한다.",
-    "relevance": 0.78,
+    "relevance": null,
     "doc": {
      "title": "2026년 사업계획(여신 부문)",
      "issuer": "종합기획부",
@@ -625,192 +256,73 @@
      "fileName": "2026년 사업계획(여신 부문).pdf"
     }
    }
-  ]
+  ],
+  "narrativeTpl": "2026년 [[ym:LOAN_BALANCE_MONTHLY:$latest|month]] 누계 전체 수익은 [[fig:total_rev_2026]]으로 전년 동기 대비 [[fig:total_rev_growth]] 증가했습니다. 같은 기간 여신(일반)부문 이자마진 수익은 [[fig:nim_2026]]으로 [[fig:nim_growth]] 증가하여 전체 수익 증가율을 하회했습니다. 이에 따라 전체 수익 중 여신 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] 낮아졌습니다. 3개년 연속 비중이 축소되는 흐름이 현재 데이터상 확인되는 주요 변화입니다."
  },
  "corporate": {
   "key": "corporate",
   "name": "기업여신",
   "balance": {
    "id": "corp_bal",
-   "label": "기업자금대출금 잔액(2026.08말)",
-   "value": 115.34,
+   "label": "기업자금대출금 잔액(–말)",
+   "value": null,
    "unit": "KRW_TN",
-   "dataOrigin": "simulated",
    "decimals": 2,
-   "sourceRef": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
+   "labelTpl": "기업자금대출금 잔액([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]]말)"
   },
   "growth": {
    "id": "corp_growth",
    "label": "기업여신 증가율(전년 동기 대비)",
-   "value": 4.04,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-corp-growth",
-    "formulaId": "GROWTH_RATE",
-    "formulaVersion": 1,
-    "expression": "(당기 − 전기) / |전기| × 100",
-    "inputs": [
-     {
-      "key": "v0",
-      "label": "기업자금대출금 (전년 동기)",
-      "value": "110,860,000",
-      "unit": "백만원",
-      "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
-     },
-     {
-      "key": "v1",
-      "label": "기업자금대출금 (당기)",
-      "value": "115,340,000",
-      "unit": "백만원",
-      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00",
-    "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-   }
+   "decimals": 2
   },
   "share": {
    "id": "corp_share",
    "label": "기업여신 구성비",
-   "value": 53.75,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-corp-share",
-    "formulaId": "SHARE",
-    "formulaVersion": 1,
-    "expression": "기업자금대출금 / (기업+가계) × 100",
-    "inputs": [
-     {
-      "key": "numerator",
-      "label": "기업자금대출금",
-      "value": "115,340,000",
-      "unit": "백만원",
-      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J3"
-     },
-     {
-      "key": "denominator",
-      "label": "기업+가계 합계",
-      "value": "214,580,000",
-      "unit": "백만원",
-      "source": "fact.loan_balance_monthly 집계"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 2
   },
   "interestRevenue": {
    "id": "corp_int_rev",
-   "label": "기업자금대출금이자(2026.08 누계)",
-   "value": 10898,
+   "label": "기업자금대출금이자(– 누계)",
+   "value": null,
    "unit": "KRW_BN",
-   "dataOrigin": "simulated",
-   "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D141"
+   "labelTpl": "기업자금대출금이자([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]] 누계)"
   },
-  "monthly": [
-   {
-    "label": "1월",
-    "value": 111.24
-   },
-   {
-    "label": "2월",
-    "value": 111.86
-   },
-   {
-    "label": "3월",
-    "value": 112.54
-   },
-   {
-    "label": "4월",
-    "value": 113.08
-   },
-   {
-    "label": "5월",
-    "value": 113.62
-   },
-   {
-    "label": "6월",
-    "value": 114.26
-   },
-   {
-    "label": "7월",
-    "value": 114.82
-   },
-   {
-    "label": "8월",
-    "value": 115.34
-   }
-  ],
-  "yearly": [
-   {
-    "label": "2024.08",
-    "value": 106.24
-   },
-   {
-    "label": "2025.08",
-    "value": 110.86
-   },
-   {
-    "label": "2026.08",
-    "value": 115.34
-   }
-  ],
+  "monthly": [],
+  "yearly": [],
   "goalId": "goal-corp-growth",
-  "goalLabel": "기업여신 전년 대비 +7.0% 이상 확대",
+  "goalLabel": "기업여신 전년 대비 – 이상 확대",
   "goalValue": {
    "id": "corp_goal",
    "label": "현재 경영목표",
-   "value": 7,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "actual",
    "decimals": 1
   },
   "gap": {
    "id": "corp_gap",
    "label": "목표 대비 이탈",
-   "value": -2.96,
+   "value": null,
    "unit": "PP",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-corp-gap",
-    "formulaId": "DIFF",
-    "formulaVersion": 1,
-    "expression": "실적 증가율 − 목표 증가율",
-    "inputs": [
-     {
-      "key": "v1",
-      "label": "실적 증가율",
-      "value": "4.0411",
-      "unit": "%",
-      "source": "calc-corp-growth"
-     },
-     {
-      "key": "v0",
-      "label": "목표 증가율",
-      "value": "7.0000",
-      "unit": "%",
-      "source": "goal.goal_version(goal-corp-growth, v3)"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 2
   },
   "gapVerdict": "below",
-  "narrative": "기업여신은 2026년 8월말 [[fig:corp_bal]]으로 전년 동기 대비 [[fig:corp_growth]] 증가하며 증가세를 유지하고 있습니다. 다만 현재 설정된 성장목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 같은 기간 기업자금대출금이자는 [[fig:corp_int_rev]]으로, 규모 기준으로는 가계 대비 우위를 유지하고 있습니다.",
+  "narrative": "기업여신은 2026년 –말 –으로 전년 동기 대비 – 증가하며 증가세를 유지하고 있습니다. 다만 현재 설정된 성장목표 –을 – 하회하고 있습니다. 같은 기간 기업자금대출금이자는 –으로, 규모 기준으로는 가계 대비 우위를 유지하고 있습니다.",
   "narrativeFigures": {},
   "evidence": [
    {
     "id": "ev-corp-data",
     "category": "bank_data",
-    "label": "2026.08말 기업자금대출금 잔액 및 3개년 추이",
+    "label": "–말 기업자금대출금 잔액 및 3개년 추이",
     "sourceKind": "metric_value",
-    "snippet": "기업자금대출금 115.34조원 · 전년 동기 110.86조원 · 증가율 4.04%",
+    "snippet": "기업자금대출금 – · 전년 동기 – · 증가율 –",
     "figureId": "corp_bal",
-    "tableRef": "fact.loan_balance_monthly (2020 과목별 월별 여신현황)"
+    "tableRef": "fact.loan_balance_monthly (2020 과목별 월별 여신현황)",
+    "labelTpl": "[[ym:LOAN_BALANCE_MONTHLY:$latest|dot]]말 기업자금대출금 잔액 및 3개년 추이",
+    "snippetTpl": "기업자금대출금 [[fig:corp_bal]] · 전년 동기 [[fig:cmp_corp_bal_prior]] · 증가율 [[fig:corp_growth]]"
    },
    {
     "id": "ev-corp-policy",
@@ -818,7 +330,7 @@
     "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
     "sourceKind": "doc_chunk",
     "snippet": "기업여신 공급 확대 기조를 유지하고 생산적 부문에 대한 자금공급을 확대한다는 정책 방향이 제시됨.",
-    "relevance": 0.86,
+    "relevance": null,
     "doc": {
      "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
      "issuer": "금융위원회",
@@ -836,7 +348,7 @@
     "label": "2026년 하반기 경영전략회의 결과 — 여신 부문 운영방향",
     "sourceKind": "doc_chunk",
     "snippet": "기업여신은 확대, 가계여신은 증가율 관리 기조를 하반기에도 유지하기로 결정.",
-    "relevance": 0.91,
+    "relevance": null,
     "doc": {
      "title": "2026년 하반기 경영전략회의 결과",
      "issuer": "경영전략회의",
@@ -847,192 +359,74 @@
      "fileName": "2026년 하반기 경영전략회의 결과.pdf"
     }
    }
-  ]
+  ],
+  "goalLabelTpl": "기업여신 전년 대비 [[fig:corp_goal|signed]] 이상 확대",
+  "narrativeTpl": "기업여신은 2026년 [[ym:LOAN_BALANCE_MONTHLY:$latest|month]]말 [[fig:corp_bal]]으로 전년 동기 대비 [[fig:corp_growth]] 증가하며 증가세를 유지하고 있습니다. 다만 현재 설정된 성장목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 같은 기간 기업자금대출금이자는 [[fig:corp_int_rev]]으로, 규모 기준으로는 가계 대비 우위를 유지하고 있습니다."
  },
  "household": {
   "key": "household",
   "name": "가계여신",
   "balance": {
    "id": "hh_bal",
-   "label": "가계자금대출금 잔액(2026.08말)",
-   "value": 99.24,
+   "label": "가계자금대출금 잔액(–말)",
+   "value": null,
    "unit": "KRW_TN",
-   "dataOrigin": "simulated",
    "decimals": 2,
-   "sourceRef": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
+   "labelTpl": "가계자금대출금 잔액([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]]말)"
   },
   "growth": {
    "id": "hh_growth",
    "label": "가계여신 증가율(전년 동기 대비)",
-   "value": 6.5,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-hh-growth",
-    "formulaId": "GROWTH_RATE",
-    "formulaVersion": 1,
-    "expression": "(당기 − 전기) / |전기| × 100",
-    "inputs": [
-     {
-      "key": "v0",
-      "label": "가계자금대출금 (전년 동기)",
-      "value": "93,180,000",
-      "unit": "백만원",
-      "source": "(202508)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
-     },
-     {
-      "key": "v1",
-      "label": "가계자금대출금 (당기)",
-      "value": "99,240,000",
-      "unit": "백만원",
-      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00",
-    "note": "8월 누계 기준. 표시 자릿수 2자리, 내부 보존 6자리."
-   }
+   "decimals": 2
   },
   "share": {
    "id": "hh_share",
    "label": "가계여신 구성비",
-   "value": 46.25,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-hh-share",
-    "formulaId": "SHARE",
-    "formulaVersion": 1,
-    "expression": "가계자금대출금 / (기업+가계) × 100",
-    "inputs": [
-     {
-      "key": "numerator",
-      "label": "가계자금대출금",
-      "value": "99,240,000",
-      "unit": "백만원",
-      "source": "(202608)2020 과목별 월별 여신현황.xlsx!Sheet1!J9"
-     },
-     {
-      "key": "denominator",
-      "label": "기업+가계 합계",
-      "value": "214,580,000",
-      "unit": "백만원",
-      "source": "fact.loan_balance_monthly 집계"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 2
   },
   "interestRevenue": {
    "id": "hh_int_rev",
-   "label": "가계자금대출금이자(2026.08 누계)",
-   "value": 9100,
+   "label": "가계자금대출금이자(– 누계)",
+   "value": null,
    "unit": "KRW_BN",
-   "dataOrigin": "simulated",
-   "sourceRef": "(202608)2633_상품부문별손익계산서.xlsx!Sheet1!D147"
+   "labelTpl": "가계자금대출금이자([[ym:LOAN_BALANCE_MONTHLY:$latest|dot]] 누계)"
   },
-  "monthly": [
-   {
-    "label": "1월",
-    "value": 93.88
-   },
-   {
-    "label": "2월",
-    "value": 94.52
-   },
-   {
-    "label": "3월",
-    "value": 95.24
-   },
-   {
-    "label": "4월",
-    "value": 96.18
-   },
-   {
-    "label": "5월",
-    "value": 97.02
-   },
-   {
-    "label": "6월",
-    "value": 97.86
-   },
-   {
-    "label": "7월",
-    "value": 98.54
-   },
-   {
-    "label": "8월",
-    "value": 99.24
-   }
-  ],
-  "yearly": [
-   {
-    "label": "2024.08",
-    "value": 88.12
-   },
-   {
-    "label": "2025.08",
-    "value": 93.18
-   },
-   {
-    "label": "2026.08",
-    "value": 99.24
-   }
-  ],
+  "monthly": [],
+  "yearly": [],
   "goalId": "goal-hh-control",
-  "goalLabel": "가계여신 전년 대비 +4.0% 이하 관리",
+  "goalLabel": "가계여신 전년 대비 – 이하 관리",
   "goalValue": {
    "id": "hh_goal",
    "label": "현재 관리목표",
-   "value": 4,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "actual",
    "decimals": 1
   },
   "gap": {
    "id": "hh_gap",
    "label": "관리목표 대비 초과",
-   "value": 2.5,
+   "value": null,
    "unit": "PP",
-   "dataOrigin": "simulated",
-   "decimals": 2,
-   "calc": {
-    "calcId": "calc-hh-gap",
-    "formulaId": "DIFF",
-    "formulaVersion": 1,
-    "expression": "실적 증가율 − 관리목표 상한",
-    "inputs": [
-     {
-      "key": "v1",
-      "label": "실적 증가율",
-      "value": "6.5035",
-      "unit": "%",
-      "source": "calc-hh-growth"
-     },
-     {
-      "key": "v0",
-      "label": "관리목표 상한",
-      "value": "4.0000",
-      "unit": "%",
-      "source": "goal.goal_version(goal-hh-control, v2)"
-     }
-    ],
-    "executedAt": "2026-08-31T06:22:00+09:00"
-   }
+   "decimals": 2
   },
   "gapVerdict": "breach",
-  "narrative": "가계여신은 2026년 8월말 [[fig:hh_bal]]으로 전년 동기 대비 [[fig:hh_growth]] 증가했습니다. 현재 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과한 수준이며, 잔액 관리목표 100.00조원 대비 소진율은 99.2%입니다. 가계자금대출금이자는 [[fig:hh_int_rev]]으로 증가율 측면에서는 기업 대비 빠른 흐름이 확인됩니다.",
+  "narrative": "가계여신은 2026년 –말 –으로 전년 동기 대비 – 증가했습니다. 현재 관리목표 – 이하를 – 초과한 수준이며, 잔액 관리목표 – 대비 소진율은 –입니다. 가계자금대출금이자는 –으로 증가율 측면에서는 기업 대비 빠른 흐름이 확인됩니다.",
   "narrativeFigures": {},
   "evidence": [
    {
     "id": "ev-hh-data",
     "category": "bank_data",
-    "label": "2026.08말 가계자금대출금 잔액 및 월별 추이",
+    "label": "–말 가계자금대출금 잔액 및 월별 추이",
     "sourceKind": "metric_value",
-    "snippet": "가계자금대출금 99.24조원 · 전년 동기 93.18조원 · 증가율 6.50%",
+    "snippet": "가계자금대출금 – · 전년 동기 – · 증가율 –",
     "figureId": "hh_bal",
-    "tableRef": "fact.loan_balance_monthly (2020 과목별 월별 여신현황)"
+    "tableRef": "fact.loan_balance_monthly (2020 과목별 월별 여신현황)",
+    "labelTpl": "[[ym:LOAN_BALANCE_MONTHLY:$latest|dot]]말 가계자금대출금 잔액 및 월별 추이",
+    "snippetTpl": "가계자금대출금 [[fig:hh_bal]] · 전년 동기 [[fig:cmp_hh_bal_prior]] · 증가율 [[fig:hh_growth]]"
    },
    {
     "id": "ev-hh-policy",
@@ -1040,7 +434,7 @@
     "label": "가계부채 관리방안(2026년)",
     "sourceKind": "doc_chunk",
     "snippet": "가계대출 증가율을 명목 성장률 이내로 관리하는 기조를 제시.",
-    "relevance": 0.89,
+    "relevance": null,
     "doc": {
      "title": "가계부채 관리방안(2026년)",
      "issuer": "금융위원회·금융감독원",
@@ -1058,7 +452,7 @@
     "label": "2026년 사업계획(여신 부문) — 가계여신 관리목표",
     "sourceKind": "doc_chunk",
     "snippet": "가계여신은 전년 대비 +4.0% 이하, 잔액 100조원 이하로 관리한다.",
-    "relevance": 0.84,
+    "relevance": null,
     "doc": {
      "title": "2026년 사업계획(여신 부문)",
      "issuer": "종합기획부",
@@ -1069,6 +463,8 @@
      "fileName": "2026년 사업계획(여신 부문).pdf"
     }
    }
-  ]
+  ],
+  "goalLabelTpl": "가계여신 전년 대비 [[fig:hh_goal|signed]] 이하 관리",
+  "narrativeTpl": "가계여신은 2026년 [[ym:LOAN_BALANCE_MONTHLY:$latest|month]]말 [[fig:hh_bal]]으로 전년 동기 대비 [[fig:hh_growth]] 증가했습니다. 현재 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과한 수준이며, 잔액 관리목표 [[fig:cc_hh_ceiling]] 대비 소진율은 [[fig:hh_bal_usage]]입니다. 가계자금대출금이자는 [[fig:hh_int_rev]]으로 증가율 측면에서는 기업 대비 빠른 흐름이 확인됩니다."
  }
 }

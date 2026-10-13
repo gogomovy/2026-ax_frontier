@@ -65,7 +65,6 @@ class Settings(BaseSettings):
     llm_default_api_key: str = ""
     llm_default_model: str = ""
 
-    as_of_default: str = "2026-08-31"
     seed_dir: str = ""  # 비우면 패키지 내장 seed 디렉터리
 
     worker_poll_sec: float = 1.0

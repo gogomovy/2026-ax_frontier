@@ -1,24 +1,19 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ACTION_PLANS as MOCK_ACTION_PLANS } from "@/mock/risk";
 import { api } from "@/lib/api-client";
-import { API_MODE } from "@/lib/config";
+import { todayKst } from "@/lib/period";
 import type { ActionPlan, Evidence } from "@/lib/types";
 import { useSession } from "./SessionProvider";
 import { useUi } from "./UiProvider";
 
 /**
- * 수행방안·진행사업 상태 계층.
- *
- *  - API 모드: 서버 상태(`/state/plans/*`) — 등록/해제·전파 토글·수정·삭제·추가가 모든 사용자에게 공유된다.
- *    응답이 이 Provider 의 저장 구조(runtime · userPlans · deleted)와 같아서 병합 로직은 그대로 쓴다.
- *  - 목데이터 모드: 클라이언트 상태 + localStorage
+ * 수행방안·진행사업 상태 계층 — 서버 상태(`/state/plans/*`).
+ * 등록/해제·전파 토글·수정·삭제·추가가 모든 사용자에게 공유된다.
+ * 응답이 이 Provider 의 저장 구조(runtime · userPlans · deleted)와 같아서 병합 로직은 그대로 쓴다.
+ * 화면 변경은 낙관적으로 먼저 반영하고 서버 응답으로 곧 교체한다.
  * 신용리스크관리부 3화면과 종합기획부 '사업부서별 진행 사업 현황' 화면이 같은 상태를 본다.
  */
-
-const STORE_KEY = "nhdip.planState.v1";
-const TODAY = "2026-09-27";
 
 export interface PlanPatch {
   title?: string;
@@ -92,8 +87,11 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PersistedState>(EMPTY);
   const session = useSession();
   const { showToast } = useUi();
-  const remote = API_MODE && Boolean(session.menu);
-  const ACTION_PLANS: ActionPlan[] = useMemo(() => (API_MODE ? (session.actionPlans ?? []) : MOCK_ACTION_PLANS), [session.actionPlans]);
+  const remote = Boolean(session.menu);
+  // 기준 수행방안은 레이아웃이 서버에서 받은 목록 — 없으면 빈 목록
+  const ACTION_PLANS: ActionPlan[] = useMemo(() => session.actionPlans ?? [], [session.actionPlans]);
+  // 새 수행방안의 기본 담당조직 = 로그인 사용자 소속
+  const userOrg = session.menu?.user.org.name ?? "";
 
   /** 서버 호출 → 응답 상태로 교체 */
   const call = useCallback(
@@ -107,48 +105,14 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
 
   /* 초기 로드 — SSR 과 첫 렌더를 일치시키기 위해 마운트 후 읽는다 */
   useEffect(() => {
-    if (remote) {
-      api<PersistedState>("/state/plans")
-        .then((next) => setState({ ...EMPTY, ...next }))
-        .catch(() => undefined);
-      return;
-    }
-    if (API_MODE) return;
-    try {
-      const raw = window.localStorage.getItem(STORE_KEY);
-      // localStorage 는 SSR 과 첫 렌더를 맞추기 위해 마운트 후에만 읽는다
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (raw) setState({ ...EMPTY, ...(JSON.parse(raw) as PersistedState) });
-    } catch {
-      /* 저장소 접근 불가 시 기본 상태 유지 */
-    }
+    if (!remote) return;
+    api<PersistedState>("/state/plans")
+      .then((next) => setState({ ...EMPTY, ...next }))
+      .catch(() => undefined);
   }, [remote]);
 
-  const persist = useCallback((next: PersistedState) => {
-    setState(next);
-    if (API_MODE) return;
-    try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify(next));
-    } catch {
-      /* 저장 실패는 화면 동작에 영향을 주지 않는다 */
-    }
-  }, []);
-
-  const mutate = useCallback(
-    (fn: (prev: PersistedState) => PersistedState) => {
-      setState((prev) => {
-        const next = fn(prev);
-        if (API_MODE) return next; // 서버 응답으로 곧 교체되는 낙관적 갱신
-        try {
-          window.localStorage.setItem(STORE_KEY, JSON.stringify(next));
-        } catch {
-          /* noop */
-        }
-        return next;
-      });
-    },
-    [],
-  );
+  /** 낙관적 갱신 — 서버 응답으로 곧 교체된다 */
+  const mutate = useCallback((fn: (prev: PersistedState) => PersistedState) => setState(fn), []);
 
   const setRuntime = useCallback(
     (id: string, value: PlanRuntime) =>
@@ -161,7 +125,7 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
 
   const registerPlan = useCallback(
     (id: string) => {
-      setRuntime(id, { status: "in_progress", registeredAt: TODAY });
+      setRuntime(id, { status: "in_progress", registeredAt: todayKst() });
       if (remote) call(`/state/plans/${encodeURIComponent(id)}/register`, { method: "POST" });
     },
     [setRuntime, remote, call],
@@ -194,6 +158,7 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
   const updatePlan = useCallback(
     (id: string, patch: PlanPatch) => {
       if (remote) call(`/state/plans/${encodeURIComponent(id)}`, { method: "PATCH", json: patch });
+      const today = todayKst();
       mutate((prev) => {
         const isUser = prev.userPlans.some((p) => p.id === id);
         if (isUser) {
@@ -205,7 +170,7 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
                     ...p,
                     ...patch,
                     evidence: patch.evidenceNote !== undefined ? userEvidence(patch.evidenceNote) : p.evidence,
-                    updatedAt: TODAY,
+                    updatedAt: today,
                   }
                 : p,
             ),
@@ -215,7 +180,7 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
           ...prev,
           runtime: {
             ...prev.runtime,
-            [id]: { ...prev.runtime[id], patch: { ...prev.runtime[id]?.patch, ...patch }, updatedAt: TODAY },
+            [id]: { ...prev.runtime[id], patch: { ...prev.runtime[id]?.patch, ...patch }, updatedAt: today },
           },
         };
       });
@@ -242,7 +207,7 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
         id,
         title: input.title,
         body: input.body,
-        ownerOrg: input.ownerOrg ?? "신용리스크관리부",
+        ownerOrg: input.ownerOrg ?? userOrg,
         monitoringMetrics: input.monitoringMetrics,
         reviewCycle: input.reviewCycle ?? "월",
         alignment: { verdict: "unknown", matched: [], conflicts: [] },
@@ -253,20 +218,20 @@ export function PlanStateProvider({ children }: { children: ReactNode }) {
         origin: "user",
         linkedTabKey: input.linkedTabKey,
         linkedAnalysisLabel: input.linkedAnalysisLabel,
-        updatedAt: TODAY,
+        updatedAt: todayKst(),
         guideRuleId: "USER_DEFINED",
       };
       mutate((prev) => ({ ...prev, userPlans: [...prev.userPlans, plan] }));
       if (remote) call("/state/plans", { method: "POST", json: { ...input, id } });
       return id;
     },
-    [mutate, remote, call],
+    [mutate, remote, call, userOrg],
   );
 
   const resetPlans = useCallback(() => {
-    persist(EMPTY);
+    setState(EMPTY);
     if (remote) call("/state/plans/reset", { method: "POST", json: {} });
-  }, [persist, remote, call]);
+  }, [remote, call]);
 
   const plans = useMemo(() => {
     const base = ACTION_PLANS.filter((p) => !state.deleted.includes(p.id)).map((p) => {

@@ -35,7 +35,7 @@ export default function EvalsAdmin() {
   return (
     <AdminPage
       title="골든셋 평가"
-      description="시나리오 기준값(6B 7.929% · PSI 0.082 · 충당금 비중 9.16% 등)과 추천안으로 확정한 값이 현재 계산 · 화면 · 근거 검색 · 질의 결과와 같은지 확인합니다. 같은 평가가 CI 에서도 실행됩니다."
+      description="골든셋 시나리오의 기준값(모형 지표 · 리스크 지표 등)과 추천안으로 확정한 값이 현재 계산 · 화면 · 근거 검색 · 질의 결과와 같은지 확인합니다. 같은 평가가 CI 에서도 실행됩니다."
       actions={
         <Button size="sm" variant="confirm" disabled={busy} onClick={() => run(() => apiPost("/admin/evals/run"), "평가를 실행했습니다", data.reload)}>
           지금 평가

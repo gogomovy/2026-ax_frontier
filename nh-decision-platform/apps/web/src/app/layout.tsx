@@ -8,7 +8,6 @@ import { SourceDrawer } from "@/components/evidence/SourceDrawer";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toast } from "@/components/layout/Toast";
 import { apiTry, hasSession } from "@/lib/api-server";
-import { API_MODE } from "@/lib/config";
 import type { ActionPlan, CascadeNode, Goal, Term } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -17,9 +16,9 @@ export const metadata: Metadata = {
     "은행 내·외부 정보를 연결하여 경영목표의 설정과 조정을 지원하고, 그 결과를 조직 전체의 판단 기준으로 전파하는 의사결정 플랫폼",
 };
 
-/** API 모드: 로그인 사용자의 메뉴·용어집·공용 상태 기준 데이터를 한 번에 받아 클라이언트에 넘긴다 */
+/** 로그인 사용자의 메뉴·용어집·공용 상태 기준 데이터를 한 번에 받아 클라이언트에 넘긴다 */
 async function loadBootstrap(): Promise<Bootstrap | null> {
-  if (!API_MODE || !(await hasSession())) return null;
+  if (!(await hasSession())) return null;
   const [menu, terms, actionPlans, cascade, goals, meta] = await Promise.all([
     apiTry<MenuPayload>("/me/menu"),
     apiTry<Term[]>("/screens/terms"),

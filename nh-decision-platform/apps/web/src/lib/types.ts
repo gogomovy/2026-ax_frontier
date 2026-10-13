@@ -1,6 +1,6 @@
 /**
- * 도메인 타입. 향후 백엔드 API 응답 스키마와 동일한 형태를 유지한다.
- * (설계서 §11.4 응답 예시 기준 — MVP 는 목데이터가 이 타입을 그대로 채운다)
+ * 도메인 타입. 백엔드 화면 API 응답 스키마와 동일한 형태를 유지한다.
+ * (설계서 §11.4 응답 예시 기준 — 업로드 전에는 값이 빈 템플릿이 같은 형태로 온다)
  */
 
 export type DataOrigin = "actual" | "simulated" | "mixed";
@@ -66,7 +66,8 @@ export interface Evidence {
   sourceKind: "doc_chunk" | "metric_value" | "calc_run" | "external" | "none";
   label: string;
   snippet?: string;
-  relevance?: number;
+  /** 검색 적합도 — 화면 틀(Phase I)에서는 값이 없을 수 있다(null) */
+  relevance?: number | null;
   doc?: EvidenceDoc;
   /** 데이터 근거인 경우 참조 지표/계산 */
   figureId?: string;
@@ -151,6 +152,8 @@ export interface Goal {
   updatedAt: string;
   version: number;
   metricLabel: string;
+  /** 목표값 수치 (서버 계산 · 업로드 전에는 값 없음) */
+  targetFigure?: Figure;
   actual?: Figure;
   /** 목표 대비 이탈 (pp 또는 %) */
   gap?: Figure;

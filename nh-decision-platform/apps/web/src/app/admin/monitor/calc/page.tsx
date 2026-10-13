@@ -143,7 +143,7 @@ export default function CalcMonitor() {
               <tr key={a.key}>
                 <C mono>{a.key}</C>
                 <C right>{a.generation}</C>
-                <C>{a.producedBy === "seed" ? <Badge>목데이터 시드</Badge> : <Badge tone="info">{a.producedBy}</Badge>}</C>
+                <C>{a.producedBy === "seed" ? <Badge>시드 템플릿</Badge> : <Badge tone="info">{a.producedBy}</Badge>}</C>
                 <C right>{a.changes}</C>
                 <C className="text-[11px]">{fmtTime(a.createdAt)}</C>
                 <C>

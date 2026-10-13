@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, OriginBadge, Select, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { PurgeStatus, useDataDelete, useIsDataAdmin } from "@/components/admin/DataDelete";
 import { ValueView } from "@/components/admin/ValueView";
 import { useConfirm } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
@@ -109,6 +110,10 @@ interface Version {
   uploadedBy: string | null;
   createdAt: string;
   note: string | null;
+  /** 삭제 표시 (Phase J · DEL-06) — 행 · 원본 파일은 지워지고 기록만 남음 */
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 interface Ds {
   code: string;
@@ -144,6 +149,9 @@ interface Doc {
   extraction: { by: string | null; entities: number; relations: number; issues: number | null; fallbackReason?: string };
   openIssues: number;
   createdAt: string;
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+  deleteReason?: string | null;
 }
 
 /** 데이터셋 정의 · 당행/외부 업로드 · 버전 · 롤백 · 품질 / 문서 업로드 · 구조화 (ADM-08, ING-01~07) */
@@ -156,6 +164,7 @@ export default function DatasetsAdmin() {
     >
       <Tabs active={tab} onChange={setTab} tabs={[{ key: "datasets", label: "정형 데이터셋" }, { key: "documents", label: "문서 (비정형)" }]} />
       {tab === "datasets" ? <Datasets /> : <Documents />}
+      <PurgeStatus />
     </AdminPage>
   );
 }
@@ -305,6 +314,8 @@ function Datasets() {
 function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Promise<void>; initialFile?: File | null }) {
   const { run, busy } = useAction();
   const confirm = useConfirm();
+  const isDataAdmin = useIsDataAdmin();
+  const del = useDataDelete();
   const [file, setFile] = useState<File | null>(initialFile ?? null);
   const [origin, setOrigin] = useState<string>(ds.origin);
   const [dataOrigin, setDataOrigin] = useState("actual");
@@ -388,13 +399,19 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
       <Card title="버전">
         <Table head={["버전", "기준일", "상태", "성격", "파일", "행", "품질", "업로드", ""]}>
           {ds.versions.map((v) => (
-            <tr key={v.id} className={v.isCurrent ? "bg-success-faint" : ""}>
+            <tr key={v.id} className={v.isCurrent ? "bg-success-faint" : v.status === "deleted" ? "opacity-60" : ""} data-version-status={v.status}>
               <C>
                 v{v.version} {v.isCurrent ? <Badge tone="success">현재</Badge> : null}
               </C>
               <C>{v.asOf ?? "-"}</C>
               <C>
                 <StatusBadge status={v.status} />
+                {v.status === "deleted" ? (
+                  <p className="mt-0.5 max-w-[200px] text-[10.5px] text-stone">
+                    {v.deletedBy ?? "-"} · {fmtTime(v.deletedAt ?? null)}
+                    {v.deleteReason ? <span className="block">사유: {v.deleteReason}</span> : null}
+                  </p>
+                ) : null}
               </C>
               <C>{v.dataOrigin === "actual" ? "실데이터" : "시뮬레이션"}</C>
               <C className="max-w-[260px] text-[11.5px]">
@@ -421,9 +438,11 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
               </C>
               <C>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="quiet" onClick={() => apiGetC<{ columns: string[]; rows: Record<string, unknown>[] }>(`/admin/datasets/${ds.code}/versions/${v.id}/rows?limit=200`).then(setRows)}>
-                    행
-                  </Button>
+                  {v.status !== "deleted" ? (
+                    <Button size="sm" variant="quiet" onClick={() => apiGetC<{ columns: string[]; rows: Record<string, unknown>[] }>(`/admin/datasets/${ds.code}/versions/${v.id}/rows?limit=200`).then(setRows)}>
+                      행
+                    </Button>
+                  ) : null}
                   {!v.isCurrent && (v.status === "committed" || v.status === "rolled_back") ? (
                     <Button
                       size="sm"
@@ -435,6 +454,11 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
                       }}
                     >
                       되돌리기
+                    </Button>
+                  ) : null}
+                  {isDataAdmin && v.status !== "deleted" ? (
+                    <Button size="sm" variant="danger" disabled={busy || del.busy} onClick={() => void del.deleteVersion(ds, v.id, reload)} aria-label={`v${v.version} 삭제`} data-delete-version={v.id}>
+                      삭제
                     </Button>
                   ) : null}
                 </div>
@@ -478,8 +502,11 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
 }
 
 function Documents() {
-  const docs = useApiData<Doc[]>("/admin/documents", { refreshMs: 8000 });
+  const [showDeleted, setShowDeleted] = useState(false);
+  const docs = useApiData<Doc[]>(`/admin/documents${showDeleted ? "?include_deleted=true" : ""}`, { refreshMs: 8000 });
   const { run, busy } = useAction();
+  const isDataAdmin = useIsDataAdmin();
+  const del = useDataDelete();
   const [f, setF] = useState({ origin: "ext", doc_class: "gov_policy", title: "", issuer: "", published_at: "", text: "" });
   const [file, setFile] = useState<File | null>(null);
   const [detail, setDetail] = useState<unknown>(null);
@@ -531,11 +558,11 @@ function Documents() {
           {!f.title ? <span className="text-[12px] text-steel">제목을 입력하세요.</span> : !file && !f.text ? <span className="text-[12px] text-steel">파일을 고르거나 본문을 넣으세요.</span> : null}
         </div>
       </Card>
-      <Card title="문서">
+      <Card title="문서" actions={<Check label="삭제된 문서 보기" checked={showDeleted} onChange={setShowDeleted} />}>
         <Loading error={docs.error} loading={!docs.data && docs.loading} />
         <Table head={["출처", "문서", "분류", "상태", "청크 · 임베딩", "구조화", "검토 대기", ""]}>
           {(docs.data ?? []).map((d) => (
-            <tr key={`${d.origin}-${d.id}`} className={d.isCurrent ? "" : "opacity-50"}>
+            <tr key={`${d.origin}-${d.id}`} className={d.isCurrent ? "" : "opacity-50"} data-doc-status={d.status}>
               <C>
                 <OriginBadge origin={d.origin} />
               </C>
@@ -550,6 +577,12 @@ function Documents() {
               </C>
               <C>
                 <StatusBadge status={d.status} />
+                {d.status === "deleted" ? (
+                  <p className="mt-0.5 max-w-[200px] text-[10.5px] text-stone">
+                    {d.deletedBy ?? "-"} · {fmtTime(d.deletedAt ?? null)}
+                    {d.deleteReason ? <span className="block">사유: {d.deleteReason}</span> : null}
+                  </p>
+                ) : null}
               </C>
               <C right>
                 {d.chunks} · {d.embedded}
@@ -564,9 +597,16 @@ function Documents() {
                   <Button size="sm" variant="quiet" onClick={() => apiGetC(`/admin/documents/${d.origin}/${d.id}`).then(setDetail)}>
                     상세
                   </Button>
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => apiPost(`/admin/documents/${d.origin}/${d.id}/reextract`), "재구조화를 요청했습니다", docs.reload)}>
-                    재구조화
-                  </Button>
+                  {d.status !== "deleted" ? (
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => apiPost(`/admin/documents/${d.origin}/${d.id}/reextract`), "재구조화를 요청했습니다", docs.reload)}>
+                      재구조화
+                    </Button>
+                  ) : null}
+                  {isDataAdmin && d.status !== "deleted" ? (
+                    <Button size="sm" variant="danger" disabled={busy || del.busy} onClick={() => void del.deleteDocument(d, docs.reload)} aria-label={`${d.title} v${d.version} 삭제`} data-delete-document={`${d.origin}-${d.id}`}>
+                      삭제
+                    </Button>
+                  ) : null}
                 </div>
               </C>
             </tr>

@@ -123,7 +123,7 @@ def _match(row: dict[str, Any], where: dict[str, Any], ctx: EvalContext) -> bool
     return True
 
 
-TOKEN_RE = __import__("re").compile(r"^\$(latest|earliest)(?:-(\d+))?$")
+TOKEN_RE = __import__("re").compile(r"^\$(latest|earliest|prev_year_end)(?:-(\d+))?$")
 
 
 def _shift(value: str, months: int) -> str:
@@ -144,7 +144,7 @@ def _shift(value: str, months: int) -> str:
 
 
 def resolve_token(rows: list[dict[str, Any]], col: str, token: Any) -> Any:
-    """'$latest' · '$earliest' · '$latest-12'(12개월 전) 을 실제 값으로."""
+    """'$latest' · '$earliest' · '$latest-12'(12개월 전) · '$prev_year_end'(최근 기간의 전년 12월) 을 실제 값으로."""
     if not isinstance(token, str):
         return token
     m = TOKEN_RE.match(token)
@@ -153,7 +153,9 @@ def resolve_token(rows: list[dict[str, Any]], col: str, token: Any) -> Any:
     vals = sorted({str(r.get(col)) for r in rows if r.get(col) is not None})
     if not vals:
         raise ResolveError(f"{col}: 값 없음")
-    base = vals[-1] if m.group(1) == "latest" else vals[0]
+    base = vals[-1] if m.group(1) in ("latest", "prev_year_end") else vals[0]
+    if m.group(1) == "prev_year_end":
+        base = _shift(base, int(str(base).replace("-", "")[4:6]))  # 같은 해 1월의 한 달 전 = 전년 12월(YYYYMM · YYYY-MM-DD)
     return _shift(base, int(m.group(2))) if m.group(2) else base
 
 

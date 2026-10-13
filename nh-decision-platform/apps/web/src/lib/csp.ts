@@ -1,6 +1,5 @@
 /**
- * 콘텐츠 보안 정책 (B.33) — API 모드는 요청마다 nonce 를 만들어 스크립트를 nonce + strict-dynamic 으로만 허용한다.
- * (목데이터 모드는 정적 페이지라 nonce 를 쓸 수 없어 next.config.mjs 의 정적 정책을 쓴다.)
+ * 콘텐츠 보안 정책 (B.33) — proxy.ts 가 요청마다 nonce 를 만들어 스크립트를 nonce + strict-dynamic 으로만 허용한다.
  * 외부 출처는 글꼴 CDN(jsdelivr · Pretendard) 하나뿐이다. 스타일은 React 의 style 속성 때문에 'unsafe-inline' 을 유지한다.
  */
 export function buildCsp(nonce: string, dev = process.env.NODE_ENV !== "production"): string {

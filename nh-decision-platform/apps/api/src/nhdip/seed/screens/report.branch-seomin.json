@@ -3,17 +3,10 @@
  "kind": "branch_seomin",
  "title": "생산적·포용금융 · 서민금융 — 신규 유치 적정 규모",
  "subtitle": "수원영통지점 · 2026년 하반기 업적평가 세부기준 신설 대응 · 기준일 2026.08.31",
- "asOf": "2026-08-31",
- "generatedAt": "2026-08-31T06:22:00+09:00",
+ "asOf": null,
+ "generatedAt": null,
  "dataOrigin": "simulated",
- "office": {
-  "code": "001068",
-  "name": "수원영통지점",
-  "region": "경기",
-  "sigungu": "수원시",
-  "regionHq": "수도권1지역본부",
-  "orgCode": "001068"
- },
+ "office": [],
  "toc": [
   {
    "id": "bs-change",
@@ -111,58 +104,7 @@
      "chart": {
       "kind": "bar",
       "title": "상품군별 금액 비중 — 지점 vs 전행",
-      "series": [
-       {
-        "name": "지점",
-        "points": [
-         {
-          "label": "주택담보",
-          "value": 60.1
-         },
-         {
-          "label": "전세",
-          "value": 24.1
-         },
-         {
-          "label": "신용",
-          "value": 13.8
-         },
-         {
-          "label": "서민금융",
-          "value": 1.4
-         },
-         {
-          "label": "기타",
-          "value": 0.6
-         }
-        ]
-       },
-       {
-        "name": "전행",
-        "points": [
-         {
-          "label": "주택담보",
-          "value": 50.3
-         },
-         {
-          "label": "전세",
-          "value": 26.9
-         },
-         {
-          "label": "신용",
-          "value": 17.7
-         },
-         {
-          "label": "서민금융",
-          "value": 4
-         },
-         {
-          "label": "기타",
-          "value": 1.1
-         }
-        ]
-       }
-      ],
+      "series": [],
       "unit": "PCT"
      }
     },
@@ -218,128 +160,7 @@
         "align": "right"
        }
       ],
-      "rows": [
-       {
-        "pool": "P01",
-        "name": "주택담보대출(우량)",
-        "seomin": "-",
-        "lowCredit": "-",
-        "brCnt": "54",
-        "brAmt": "11,121",
-        "brShare": "39.17",
-        "bankShare": "33.36",
-        "brDlq": "0.00",
-        "provRate": "0.05"
-       },
-       {
-        "pool": "P02",
-        "name": "주택담보대출(일반)",
-        "seomin": "-",
-        "lowCredit": "-",
-        "brCnt": "38",
-        "brAmt": "5,952",
-        "brShare": "20.96",
-        "bankShare": "16.97",
-        "brDlq": "1.42",
-        "provRate": "0.15"
-       },
-       {
-        "pool": "P03",
-        "name": "전세자금대출",
-        "seomin": "-",
-        "lowCredit": "-",
-        "brCnt": "39",
-        "brAmt": "6,830",
-        "brShare": "24.06",
-        "bankShare": "26.89",
-        "brDlq": "0.00",
-        "provRate": "0.06"
-       },
-       {
-        "pool": "P04",
-        "name": "신용대출(우량 1~3등급)",
-        "seomin": "-",
-        "lowCredit": "-",
-        "brCnt": "46",
-        "brAmt": "2,497",
-        "brShare": "8.80",
-        "bankShare": "10.06",
-        "brDlq": "0.00",
-        "provRate": "0.23"
-       },
-       {
-        "pool": "P05",
-        "name": "신용대출(일반 4~6등급)",
-        "seomin": "-",
-        "lowCredit": "-",
-        "brCnt": "37",
-        "brAmt": "1,205",
-        "brShare": "4.24",
-        "bankShare": "6.33",
-        "brDlq": "0.00",
-        "provRate": "0.90"
-       },
-       {
-        "pool": "P06",
-        "name": "신용대출(저신용 7~10등급)",
-        "seomin": "-",
-        "lowCredit": "저신용",
-        "brCnt": "16",
-        "brAmt": "219",
-        "brShare": "0.77",
-        "bankShare": "1.29",
-        "brDlq": "0.00",
-        "provRate": "3.58"
-       },
-       {
-        "pool": "P07",
-        "name": "NH새희망홀씨대출",
-        "seomin": "인정",
-        "lowCredit": "저신용",
-        "brCnt": "6",
-        "brAmt": "129",
-        "brShare": "0.45",
-        "bankShare": "2.14",
-        "brDlq": "0.00",
-        "provRate": "4.68"
-       },
-       {
-        "pool": "P08",
-        "name": "햇살론(보증부)",
-        "seomin": "-",
-        "lowCredit": "저신용",
-        "brCnt": "8",
-        "brAmt": "143",
-        "brShare": "0.50",
-        "bankShare": "1.12",
-        "brDlq": "0.00",
-        "provRate": "0.45"
-       },
-       {
-        "pool": "P09",
-        "name": "사잇돌(보증부)",
-        "seomin": "-",
-        "lowCredit": "저신용",
-        "brCnt": "8",
-        "brAmt": "127",
-        "brShare": "0.45",
-        "bankShare": "0.78",
-        "brDlq": "0.00",
-        "provRate": "1.20"
-       },
-       {
-        "pool": "P10",
-        "name": "기타 소매",
-        "seomin": "-",
-        "lowCredit": "-",
-        "brCnt": "8",
-        "brAmt": "169",
-        "brShare": "0.59",
-        "bankShare": "1.05",
-        "brDlq": "0.00",
-        "provRate": "0.40"
-       }
-      ],
+      "rows": [],
       "highlightRowKey": "pool",
       "highlightRowValue": "P07",
       "note": "Pool 정의(서민금융 인정 · 저신용 · 충당금률 = PD × LGD)는 시뮬레이션 가정 — 실제 Pool 체계 수령 시 마스터만 교체."
@@ -399,36 +220,7 @@
         "label": "적용"
        }
       ],
-      "rows": [
-       {
-        "limit": "전행 평균 비중 도달 필요액",
-        "basis": "지점 서민금융 비중을 전행 평균 수준으로",
-        "amount": "490",
-        "count": "22",
-        "applied": "-"
-       },
-       {
-        "limit": "충당금 증가 허용 범위",
-        "basis": "추가 충당금 ≤ 허용액 (충당금률 가정)",
-        "amount": "427",
-        "count": "19",
-        "applied": "적용(최소)"
-       },
-       {
-        "limit": "반기 신규 가능 건수",
-        "basis": "신규 가능 건수 × 평균 취급액",
-        "amount": "687",
-        "count": "30",
-        "applied": "-"
-       },
-       {
-        "limit": "권고 규모",
-        "basis": "세 한도 중 최소",
-        "amount": "427",
-        "count": "19",
-        "applied": "권고"
-       }
-      ],
+      "rows": [],
       "highlightRowKey": "applied",
       "highlightRowValue": "권고"
      }
@@ -505,297 +297,260 @@
   "br_retail_amt": {
    "id": "br_retail_amt",
    "label": "지점 소매여신 익스포저",
-   "value": 283.9,
+   "value": null,
    "unit": "KRW_BN",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_retail_cnt": {
    "id": "br_retail_cnt",
    "label": "지점 소매여신 차주 수",
-   "value": 260,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "bank_retail_amt": {
    "id": "bank_retail_amt",
    "label": "전행 소매여신 익스포저",
-   "value": 5181.7,
+   "value": null,
    "unit": "KRW_BN",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "bank_retail_cnt": {
    "id": "bank_retail_cnt",
    "label": "전행 소매여신 차주 수",
-   "value": 6020,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_amt": {
    "id": "br_seomin_amt",
    "label": "지점 서민금융(업적평가 인정 Pool) 익스포저",
-   "value": 129,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_cnt": {
    "id": "br_seomin_cnt",
    "label": "지점 서민금융 차주 수",
-   "value": 6,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "bank_seomin_amt": {
    "id": "bank_seomin_amt",
    "label": "전행 서민금융(업적평가 인정 Pool) 익스포저",
-   "value": 111,
+   "value": null,
    "unit": "KRW_BN",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "bank_seomin_cnt": {
    "id": "bank_seomin_cnt",
    "label": "전행 서민금융 차주 수",
-   "value": 485,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_share": {
    "id": "br_seomin_share",
    "label": "지점 서민금융 비중(금액)",
-   "value": 0.45,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "bank_seomin_share": {
    "id": "bank_seomin_share",
    "label": "전행 서민금융 비중(금액)",
-   "value": 2.14,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "br_seomin_cnt_share": {
    "id": "br_seomin_cnt_share",
    "label": "지점 서민금융 비중(건수)",
-   "value": 2.3,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "bank_seomin_cnt_share": {
    "id": "bank_seomin_cnt_share",
    "label": "전행 서민금융 비중(건수)",
-   "value": 8.1,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_seomin_share_gap": {
    "id": "br_seomin_share_gap",
    "label": "서민금융 비중 차이(전행 − 지점)",
-   "value": 1.69,
+   "value": null,
    "unit": "PP",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "br_lowcredit_share": {
    "id": "br_lowcredit_share",
    "label": "지점 저신용자 Pool 비중(금액)",
-   "value": 2.2,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "bank_lowcredit_share": {
    "id": "bank_lowcredit_share",
    "label": "전행 저신용자 Pool 비중(금액)",
-   "value": 5.3,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_retail_dlq_rate": {
    "id": "br_retail_dlq_rate",
    "label": "지점 소매여신 연체율(금액)",
-   "value": 0.3,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "bank_retail_dlq_rate": {
    "id": "bank_retail_dlq_rate",
    "label": "전행 소매여신 연체율(금액)",
-   "value": 0.54,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "bank_seomin_dlq_rate": {
    "id": "bank_seomin_dlq_rate",
    "label": "전행 서민금융 연체율(금액)",
-   "value": 5.34,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "br_seomin_prov_rate": {
    "id": "br_seomin_prov_rate",
    "label": "서민금융 충당금률(가정)",
-   "value": 4.68,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "br_seomin_ticket_avg": {
    "id": "br_seomin_ticket_avg",
    "label": "전행 서민금융 차주당 평균 익스포저",
-   "value": 22.9,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_seomin_limit": {
    "id": "br_seomin_limit",
    "label": "동일차주 연간 최고 대출한도",
-   "value": 35,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_ticket": {
    "id": "br_seomin_ticket",
    "label": "권고 산정 평균 취급액(한도 이내)",
-   "value": 22.9,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_seomin_gap_amt": {
    "id": "br_seomin_gap_amt",
    "label": "전행 평균 비중 도달 필요액",
-   "value": 490,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_prov_limit": {
    "id": "br_seomin_prov_limit",
    "label": "충당금 증가 허용액",
-   "value": 20,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_prov_cap": {
    "id": "br_seomin_prov_cap",
    "label": "충당금 허용 범위 내 최대 유치액",
-   "value": 427,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_max_cnt": {
    "id": "br_seomin_max_cnt",
    "label": "반기 신규 가능 건수",
-   "value": 30,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_cnt_cap": {
    "id": "br_seomin_cnt_cap",
    "label": "신규 가능 건수 기준 최대 유치액",
-   "value": 687,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_rec_amt": {
    "id": "br_seomin_rec_amt",
    "label": "권고 신규 유치 규모",
-   "value": 427,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_rec_cnt": {
    "id": "br_seomin_rec_cnt",
    "label": "권고 신규 유치 건수",
-   "value": 19,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_add_prov": {
    "id": "br_seomin_add_prov",
    "label": "권고 규모 유치 시 예상 추가 충당금",
-   "value": 20,
+   "value": null,
    "unit": "KRW_MN",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_seomin_share_after": {
    "id": "br_seomin_share_after",
    "label": "유치 후 지점 서민금융 비중",
-   "value": 1.93,
+   "value": null,
    "unit": "PCT",
-   "dataOrigin": "simulated",
    "decimals": 2
   },
   "br_seomin_actual": {
    "id": "br_seomin_actual",
    "label": "서민금융 하반기 신규 실적",
-   "value": 4,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_target": {
    "id": "br_seomin_target",
    "label": "서민금융 만점 목표 건수",
-   "value": 30,
+   "value": null,
    "unit": "CNT",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_points": {
    "id": "br_seomin_points",
    "label": "서민금융 배점",
-   "value": 20,
+   "value": null,
    "unit": "NONE",
-   "dataOrigin": "simulated",
    "decimals": 0
   },
   "br_seomin_score_now": {
    "id": "br_seomin_score_now",
    "label": "서민금융 현재 득점",
-   "value": 2.7,
+   "value": null,
    "unit": "NONE",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_seomin_score_after": {
    "id": "br_seomin_score_after",
    "label": "권고 규모 유치 시 서민금융 득점",
-   "value": 15.3,
+   "value": null,
    "unit": "NONE",
-   "dataOrigin": "simulated",
    "decimals": 1
   },
   "br_seomin_uplift": {
    "id": "br_seomin_uplift",
    "label": "예상 업적 점수 상향(서민금융)",
-   "value": 12.7,
+   "value": null,
    "unit": "NONE",
-   "dataOrigin": "simulated",
    "decimals": 1
   }
  },
@@ -809,79 +564,70 @@
    "title": "건전성 범위 안에서 NH새희망홀씨 신규 유치로 서민금융 가점 확보",
    "statement": "하반기 업적평가는 생산적·포용금융에 NH새희망홀씨 신규 유치 건수로 평가하는 서민금융([[fig:br_seomin_points]]점)을 신설하고 해당 차주를 연체평가에서 제외했습니다. 지점 서민금융 비중은 [[fig:br_seomin_share]]로 전행 [[fig:bank_seomin_share]]보다 낮습니다. 전행 수준 도달에는 [[fig:br_seomin_gap_amt]]이 필요하지만 충당금 증가 허용 범위를 함께 고려해 [[fig:br_seomin_rec_cnt]] · [[fig:br_seomin_rec_amt]] 신규 유치를 권하며, 이 경우 서민금융 득점은 [[fig:br_seomin_uplift]]점 오를 것으로 추정됩니다. 동일차주 연간 최고 한도([[fig:br_seomin_limit]])를 지키고, 업적평가의 연체평가 예외와 별개로 실제 충당금이 [[fig:br_seomin_add_prov]] 늘 수 있음을 감안해 분할 유치와 사후관리를 병행하기 바랍니다.",
    "severity": "watch",
-   "asOf": "2026-08-31",
+   "asOf": null,
    "dataOrigin": "simulated",
    "figures": {
     "br_seomin_points": {
      "id": "br_seomin_points",
      "label": "서민금융 배점",
-     "value": 20,
+     "value": null,
      "unit": "NONE",
-     "dataOrigin": "simulated",
      "decimals": 0
     },
     "br_seomin_share": {
      "id": "br_seomin_share",
      "label": "지점 서민금융 비중(금액)",
-     "value": 0.45,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 2
     },
     "bank_seomin_share": {
      "id": "bank_seomin_share",
      "label": "전행 서민금융 비중(금액)",
-     "value": 2.14,
+     "value": null,
      "unit": "PCT",
-     "dataOrigin": "simulated",
      "decimals": 2
     },
     "br_seomin_gap_amt": {
      "id": "br_seomin_gap_amt",
      "label": "전행 평균 비중 도달 필요액",
-     "value": 490,
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
      "decimals": 0
     },
     "br_seomin_rec_cnt": {
      "id": "br_seomin_rec_cnt",
      "label": "권고 신규 유치 건수",
-     "value": 19,
+     "value": null,
      "unit": "CNT",
-     "dataOrigin": "simulated",
      "decimals": 0
     },
     "br_seomin_rec_amt": {
      "id": "br_seomin_rec_amt",
      "label": "권고 신규 유치 규모",
-     "value": 427,
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
      "decimals": 0
     },
     "br_seomin_uplift": {
      "id": "br_seomin_uplift",
      "label": "예상 업적 점수 상향(서민금융)",
-     "value": 12.7,
+     "value": null,
      "unit": "NONE",
-     "dataOrigin": "simulated",
      "decimals": 1
     },
     "br_seomin_limit": {
      "id": "br_seomin_limit",
      "label": "동일차주 연간 최고 대출한도",
-     "value": 35,
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
      "decimals": 0
     },
     "br_seomin_add_prov": {
      "id": "br_seomin_add_prov",
      "label": "권고 규모 유치 시 예상 추가 충당금",
-     "value": 20,
+     "value": null,
      "unit": "KRW_MN",
-     "dataOrigin": "simulated",
      "decimals": 1
     }
    },
@@ -892,7 +638,7 @@
      "label": "26년(하) 업적평가 세부기준 — 생산적·포용금융 > ① 서민금융 (126p)",
      "sourceKind": "doc_chunk",
      "snippet": "NH새희망홀씨대출(용도코드 1031 · 1032)을 신규 유치한 경우 유치 건수에 따라 배점을 부여하며, 해당 차주는 건전성평가 중 연체평가에서 제외한다. 동일차주 연간 최고 대출한도는 35백만원.",
-     "relevance": 0.96,
+     "relevance": null,
      "doc": {
       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
       "issuer": "종합기획부 성과관리팀",
@@ -909,7 +655,7 @@
      "label": "26년(하) 업적평가 세부기준 — 재무KPI > 건전성 (118p)",
      "sourceKind": "doc_chunk",
      "snippet": "건전성은 연체평가와 충당금 전입액 증감으로 평가한다. 신규 취급 여신의 부실 발생 시 충당금 전입이 늘어 득점이 낮아질 수 있다.",
-     "relevance": 0.84,
+     "relevance": null,
      "doc": {
       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
       "issuer": "종합기획부 성과관리팀",
@@ -935,7 +681,7 @@
      "label": "포용금융 확대방안 (금융위원회)",
      "sourceKind": "doc_chunk",
      "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-     "relevance": 0.9,
+     "relevance": null,
      "doc": {
       "title": "포용금융 확대방안",
       "issuer": "금융위원회",
@@ -977,7 +723,7 @@
    "label": "26년(하) 업적평가 세부기준 — 생산적·포용금융 > ① 서민금융 (126p)",
    "sourceKind": "doc_chunk",
    "snippet": "NH새희망홀씨대출(용도코드 1031 · 1032)을 신규 유치한 경우 유치 건수에 따라 배점을 부여하며, 해당 차주는 건전성평가 중 연체평가에서 제외한다. 동일차주 연간 최고 대출한도는 35백만원.",
-   "relevance": 0.96,
+   "relevance": null,
    "doc": {
     "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
     "issuer": "종합기획부 성과관리팀",
@@ -994,7 +740,7 @@
    "label": "26년(하) 업적평가 세부기준 — 재무KPI > 건전성 (118p)",
    "sourceKind": "doc_chunk",
    "snippet": "건전성은 연체평가와 충당금 전입액 증감으로 평가한다. 신규 취급 여신의 부실 발생 시 충당금 전입이 늘어 득점이 낮아질 수 있다.",
-   "relevance": 0.84,
+   "relevance": null,
    "doc": {
     "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
     "issuer": "종합기획부 성과관리팀",
@@ -1011,7 +757,7 @@
    "label": "26년(하) 업적평가 세부기준 — 영업점 배점표(리테일) (13p)",
    "sourceKind": "doc_chunk",
    "snippet": "리테일 영업점 배점표: 고객KPI 200 · 사업KPI 500(핵심사업 220 · 전략사업 160 · 생산적·포용금융 120) · 재무KPI 300. 상반기 대비 우량기업여신 · 서민금융 항목 신설.",
-   "relevance": 0.9,
+   "relevance": null,
    "doc": {
     "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
     "issuer": "종합기획부 성과관리팀",
@@ -1037,7 +783,7 @@
    "label": "포용금융 확대방안 (금융위원회)",
    "sourceKind": "doc_chunk",
    "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-   "relevance": 0.9,
+   "relevance": null,
    "doc": {
     "title": "포용금융 확대방안",
     "issuer": "금융위원회",

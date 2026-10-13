@@ -481,6 +481,32 @@ def f_attention_score(components):
 
 
 # ═════════════════════════ 영업점 업적평가 · 포트폴리오 (B.29) ═════════════════════════
+SEVERITY_ORDER = ["info", "watch", "caution", "critical"]
+
+
+@formula(
+    "VERDICT",
+    expression="판정들 중 가장 심각한 수준 → 규칙의 판정 문구 (info < watch < caution < critical)",
+    description="종합 판정 — 여러 구간 판정(BAND)의 심각도 중 가장 높은 것을 고르고 규칙의 문구로 표시. 값은 심각도 순번(0~3)",
+    params={"sev_a": "string(심각도)", "sev_b": "string(기본 없음)", "sev_c": "string(기본 없음)", "labels": "object(심각도 → 문구)"},
+    returns="object",
+)
+def f_verdict(sev_a, sev_b=None, sev_c=None, labels=None):
+    sevs = [s for s in (sev_a, sev_b, sev_c) if s]
+    bad = [s for s in sevs if s not in SEVERITY_ORDER]
+    if bad:
+        raise FormulaError(f"알 수 없는 심각도: {bad}")
+    if not sevs:
+        raise FormulaError("판정 입력이 없습니다")
+    worst = max(sevs, key=SEVERITY_ORDER.index)
+    return {"value": Decimal(SEVERITY_ORDER.index(worst)), "verdict": (labels or {}).get(worst, worst), "severity": worst}
+
+
+@formula("GROWTH_APPLY", expression="기준 × (1 + 증가율 ÷ 100)", description="증가율 적용 추정(예: 전년 말 잔액 × (1 + 제안 증가율) = 연말 추정 잔액)", params={"base": "number", "rate": "number(%)"})
+def f_growth_apply(base, rate):
+    return D(base) * (1 + D(rate) / 100)
+
+
 @formula("MEAN", expression="Σ 값 ÷ 개수", description="단순 평균(예: 차주 수 기준 평균 신용등급)", params={"values": "number[]"})
 def f_mean(values):
     vals = [D(v) for v in (values or []) if v not in (None, "")]

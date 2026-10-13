@@ -3,9 +3,7 @@ import type { ReviewData } from "@/components/knowledge/StewardReview";
 import { UploadPageTabs } from "@/components/knowledge/UploadPageTabs";
 import type { Uploadable } from "@/components/knowledge/UploadWorkspace";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Notice } from "@/components/ui/Layout";
 import { apiTry } from "@/lib/api-server";
-import { API_MODE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -15,18 +13,6 @@ export const dynamic = "force-dynamic";
  */
 export default async function KnowledgeUploadPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await props.searchParams;
-  if (!API_MODE) {
-    return (
-      <>
-        <PageHeader crumbs={[{ label: "데이터베이스", href: "/knowledge" }, { label: "자료 올리기" }]} title="자료 올리기" />
-        <div className="shell pb-section">
-          <Notice tone="info" title="서버 연결 모드에서 쓸 수 있습니다">
-            목업 화면에서는 자료를 올릴 수 없습니다.
-          </Notice>
-        </div>
-      </>
-    );
-  }
   const [options, review] = await Promise.all([apiTry<Uploadable>("/db/uploadable"), apiTry<ReviewData>("/db/uploads/review?status=pending")]);
   if (!options && !review) redirect("/forbidden?from=/knowledge/upload");
   return (

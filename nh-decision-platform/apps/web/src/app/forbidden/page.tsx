@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { apiTry, hasSession } from "@/lib/api-server";
-import { API_MODE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +18,7 @@ export default async function ForbiddenPage(props: { searchParams: Promise<Recor
   const raw = typeof sp.from === "string" ? sp.from : "";
   // 내부 주소만(외부 주소 · 스킴 차단)
   const from = raw.startsWith("/") && !raw.startsWith("//") ? raw.slice(0, 200) : "";
-  const info = API_MODE && from && (await hasSession()) ? await apiTry<ScreenInfo>(`/me/screen?path=${encodeURIComponent(from)}`) : null;
+  const info = from && (await hasSession()) ? await apiTry<ScreenInfo>(`/me/screen?path=${encodeURIComponent(from)}`) : null;
   const sc = info?.screen ?? null;
   const home = info?.home ?? "/";
 

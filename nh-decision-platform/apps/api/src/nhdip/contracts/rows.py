@@ -52,10 +52,9 @@ def _ym(v: Any) -> str:
 
 
 def _asof(ctx: EvalContext) -> str:
-    from nhdip.models import Setting
+    from nhdip.data.datasets import display_as_of  # 설정 ui.as_of 가 비면 올라온 자료의 최신 기준일
 
-    s = ctx.session.get(Setting, "ui.as_of")
-    return str(s.value) if s is not None and s.value else ""
+    return display_as_of(ctx.session) or ""
 
 
 def _rows(ctx: EvalContext, code: str) -> list[dict[str, Any]]:

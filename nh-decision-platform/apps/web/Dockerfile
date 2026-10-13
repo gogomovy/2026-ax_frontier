@@ -8,13 +8,10 @@ RUN npm install --no-audit --no-fund
 
 FROM node:20-alpine AS builder
 WORKDIR /app
-ARG NEXT_PUBLIC_DATA_SOURCE=mock
-ARG NEXT_PUBLIC_AS_OF=2026-08-31
 # /backend/* 프록시 대상 — next.config rewrites 가 빌드 시점에 고정하므로 빌드 인자로 받는다
+# (화면 데이터는 항상 백엔드 API 에서 온다 — 목데이터 모드 없음 · Phase I)
 ARG API_INTERNAL_URL=http://api:8000
-ENV NEXT_PUBLIC_DATA_SOURCE=$NEXT_PUBLIC_DATA_SOURCE \
-    NEXT_PUBLIC_AS_OF=$NEXT_PUBLIC_AS_OF \
-    API_INTERNAL_URL=$API_INTERNAL_URL \
+ENV API_INTERNAL_URL=$API_INTERNAL_URL \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

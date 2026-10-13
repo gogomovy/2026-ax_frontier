@@ -2,15 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "@/lib/api-client";
-import { API_MODE } from "@/lib/config";
+import { baseYear, todayKst } from "@/lib/period";
 import type { Goal, GoalStatus, Proposal } from "@/lib/types";
 import { useSession } from "./SessionProvider";
 import { useUi } from "./UiProvider";
 
 /**
- * 경영목표 처리 상태.
- *  - API 모드: `/state/goals/*` (서버 저장 · 감사 기록 · goal.confirmed 이벤트 → 관련 워크플로우 재실행)
- *  - 목데이터 모드: 클라이언트 메모리
+ * 경영목표 처리 상태 — `/state/goals/*` (서버 저장 · 감사 기록 · goal.confirmed 이벤트 → 관련 워크플로우 재실행).
+ * 로그인 전(서버 메뉴 없음)에만 클라이언트 메모리로 처리한다.
  */
 export type ProposalAction = "keep" | "adopt" | "manual_edit" | "added";
 
@@ -63,13 +62,16 @@ interface GoalStateValue extends GoalStateShape {
 const GoalStateContext = createContext<GoalStateValue | null>(null);
 const EMPTY: GoalStateShape = { overrides: {}, proposalActions: {}, addedGoals: [], reviewItems: [] };
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayKst;
 
 export function GoalStateProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GoalStateShape>(EMPTY);
   const session = useSession();
   const { showToast } = useUi();
-  const remote = API_MODE && Boolean(session.menu);
+  const remote = Boolean(session.menu);
+  // 낙관적 목표의 기간 · 담당조직 — 기준일 연도 · 로그인 사용자 소속에서
+  const defaultPeriod = `${baseYear(session.menu?.asOf)} 연간`;
+  const userOrg = session.menu?.user.org.name ?? "";
 
   useEffect(() => {
     if (!remote) return;
@@ -145,15 +147,15 @@ export function GoalStateProvider({ children }: { children: ReactNode }) {
                 creationMode: "ai_proposed",
                 status: "active",
                 sourceProposalId: proposal.id,
-                periodLabel: "2026 연간",
-                ownerOrg: "종합기획부",
+                periodLabel: defaultPeriod,
+                ownerOrg: userOrg,
                 addedAt: today(),
               },
             ],
         proposalActions: { ...prev.proposalActions, [proposal.id]: "added" },
       }));
     },
-    [remote, call],
+    [remote, call, defaultPeriod, userOrg],
   );
 
   const addManualGoal = useCallback(
@@ -171,13 +173,13 @@ export function GoalStateProvider({ children }: { children: ReactNode }) {
             status: "active",
             periodLabel: input.periodLabel,
             metricLabel: input.metricLabel,
-            ownerOrg: input.ownerOrg ?? "종합기획부",
+            ownerOrg: input.ownerOrg ?? userOrg,
             addedAt: today(),
           },
         ],
       }));
     },
-    [remote, call],
+    [remote, call, userOrg],
   );
 
   const registerReviewItem = useCallback(

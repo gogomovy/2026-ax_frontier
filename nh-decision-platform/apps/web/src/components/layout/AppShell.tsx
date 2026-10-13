@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import clsx from "clsx";
 import { AssistPanel } from "@/components/assist/AssistPanel";
@@ -10,17 +10,10 @@ import { usePlanState } from "@/components/providers/PlanStateProvider";
 import { useSession, type MenuPayload } from "@/components/providers/SessionProvider";
 import { apiPost } from "@/lib/api-client";
 import { navHrefWithOffice, officeFromSearch } from "@/lib/branchOffice";
-import { API_MODE } from "@/lib/config";
 import { IconChevron, IconClose, IconMenu } from "@/components/ui/primitives";
 import { formatDate, formatKstDateTime } from "@/lib/format";
-import { PERSONAS, activeHref, personaOfPath, type NavItem } from "@/lib/nav";
-import type { Persona } from "@/lib/types";
-import { PROPOSALS } from "@/mock/goals";
-import { AS_OF, GENERATED_AT } from "@/mock/helpers";
-import { BRANCH_TABS } from "@/mock/branch";
-import { ANALYSIS_TABS } from "@/mock/risk";
+import { activeHref, type NavItem } from "@/lib/nav";
 
-const PERSONA_KEY = "nhdip.persona";
 /** 셸 없이 그리는 화면 (로그인 · 가입 · 권한 없음) */
 const BARE_PATHS = ["/login", "/signup", "/forbidden"];
 
@@ -75,35 +68,25 @@ export function groupsFromMenu(menu: MenuPayload): NavGroupSpec[] {
 
 /**
  * 앱 셸 — 좌측 사이드바(데스크톱) / 상단 바 + 드로어(모바일).
+ * 메뉴 · 기준일 · 데이터 성격은 모두 서버 메뉴(`GET /me/menu`)에서 온다 — 로그인 전(메뉴 없음)엔 셸 없이 그린다.
  * 기준일·분석 시각·데이터 성격은 셸에서 한 번만 고지하고 화면마다 반복하지 않는다.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname() ?? "/";
-  const [persona, setPersona] = useState<Persona>("P1");
   const [mobileOpen, setMobileOpen] = useState(false);
   const { menu } = useSession();
-  const bare = BARE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) || (API_MODE && !menu);
+  const bare = BARE_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  /* 전용 화면이면 경로로, 공용 화면(데이터베이스 등)이면 직전 페르소나를 유지 */
+  /* 화면을 옮기면 모바일 메뉴를 닫는다 */
   useEffect(() => {
-    const fromPath = personaOfPath(pathname);
-    if (fromPath) {
-      // 목데이터 모드 전용 페르소나 — localStorage 는 마운트 후에만 읽을 수 있어 effect 에서 동기화한다
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPersona(fromPath);
-      window.localStorage.setItem(PERSONA_KEY, fromPath);
-    } else {
-      const saved = window.localStorage.getItem(PERSONA_KEY) as Persona | null;
-      if (saved && PERSONAS[saved]) setPersona(saved);
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileOpen(false);
   }, [pathname]);
 
-  const config = PERSONAS[persona];
-  const orgLabel = API_MODE ? (menu?.user.org.name ?? "") : config.org;
+  const orgLabel = menu?.user.org.name ?? "";
   const closeMenu = useCallback(() => setMobileOpen(false), []);
 
-  if (bare) {
+  if (bare || !menu) {
     return (
       <main id="main" className="min-h-screen bg-canvas">
         {children}
@@ -115,7 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen bg-canvas">
       {/* 데스크톱 사이드바 */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] border-r border-hairline-soft bg-canvas lg:block no-print">
-        <SidebarBody persona={persona} pathname={pathname} />
+        <SidebarBody menu={menu} pathname={pathname} />
       </aside>
 
       {/* 모바일 상단 바 */}
@@ -143,7 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             >
               <IconClose />
             </button>
-            <SidebarBody persona={persona} pathname={pathname} />
+            <SidebarBody menu={menu} pathname={pathname} />
           </aside>
           <button
             type="button"
@@ -157,11 +140,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <div className="lg:pl-[248px]">
         {/* 아래 여백 — 떠 있는 [질문하기] 단추가 마지막 내용을 가리지 않게 (Phase E · LAY-01) */}
-        <main id="main" className={API_MODE && menu ? "pb-32" : "pb-section"}>
+        <main id="main" className="pb-32">
           {children}
         </main>
       </div>
-      {API_MODE && menu ? <AssistPanel /> : null}
+      <AssistPanel />
     </div>
   );
 }
@@ -220,19 +203,12 @@ function Brand({ compact }: { compact?: boolean }) {
   );
 }
 
-function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string }) {
-  const config = PERSONAS[persona];
+function SidebarBody({ menu, pathname }: { menu: MenuPayload; pathname: string }) {
   const counts = useNavCounts();
-  const { menu, generatedAt } = useSession();
-  const groups: NavGroupSpec[] =
-    API_MODE && menu
-      ? groupsFromMenu(menu)
-      : [
-          { label: config.flow.length > 1 ? "업무 흐름" : "업무", items: config.flow, withCounts: true },
-          ...(config.reference.length > 0 ? [{ label: "참고", items: config.reference }] : []),
-        ];
-  const asOf = API_MODE ? (menu?.asOf ?? AS_OF) : AS_OF;
-  const genAt = API_MODE ? generatedAt : GENERATED_AT;
+  const { generatedAt } = useSession();
+  const groups: NavGroupSpec[] = groupsFromMenu(menu);
+  // 기준일 · 계산 시각 — 업로드 자료가 없으면 '–'
+  const asOf = formatDate(menu.asOf ?? "") || "–";
   // 영업점 화면에서 고른 지점(?office=, B.47) — 사이드바 이동에도 유지. 서버 렌더 · 하이드레이션은 인자 없이(같은 글자) 그리고 그 뒤 주소에서 읽는다
   const search = useSyncExternalStore(subscribeLocation, readSearch, emptySearch);
   const office = pathname.startsWith("/branch") ? officeFromSearch(search) : null;
@@ -242,7 +218,7 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
   const current = activeHref(groups.flatMap((g) => g.items), pathname);
   const inside = (g: NavGroupSpec) => g.items.some((item) => item.href === current);
   const isOpen = (g: NavGroupSpec) => !g.collapsible || (toggled[g.label] ?? (Boolean(g.defaultOpen) || inside(g)));
-  const origin = API_MODE ? (menu?.dataOrigin ?? "simulated") : "simulated";
+  const origin = menu.dataOrigin ?? "simulated";
 
   return (
     <div className="flex h-full flex-col">
@@ -250,7 +226,9 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
         <Brand />
       </div>
 
-      <div className="px-md">{API_MODE && menu ? <UserCard menu={menu} /> : <PersonaSwitcher persona={persona} />}</div>
+      <div className="px-md">
+        <UserCard menu={menu} />
+      </div>
 
       <nav aria-label="주요 메뉴" className="mt-lg flex-1 overflow-y-auto px-md">
         {groups.map((g) => (
@@ -279,11 +257,11 @@ function SidebarBody({ persona, pathname }: { persona: Persona; pathname: string
       {/* 데이터 기준 — 전 화면 공통 고지 */}
       <div className="m-md rounded-xl bg-surface-soft px-base py-3">
         <p className="text-[11px] font-bold text-steel">데이터 기준</p>
-        <p className="mt-1 text-[13px] font-bold text-ink-deep tnum">{formatDate(asOf)}</p>
-        {genAt ? (
+        <p className="mt-1 text-[13px] font-bold text-ink-deep tnum">{asOf}</p>
+        {generatedAt ? (
           <p className="mt-0.5 text-[11px] text-stone tnum">
             {/* KST 시각은 Intl 없이 산술로 만든다 — 서버(Node) · 브라우저 ICU 의 자정 표기 차이로 #418 (B.41) */}
-            {API_MODE ? `최근 계산 ${formatKstDateTime(genAt)}` : `일배치 분석 완료 ${genAt.slice(11, 16)}`}
+            {`최근 계산 ${formatKstDateTime(generatedAt)}`}
           </p>
         ) : null}
         {/* 자료 성격 — 현재 버전 자료 기준 (Phase E · NAV-05 · Q124) */}
@@ -393,10 +371,11 @@ function useNavCounts(): Record<NonNullable<NavItem["countKey"]>, number> {
   const { proposalActions } = useGoalState();
   const { proposedPlans } = usePlanState();
   const { menu } = useSession();
-  const proposals = API_MODE ? (menu?.counts.proposalsTotal ?? 0) : PROPOSALS.length;
-  const analyses = API_MODE ? (menu?.counts.analysesTotal ?? 0) : ANALYSIS_TABS.length;
-  const branchAnalyses = API_MODE ? (menu?.counts.branchAnalysesTotal ?? 0) : BRANCH_TABS.current.length;
-  const c = API_MODE ? (menu?.counts ?? {}) : {};
+  // 건수는 서버 메뉴(counts)에서만 — 없으면 0
+  const c: Record<string, number> = menu?.counts ?? {};
+  const proposals = c.proposalsTotal ?? 0;
+  const analyses = c.analysesTotal ?? 0;
+  const branchAnalyses = c.branchAnalysesTotal ?? 0;
   return {
     goalProposals: Math.max(0, proposals - Object.keys(proposalActions).length),
     analyses,
@@ -446,87 +425,6 @@ function UserCard({ menu }: { menu: MenuPayload }) {
           로그아웃
         </button>
       </div>
-    </div>
-  );
-}
-
-/** 페르소나 전환 — SSO 연동 전 개발·시연용 (AUTH-01/05 대응 시 제거) */
-function PersonaSwitcher({ persona }: { persona: Persona }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const config = PERSONAS[persona];
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-xl border border-hairline-soft px-md py-2.5 text-left"
-      >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-circle bg-surface-soft text-[12px] font-bold text-ink-deep">
-          {config.user.slice(0, 1)}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-bold text-ink-deep">
-            {config.user} {config.role}
-          </span>
-          <span className="block truncate text-[11px] text-steel">{config.org}</span>
-        </span>
-        <IconChevron className={clsx("shrink-0 text-stone transition-transform", open ? "-rotate-90" : "rotate-90")} />
-      </button>
-
-      {open ? (
-        <div role="menu" className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 rounded-xl border border-hairline-soft bg-canvas p-1.5 shadow-pop">
-          <p className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-bold text-stone">사용자 전환 · 시연용</p>
-          {(Object.keys(PERSONAS) as Persona[]).map((code) => {
-            const p = PERSONAS[code];
-            const on = code === persona;
-            return (
-              <button
-                key={code}
-                type="button"
-                role="menuitemradio"
-                aria-checked={on}
-                onClick={() => {
-                  setOpen(false);
-                  window.localStorage.setItem(PERSONA_KEY, code);
-                  router.push(p.home);
-                }}
-                className={clsx(
-                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left",
-                  on ? "bg-surface-soft" : "",
-                )}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[12.5px] font-bold text-ink">{p.org}</span>
-                  <span className="block text-[11px] text-stone">
-                    {p.user} {p.role}
-                  </span>
-                </span>
-                {on ? <span className="h-1.5 w-1.5 rounded-circle bg-primary" aria-hidden="true" /> : null}
-              </button>
-            );
-          })}
-          <p className="px-2.5 pb-1 pt-1.5 text-[10.5px] leading-snug text-stone">SSO 연동 시 권한에 따라 자동 결정됩니다.</p>
-        </div>
-      ) : null}
     </div>
   );
 }

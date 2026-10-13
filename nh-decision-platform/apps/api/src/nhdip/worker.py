@@ -209,6 +209,20 @@ def housekeeping(worker_id: str, stats: dict, last: dict[str, float]) -> None:
                     log.exception("knowledge maintenance failed")
             else:
                 s.rollback()
+    if due("purge_tasks", 30):
+        # 업로드 자료 삭제의 외부 저장소 반영(Elasticsearch · Neo4j) — 저장소가 멈췄던 작업을 끝날 때까지 다시 시도 (Phase J · DEL-04)
+        from nhdip.data.deletion import run_purge_tasks
+
+        with SessionLocal() as s:
+            if try_lock(s, "housekeeping:purge_tasks"):
+                try:
+                    res = run_purge_tasks(s)
+                    stats["purge_done"] = stats.get("purge_done", 0) + res.get("done", 0)
+                except Exception:  # noqa: BLE001 — 삭제 반영 실패가 작업 처리를 막지 않는다
+                    s.rollback()
+                    log.exception("purge tasks failed")
+            else:
+                s.rollback()
     if due("purge", 86400):
         from nhdip.retention import purge
 

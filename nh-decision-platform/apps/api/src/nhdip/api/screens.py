@@ -16,6 +16,7 @@ from nhdip.graph.evidence import doc_visible
 from nhdip.graph.search import graph_documents, hybrid_search
 from nhdip.models import AppUser, Dataset, Setting, source
 from nhdip.views.store import find_insight, get_current, get_current_row
+from nhdip.views.template import strip_tpl
 
 from .deps import require_resource
 
@@ -26,7 +27,7 @@ def _artifact(session: Session, key: str) -> Any:
     v = get_current(session, key)
     if v is None:
         raise HTTPException(404, f"산출물 없음: {key}")
-    return v
+    return strip_tpl(v)  # 서식 원문(xxxTpl · bindKey)은 서버 안에서만 — 화면에는 채워진 글만 (Phase I · Q138)
 
 
 def _simple(path: str, key: str, resource: str):
@@ -95,11 +96,12 @@ def meta(session: Session = Depends(get_session), _: AppUser = Depends(require_r
     """화면 상단 기준일 · 최근 계산 시각 (AppShell)."""
     from nhdip.models import ViewArtifact, WorkflowRun
 
-    as_of = session.get(Setting, "ui.as_of")
+    from nhdip.data.datasets import display_as_of
+
     last = session.execute(select(func.max(ViewArtifact.created_at)).where(ViewArtifact.is_current)).scalar()
     last_run = session.execute(select(WorkflowRun).where(WorkflowRun.status.in_(["succeeded", "degraded"])).order_by(WorkflowRun.finished_at.desc()).limit(1)).scalar()
     return {
-        "asOf": as_of.value if as_of else None,
+        "asOf": display_as_of(session),
         "generatedAt": last.isoformat() if last else None,
         "lastRun": {"workflow": last_run.workflow_code, "status": last_run.status, "finishedAt": last_run.finished_at.isoformat() if last_run.finished_at else None} if last_run else None,
     }
@@ -146,7 +148,7 @@ def report(tab_key: str, session: Session = Depends(get_session), user: AppUser 
     row = get_current_row(session, f"report.{tab_key}")
     if not row:
         raise HTTPException(404, "보고서 없음")
-    return {**row.payload, "workflow": _producer(session, f"report.{tab_key}")}
+    return {**strip_tpl(row.payload), "workflow": _producer(session, f"report.{tab_key}")}
 
 
 # ── 영업점 (B.29) — 산출물의 영업점(office.code)과 사용자 소속을 대조한다 (Q44) ──
@@ -208,13 +210,13 @@ def branch_dashboard(office: str | None = OFFICE_Q, session: Session = Depends(g
     v = branch_artifact(session, user, "branch_dashboard", office)
     if v is None:
         return {"available": False, "viewer": _viewer_office(session, user)}
-    return {**v, "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
+    return {**strip_tpl(v), "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
 
 
 @router.get("/branch/tabs")
 def branch_tabs(office: str | None = OFFICE_Q, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_tabs"))):
     v = branch_artifact(session, user, "branch_tabs", office)
-    return v if v is not None else {"current": [], "previous": []}
+    return strip_tpl(v) if v is not None else {"current": [], "previous": []}
 
 
 @router.get("/branch/reports/{tab_key}")
@@ -222,7 +224,7 @@ def branch_report(tab_key: str, office: str | None = OFFICE_Q, session: Session 
     v = branch_artifact(session, user, f"report.branch-{tab_key}", office)
     if v is None:
         raise HTTPException(404, "보고서 없음")
-    return {**v, "workflow": _producer(session, f"report.branch-{tab_key}")}
+    return {**strip_tpl(v), "workflow": _producer(session, f"report.branch-{tab_key}")}
 
 
 @router.get("/changes")
@@ -262,7 +264,7 @@ def insight(insight_id: str, session: Session = Depends(get_session), user: AppU
     ins = find_insight({k: v for k, v in arts.items() if v is not None}, insight_id)
     if not ins:
         raise HTTPException(404, "인사이트 없음")
-    return ins
+    return strip_tpl(ins)
 
 
 # ── 원장 기반 목록 ────────────────────────────────────────────
@@ -354,6 +356,7 @@ def search(q: str, concepts: str | None = None, k: int = 5, domain: str | None =
     cs = [c.strip() for c in (concepts or "").split(",") if c.strip()]
     flt = graph_documents(cs) if cs else None
     k = min(max(k, 1), 20)
-    as_of = session.get(Setting, "ui.as_of")
-    ranked = rank_evidence(session, hybrid_search(session, q, doc_filter=flt, k=k * 3), k=k, user=user, as_of=as_of.value if as_of else None, domain=domain, doc_filter=flt, query_terms=len(query_terms(q)))
+    from nhdip.data.datasets import display_as_of
+
+    ranked = rank_evidence(session, hybrid_search(session, q, doc_filter=flt, k=k * 3), k=k, user=user, as_of=display_as_of(session), domain=domain, doc_filter=flt, query_terms=len(query_terms(q)))
     return {"graphFilter": flt, "hits": ranked["hits"], "rejected": ranked["rejected"], "categories": ranked["categories"], "missingCategories": ranked["missingCategories"]}

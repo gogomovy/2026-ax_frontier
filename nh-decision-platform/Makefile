@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: upload-test help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set
+.PHONY: upload-test help env build up down logs ps restart seed sample sample-verify reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
@@ -10,7 +10,9 @@ help:
 	@echo "make logs        - 전체 로그 (s=api 처럼 서비스 지정 가능)"
 	@echo "make down        - 중지 (데이터 유지)"
 	@echo "make reset       - 중지 + 볼륨 삭제 (초기 상태로)"
-	@echo "make seed        - 기본 설정·목데이터 시드 재실행 (멱등)"
+	@echo "make seed        - 기본 설정·데이터 정의 시드 재실행 (멱등 · 업무 수치는 넣지 않음)"
+	@echo "make sample      - 시연 자료 패키지(엑셀 · CSV · PDF)를 실제 업로드 API 로 올리기 (같은 파일은 건너뜀)"
+	@echo "make sample-verify - 엑셀에서 독립 계산한 기대값 ↔ 화면 API 수치 대조"
 	@echo "make test        - 백엔드 테스트 (api 컨테이너)"
 	@echo "make e2e         - 브라우저 E2E (기동 중인 스택 대상, Node 20+ 필요)"
 	@echo "make a11y        - 자동 접근성 점검(axe-core · WCAG 2.1 A·AA 자동 규칙, 기동 중인 스택 대상)"
@@ -25,8 +27,8 @@ help:
 	@echo "make restore FROM=backups/<시각> CONFIRM=yes - 백업에서 복구 (현재 데이터 덮어씀)"
 	@echo "make wait-idle   - 이벤트 · 작업 처리가 끝날 때까지 대기"
 	@echo ""
-	@echo "── 프론트만 (도커 없이, 목데이터) ─────────────────────────"
-	@echo "make web-dev     - apps/web 개발 서버"
+	@echo "── 프론트만 (도커 없이 · 백엔드 API 필요) ─────────────────"
+	@echo "make web-dev     - apps/web 개발 서버 (API_INTERNAL_URL 의 백엔드에 연결 · 기본 http://localhost:8000)"
 
 env:
 	@bash infra/scripts/ensure-env.sh
@@ -61,6 +63,12 @@ reset:
 seed:
 	$(COMPOSE) exec -e NHDIP_USE_APP_ROLE=0 api python -m nhdip.cli seed
 
+sample:
+	$(COMPOSE) exec -T api python -m nhdip.sample upload --base-url http://localhost:8000
+
+sample-verify:
+	$(COMPOSE) exec -T api python -m nhdip.sample verify --base-url http://localhost:8000
+
 test:
 	$(COMPOSE) exec -e NHDIP_USE_APP_ROLE=0 api python -m pytest -q tests
 e2e:
@@ -88,6 +96,7 @@ api-sh:
 admin-pass:
 	@grep -E '^BOOTSTRAP_ADMIN_(EMP_NO|PASSWORD)=' .env
 
+# 화면 데이터는 항상 백엔드 API 에서 온다(목데이터 모드 없음) — API_INTERNAL_URL(기본 http://localhost:8000)의 api 가 떠 있어야 한다
 web-dev:
 	cd apps/web && npm install && npm run dev
 backup:

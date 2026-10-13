@@ -717,6 +717,45 @@ try {
     }
   }
 
+  // 9-4) 업로드 자료 삭제 (Phase J · DEL-01~08) — 데이터 관리자: 문서 [삭제] → 미리보기 · 사유 입력 → 원장 삭제 + 색인 · 그래프 삭제 작업
+  {
+    const delCode = `e2e-del-${EMP}`;
+    const up = await a.evaluate(async (code) => {
+      const fd = new FormData();
+      fd.append("origin", "ext");
+      fd.append("doc_class", "reference");
+      fd.append("title", "E2E 삭제 시험 문서");
+      fd.append("doc_code", code);
+      fd.append("text", "E2E 삭제 시험 본문 — 포용금융 공급 확대와 서민금융 신규 유치. ".repeat(12));
+      const r = await fetch("/backend/admin/documents/upload", { method: "POST", body: fd });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    }, delCode);
+    ok("삭제 시험 문서 등록", up.status === 201, String(up.status));
+    ok("부트스트랩 관리자 = 데이터 관리자", (await api("/me")).body?.user?.dataAdmin === true);
+    await a.goto(`${BASE}/admin/datasets`, { waitUntil: "networkidle0" });
+    await a.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.includes("문서"))?.click());
+    const delSel = `[data-delete-document="ext-${up.body?.id}"]`;
+    await a.waitForSelector(delSel, { timeout: 15000 });
+    await a.click(delSel);
+    await a.waitForSelector('[data-delete-preview="document"]', { timeout: 10000 });
+    const pvText = await a.evaluate(() => document.querySelector('[data-delete-preview="document"]')?.innerText ?? "");
+    ok("문서 삭제: 미리보기(현재 문서 · 색인 · 그래프)", pvText.includes("현재 문서") && pvText.includes("Elasticsearch") && pvText.includes("Neo4j"), pvText.slice(0, 120).replace(/\n/g, " | "));
+    await a.click("[data-confirm-ok]"); // 사유 없이 확인 → 막힘
+    const reasonErr = await a.waitForFunction(() => document.querySelector('[data-confirm-dialog] [role="alert"]')?.textContent ?? "", { timeout: 5000 }).then((h) => h.jsonValue()).catch(() => "");
+    ok("문서 삭제: 사유 필수", String(reasonErr).includes("사유"), String(reasonErr));
+    await a.type("[data-confirm-dialog] input", "E2E 삭제 시험");
+    await a.click("[data-confirm-ok]");
+    await a.waitForFunction(() => document.body.innerText.includes("문서를 삭제했습니다"), { timeout: 15000 });
+    const gone = ((await api("/admin/documents?include_deleted=true")).body ?? []).find((d) => d.origin === "ext" && d.id === up.body?.id);
+    ok("문서 삭제: 삭제 표시 · 청크 0 · 사유", gone?.status === "deleted" && gone?.chunks === 0 && gone?.deleteReason === "E2E 삭제 시험", `${gone?.status} · ${gone?.chunks} · ${gone?.deleteReason}`);
+    ok("문서 삭제: 기본 목록에서 빠짐", !((await api("/admin/documents")).body ?? []).some((d) => d.origin === "ext" && d.id === up.body?.id));
+    const pt = (await api("/admin/purge-tasks?limit=20")).body?.tasks ?? [];
+    ok("문서 삭제: 색인 · 그래프 삭제 작업", pt.some((t) => t.subjectRef === `ext:${delCode}` && t.store === "neo4j") && pt.some((t) => t.subjectRef === `ext:${delCode}` && t.store === "es"), pt.filter((t) => t.subjectRef === `ext:${delCode}`).map((t) => `${t.store}:${t.status}`).join(", "));
+    const purgeCard = await a.waitForFunction(() => document.body.innerText.includes("삭제 반영 상태"), { timeout: 20000 }).then(() => true).catch(() => false);
+    ok("삭제 반영 상태 카드", purgeCard);
+    await shot(a, "09e-admin-delete");
+  }
+
   // 10) 로그아웃 · 정리
   await u.goto(`${BASE}/hq/overview`, { waitUntil: "networkidle0" });
   await u.evaluate(() => [...document.querySelectorAll("aside button")].find((x) => x.innerText.includes("로그아웃"))?.click());

@@ -3,13 +3,16 @@
 import { useState } from "react";
 import { Chart } from "@/components/charts/Chart";
 import { ComparisonTable } from "@/components/data/ComparisonTable";
-import { MetricStrip } from "@/components/data/MetricStrip";
+import { MetricStrip, type MetricStripItem } from "@/components/data/MetricStrip";
 import { AgentNote } from "@/components/domain/AgentNote";
 import { SegmentDetail } from "@/components/domain/SegmentDetail";
 import { OnDemandAnalysis } from "@/components/agent/AgentProgress";
 import { PageHeader } from "@/components/layout/PageHeader";
 import Link from "next/link";
 import { IconWarn, NextStep, PillTabs, SectionHead, SeverityBadge, StatusDot, TextLink } from "@/components/ui/primitives";
+import { formatFigure } from "@/lib/format";
+import { lastStep, pointCount, prevStepPhrase, revenueRowsOf, trendPhrase } from "@/lib/loanView";
+import { NO_VALUE, periodOf } from "@/lib/period";
 import type { AnalysisTab, ComparisonView, LoanOverview } from "@/lib/types";
 
 type TabKey = "revenue" | "corporate" | "household" | "comparison";
@@ -43,6 +46,38 @@ export function AnalysisWorkspace({
 }) {
   const [tab, setTab] = useState<TabKey>("revenue");
   const { revenue, corporate, household } = overview;
+  // 기간 · 추세 문구는 산출물 기준일과 계열 값에서 계산한다 (Phase I · 하드코딩 제거)
+  const p = periodOf(overview.asOf);
+  const cp = periodOf(comparison.asOf);
+  const rows = revenueRowsOf(revenue.rows);
+  const shareStep = lastStep(revenue.nimShareTrend);
+  const revenueItems: MetricStripItem[] = [];
+  if (rows.total) revenueItems.push({ label: `전체 수익 (${p.month} 누계)`, figure: rows.total.current, delta: rows.total.diffRate });
+  if (rows.nim) revenueItems.push({ label: "여신 이자마진 수익", figure: rows.nim.current, delta: rows.nim.diffRate });
+  revenueItems.push({
+    label: "전체 수익 중 비중",
+    figure: revenue.nimShare,
+    caption: prevStepPhrase(revenue.nimShareTrend, revenue.nimShare) ?? undefined,
+    tone: shareStep === "축소" ? "attention" : "default",
+  });
+  if (rows.corporate) {
+    revenueItems.push({
+      label: "기업 이자수익",
+      figure: rows.corporate.current,
+      caption: rows.household ? `가계 ${formatFigure(rows.household.current)}` : undefined,
+    });
+  }
+  const shareTrend = trendPhrase(revenue.nimShareTrend);
+  // 기업 · 가계 구성비 흐름 — 계열마다 방향을 계산해 잇는다
+  const shareCaption = comparison.shareSeries
+    .map((s) => {
+      const t = trendPhrase(s.points);
+      return t ? `${s.name} ${t}` : null;
+    })
+    .filter(Boolean)
+    .join(" · ");
+  const shareYears = Math.max(0, ...comparison.shareSeries.map((s) => pointCount(s.points)));
+  const balanceFigure = comparison.balanceRows[0]?.current;
 
   return (
     <>
@@ -99,23 +134,7 @@ export function AnalysisWorkspace({
       <div className="shell flex flex-col gap-xxl">
         {tab === "revenue" ? (
           <>
-            <MetricStrip
-              items={[
-                { label: "전체 수익 (8월 누계)", figure: revenue.rows[0].current, delta: revenue.rows[0].diffRate },
-                { label: "여신 이자마진 수익", figure: revenue.rows[1].current, delta: revenue.rows[1].diffRate },
-                {
-                  label: "전체 수익 중 비중",
-                  figure: revenue.nimShare,
-                  caption: "전년 45.90% → 축소",
-                  tone: "attention",
-                },
-                {
-                  label: "기업 이자수익",
-                  figure: revenue.rows[2].current,
-                  caption: `가계 ${revenue.rows[3].current.value?.toLocaleString("ko-KR")}억원`,
-                },
-              ]}
-            />
+            <MetricStrip items={revenueItems} columns={revenueItems.length === 4 ? 4 : 3} />
 
             <AgentNote
               text={revenue.narrative}
@@ -126,9 +145,9 @@ export function AnalysisWorkspace({
 
             <section className="flex flex-col gap-xxl">
               <div>
-                <SectionHead title="전년 동기 대비" hint="3개년 8월 누계" />
+                <SectionHead title="전년 동기 대비" hint={`3개년 ${p.month} 누계`} />
                 <div className="rounded-2xl border border-hairline-soft p-lg">
-                  <ComparisonTable rows={revenue.rows} unitLabel="억원" />
+                  <ComparisonTable rows={revenue.rows} asOf={overview.asOf} />
                 </div>
               </div>
               <div>
@@ -137,11 +156,11 @@ export function AnalysisWorkspace({
                   <Chart
                     kind="line"
                     title=""
-                    unit="PCT"
-                    decimals={2}
+                    unit={revenue.nimShare.unit}
+                    decimals={revenue.nimShare.decimals ?? 2}
                     series={[{ name: "비중", points: revenue.nimShareTrend }]}
                     zeroBased={false}
-                    caption="3개년 연속 축소 흐름"
+                    caption={shareTrend ? `${shareTrend} 흐름` : undefined}
                   />
                 </div>
               </div>
@@ -149,8 +168,8 @@ export function AnalysisWorkspace({
           </>
         ) : null}
 
-        {tab === "corporate" ? <SegmentDetail segment={corporate} /> : null}
-        {tab === "household" ? <SegmentDetail segment={household} /> : null}
+        {tab === "corporate" ? <SegmentDetail segment={corporate} asOf={overview.asOf} /> : null}
+        {tab === "household" ? <SegmentDetail segment={household} asOf={overview.asOf} /> : null}
 
         {tab === "comparison" ? (
           <>
@@ -173,33 +192,33 @@ export function AnalysisWorkspace({
             ) : null}
 
             <section>
-              <SectionHead title="잔액 규모" hint="2026년 월별" />
+              <SectionHead title="잔액 규모" hint={`${cp.year === NO_VALUE ? NO_VALUE : `${cp.year}년`} 월별`} />
               <div className="rounded-2xl border border-hairline-soft p-lg">
-                <Chart kind="line" title="" unit="KRW_TN" decimals={2} series={comparison.balanceSeries} zeroBased={false} />
+                <Chart
+                  kind="line"
+                  title=""
+                  unit={balanceFigure?.unit ?? "NONE"}
+                  decimals={balanceFigure?.decimals ?? 2}
+                  series={comparison.balanceSeries}
+                  zeroBased={false}
+                />
                 <div className="mt-lg">
-                  <ComparisonTable rows={comparison.balanceRows} unitLabel="조원" />
+                  <ComparisonTable rows={comparison.balanceRows} asOf={comparison.asOf} />
                 </div>
               </div>
             </section>
 
             <section className="grid grid-cols-1 gap-xl xl:grid-cols-2">
               <div>
-                <SectionHead title="구성비" hint="기업+가계 합계 기준 3개년" />
+                <SectionHead title="구성비" hint={`기업+가계 합계 기준${shareYears ? ` ${shareYears}개년` : ""}`} />
                 <div className="rounded-2xl border border-hairline-soft p-lg">
-                  <Chart
-                    kind="bar"
-                    title=""
-                    unit="PCT"
-                    decimals={2}
-                    series={comparison.shareSeries}
-                    caption="기업여신 구성비는 3개년 연속 축소, 가계여신 구성비는 확대되는 흐름입니다."
-                  />
+                  <Chart kind="bar" title="" unit="PCT" decimals={2} series={comparison.shareSeries} caption={shareCaption || undefined} />
                 </div>
               </div>
               <div>
                 <SectionHead title="이자수익 규모" hint="원화대출금이자수익 하위 항목" />
                 <div className="rounded-2xl border border-hairline-soft p-lg">
-                  <ComparisonTable rows={comparison.interestRows} unitLabel="억원" />
+                  <ComparisonTable rows={comparison.interestRows} asOf={comparison.asOf} />
                 </div>
               </div>
             </section>

@@ -29,7 +29,7 @@ def _make(schema: str, prefix: str):
             "version": Column(Integer, nullable=False),
             "as_of": Column(Date, nullable=True),
             "data_origin": Column(String(10), default="simulated", nullable=False),  # actual | simulated
-            "status": Column(String(12), default="staged", nullable=False),  # staged|committed|rolled_back|rejected
+            "status": Column(String(12), default="staged", nullable=False),  # staged|committed|rolled_back|rejected|deleted
             "is_current": Column(Boolean, default=False, nullable=False),
             "file_name": Column(String(300)),
             "file_sha256": Column(String(64)),
@@ -40,6 +40,10 @@ def _make(schema: str, prefix: str):
             "uploaded_by": Column(String(40)),
             "created_at": _ts(default=utcnow, nullable=False),
             "committed_at": _ts(nullable=True),
+            # 삭제 표시 (Phase J · Q145) — 행 · 원본 파일은 지우고 메타만 남긴다(status=deleted, 버전 번호 재사용 방지)
+            "deleted_at": _ts(nullable=True),
+            "deleted_by": Column(String(40)),
+            "delete_reason": Column(Text),
         },
     )
     row = type(
@@ -78,10 +82,14 @@ def _make(schema: str, prefix: str):
             "mime": Column(String(100)),
             "text": Column(Text, default="", nullable=False),
             "meta": Column(JSONB, default=dict, nullable=False),
-            "status": Column(String(12), default="ingested", nullable=False),  # ingested|extracted|partial|failed
+            "status": Column(String(12), default="ingested", nullable=False),  # ingested|extracted|partial|failed|deleted
             "extraction": Column(JSONB, default=dict, nullable=False),
             "uploaded_by": Column(String(40)),
             "created_at": _ts(default=utcnow, nullable=False),
+            # 삭제 표시 (Phase J · Q145) — 본문 · 청크 · 추출 · 원본 파일은 지우고 메타만 남긴다(status=deleted)
+            "deleted_at": _ts(nullable=True),
+            "deleted_by": Column(String(40)),
+            "delete_reason": Column(Text),
         },
     )
     chunk = type(

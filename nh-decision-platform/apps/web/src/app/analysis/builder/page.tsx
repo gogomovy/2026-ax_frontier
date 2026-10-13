@@ -1,8 +1,6 @@
 import { AnalysisBuilder, type Catalog, type MyAnalysis } from "@/components/analysis/AnalysisBuilder";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Notice } from "@/components/ui/Layout";
 import { apiGet } from "@/lib/api-server";
-import { API_MODE } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -16,18 +14,6 @@ export default async function AnalysisBuilderPage(props: { searchParams: Promise
   const sp = await props.searchParams;
   const space = typeof sp.space === "string" && /^[a-z][a-z0-9_]{0,30}$/.test(sp.space) ? sp.space : undefined;
   const edit = typeof sp.edit === "string" && /^an_[a-z0-9]{1,20}$/.test(sp.edit) ? sp.edit : undefined;
-  if (!API_MODE) {
-    return (
-      <>
-        <PageHeader title="분석 만들기" />
-        <div className="shell pb-section">
-          <Notice tone="info" title="서버 연결 모드에서 쓸 수 있습니다">
-            목업 화면에서는 분석 에이전트를 만들 수 없습니다.
-          </Notice>
-        </div>
-      </>
-    );
-  }
   const [catalog, mine, detail] = await Promise.all([
     apiGet<Catalog>(`/analysis-agents/catalog${space ? `?space=${space}` : ""}`),
     apiGet<MyAnalysis[]>("/analysis-agents/mine"),

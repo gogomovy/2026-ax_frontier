@@ -5,7 +5,6 @@ import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
 import { Badge, IconCalc, IconDoc, IconWarn } from "@/components/ui/primitives";
 import { EVIDENCE_CATEGORY_LABEL, DB_CLASS_LABEL, formatDate, formatFigure } from "@/lib/format";
-import { API_MODE } from "@/lib/config";
 import type { Evidence } from "@/lib/types";
 import { useFocusTrap } from "@/lib/a11y";
 
@@ -211,9 +210,9 @@ function EvidenceDetail({ item }: { item: Evidence }) {
 
       <div className="mt-3 flex items-center justify-between gap-2">
         <p className="text-[11px] text-stone">
-          {item.relevance !== undefined ? `의미 적합도 ${item.relevance.toFixed(2)}` : "데이터 근거"}
+          {typeof item.relevance === "number" ? `의미 적합도 ${item.relevance.toFixed(2)}` : item.doc ? "문서 근거" : "데이터 근거"}
         </p>
-        {item.doc && API_MODE && item.doc.dbClass !== "external_web" ? (
+        {item.doc && item.doc.dbClass !== "external_web" ? (
           <a
             href={docViewerHref(item)}
             target="_blank"
