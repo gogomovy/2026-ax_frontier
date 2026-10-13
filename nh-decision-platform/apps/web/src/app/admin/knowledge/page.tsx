@@ -41,9 +41,23 @@ interface Status {
   documentsByClass: Record<string, number>;
   embedding: { agent: string; model: string | null; on: boolean; reason?: string };
   graph: { ok: boolean; nodes?: number; relationships?: number; error?: string };
+  distance: { threshold: number; calibratedModel: string | null; fusion: string };
   unassigned: number;
   orphanChunks: number;
   collections: Collection[];
+}
+interface Calibration {
+  model: string;
+  dim: number;
+  chunks: number;
+  current: number;
+  at: string;
+  positives: { n: number; median: number | null; p90: number | null };
+  negatives: { n: number; min: number | null; p25: number | null; median: number | null };
+  suggested: number | null;
+  confident: boolean;
+  note: string;
+  applied?: boolean;
 }
 interface ChannelState {
   on: boolean;
@@ -83,7 +97,32 @@ interface Diagnosis {
   };
 }
 
-type TabKey = "status" | "collections" | "diagnose";
+interface TopQuestion {
+  question: string;
+  count: number;
+  lastAt: string | null;
+}
+interface Quality {
+  days: number;
+  ask: {
+    total: number;
+    users: number;
+    noSource: number;
+    noSourceRate: number | null;
+    fallback: number;
+    fallbackRate: number | null;
+    unverified: number;
+    unverifiedRate: number | null;
+    semanticRate: number | null;
+    rewrittenRate: number | null;
+  };
+  feedback: { total: number; helpful: number; unhelpful: number; helpfulRate: number | null; responseRate: number | null };
+  unanswered: TopQuestion[];
+  unhelpful: TopQuestion[];
+  daily: { day: string; total: number; noSource: number }[];
+}
+
+type TabKey = "status" | "collections" | "diagnose" | "quality";
 const KIND_LABEL: Record<string, string> = { document: "문서", analysis: "분석 결과", glossary: "용어", catalog: "데이터 목록" };
 const AUDIENCE_OPTIONS = [
   { value: "all", label: "전체 공개 (all)" },
@@ -137,18 +176,95 @@ export default function KnowledgeAdmin() {
           { key: "status", label: "색인 상태" },
           { key: "collections", label: "컬렉션", count: st?.collections.length },
           { key: "diagnose", label: "검색 진단" },
+          { key: "quality", label: "품질 지표" },
         ]}
         active={tab}
         onChange={setTab}
       />
-      {tab === "status" && st ? <StatusTab st={st} /> : null}
+      {tab === "status" && st ? <StatusTab st={st} reload={status.reload} /> : null}
       {tab === "collections" && st ? <CollectionsTab items={st.collections} reload={status.reload} /> : null}
       {tab === "diagnose" ? <DiagnoseTab /> : null}
+      {tab === "quality" ? <QualityTab /> : null}
     </AdminPage>
   );
 }
 
-function StatusTab({ st }: { st: Status }) {
+/** 의미 검색 기준(코사인 거리) 보정 — 모델마다 거리 눈금이 달라 임베딩 모델을 바꾸면 다시 잰다(설계 §21.15). 측정은 읽기 전용, 적용은 확신할 수 있을 때만 */
+function DistanceCard({ st, reload }: { st: Status; reload: () => unknown }) {
+  const { run, busy } = useAction();
+  const [rep, setRep] = useState<Calibration | null>(null);
+  const model = st.embedding.model;
+  const cal = st.distance.calibratedModel;
+  const stale = Boolean(cal && model && cal !== model);
+  const measure = () => run(() => apiPost<Calibration>("/admin/knowledge/calibrate", { apply: false })).then((r) => r && setRep(r));
+  const apply = () =>
+    run(
+      () => apiPost<Calibration>("/admin/knowledge/calibrate", { apply: true }),
+      (r) => `거리 기준을 ${r.suggested} 로 적용했습니다`,
+      reload,
+    ).then((r) => r && setRep(r));
+  return (
+    <div className="mb-lg" data-kb-distance>
+      <Card
+        title="의미 검색 기준 (코사인 거리)"
+        actions={
+          <Button size="sm" variant="quiet" disabled={busy || !st.embedding.on} onClick={measure}>
+            {busy ? "측정 중…" : "보정 측정"}
+          </Button>
+        }
+      >
+        <p className="text-[12.5px] text-steel">
+          현재 기준 <b className="text-ink-deep">{st.distance.threshold}</b> 이하로 가까운 글만 의미가 통하는 후보로 인정합니다 · 결합 방식 {st.distance.fusion === "rrf" ? "순위 합산(RRF)" : "점수 합산(convex)"} · 보정한 모델{" "}
+          {cal ?? "없음(기본값)"}
+          {stale ? <Badge tone="warning">모델이 바뀜 — 다시 측정하세요</Badge> : null}
+        </p>
+        <p className="mt-xs text-[11.5px] text-stone">
+          임베딩 모델마다 거리 눈금이 달라, 같은 질문도 모델에 따라 0.3 에서 0.5 까지 달라집니다. 엉뚱한 질문(날씨 · 점심 등)과 색인된 제목으로 지금 모델의 눈금을 재서 기준을 추천합니다. 자동으로 바꾸지 않습니다.
+        </p>
+        <div aria-live="polite">
+          {rep ? (
+            <div className="mt-md rounded-xl border border-hairline-soft p-md" data-kb-calibration>
+              <p className="text-[12.5px] text-ink-deep">
+                모델 <b>{rep.model}</b> ({rep.dim}차원) · 임베딩된 조각 {rep.chunks.toLocaleString("ko-KR")}개 기준
+              </p>
+              <dl className="mt-sm grid grid-cols-2 gap-x-lg gap-y-1 text-[12.5px] md:grid-cols-4">
+                <div>
+                  <dt className="text-stone">정상 질문 거리 중앙값</dt>
+                  <dd className="font-mono">{rep.positives.median ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt className="text-stone">정상 질문 90% 이내</dt>
+                  <dd className="font-mono">{rep.positives.p90 ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt className="text-stone">엉뚱한 질문 최소 거리</dt>
+                  <dd className="font-mono">{rep.negatives.min ?? "-"}</dd>
+                </div>
+                <div>
+                  <dt className="text-stone">추천 기준 (현재 {rep.current})</dt>
+                  <dd className="font-mono">{rep.suggested ?? "-"}</dd>
+                </div>
+              </dl>
+              <p className="mt-sm flex flex-wrap items-center gap-sm text-[12.5px]">
+                {rep.applied ? <Badge tone="success">적용됨</Badge> : rep.confident ? <Badge tone="info">적용 가능</Badge> : <Badge tone="warning">적용 불가</Badge>}
+                <span className="text-steel">{rep.note}</span>
+              </p>
+              {!rep.applied && rep.confident && rep.suggested !== rep.current ? (
+                <div className="mt-sm">
+                  <Button size="sm" variant="confirm" disabled={busy} onClick={apply}>
+                    추천 기준 {rep.suggested} 적용
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function StatusTab({ st, reload }: { st: Status; reload: () => unknown }) {
   const pct = st.totals.chunks ? Math.round((st.totals.embedded / st.totals.chunks) * 100) : 0;
   return (
     <>
@@ -180,6 +296,7 @@ function StatusTab({ st }: { st: Status }) {
           />
         </StatGrid>
       </div>
+      <DistanceCard st={st} reload={reload} />
       <Card title="컬렉션별 현황" actions={<span className="text-[11.5px] text-stone">그래프: {st.graph.ok ? `연결됨 · 노드 ${st.graph.nodes} · 관계 ${st.graph.relationships}` : "연결 안 됨 — 개념 확장은 PostgreSQL 간선으로 계속 동작"}</span>}>
         <Table head={["컬렉션", "종류", "담당 팀", "공개 범위", "조각", "임베딩", "출처", "마지막 색인", "상태"]}>
           {st.collections.map((c) => (
@@ -205,6 +322,92 @@ function StatusTab({ st }: { st: Status }) {
         </p>
       </Card>
     </>
+  );
+}
+
+const pctText = (r: number | null | undefined) => (r == null ? "-" : `${Math.round(r * 1000) / 10}`);
+
+/** 질문하기 품질 지표 (ASK-08 · 설계 §21.16) — 감사 기록에서 집계. 답을 못 한 비율이 높으면 색인에 자료가 없거나 팀 범위 밖인 질문이 많다는 뜻 */
+function QualityTab() {
+  const [days, setDays] = useState("7");
+  const q = useApiData<Quality>(`/admin/knowledge/quality?days=${days}`);
+  const d = q.data;
+  return (
+    <>
+      <Card
+        title="질문하기 품질"
+        actions={
+          <Select
+            ariaLabel="집계 기간"
+            value={days}
+            onChange={setDays}
+            options={[
+              { value: "7", label: "최근 7일" },
+              { value: "30", label: "최근 30일" },
+              { value: "90", label: "최근 90일" },
+            ]}
+          />
+        }
+      >
+        <Loading error={q.error} loading={!d && q.loading} />
+        {d ? (
+          <StatGrid columns={4} label="질문하기 품질 요약">
+            <StatCard dataKey="q-total" label="질문 수" value={d.ask.total.toLocaleString("ko-KR")} unit="건" hint={`질문한 사람 ${d.ask.users}명 · 후속 질문 재작성 ${pctText(d.ask.rewrittenRate)}%`} />
+            <StatCard
+              dataKey="q-nosource"
+              label="답을 못 한 비율"
+              value={pctText(d.ask.noSourceRate)}
+              unit="%"
+              tone={d.ask.noSourceRate == null ? "default" : d.ask.noSourceRate >= 0.3 ? "attention" : "success"}
+              hint={`출처가 하나도 없는 질문 ${d.ask.noSource}건${d.ask.noSourceRate != null && d.ask.noSourceRate >= 0.3 ? " — 자주 묻는데 자료가 없는지 아래 목록에서 확인" : ""}`}
+            />
+            <StatCard
+              dataKey="q-helpful"
+              label="도움이 됐다는 평가"
+              value={pctText(d.feedback.helpfulRate)}
+              unit="%"
+              tone={d.feedback.helpfulRate == null ? "default" : d.feedback.helpfulRate < 0.6 ? "attention" : "success"}
+              hint={`평가 ${d.feedback.total}건 (도움됨 ${d.feedback.helpful} · 아님 ${d.feedback.unhelpful}) · 평가율 ${pctText(d.feedback.responseRate)}%`}
+            />
+            <StatCard
+              dataKey="q-fallback"
+              label="정리만 한 답"
+              value={pctText(d.ask.fallbackRate)}
+              unit="%"
+              tone={d.ask.fallbackRate != null && d.ask.fallbackRate >= 0.5 ? "attention" : "default"}
+              hint={`LLM 을 쓰지 못해 수치 · 출처만 보여 준 답 ${d.ask.fallback}건 · 숫자 검증 미통과 ${d.ask.unverified}건 · 의미 검색 사용 ${pctText(d.ask.semanticRate)}%`}
+            />
+          </StatGrid>
+        ) : null}
+      </Card>
+      {d ? (
+        <div className="grid grid-cols-1 gap-lg lg:grid-cols-2">
+          <Card title="자주 답을 못 한 질문">
+            <TopList items={d.unanswered} empty="출처 없이 끝난 질문이 없습니다." />
+            <p className="mt-md text-[11.5px] text-stone">색인에 해당 자료가 없거나, 그 사용자의 팀 범위 밖입니다. 컬렉션의 담당·공유 팀과 포함 규칙을 확인하거나 자료를 올려 주세요. 질문의 개인정보 형식 값은 가려서 보입니다.</p>
+          </Card>
+          <Card title="도움이 안 됐다고 평가한 질문">
+            <TopList items={d.unhelpful} empty="낮게 평가된 질문이 없습니다." />
+            <p className="mt-md text-[11.5px] text-stone">검색 진단 탭에서 같은 질문을 돌려 어떤 컬렉션에서 무엇이 나오는지 확인하세요.</p>
+          </Card>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function TopList({ items, empty }: { items: TopQuestion[]; empty: string }) {
+  if (!items.length) return <p className="text-[12.5px] text-steel">{empty}</p>;
+  return (
+    <Table head={["질문", "횟수", "마지막"]}>
+      {items.map((t, i) => (
+        <tr key={`${t.question}-${i}`}>
+          <C className="min-w-[200px]">{t.question}</C>
+          <C right>{t.count}</C>
+          <C>{fmtTime(t.lastAt)}</C>
+        </tr>
+      ))}
+    </Table>
   );
 }
 
