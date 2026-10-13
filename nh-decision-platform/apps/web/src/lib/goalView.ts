@@ -1,5 +1,20 @@
 import { UNIT_LABEL } from "./format";
-import type { Goal } from "./types";
+import type { Goal, Proposal } from "./types";
+
+/** AI 추천값 표기 — 범위면 `7.5% ~ 8.0%`, 단일 값이면 `7.8%`, 방향만이면 문구 */
+export function proposalRange(p: Proposal): string {
+  const unit = UNIT_LABEL[p.recommendation.unit];
+  const dec = p.recommendation.decimals ?? 1;
+  const n = (v?: number) => (v === undefined || v === null ? "-" : v.toFixed(dec));
+  if (p.recommendation.mode === "range") return `${n(p.recommendation.low)}${unit} ~ ${n(p.recommendation.high)}${unit}`;
+  if (p.recommendation.mode === "point") return `${n(p.recommendation.value)}${unit}`;
+  return "방향성만 제시";
+}
+
+/** 목표 방향에 맞는 꼬리말 (이상 · 이하) */
+export function directionSuffix(goal?: Pick<Goal, "direction">): string {
+  return goal?.direction === "increase" ? "이상" : goal?.direction === "decrease" ? "이하" : "";
+}
 
 /** 클라이언트 상태(수정 반영)를 덮어쓴 경영목표 표시값 */
 export interface GoalOverrideLike {
@@ -10,11 +25,12 @@ export interface GoalOverrideLike {
   creationMode?: Goal["creationMode"];
 }
 
+/** 목표 판정 태그 (가이드 G04: 정상 = 무채색, 미달 · 근접 = 주황, 한도 초과 = 빨강) */
 export const GOAL_VERDICT = {
-  on_track: { label: "정상 진행", tone: "success" as const },
-  below: { label: "목표 하회", tone: "critical" as const },
+  on_track: { label: "정상", tone: "success" as const },
+  below: { label: "목표 미달", tone: "attention" as const },
   near_limit: { label: "한도 근접", tone: "attention" as const },
-  breach: { label: "목표 초과", tone: "critical" as const },
+  breach: { label: "한도 초과", tone: "critical" as const },
 };
 
 export function resolveGoal(goal: Goal, override?: GoalOverrideLike) {

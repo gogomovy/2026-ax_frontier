@@ -7,15 +7,19 @@ import type { Severity } from "@/lib/types";
 /* ── Badge ─────────────────────────────────────────────────── */
 type BadgeTone = "neutral" | "info" | "success" | "attention" | "warning" | "critical" | "primary" | "dark";
 
+/**
+ * 태그 · 알약 = 상태 (누를 수 없음). 12px Bold · 연한 배경 + 진한 글자 (가이드 G04)
+ *  neutral/100·600 확정·정상 · primary/100·700 AI 제안 · warning/50·700 미달·근접 · danger/50·700 한도 초과
+ */
 const BADGE_TONE: Record<BadgeTone, string> = {
-  neutral: "bg-surface-soft text-steel",
+  neutral: "bg-track text-steel",
   info: "bg-info-soft text-primary",
-  success: "bg-success-soft text-success",
+  success: "bg-track text-steel",
   attention: "bg-attention-soft text-attention",
   warning: "bg-warning-soft text-warning",
   critical: "bg-critical-soft text-critical",
-  primary: "bg-primary text-white",
-  dark: "bg-ink-deep text-white",
+  primary: "bg-info-soft text-primary",
+  dark: "bg-track text-ink-deep",
 };
 
 export function Badge({
@@ -32,7 +36,7 @@ export function Badge({
   return (
     <span
       className={clsx(
-        "inline-flex items-center gap-1 rounded-pill px-2.5 py-1 text-[11px] font-bold leading-none whitespace-nowrap",
+        "inline-flex items-center gap-1 rounded-pill px-2.5 py-[3px] text-[12px] font-bold leading-[1.4] whitespace-nowrap",
         BADGE_TONE[tone],
         className,
       )}
@@ -64,19 +68,22 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
 /* ── Button ────────────────────────────────────────────────── */
 type ButtonVariant = "primary" | "confirm" | "secondary" | "ghost" | "quiet" | "danger";
 
+/**
+ * 버튼 = 사각형(6px) = 누르는 것 (가이드 G04)
+ *  메인(primary·confirm): primary/500 · 화면당 1개 / 보조(secondary·ghost): 흰 배경 + 테두리 / quiet: 도구 모음(hover neutral/50)
+ */
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
-  // 마케팅 primary(검정 pill) → 일반 주요 액션
-  primary: "bg-ink-button text-white active:bg-charcoal",
-  // commerce CTA(코발트) → 확정·승인 액션
-  confirm: "bg-primary text-white active:bg-primary-deep",
-  secondary: "bg-transparent text-ink-deep border-2 border-ink-deep",
-  ghost: "bg-transparent text-ink-deep border-2 border-line-strong",
-  quiet: "bg-surface-soft text-charcoal",
+  primary: "border border-transparent bg-primary text-white hover:bg-primary-deep active:bg-primary-deep",
+  confirm: "border border-transparent bg-primary text-white hover:bg-primary-deep active:bg-primary-deep",
+  secondary: "border border-hairline bg-canvas text-ink-deep hover:bg-surface-soft active:bg-track",
+  ghost: "border border-hairline bg-canvas text-ink-deep hover:bg-surface-soft active:bg-track",
+  quiet: "border border-transparent bg-transparent text-charcoal hover:bg-surface-soft active:bg-track",
   // 되돌리기 어려운 작업 확인 (Phase E · INT-01)
-  danger: "bg-critical-strong text-white active:bg-critical",
+  danger: "border border-transparent bg-critical text-white hover:bg-critical-strong active:bg-critical-strong",
 };
 // 꺼진 단추 — 변형 색과 섞이지 않게 변형 대신 쓴다(같은 bg-* 두 개면 CSS 순서로 켜진 색이 이겨 켜진 것처럼 보였다 · Phase E F4)
-const BUTTON_DISABLED = "cursor-not-allowed bg-surface-soft text-stone border-transparent";
+const BUTTON_DISABLED = "cursor-not-allowed border border-transparent bg-track text-steel opacity-70";
+const BUTTON_SIZE = { md: "h-10 px-4 text-[14px]", sm: "h-8 px-3 text-[13px]" } as const;
 
 type ButtonProps = {
   children: ReactNode;
@@ -114,8 +121,8 @@ export function Button({
       disabled={disabled}
       onClick={onClick}
       className={clsx(
-        "inline-flex items-center justify-center gap-1.5 rounded-pill font-bold transition-colors",
-        size === "md" ? "px-6 py-2.5 text-[13px]" : "px-4 py-2 text-[12px]",
+        "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-bold transition-colors",
+        BUTTON_SIZE[size],
         disabled ? BUTTON_DISABLED : BUTTON_VARIANT[variant],
         className,
       )}
@@ -142,8 +149,8 @@ export function LinkButton({
     <Link
       href={href}
       className={clsx(
-        "inline-flex items-center justify-center gap-1.5 rounded-pill font-bold transition-colors",
-        size === "md" ? "px-6 py-2.5 text-[13px]" : "px-4 py-2 text-[12px]",
+        "inline-flex shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-bold transition-colors",
+        BUTTON_SIZE[size],
         BUTTON_VARIANT[variant],
         className,
       )}
@@ -169,20 +176,20 @@ export function SectionHead({
   id?: string;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-base gap-y-1" id={id}>
-      <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <h2 className="text-[16px] font-bold leading-snug text-ink-deep">{title}</h2>
-        {hint ? <p className="text-[12px] leading-snug text-stone">{hint}</p> : null}
+    <div className="mb-5 flex flex-wrap items-baseline justify-between gap-x-base gap-y-1" id={id}>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-[20px] font-bold leading-[1.25] text-ink-deep">{title}</h2>
+        {hint ? <p className="text-[12px] leading-normal text-steel">{hint}</p> : null}
       </div>
       {right ? <div className="flex shrink-0 items-center gap-md">{right}</div> : null}
     </div>
   );
 }
 
-/** 섹션 우측의 텍스트 링크. 화면마다 버튼을 늘리지 않기 위해 사용한다. */
+/** 링크 = primary/700 + › (가이드 G04). 화면마다 버튼을 늘리지 않기 위해 섹션 우측에 둔다. */
 export function TextLink({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <Link href={href} className="inline-flex items-center gap-1 text-[12px] font-bold text-primary">
+    <Link href={href} className="inline-flex items-center gap-0.5 text-[13px] font-bold text-primary hover:underline">
       {children}
       <IconChevron />
     </Link>
@@ -201,16 +208,16 @@ export function ProgressBar({
 }) {
   const toneClass = {
     primary: "bg-primary",
-    success: "bg-success",
+    success: "bg-icon",
     attention: "bg-attention",
     critical: "bg-critical",
   }[tone];
   return (
     <div>
-      <div className="h-2 w-full overflow-hidden rounded-pill bg-surface-soft">
+      <div className="h-2 w-full overflow-hidden rounded-pill bg-track">
         <div className={clsx("h-full rounded-pill", toneClass)} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
       </div>
-      {label ? <p className="mt-1 text-[11px] text-steel">{label}</p> : null}
+      {label ? <p className="mt-1 text-[12px] text-steel">{label}</p> : null}
     </div>
   );
 }
@@ -229,17 +236,17 @@ export function DataTable({
 }) {
   return (
     <ScrollRegion label={typeof caption === "string" ? caption : undefined}>
-      <table className="w-full border-collapse text-[13px]">
+      <table className="w-full border-collapse text-[14px]">
         {caption ? <caption className="mb-2 text-left text-[12px] text-steel">{caption}</caption> : null}
         <thead>
-          <tr className="border-y border-hairline-soft bg-surface-soft">
+          <tr className="bg-surface-soft">
             {columns.map((c) => (
               <th
                 key={c.key}
                 scope="col"
                 style={c.width ? { width: c.width } : undefined}
                 className={clsx(
-                  "whitespace-nowrap px-3 font-bold text-charcoal",
+                  "whitespace-nowrap px-3 text-[12px] font-bold text-steel first:rounded-l-md last:rounded-r-md",
                   dense ? "py-2" : "py-2.5",
                   c.align === "right" && "text-right",
                   c.align === "center" && "text-center",
@@ -287,7 +294,7 @@ export function Td({
 /** 목록 컨테이너 — 1겹 테두리 + 행 구분선. 행은 `.row-button` 버튼을 권장한다 */
 export function RowList({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <ul className={clsx("divide-y divide-hairline-soft overflow-hidden rounded-2xl border border-hairline-soft", className)}>
+    <ul className={clsx("divide-y divide-hairline-soft overflow-hidden rounded-xl border border-hairline-soft bg-canvas", className)}>
       {children}
     </ul>
   );
@@ -295,9 +302,9 @@ export function RowList({ children, className }: { children: ReactNode; classNam
 
 export function RowEmpty({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 rounded-2xl border border-dashed border-hairline px-xl py-xxl text-center">
-      <p className="text-[13.5px] font-bold text-charcoal">{title}</p>
-      {description ? <p className="max-w-[420px] text-[12.5px] leading-relaxed text-steel">{description}</p> : null}
+    <div className="flex flex-col items-center gap-1.5 rounded-xl border border-dashed border-hairline bg-canvas px-xl py-xxl text-center">
+      <p className="text-[14px] font-bold text-charcoal">{title}</p>
+      {description ? <p className="max-w-[420px] text-[13px] leading-relaxed text-steel">{description}</p> : null}
       {action ? <div className="mt-2">{action}</div> : null}
     </div>
   );
@@ -310,7 +317,18 @@ export interface PillTabItem<K extends string> {
   count?: number;
 }
 
-/** 화면 내부 탭. 비활성 = canvas + hairline, 활성 = ink-deep 채움 (디자인 시스템 button-pill-tab) */
+/**
+ * 하위 분석 탭 = 밑줄 탭 (가이드 G04): 선택 = 하단 2px 보라 밑줄 + Bold, 비선택 = 보조 글자.
+ * 선택 상태는 배경 대신 보라 라인으로 알린다.
+ */
+export function tabClass(on: boolean, size: "sm" | "md") {
+  return clsx(
+    "relative inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 transition-colors",
+    size === "md" ? "px-0.5 pb-3 pt-2 text-[14px]" : "px-0.5 pb-2 pt-1 text-[13px]",
+    on ? "border-primary font-bold text-ink-deep" : "border-transparent font-medium text-steel hover:text-ink-deep",
+  );
+}
+
 export function PillTabs<K extends string>({
   items,
   value,
@@ -325,7 +343,7 @@ export function PillTabs<K extends string>({
   size?: "sm" | "md";
 }) {
   return (
-    <div role="tablist" aria-label={label} className="flex flex-wrap items-center gap-1.5">
+    <div role="tablist" aria-label={label} className="flex flex-wrap items-center gap-x-6 border-b border-hairline-soft">
       {items.map((item) => {
         const on = item.key === value;
         return (
@@ -335,15 +353,18 @@ export function PillTabs<K extends string>({
             role="tab"
             aria-selected={on}
             onClick={() => onChange(item.key)}
-            className={clsx(
-              "inline-flex items-center gap-1.5 rounded-pill font-bold transition-colors",
-              size === "md" ? "px-4 py-2 text-[13px]" : "px-3 py-1.5 text-[12px]",
-              on ? "bg-ink-deep text-white" : "border border-hairline bg-canvas text-ink",
-            )}
+            className={clsx(tabClass(on, size), "-mb-px")}
           >
             {item.label}
             {item.count !== undefined ? (
-              <span className={clsx("tnum text-[11px]", on ? "text-white/70" : "text-stone")}>{item.count}</span>
+              <span
+                className={clsx(
+                  "inline-flex min-w-[20px] items-center justify-center rounded-pill px-1.5 text-[12px] font-bold leading-[20px] tnum",
+                  on ? "bg-info-soft text-primary" : "bg-track text-steel",
+                )}
+              >
+                {item.count}
+              </span>
             ) : null}
           </button>
         );
@@ -352,7 +373,7 @@ export function PillTabs<K extends string>({
   );
 }
 
-/** 링크형 Pill Tabs — 탭마다 별도 URL 이 있는 경우 */
+/** 링크형 밑줄 탭 — 탭마다 별도 URL 이 있는 경우. 미확인 이슈가 있는 탭에만 점(주황 · 빨강)을 단다 */
 export function PillTabLinks({
   items,
   activeHref,
@@ -363,7 +384,7 @@ export function PillTabLinks({
   label: string;
 }) {
   return (
-    <nav aria-label={label} className="flex flex-wrap items-center gap-1.5">
+    <nav aria-label={label} className="flex flex-wrap items-center gap-x-6 border-b border-hairline-soft">
       {items.map((item) => {
         const on = item.href === activeHref;
         return (
@@ -371,13 +392,10 @@ export function PillTabLinks({
             key={item.href}
             href={item.href}
             aria-current={on ? "page" : undefined}
-            className={clsx(
-              "inline-flex items-center gap-2 rounded-pill px-4 py-2 text-[13px] font-bold transition-colors",
-              on ? "bg-ink-deep text-white" : "border border-hairline bg-canvas text-ink",
-            )}
+            className={clsx(tabClass(on, "md"), "-mb-px")}
           >
-            {item.dot ? <StatusDot severity={item.dot} /> : null}
             {item.label}
+            {item.dot ? <StatusDot severity={item.dot} /> : null}
           </Link>
         );
       })}
@@ -412,27 +430,28 @@ export function Switch({
         aria-hidden="true"
         className={clsx(
           "relative inline-block h-5 w-9 shrink-0 rounded-pill transition-colors",
-          checked ? "bg-success" : "bg-hairline",
+          checked ? "bg-primary" : "bg-icon",
         )}
       >
         <span
           className={clsx(
-            "absolute top-0.5 h-4 w-4 rounded-circle bg-white shadow-panel transition-all",
+            "absolute top-0.5 h-4 w-4 rounded-circle bg-white transition-all",
             checked ? "left-[18px]" : "left-0.5",
           )}
         />
       </span>
       <span className="min-w-0">
-        <span className={clsx("block text-[12.5px] font-bold", checked ? "text-ink-deep" : "text-steel")}>{label}</span>
-        {description ? <span className="block text-[11px] text-stone">{description}</span> : null}
+        <span className={clsx("block text-[13px] font-bold", checked ? "text-ink-deep" : "text-steel")}>{label}</span>
+        {description ? <span className="block text-[12px] text-steel">{description}</span> : null}
       </span>
     </button>
   );
 }
 
 /* ── Status dot ────────────────────────────────────────────── */
+/** 레드닷 = danger/500 7px — 미확인 이슈가 있는 탭에만, 선택하면 사라지고 새 이슈가 생기면 다시 표시 (가이드 G04) */
 const DOT_TONE: Record<Severity, string> = {
-  info: "bg-success",
+  info: "bg-icon",
   watch: "bg-primary",
   caution: "bg-attention",
   critical: "bg-critical",
@@ -442,7 +461,7 @@ export function StatusDot({ severity, className }: { severity: Severity; classNa
   return (
     <span
       aria-hidden="true"
-      className={clsx("inline-block h-2 w-2 shrink-0 rounded-circle", DOT_TONE[severity], className)}
+      className={clsx("inline-block h-[7px] w-[7px] shrink-0 rounded-circle", DOT_TONE[severity], className)}
     />
   );
 }
@@ -454,27 +473,32 @@ export function NextStep({
   title,
   description,
   href,
+  cta,
 }: {
   step: number;
   title: string;
   description: string;
   href: string;
+  /** 버튼 문구 — 같은 목적지는 같은 버튼 이름 (가이드 규칙 04) */
+  cta?: string;
 }) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-base rounded-2xl bg-ink-deep px-xl py-lg text-white"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-white/15 text-[13px] font-bold">
+    <section className="flex flex-wrap items-center gap-base rounded-xl border border-hairline-soft bg-canvas px-xl py-lg">
+      <span
+        aria-hidden="true"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-info-soft text-[16px] font-bold text-primary"
+      >
         {step}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[11.5px] font-bold text-white/60">다음 단계</span>
-        <span className="block text-[15px] font-bold">{title}</span>
-        <span className="mt-0.5 block text-[12.5px] text-white/70">{description}</span>
-      </span>
-      <IconArrowRight className="shrink-0 text-white/80" />
-    </Link>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">다음 단계 · {title}</h2>
+        <p className="mt-0.5 text-[12px] leading-normal text-steel">{description}</p>
+      </div>
+      <LinkButton href={href} className="shrink-0">
+        {cta ?? `${title}으로`}
+        <IconChevron />
+      </LinkButton>
+    </section>
   );
 }
 

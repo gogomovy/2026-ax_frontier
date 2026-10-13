@@ -2,17 +2,11 @@ import { Chart, TargetGauge } from "@/components/charts/Chart";
 import { FigureText } from "@/components/data/FigureText";
 import { MetricStrip, type MetricStripItem } from "@/components/data/MetricStrip";
 import { AgentNote } from "@/components/domain/AgentNote";
-import { Badge, SectionHead, TextLink } from "@/components/ui/primitives";
+import { Badge, TextLink } from "@/components/ui/primitives";
+import { GOAL_VERDICT } from "@/lib/goalView";
 import { pointCount } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
 import type { Figure, LoanSegmentDetail } from "@/lib/types";
-
-const VERDICT = {
-  on_track: { label: "목표 정상 진행", tone: "success" as const },
-  below: { label: "목표 하회", tone: "critical" as const },
-  near_limit: { label: "한도 근접", tone: "attention" as const },
-  breach: { label: "관리목표 초과", tone: "critical" as const },
-};
 
 /**
  * 기업여신 / 가계여신 상세 (요구사항 LOAN-04 ~ LOAN-09).
@@ -20,7 +14,7 @@ const VERDICT = {
  */
 export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; asOf?: string | null }) {
   const isHousehold = segment.key === "household";
-  const verdict = segment.gapVerdict ? VERDICT[segment.gapVerdict] : null;
+  const verdict = segment.gapVerdict ? GOAL_VERDICT[segment.gapVerdict] : null;
   const offTrack = segment.gapVerdict === "below" || segment.gapVerdict === "breach";
   const p = periodOf(asOf);
   const monthEnd = p.month === NO_VALUE ? NO_VALUE : `${p.month}말`;
@@ -66,13 +60,13 @@ export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; a
     <>
       <MetricStrip items={items} columns={items.length === 4 ? 4 : 3} />
 
-      <section className="grid grid-cols-1 gap-xl xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <AgentNote text={segment.narrative} figures={noteFigures} evidence={segment.evidence} evidenceTitle={`${segment.name} 해설 근거`} />
 
         {/* 현재 경영목표 대비 (LOAN-06 / LOAN-09) */}
-        <div className="rounded-2xl border border-hairline-soft px-lg py-lg">
+        <div className="rounded-xl border border-hairline-soft bg-canvas p-6">
           <div className="flex items-baseline justify-between gap-base">
-            <p className="text-[11.5px] font-bold text-steel">현재 경영목표 대비</p>
+            <p className="text-[16px] font-bold text-ink-deep">현재 경영목표 대비</p>
             <TextLink href="/hq/goals">목표 설정</TextLink>
           </div>
           <dl className="mt-3 flex flex-col gap-3">
@@ -119,9 +113,9 @@ export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; a
       </section>
 
       <section>
-        <SectionHead title="추이" hint={`월별 잔액(당해) · ${yearlyLabel}`} />
-        <div className="grid grid-cols-1 gap-xl xl:grid-cols-2">
-          <div className="rounded-2xl border border-hairline-soft p-lg">
+        <h2 className="mb-5 text-[20px] font-bold leading-[1.25] text-ink-deep">추이 <span className="ml-2 text-[12px] font-normal text-steel">월별 잔액(당해) · {yearlyLabel}</span></h2>
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+          <div className="rounded-xl border border-hairline-soft bg-canvas p-6">
             <Chart
               kind="line"
               title={`${segment.name} 월별 잔액 (${yearLabel})`}
@@ -131,7 +125,7 @@ export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; a
               zeroBased={false}
             />
           </div>
-          <div className="rounded-2xl border border-hairline-soft p-lg">
+          <div className="rounded-xl border border-hairline-soft bg-canvas p-6">
             <Chart
               kind="bar"
               title={`${segment.name} ${yearlyLabel}`}

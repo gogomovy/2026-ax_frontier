@@ -55,6 +55,15 @@ export function formatFigure(figure: Figure): string {
   return `${body}${unit}`;
 }
 
+/** 부호 포함 수치 본문(단위 라벨 제외) — 큰 숫자에서 단위를 작게 따로 그릴 때 */
+export function formatSignedValue(figure: Figure): string {
+  if (figure.value === null || figure.value === undefined) {
+    return figure.undefinedLabel ?? "미제공";
+  }
+  const sign = figure.value > 0 ? "+" : "";
+  return `${sign}${nf(figure.decimals ?? defaultDecimals(figure.unit)).format(figure.value)}`;
+}
+
 /** 증감 부호 포함 */
 export function formatSigned(figure: Figure): string {
   if (figure.value === null || figure.value === undefined) {
@@ -109,6 +118,22 @@ export function formatKstDateTime(iso: string): string {
   if (Number.isNaN(t)) return iso;
   const k = new Date(t + KST_OFFSET_MS);
   return `${k.getUTCMonth() + 1}. ${pad2(k.getUTCDate())}. ${pad2(k.getUTCHours())}:${pad2(k.getUTCMinutes())}`;
+}
+
+/** 시각 → KST `MM.DD HH:mm` (예: `10.13 06:22`) — formatKstDateTime 과 같은 이유로 산술로만 계산한다 */
+export function formatKstShort(iso: string): string {
+  if (!iso) return "";
+  const zoned = /T\d{2}:\d{2}/.test(iso) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? `${iso}Z` : iso;
+  const t = Date.parse(zoned);
+  if (Number.isNaN(t)) return iso;
+  const k = new Date(t + KST_OFFSET_MS);
+  return `${pad2(k.getUTCMonth() + 1)}.${pad2(k.getUTCDate())} ${pad2(k.getUTCHours())}:${pad2(k.getUTCMinutes())}`;
+}
+
+/** `2026-08-31` → `2026년 8월` */
+export function formatYearMonth(iso: string): string {
+  const [y, m] = iso.slice(0, 10).split("-");
+  return y && m ? `${y}년 ${Number(m)}월` : iso;
 }
 
 export const SEVERITY_LABEL = {

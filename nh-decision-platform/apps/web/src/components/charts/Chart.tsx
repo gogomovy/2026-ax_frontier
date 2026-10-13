@@ -2,6 +2,7 @@
 
 import { useId, useState } from "react";
 import clsx from "clsx";
+import { IconTable } from "@/components/ui/icons";
 import { DataTable, Td } from "@/components/ui/primitives";
 import { UNIT_LABEL, defaultDecimals } from "@/lib/format";
 import type { Figure, SeriesPoint } from "@/lib/types";
@@ -84,10 +85,11 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
         <button
           type="button"
           onClick={() => setAsTable((v) => !v)}
-          className="shrink-0 rounded-pill border border-hairline bg-canvas px-2.5 py-1 text-[11px] font-bold text-charcoal no-print"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline-soft bg-canvas px-3 text-[12px] font-bold text-ink-deep hover:bg-surface-soft no-print"
           aria-pressed={asTable}
         >
-          {asTable ? "차트로 보기" : "표로 보기"}
+          <IconTable />
+          {asTable ? "차트 보기" : "표 보기"}
         </button>
       </div>
 
@@ -119,14 +121,14 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} className="stroke-hairline-soft" strokeWidth="1" />
-              <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize="10" className="fill-stone">
+              <text x={padL - 8} y={y(t) + 3.5} textAnchor="end" fontSize="11" className="fill-steel">
                 {fmt(t, unit, decimals)}
               </text>
             </g>
           ))}
 
           {categories.map((label, i) => (
-            <text key={label} x={x(i)} y={H - 12} textAnchor="middle" fontSize="10.5" className="fill-steel">
+            <text key={label} x={x(i)} y={H - 12} textAnchor="middle" fontSize="11" className="fill-steel">
               {label}
             </text>
           ))}

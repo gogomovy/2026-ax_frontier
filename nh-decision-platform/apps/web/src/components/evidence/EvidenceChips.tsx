@@ -2,17 +2,77 @@
 
 import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
+import { IconChevronDown } from "@/components/ui/icons";
 import { IconChevron, IconDoc } from "@/components/ui/primitives";
 import { EVIDENCE_CATEGORY_LABEL } from "@/lib/format";
 import type { Evidence, EvidenceCategory } from "@/lib/types";
 
 const ORDER: EvidenceCategory[] = ["bank_data", "internal_direction", "external_policy"];
 
+/** 색은 의미 있는 값에만 — 근거 범주는 보라 계열 농도와 무채색으로만 구분한다 */
 const CATEGORY_DOT: Record<EvidenceCategory, string> = {
   bank_data: "bg-primary",
-  internal_direction: "bg-attention",
-  external_policy: "bg-success",
+  internal_direction: "bg-chart-5",
+  external_policy: "bg-icon",
 };
+
+/**
+ * 근거 줄 (가이드 7156) — "근거 [당행 Data 1] [내부 경영방향 1] 외부 정책·환경 없음 · 해설 전문 보기 ⌄ · 원문 확인 ›"
+ * 범주 칩을 누르면 그 범주의 첫 근거가 선택된 상태로 서랍이 열리고, 근거가 없는 범주는 글로 "없음"을 알린다.
+ */
+export function EvidenceRow({
+  items,
+  title,
+  statement,
+  expanded,
+  onToggleFull,
+}: {
+  items: Evidence[];
+  title: string;
+  /** 서랍 위쪽에 인용할 AI 결론 문장 */
+  statement?: string;
+  expanded?: boolean;
+  onToggleFull?: () => void;
+}) {
+  const { openDrawer } = useUi();
+  const open = (selectedId?: string) => openDrawer({ kind: "evidence", title, items, selectedId, statement });
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[12px] text-steel">
+      <span className="mr-0.5">근거</span>
+      {ORDER.map((c) => {
+        const group = items.filter((i) => i.category === c);
+        return group.length ? (
+          <button
+            key={c}
+            type="button"
+            onClick={() => open(group[0].id)}
+            className="inline-flex h-7 items-center gap-1.5 rounded-pill border border-hairline-soft bg-canvas px-3 font-bold text-ink-deep hover:bg-surface-soft"
+          >
+            <span aria-hidden="true" className={clsx("h-1.5 w-1.5 rounded-circle", CATEGORY_DOT[c])} />
+            {EVIDENCE_CATEGORY_LABEL[c]} <span className="tnum">{group.length}</span>
+          </button>
+        ) : (
+          <span key={c} className="px-1">
+            {EVIDENCE_CATEGORY_LABEL[c]} 없음
+          </span>
+        );
+      })}
+      {onToggleFull ? (
+        <button type="button" onClick={onToggleFull} aria-expanded={expanded} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">
+          해설 전문 보기
+          <IconChevronDown className={clsx("transition-transform", expanded && "rotate-180")} />
+        </button>
+      ) : null}
+      <span aria-hidden="true" className="text-icon">
+        ·
+      </span>
+      <button type="button" onClick={() => open()} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">
+        원문 확인
+        <IconChevron />
+      </button>
+    </div>
+  );
+}
 
 function countOf(items: Evidence[], category: EvidenceCategory) {
   return items.filter((i) => i.category === category).length;
@@ -45,7 +105,7 @@ export function EvidenceChips({
       title={summary}
       aria-label={`근거 ${items.length}건 보기 — ${summary}`}
       className={clsx(
-        "inline-flex items-center gap-2 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-[11.5px] font-bold text-charcoal",
+        "inline-flex h-7 items-center gap-2 rounded-pill border border-hairline-soft bg-canvas px-3 text-[12px] font-bold text-ink-deep hover:bg-surface-soft",
         className,
       )}
     >

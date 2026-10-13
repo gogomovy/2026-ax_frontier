@@ -144,7 +144,7 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
           <IconList />
         </button>
         <h2 id={titleId} className="flex items-center gap-2 text-[15px] font-bold text-ink-deep">
-          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-circle bg-ink-deep text-white">
+          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-circle bg-primary text-white">
             <IconBot size={17} />
           </span>
           {ASSIST_NAME}
@@ -213,7 +213,7 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
             <div className="mx-auto flex w-full max-w-[780px] flex-col gap-6 px-4 py-6">
               {!messages.length ? (
                 <div className="flex flex-col items-center pt-6 text-center">
-                  <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-circle bg-ink-deep text-white shadow-panel">
+                  <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-circle bg-primary text-white shadow-panel">
                     <IconBot size={30} />
                   </span>
                   <p className="mt-4 text-[22px] font-bold text-ink-deep">안녕하세요, 무엇을 도와드릴까요?</p>
@@ -277,11 +277,11 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
                   className="max-h-[168px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[14px] leading-relaxed text-ink outline-none placeholder:text-stone"
                 />
                 {busy ? (
-                  <button type="button" onClick={chat.stop} aria-label="답변 생성 중지" title="중지" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-ink-deep text-white hover:opacity-90">
+                  <button type="button" onClick={chat.stop} aria-label="답변 생성 중지" title="중지" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-primary text-white hover:opacity-90">
                     <IconStop size={15} />
                   </button>
                 ) : (
-                  <button type="submit" disabled={q.trim().length < 2} title="보내기 (Enter)" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-ink-deep text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-disabled">
+                  <button type="submit" disabled={q.trim().length < 2} title="보내기 (Enter)" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-primary text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:bg-disabled">
                     <IconSend size={17} />
                     <span className="sr-only">질문</span>
                   </button>

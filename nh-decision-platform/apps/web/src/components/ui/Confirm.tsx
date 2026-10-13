@@ -78,7 +78,7 @@ export function ConfirmDialog({ req, onDone }: { req: ConfirmRequest; onDone: ()
         aria-labelledby={titleId}
         aria-describedby={req.body ? bodyId : undefined}
         tabIndex={-1}
-        className="w-full max-w-[440px] rounded-2xl bg-canvas p-lg shadow-pop"
+        className="w-full max-w-[440px] animate-pop-in rounded-3xl bg-canvas p-xl shadow-popup"
         data-confirm-dialog
       >
         <h2 id={titleId} className="text-[17px] font-bold text-ink-deep">
@@ -124,7 +124,7 @@ export function ConfirmDialog({ req, onDone }: { req: ConfirmRequest; onDone: ()
             ref={cancelRef}
             type="button"
             onClick={() => close(req.input ? null : false)}
-            className="inline-flex items-center justify-center rounded-pill bg-surface-soft px-6 py-2.5 text-[13px] font-bold text-charcoal"
+            className="inline-flex h-10 items-center justify-center rounded-md border border-hairline bg-canvas px-4 text-[14px] font-bold text-ink-deep hover:bg-surface-soft"
             data-confirm-cancel
           >
             {req.cancelLabel ?? "취소"}

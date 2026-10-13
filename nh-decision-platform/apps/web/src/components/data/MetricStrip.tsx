@@ -25,41 +25,25 @@ export function MetricStrip({ items, columns = 4 }: { items: MetricStripItem[]; 
   return (
     <div
       className={clsx(
-        "grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-hairline-soft bg-hairline-soft",
+        "grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-hairline-soft bg-hairline-soft",
         columns === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3",
       )}
     >
       {items.map((item) => (
-        <div key={item.label} className="bg-canvas px-lg py-base">
-          <p className="flex items-center gap-1.5 text-[12px] text-steel">
+        <div key={item.label} className="bg-canvas px-6 py-5">
+          <p className="flex items-center gap-1.5 text-[14px] text-steel">
             {item.tone === "attention" || item.tone === "critical" ? (
-              <span
-                aria-hidden="true"
-                className={clsx(
-                  "h-1.5 w-1.5 rounded-circle",
-                  item.tone === "critical" ? "bg-critical" : "bg-attention",
-                )}
-              />
+              <span aria-hidden="true" className={clsx("h-[7px] w-[7px] rounded-circle", item.tone === "critical" ? "bg-critical" : "bg-attention")} />
             ) : null}
             {item.label}
           </p>
-          <p
-            className={clsx(
-              "mt-1.5 text-[22px] font-bold leading-none",
-              item.tone === "critical" ? "text-critical" : "text-ink-deep",
-            )}
-          >
-            <FigureText
-              figure={item.figure}
-              signed={item.signed}
-              strong
-              className={item.tone === "critical" ? "!text-critical" : undefined}
-            />
+          <p className={clsx("mt-2 text-[24px] font-bold leading-[1.25]", item.tone === "critical" ? "text-critical" : "text-ink-deep")}>
+            <FigureText figure={item.figure} signed={item.signed} strong plain className={item.tone === "critical" ? "!text-critical" : undefined} />
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11.5px] text-stone">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-steel">
             {item.delta ? (
               <span>
-                전년 동기 <DeltaFigure figure={item.delta} positiveIsGood={item.positiveIsGood ?? true} />
+                전년 동기 <DeltaFigure figure={item.delta} positiveIsGood={item.positiveIsGood ?? true} plain />
               </span>
             ) : null}
             {item.caption ? <span>{item.caption}</span> : null}
