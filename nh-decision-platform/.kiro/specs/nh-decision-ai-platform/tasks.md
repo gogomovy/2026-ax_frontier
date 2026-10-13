@@ -429,6 +429,7 @@
 - [x] J.5 화면 — 데이터셋 버전 · 문서 [삭제](미리보기 → 사유 입력 확인), 삭제됨 표시, 삭제 반영 상태, 사용자 화면 '데이터 관리자'
 - [x] J.6 시험 — 권한 · 사유 · 중복 · 승격 · 화면 값 · 버전 번호 · 청크/이슈 · 파일 · Elasticsearch 가짜 전송 · Neo4j 대체 함수 · 재업로드 건너뜀
 - 결과(2026-10-13): pytest 294(282 passed · 11 건너뜀(실제 ES) · 실패 1 = `test_antivirus_hook` Windows 전용) — 신규 `test_data_delete.py` 8 · `test_phase_i_units.py` 13, 계층 계약 4/4, `sample selftest` ok(업로드 43 · 엑셀 대조 0건 · 교란 2벌 그대로인 데이터 자리 0 · 예외 설정 99 · 규칙 130), `sample verify`(HTTP) ok, `sample check` 사본 일치, tsc · eslint · vitest 114 · next build 통과, 로컬 스택(정의 시드 → 패키지 업로드 → 워커) 브라우저 E2E 133/133(삭제 흐름 +8) · 접근성 47쪽 위반 0 · 골든셋 7범주 100%
+- CI(janlight `feat/backend-phase-b` `0d0a1ea` · gogomovy `d125f7f`) — run `38421831072` 3개 잡 성공: backend(pytest · 커버리지 게이트 · 사본 일치 · 교란 검사) · frontend · e2e(compose 정의 시드 → HTTP 업로드 43개 → 엑셀 대조 → E2E 133/133 · 접근성 0 · 골든셋 100%). CI 에서 고친 것: 모형 보정 값 고정(운영체제별 반올림) · SDR 순위 예외 · 서술 시험 순서 의존 제거 · 골든셋 영업점 예외(cascade · goals) 명시
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
 
 > Phase 0~8 항목은 착수 시점 설계(§1.4 · Redis · MinIO · Milvus · LangGraph)를 기준으로 쓰였고, 설계 §19 가 이를 대체했다. 아래는 Phase B 로 **대체 구현된 범위**다. 원 항목의 체크박스는 원 DoD(원 기술 선택 포함)를 모두 충족할 때만 체크하므로, 대체 완료 항목의 상태는 이 표로 본다.
