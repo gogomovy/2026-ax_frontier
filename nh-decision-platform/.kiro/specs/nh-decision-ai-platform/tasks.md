@@ -389,7 +389,7 @@
 - [x] G.3 지도 계산 — `graph/ontology_map.py`(상한 · Louvain · 군집 이름 · 3D/2D 배치 · 구조 요약 · 보관), `GET /admin/ontology/map`
 - [x] G.4 화면 — '구성 지도' 탭: 3D 군집 지도(회전 · 확대 · 자동 회전 · 2D) · 찾기 · 범례 · 군집 초점 · 상세 패널 · 구조도 · 표로 보기 · 원장 기준 요약
 - [x] G.5 시험 — pytest(수집 = 투영 입력 · 군집 · 배치 결정성 · 상한 · API), vitest(투영 수학 · 선택), E2E(지도 · 찾기 → 상세 · 표 · 구조도), 접근성
-- [ ] G.6 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
+- [x] G.6 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
 - 후속: 의미 임베딩 기반 '의미 지도'(임베딩 모델 확정 후) · 지도에서 추출 검토(잘못된 관계 바로 제외)
 
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
