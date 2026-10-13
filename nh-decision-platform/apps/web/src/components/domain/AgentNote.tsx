@@ -29,12 +29,12 @@ export function AgentNote({
   footer?: ReactNode;
 }) {
   return (
-    <section className="rounded-xl bg-info-soft p-3">
-      <span className="inline-flex h-7 items-center gap-1.5 rounded-pill bg-canvas px-3 text-[12px] font-bold text-primary">
+    <section className="flex flex-col rounded-xl bg-info-soft p-3">
+      <span className="inline-flex h-7 items-center gap-1.5 self-start rounded-pill bg-canvas px-3 text-[12px] font-bold text-primary">
         <IconSparkle />
         {label}
       </span>
-      <div className="mt-3 rounded-lg bg-canvas px-6 py-5">
+      <div className="mt-3 flex-1 rounded-lg bg-canvas px-6 py-5">
         {title ? <h3 className="text-[16px] font-bold leading-[1.4] text-ink-deep">{title}</h3> : null}
         <RichText text={text} figures={figures} className="mt-1 text-[14px] leading-[1.7] text-ink-deep" />
         {evidence || verifications || footer ? (

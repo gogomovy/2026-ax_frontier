@@ -77,6 +77,16 @@
     padding: var(--space-sm) var(--space-md);
     line-height: 1.6;
   }
+  /* select — 브라우저 기본 화살표 대신 토큰 색 쉐브론, 글꼴은 입력칸과 동일하게 */
+  select.input {
+    appearance: none;
+    font-family: inherit;
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%236b6e82' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    cursor: pointer;
+  }
 
   /* 선택 가능한 목록 행 */
   .row-button {

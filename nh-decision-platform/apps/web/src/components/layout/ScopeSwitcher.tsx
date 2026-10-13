@@ -26,7 +26,7 @@ export function ScopeSwitcher({ scopes, currentId, admin }: { scopes: Scope[]; c
       aria-label="업무 영역 전환"
       title={admin ? "관리자는 모든 업무 영역을 볼 수 있어요" : undefined}
       className="relative inline-grid rounded-lg border border-hairline-soft bg-surface-soft p-[3px]"
-      style={{ gridTemplateColumns: `repeat(${n}, minmax(84px, 1fr))` }}
+      style={{ gridTemplateColumns: `repeat(${n}, minmax(max-content, 1fr))` }}
     >
       <span
         aria-hidden="true"
@@ -46,7 +46,7 @@ export function ScopeSwitcher({ scopes, currentId, admin }: { scopes: Scope[]; c
             aria-current={on ? "true" : undefined}
             title={s.orgName}
             className={clsx(
-              "relative z-10 flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[13px] transition-colors",
+              "relative z-10 flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px] transition-colors xl:px-3.5",
               on ? "font-bold text-ink-deep" : "font-medium text-steel hover:text-ink-deep",
             )}
           >

@@ -32,7 +32,7 @@ export function ReferenceMenu({ items, activeHref, hrefOf }: { items: NavItem[];
         aria-controls={id}
         onClick={() => setOpen((v) => !v)}
         className={clsx(
-          "inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] transition-colors hover:bg-surface-soft",
+          "inline-flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-[14px] transition-colors hover:bg-surface-soft",
           inside ? "font-bold text-primary" : "font-medium text-steel hover:text-ink-deep",
         )}
       >

@@ -160,6 +160,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                 );
               })
             : series.map((s, si) => {
+                const xs = s.points.flatMap((p, i) => (p.value === null ? [] : [x(i)]));
                 const pts = s.points
                   .map((p, i) => (p.value === null ? null : `${x(i)},${y(p.value)}`))
                   .filter((v): v is string => v !== null);
@@ -167,7 +168,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                   <g key={s.name}>
                     {si === 0 && pts.length > 1 ? (
                       <polygon
-                        points={`${padL},${y(min)} ${pts.join(" ")} ${W - padR},${y(min)}`}
+                        points={`${xs[0]},${y(min)} ${pts.join(" ")} ${xs[xs.length - 1]},${y(min)}`}
                         fill={`url(#${gradientId})`}
                       />
                     ) : null}

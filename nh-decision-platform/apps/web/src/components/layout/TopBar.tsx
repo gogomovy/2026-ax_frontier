@@ -68,7 +68,7 @@ export function PrimaryNav({ model, className }: { model: NavModel; className?: 
   const refActive = activeHref([...flow, ...reference], model.pathname);
 
   return (
-    <nav aria-label="업무 단계" className={clsx("items-center gap-7", className)}>
+    <nav aria-label="업무 단계" className={clsx("items-center gap-4 xl:gap-7", className)}>
       {flow.map((item) => (
         <StepLink
           key={item.href}
