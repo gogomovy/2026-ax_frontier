@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     es_password: str = ""
     es_index: str = "nhdip-kb-chunk"
     es_verify_certs: bool = True
+    es_ca_certs: str = ""  # 사내 CA(PEM) 파일 경로 — https 의 ES 가 사설 인증서일 때 검증을 끄지 않고 이 CA 만 믿는다(비우면 시스템 신뢰 저장소)
     es_timeout_sec: float = 10.0
     es_replicas: int = 0  # 단일 노드면 0 (복제본이 있으면 노드가 하나일 때 yellow)
 

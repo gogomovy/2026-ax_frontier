@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import ssl
 import threading
 import time
 from datetime import datetime, timezone
@@ -66,10 +67,13 @@ def client() -> httpx.Client:
     with _lock:
         if _client is None:
             s = get_settings()
+            verify: Any = s.es_verify_certs
+            if s.es_ca_certs and s.es_verify_certs:
+                verify = ssl.create_default_context(cafile=s.es_ca_certs)  # 사설 CA 만 추가로 믿는다
             _client = httpx.Client(
                 base_url=s.es_url.rstrip("/"),
                 auth=(s.es_user, s.es_password) if s.es_user else None,
-                verify=s.es_verify_certs,
+                verify=verify,
                 timeout=httpx.Timeout(connect=3.0, read=float(s.es_timeout_sec), write=15.0, pool=5.0),
                 headers={"Accept": "application/json"},
             )

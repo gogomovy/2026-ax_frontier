@@ -163,6 +163,25 @@ def test_ensure_index_falls_back_to_standard_analyzer_when_nori_is_missing(es_cl
     assert len(created) == 1 and "nori" not in json.dumps(created[0])
 
 
+def test_client_uses_basic_auth_and_pins_private_ca_without_disabling_verification(es_clean, monkeypatch):
+    """https 의 사설 인증서 ES — 검증을 끄지 않고 사내 CA 파일만 추가로 믿는다. 계정이 있으면 기본 인증을 붙인다."""
+    from types import SimpleNamespace
+
+    import certifi
+
+    base = dict(es_url="https://es.internal:9200/", es_user="svc", es_password="pw", es_timeout_sec=3.0, es_replicas=0, es_index="i")
+    monkeypatch.setattr(elastic, "get_settings", lambda: SimpleNamespace(**base, es_verify_certs=True, es_ca_certs=certifi.where()))
+    c = elastic.client()
+    assert str(c.base_url).rstrip("/") == "https://es.internal:9200" and c.auth is not None
+    elastic.set_client(None)
+    monkeypatch.setattr(elastic, "get_settings", lambda: SimpleNamespace(**{**base, "es_user": ""}, es_verify_certs=True, es_ca_certs=""))
+    assert elastic.client().auth is None  # 계정이 없으면 인증 헤더를 보내지 않는다
+    elastic.set_client(None)
+    monkeypatch.setattr(elastic, "get_settings", lambda: SimpleNamespace(**base, es_verify_certs=True, es_ca_certs="/no/such/ca.pem"))
+    with pytest.raises(OSError):  # 잘못된 CA 경로는 조용히 넘어가지 않고 바로 드러난다
+        elastic.client()
+
+
 def test_cli_kb_es_requires_configuration(monkeypatch, capsys):
     from nhdip import cli
 

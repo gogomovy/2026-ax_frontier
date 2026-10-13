@@ -78,6 +78,7 @@ x-api-env: &api-env
   ES_PASSWORD: ${ES_PASSWORD:-}
   ES_INDEX: ${ES_INDEX:-nhdip-kb-chunk}
   ES_VERIFY_CERTS: ${ES_VERIFY_CERTS:-1}
+  ES_CA_CERTS: ${ES_CA_CERTS:-}
 
 services:
   postgres:
