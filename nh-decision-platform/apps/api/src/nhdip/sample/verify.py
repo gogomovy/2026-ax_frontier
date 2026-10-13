@@ -188,6 +188,7 @@ EXEMPT: list[tuple[str, str]] = [
     (r"\.(asOf|periodLabel|asOfLabel)$", "기준일 · 평가 기간(교란 패키지는 같은 기간)"),
     (r"\.recommendation\.", "목표 추천 범위(규칙 · 기조 기반 — 데이터 제약에 닿지 않으면 같은 값)"),
     (r"\.rows\.\d+\.weight$", "등급 구간 가중치(규칙 — 등급 범주가 같으면 같은 값)"),
+    (r"\.rows\.\d+\.sdrRank$", "SDR 순위(원천 범주 열 sdr_rank 그대로 — 교란하지 않는 순위 · 범주)"),
 ]
 # 값 자체로 그대로여도 정상인 자리 — 0(해당 칸 자료 없음: 곱셈 교란에도 0), 구성비 합계 100%
 ZERO = re.compile(r"^[+\-]?0(?:\.0+)?%?$")
