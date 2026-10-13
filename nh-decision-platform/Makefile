@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: upload-test help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y preflight host-check set
+.PHONY: upload-test help env build up down logs ps restart seed reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
@@ -14,6 +14,7 @@ help:
 	@echo "make test        - 백엔드 테스트 (api 컨테이너)"
 	@echo "make e2e         - 브라우저 E2E (기동 중인 스택 대상, Node 20+ 필요)"
 	@echo "make a11y        - 자동 접근성 점검(axe-core · WCAG 2.1 A·AA 자동 규칙, 기동 중인 스택 대상)"
+	@echo "make keyboard    - 질문하기 패널 키보드 전용 점검(Tab · Enter · Esc 로 열기 · 질문 · 피드백 · 닫기, 기동 중인 스택 대상)"
 	@echo "make eval        - 골든셋 평가 (기준값 대조 · 결과를 관리자 [골든셋 평가]에 게시)"
 	@echo "make perf        - 성능 측정 (주요 API p50 · p95 · 기준치 대조)"
 	@echo "make admin-pass  - 최초 관리자 사번·비밀번호 표시"
@@ -73,6 +74,10 @@ a11y:
 	cd apps/e2e && npm install --no-audit --no-fund >/dev/null && \
 	set -a && . ../../.env && set +a && \
 	E2E_ADMIN_EMP="$$BOOTSTRAP_ADMIN_EMP_NO" E2E_ADMIN_PW="$$BOOTSTRAP_ADMIN_PASSWORD" E2E_BASE="http://localhost:$${WEB_PORT:-3000}" node a11y.mjs
+keyboard:
+	cd apps/e2e && npm install --no-audit --no-fund >/dev/null && \
+	set -a && . ../../.env && set +a && \
+	E2E_ADMIN_EMP="$$BOOTSTRAP_ADMIN_EMP_NO" E2E_ADMIN_PW="$$BOOTSTRAP_ADMIN_PASSWORD" E2E_BASE="http://localhost:$${WEB_PORT:-3000}" node keyboard.mjs
 eval:
 	$(COMPOSE) exec api python -m nhdip.evals --publish
 perf:

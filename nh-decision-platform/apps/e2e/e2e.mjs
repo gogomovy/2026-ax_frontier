@@ -133,9 +133,10 @@ try {
   await u.waitForSelector("#assist-q");
   await u.type("#assist-q", "기업여신 증가율과 목표 대비 이탈은?");
   await u.evaluate(() => [...document.querySelectorAll("form button")].find((b) => b.innerText.trim() === "질문").click());
-  await u.waitForSelector('[role="dialog"] article', { timeout: 30000 });
+  await u.waitForSelector('[role="dialog"] article[data-status="done"]', { timeout: 60000 }); // 답은 스트리밍으로 나오므로 끝난 답을 기다린다
   const ans = await u.evaluate(() => document.querySelector('[role="dialog"] article')?.innerText ?? "");
-  ok("질의 패널: 답변 카드에 확정 수치(커널)", ans.startsWith("Q. 기업여신 증가율") && /기업여신 증가율[^\n]*\n?\s*4\.04%/.test(ans) && ans.includes("목표 대비 이탈") && ans.includes("GROWTH_RATE"), ans.slice(0, 200).replace(/\n/g, " | "));
+  const asked = await u.evaluate(() => document.querySelector('[role="dialog"] [data-role="user"]')?.innerText ?? "");
+  ok("질의 패널: 내 질문이 말풍선으로, 답변에 확정 수치(커널)", asked.includes("기업여신 증가율") && /기업여신 증가율[^\n]*\n?\s*4\.04%/.test(ans) && ans.includes("목표 대비 이탈") && ans.includes("GROWTH_RATE"), ans.slice(0, 200).replace(/\n/g, " | "));
   ok("질의 패널: 수치 출처 확인 배지", ans.includes("수치 출처 확인"));
   await shot(u, "04-assist");
 
