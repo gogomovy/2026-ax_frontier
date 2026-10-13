@@ -1,4 +1,6 @@
-"""하이브리드 검색 (요구사항 RAG-01~06 · 설계 §21.6).
+"""하이브리드 검색 (요구사항 RAG-01~06 · 설계 §21.6 · 3-way 구성 설계 §24).
+3-way: 키워드 · 의미 후보는 Elasticsearch(분석 결과 · 문서 색인 — nori BM25 · kNN)에서, ES 가 없거나 안 되면 아래 PostgreSQL 채널로.
+ES 후보는 언제나 PostgreSQL 에서 접근 규칙으로 다시 걸러 본문을 읽는다(원장 · 권한 판정은 PostgreSQL). 그래프는 Neo4j + PostgreSQL 개념 태그.
 
 세 채널이 모두 **후보를 만든다**(그래프는 필터가 아니라 채널):
   키워드  PostgreSQL 전문 검색(접두 OR · 서로 다른 질의어 맞춤 수 + 0.1 × ts_rank)
@@ -371,32 +373,42 @@ def _kb_vector_es(session: Session, scope: AccessScope, qvec: list[float], model
     return out[:lim]
 
 
+def search_mode(cfg: dict[str, Any]) -> str:
+    """검색 엔진 설정 — 'auto'(기본, 3-way: ES 가 설정 · 동기화돼 있으면 ES) · 'es' · 'pg'."""
+    v = str(cfg.get("backend", "auto")).strip().lower()
+    return v if v in elastic.BACKENDS else "auto"
+
+
 def _es_state(session: Session, cfg: dict[str, Any], diag: dict[str, Any]) -> dict[str, Any] | None:
-    """ES 채널을 쓸 수 있으면 동기화 상태 {'synced_max_id', 'dims'}, 아니면 None(이유는 진단에). 설정이 'es' 가 아니면 조용히 None."""
+    """분석 결과 ES 채널을 쓸 수 있으면 동기화 상태 {'synced_max_id', 'dims'}, 아니면 None(이유는 진단 esFallback 에).
+    'pg' 이거나 'auto' 인데 ES_URL 이 없으면(축소 구성) 조용히 None."""
     diag["backend"] = "pg"
-    if str(cfg.get("backend", "pg")).strip().lower() != "es":
-        return None
-    why = None
-    st = None
-    if not elastic.configured():
-        why = "ES_URL 미설정"
-    elif not elastic.es_up():
-        why = "ES 연결 대기(차단기 열림)"
-    else:
-        st = elastic.search_state(session)
-        if st is None:
-            why = "ES 아직 동기화 전"
+    st, why = elastic.readiness(session, "kb", search_mode(cfg))
     if st is None:
-        diag["esFallback"] = why
+        if why:
+            diag["esFallback"] = why
         return None
     diag["backend"] = "es"
     return st
 
 
+def _es_doc_state(session: Session, cfg: dict[str, Any], diag: dict[str, Any]) -> dict[str, Any] | None:
+    """문서 ES 채널 — {'synced_max_id': {출처: id}, 'dims'} 또는 None(이유는 진단 esDocFallback 에)."""
+    diag["docBackend"] = "pg"
+    st, why = elastic.readiness(session, "doc", search_mode(cfg))
+    if st is None:
+        if why:
+            diag["esDocFallback"] = why
+        return None
+    diag["docBackend"] = "es"
+    return st
+
+
 def _es_or_pg(
-    session: Session, name: str, diag: dict[str, Any], mid: int | None, es_fn: Callable[[], list[dict[str, Any]]], pg_fn: Callable[[int | None], list[dict[str, Any]]], *, reverse: bool, lim: int
+    session: Session, name: str, diag: dict[str, Any], mid: Any, es_fn: Callable[[], list[dict[str, Any]]], pg_fn: Callable[[Any], list[dict[str, Any]]], *, reverse: bool, lim: int,
+    backend_key: str = "backend", fallback_key: str = "esFallback",
 ) -> list[dict[str, Any]]:
-    """`mid` 가 None 이면 PostgreSQL 전체. 아니면 ES 결과 + (ES 에 아직 못 올린 새 청크 = id > mid)의 PostgreSQL 결과를 합친다.
+    """`mid` 가 None 이면 PostgreSQL 전체. 아니면 ES 결과 + (ES 에 아직 못 올린 새 청크 = id > mid, 문서는 출처별)의 PostgreSQL 결과를 합친다.
     ES 오류면 이 채널은 PostgreSQL 전체로 폴백한다 — 검색은 멈추지 않는다."""
     if mid is None:
         return _safe(session, name, diag, lambda: pg_fn(None))
@@ -405,8 +417,8 @@ def _es_or_pg(
         try:
             rows = es_fn()
         except (elastic.EsUnavailable, ValueError, KeyError, TypeError) as exc:  # 연결 · 5xx · 4xx(매핑 · 차원) · 응답 해석 오류 — DB 오류(SQLAlchemyError)는 그대로 _safe 로
-            diag["esFallback"] = f"{name}: {str(exc)[:140]}"
-            diag["backend"] = "pg"
+            diag[fallback_key] = f"{name}: {str(exc)[:140]}"
+            diag[backend_key] = "pg"
             return pg_fn(None)
         seen = {r["ref"] for r in rows}
         extra = [r for r in pg_fn(mid) if r["ref"] not in seen]
@@ -444,34 +456,94 @@ def _doc_cols(origin: str, r: Any) -> dict[str, Any]:
     return {"origin": origin, "chunk_id": r["id"], "document_id": r["doc_id"], "doc_code": r["doc_code"], "title": r["title"], "doc_class": r["doc_class"], "page": r["page"], "section_path": r["section_path"], "text": r["text"]}
 
 
-def _doc_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int) -> list[dict[str, Any]]:
+def _doc_keyword(session: Session, scope: AccessScope, terms: list[str], lim: int, min_id: dict[str, int] | None = None) -> list[dict[str, Any]]:
+    """문서 키워드(PostgreSQL) — `min_id` 가 있으면 ES 에 아직 못 올린 새 청크(출처별 id > min_id)만(ES 보충)."""
     if not terms:
         return []
     filt, fp = doc_filter(scope)
     tp = {f"t{i}": f"{t}:*" for i, t in enumerate(terms)}
     out: list[dict[str, Any]] = []
     for origin in ORIGINS:
+        newer = " AND c.id > :es_min" if min_id is not None else ""
         sql = text(
             f"SELECT {DOC_SELECT}, ({_cover_sql('c', len(terms))}) + 0.1 * ts_rank(c.tsv, to_tsquery('simple', :q)) AS s FROM {origin}.chunk c JOIN {origin}.document d ON d.id = c.document_id "
-            f"WHERE {filt} AND c.tsv @@ to_tsquery('simple', :q) ORDER BY s DESC LIMIT :lim"
+            f"WHERE {filt}{newer} AND c.tsv @@ to_tsquery('simple', :q) ORDER BY s DESC LIMIT :lim"
         )
-        for r in session.execute(sql, {**fp, **tp, "q": " | ".join(f"{t}:*" for t in terms), "lim": lim}).mappings().all():
+        extra = {"es_min": int((min_id or {}).get(origin, 0))} if min_id is not None else {}
+        for r in session.execute(sql, {**fp, **tp, **extra, "q": " | ".join(f"{t}:*" for t in terms), "lim": lim}).mappings().all():
             out.append({"ref": ("doc", origin, r["id"]), "src": "doc", **_doc_cols(origin, r), "raw": float(r["s"]), "sig": {"keyword_score": round(float(r["s"]), 4)}})
     return out
 
 
-def _doc_vector(session: Session, scope: AccessScope, qvec: list[float], lim: int) -> list[dict[str, Any]]:
+def _doc_vector(session: Session, scope: AccessScope, qvec: list[float], lim: int, model: str | None = None, min_id: dict[str, int] | None = None) -> list[dict[str, Any]]:
+    """문서 의미(PostgreSQL) — 같은 모델 임베딩만(모델을 알 때). `min_id` 는 ES 보충."""
     filt, fp = doc_filter(scope)
     vec = "[" + ",".join(f"{x:.7f}" for x in qvec) + "]"
     out: list[dict[str, Any]] = []
     for origin in ORIGINS:
+        newer = " AND c.id > :es_min" if min_id is not None else ""
+        same_model = " AND c.embedding_model = :model" if model else ""
         sql = text(
             f"SELECT {DOC_SELECT}, (c.embedding <=> CAST(:v AS vector)) AS dist FROM {origin}.chunk c JOIN {origin}.document d ON d.id = c.document_id "
-            f"WHERE {filt} AND c.embedding IS NOT NULL AND vector_dims(c.embedding) = :dim ORDER BY dist LIMIT :lim"
+            f"WHERE {filt}{newer}{same_model} AND c.embedding IS NOT NULL AND vector_dims(c.embedding) = :dim ORDER BY dist LIMIT :lim"
         )
-        for r in session.execute(sql, {**fp, "v": vec, "dim": len(qvec), "lim": lim}).mappings().all():
+        extra: dict[str, Any] = {"es_min": int((min_id or {}).get(origin, 0))} if min_id is not None else {}
+        if model:
+            extra["model"] = model
+        for r in session.execute(sql, {**fp, **extra, "v": vec, "dim": len(qvec), "lim": lim}).mappings().all():
             out.append({"ref": ("doc", origin, r["id"]), "src": "doc", **_doc_cols(origin, r), "raw": float(r["dist"]), "sig": {"cosine_distance": round(float(r["dist"]), 4)}})
     return out
+
+
+def _hydrate_docs(session: Session, scope: AccessScope, keys: list[tuple[str, int]]) -> dict[tuple[str, int], Any]:
+    """ES 가 돌려준 문서 청크를 PostgreSQL 에서 문서 접근 규칙(현재 버전 · 열람 가능한 분류 · 부서한정)으로 다시 걸러 읽는다 — 권한 필드가 낡았거나 이전 판 청크여도 새지 않는다."""
+    out: dict[tuple[str, int], Any] = {}
+    filt, fp = doc_filter(scope)
+    for origin in ORIGINS:
+        ids = [n for o, n in keys if o == origin]
+        if not ids:
+            continue
+        rows = session.execute(
+            text(f"SELECT {DOC_SELECT} FROM {origin}.chunk c JOIN {origin}.document d ON d.id = c.document_id WHERE {filt} AND c.id = ANY(CAST(:es_ids AS int[]))"), {**fp, "es_ids": ids}
+        ).mappings().all()
+        for r in rows:
+            out[(origin, int(r["id"]))] = r
+    return out
+
+
+def _doc_keyword_es(session: Session, scope: AccessScope, terms: list[str], lim: int, n_cand: int, diag: dict[str, Any]) -> list[dict[str, Any]]:
+    """문서 키워드(ES · nori) — raw = 맞춘 어절 수 + 0.1 × (BM25 / 최대). PostgreSQL 문서 채널과 같은 척도(정수부 = 맞춘 어절 수)."""
+    if not terms:
+        return []
+    hits = elastic.doc_keyword_hits(elastic.doc_es_filter(scope), _stems(terms), size=n_cand)
+    if not hits:
+        return []
+    top = max((h[2] for h in hits), default=0.0) or 1.0
+    got = _hydrate_docs(session, scope, [(o, n) for o, n, _, _ in hits])
+    diag.setdefault("es", {})["doc_keyword"] = {"hits": len(hits), "kept": len(got)}
+    out = []
+    for o, n, bm25, matched in hits:
+        r = got.get((o, n))
+        if r is None:
+            continue
+        s = float(matched) + 0.1 * (bm25 / top)
+        out.append({"ref": ("doc", o, n), "src": "doc", **_doc_cols(o, r), "raw": s, "sig": {"keyword_score": round(s, 4)}})
+    return out[:lim]
+
+
+def _doc_vector_es(session: Session, scope: AccessScope, qvec: list[float], model: str, lim: int, n_cand: int, diag: dict[str, Any]) -> list[dict[str, Any]]:
+    hits = elastic.doc_vector_hits(elastic.doc_es_filter(scope), qvec, model or None, k=n_cand)
+    if not hits:
+        return []
+    got = _hydrate_docs(session, scope, [(o, n) for o, n, _ in hits])
+    diag.setdefault("es", {})["doc_vector"] = {"hits": len(hits), "kept": len(got)}
+    out = []
+    for o, n, dist in hits:
+        r = got.get((o, n))
+        if r is None:
+            continue
+        out.append({"ref": ("doc", o, n), "src": "doc", **_doc_cols(o, r), "raw": dist, "sig": {"cosine_distance": round(dist, 4)}})
+    return out[:lim]
 
 
 def graph_doc_scores(exact: list[str], expanded: list[str], weight: float) -> dict[tuple[str, int], tuple[float, int]] | None:
@@ -606,9 +678,10 @@ def retrieve(
     diag["timingsMs"]["embed"] = round((time.perf_counter() - t0) * 1000)
     ch: dict[str, list[dict[str, Any]]] = {"keyword": [], "vector": [], "graph": []}
 
+    n_cand = int(cfg.get("es_candidates", 60))
     if has_analysis:
         es = _es_state(session, cfg, diag)
-        n_cand, ratio, kw_cap = int(cfg.get("es_candidates", 60)), float(cfg.get("min_term_ratio", 0.34)), int(cfg.get("keyword_candidates", 3000))
+        ratio, kw_cap = float(cfg.get("min_term_ratio", 0.34)), int(cfg.get("keyword_candidates", 3000))
         mid = es["synced_max_id"] if es else None
         ef = int(cfg["hnsw_ef_search"]) if cfg.get("hnsw_ef_search") else None
         ch["keyword"] += _es_or_pg(
@@ -625,14 +698,35 @@ def retrieve(
                 lambda m: _kb_vector(session, scope, qvec, model or "", cfg.get("hnsw_dim"), lim, min_id=m, ef_search=ef, iterative=cfg.get("hnsw_iterative_scan")), reverse=False, lim=lim,
             )
         ch["graph"] += _safe(session, "kb_graph", diag, lambda: _kb_graph(session, scope, concepts, exp_keys, wexp, lim))
-    ch["keyword"] += _safe(session, "doc_keyword", diag, lambda: _doc_keyword(session, scope, terms, lim))
+    # 문서 — 3-way: 키워드 · 의미는 ES(문서 색인, PostgreSQL 에서 접근 규칙 재확인 · 새 청크 보충), 안 되면 PostgreSQL. 그래프는 Neo4j
+    dst = _es_doc_state(session, cfg, diag)
+    dmid = dst["synced_max_id"] if dst else None
+    dlim = lim * len(ORIGINS)  # PostgreSQL 문서 채널은 출처마다 lim 건 — 같은 폭으로
+    ch["keyword"] += _es_or_pg(
+        session, "doc_keyword", diag, dmid, lambda: _doc_keyword_es(session, scope, terms, dlim, n_cand, diag),
+        lambda m: _doc_keyword(session, scope, terms, lim, min_id=m), reverse=True, lim=dlim, backend_key="docBackend", fallback_key="esDocFallback",
+    )
     if qvec is not None:
-        ch["vector"] += _safe(session, "doc_vector", diag, lambda: _doc_vector(session, scope, qvec, lim))
+        vdmid = dmid if (dst and dst.get("dims") == len(qvec)) else None
+        if dst and vdmid is None:
+            diag["esDocFallback"] = diag.get("esDocFallback") or "doc_vector: ES 임베딩 색인 없음 또는 차원 불일치"
+        ch["vector"] += _es_or_pg(
+            session, "doc_vector", diag, vdmid, lambda: _doc_vector_es(session, scope, qvec, model or "", dlim, n_cand, diag),
+            lambda m: _doc_vector(session, scope, qvec, lim, model=model, min_id=m), reverse=False, lim=dlim, backend_key="docBackend", fallback_key="esDocFallback",
+        )
     t0 = time.perf_counter()
     gdocs = graph_doc_scores(concepts, exp_keys, wexp)
     diag["timingsMs"]["doc_graph_lookup"] = round((time.perf_counter() - t0) * 1000)
     if gdocs:
         ch["graph"] += _safe(session, "doc_graph", diag, lambda: _doc_graph(session, scope, gdocs, terms, lim))
+    # 실제로 쓴 엔진(채널별) — 화면 · 감사 진단에 '어느 저장소에서 찾았는지'
+    diag["engines"] = {
+        "analysis": (diag.get("backend", "pg") if has_analysis else None),
+        "documents": diag.get("docBackend", "pg"),
+        "graph": (("neo4j" if graph_up() else "postgres") if (concepts or exp_keys) else None),  # Neo4j 가 막히면 PostgreSQL 개념 태그 · 데이터셋 매핑 간선만
+    }
+    if not has_analysis:
+        diag["backend"] = diag.get("docBackend", "pg")
 
     ch["keyword"].sort(key=lambda r: r["raw"], reverse=True)
     ch["vector"].sort(key=lambda r: r["raw"])

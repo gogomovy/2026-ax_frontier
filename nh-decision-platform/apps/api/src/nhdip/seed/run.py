@@ -839,6 +839,17 @@ def assist_rename_upgrade(s: Session, out: dict[str, Any]) -> None:
         out["assist_rename_upgrade"] = 1
 
 
+def search_3way_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """3-way 검색 구성(Phase H · 설계 §24) — 1회. 검색 설정 knowledge.search.backend 가 예전 기본값 'pg' 이면 'auto' 로
+    (ES_URL 이 있으면 Elasticsearch, 없으면 지금처럼 PostgreSQL). 관리자가 이후 'pg' 로 되돌리면 다시 바꾸지 않는다."""
+    if _applied(s, "search-3way-v1"):
+        return
+    st = s.get(Setting, "knowledge.search")
+    if st is not None and isinstance(st.value, dict) and str(st.value.get("backend", "pg")).strip().lower() == "pg":
+        st.value = {**st.value, "backend": "auto"}
+        out["search_3way_upgrade"] = 1
+
+
 def _merge_screen_resources(s: Session, codes: set[str]) -> list[str]:
     """새 화면의 리소스를 설정 screen.resources 에 더한다 — 그 화면 키가 없을 때만(관리자 편집 보존)."""
     res = s.get(Setting, "screen.resources")
@@ -965,6 +976,8 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     admin_counts_upgrade(s, out)
     s.flush()
     seed_knowledge(s, out)
+    s.flush()
+    search_3way_upgrade(s, out)
     s.flush()
     # 시드로 생긴 dataset.committed 이벤트는 그대로 두면 관련 워크플로우가 모두 돈다.
     # 최초 시드 + precompute 요청 시: 그래프 투영을 먼저, 이후 업무 워크플로우를 즉시 실행하도록 수동 이벤트를 추가.

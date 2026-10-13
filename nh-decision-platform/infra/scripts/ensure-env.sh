@@ -46,6 +46,7 @@ fill CONFIG_ENC_KEY "$(rand_b64)"
 fill LITELLM_MASTER_KEY "sk-$(rand_hex 24)"
 fill LITELLM_UI_PASSWORD "$(rand_hex 12)"
 fill BOOTSTRAP_ADMIN_PASSWORD "Nh!$(rand_hex 6)"
+fill ES_PASSWORD "$(rand_hex 16)"
 
 chmod 600 "$TARGET"
 # 3) 같은 키가 여러 줄이면 경고 (echo >> 로 추가한 경우 — 값 지정은 infra/scripts/set-env.sh)

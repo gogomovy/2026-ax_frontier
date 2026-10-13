@@ -215,9 +215,10 @@ def _drop_state(db):
     from nhdip.models import Setting
 
     with db() as s:
-        st = s.get(Setting, elastic.STATE_KEY)
-        if st is not None:
-            s.delete(st)
+        for key in (elastic.STATE_KEY, elastic.DOC_STATE_KEY):
+            st = s.get(Setting, key)
+            if st is not None:
+                s.delete(st)
         s.commit()
 
 
@@ -257,9 +258,11 @@ def test_es_down_falls_back_to_postgres_with_same_answers(db, es_clean, monkeypa
     from nhdip.knowledge.search import retrieve
 
     q = "소기업 6B 등급 실제부도율은 예측 대표값 대비 어떤가요?"
-    with db() as s:
-        base = retrieve(s, _admin_scope(s), q)
-    assert base.diagnostics["backend"] == "pg" and "esFallback" not in base.diagnostics  # 기본 설정 — ES 를 건드리지 않는다
+    with monkeypatch.context() as mp:
+        mp.setattr(elastic, "configured", lambda: False)  # ES_URL 이 없는 축소 구성(auto) — ES 를 건드리지 않고 이유도 남기지 않는다
+        with db() as s:
+            base = retrieve(s, _admin_scope(s), q)
+    assert base.diagnostics["backend"] == "pg" and "esFallback" not in base.diagnostics
 
     def boom(req):
         raise httpx.ConnectError("refused")
@@ -322,12 +325,16 @@ def test_search_backend_is_visible_to_admin_and_preflight(db, es_clean, monkeypa
     monkeypatch.setattr(elastic, "configured", lambda: False)  # ES_URL 이 있는 환경에서 돌려도 '설정 안 함' 경로를 시험
     admin = _admin()
     st = admin.get("/admin/knowledge/status").json()["searchBackend"]
-    assert st["setting"] == "pg" and st["configured"] is False  # 기본 — ES 를 쓰지 않으면 연결 확인도 하지 않는다
-    assert not any(i["key"] == "search_backend" for i in admin.get("/admin/readiness").json()["items"])  # 쓰지 않으면 항목 자체가 없다
+    assert st["setting"] == "auto" and st["configured"] is False  # 기본(3-way) — ES_URL 이 없으면 연결 확인도 하지 않는다
+    assert st["engines"] == {"analysis": "pg", "documents": "pg", "graph": "postgres"}  # 지금 질문이 들어오면 어디서 찾는지
+    items = {i["key"]: i for i in admin.get("/admin/readiness").json()["items"]}
+    assert items["search_backend"]["level"] == "warn" and "3-way" in items["search_backend"]["message"]  # 표준 구성이 아님 — 축소 동작 중
     before = _set_setting(db, "knowledge.search", {"backend": "es"})
     try:
         items = {i["key"]: i for i in admin.get("/admin/readiness").json()["items"]}
         assert items["search_backend"]["level"] == "warn" and "ES_URL" in items["search_backend"]["message"]  # es 로 정했는데 주소가 없다
+        _set_setting(db, "knowledge.search", {"backend": "pg"})
+        assert not any(i["key"] == "search_backend" for i in admin.get("/admin/readiness").json()["items"])  # PostgreSQL 만 쓰기로 했으면 항목 자체가 없다
     finally:
         _restore_setting(db, "knowledge.search", before)
 
@@ -337,14 +344,17 @@ def test_search_backend_is_visible_to_admin_and_preflight(db, es_clean, monkeypa
 def live(db, monkeypatch, es_clean):
     """시험마다 겹치지 않는 색인 이름 — 끝나면 색인 · 동기화 상태 · 검색 설정을 원래대로."""
     name = f"nhdip-kb-test-{uuid.uuid4().hex[:8]}"
+    doc_name = name.replace("-kb-", "-doc-")
     monkeypatch.setattr(elastic, "index_name", lambda: name)
+    monkeypatch.setattr(elastic, "doc_index_name", lambda: doc_name)
     before = _set_setting(db, "knowledge.search", {"backend": "pg"})
     _drop_state(db)
     yield name
-    try:
-        elastic.request("DELETE", f"/{name}", ok=(200, 404))
-    except elastic.EsUnavailable:
-        pass
+    for idx in (name, doc_name):
+        try:
+            elastic.request("DELETE", f"/{idx}", ok=(200, 404))
+        except elastic.EsUnavailable:
+            pass
     _restore_setting(db, "knowledge.search", before)
     _drop_state(db)
     with db() as s:
@@ -401,7 +411,10 @@ def test_live_status_rebuild_and_cli(db, live, capsys):
     assert cli.main(["kb-es"]) == 0
     assert json.loads(capsys.readouterr().out)["es_docs"] == total
     assert cli.main(["kb-es", "--sync"]) == 0
-    assert json.loads(capsys.readouterr().out)["indexed"] == 0  # 이미 같다 — 멱등
+    rep = json.loads(capsys.readouterr().out)
+    assert rep["analysis"]["indexed"] == 0 and rep["documents"]["failed"] == 0  # 분석 결과는 이미 같다 — 멱등, 문서 색인도 함께
+    assert cli.main(["kb-es", "--check"]) == 0  # 두 색인 모두 동기화 · nori — 3-way 점검 통과
+    assert json.loads(capsys.readouterr().out)["ok"] is True
 
 
 @ES_LIVE
@@ -439,8 +452,9 @@ def test_live_golden_set_passes_with_es_backend(db, live):
     with db() as s:
         rep = run(s)
     assert count() > before  # 골든셋의 질문하기 사례가 실제로 ES 를 거쳤다
-    bad = {k: v["failures"] for k, v in rep["categories"].items() if not v["ok"]}
-    assert rep["passed"], bad
+    # 검색이 결정하는 범주(근거 검색 · 팀별 질문하기)만 본다 — 산출물 수치 범주는 앞선 시험이 바꾼 자료에 따라 달라져(전체 실행 순서) 검색 엔진과 무관하다
+    bad = {k: v["failures"] for k, v in rep["categories"].items() if k in ("retrieval", "knowledge") and not v["ok"]}
+    assert not bad, bad
     assert rep["categories"]["knowledge"]["total"] >= 4
 
 
@@ -539,3 +553,353 @@ def test_live_es_outage_mid_flight_falls_back_and_recovers(db, live):
     with db() as s:
         up = retrieve(s, _admin_scope(s), q)
     assert up.diagnostics["backend"] == "es" and [h["chunk_id"] for h in up.analysis][:1]
+
+
+# ═════════════════════════ 3-way 구성 (Phase H · 설계 §24) — 문서 색인 · 근거 검색 · 엔진 선택 ═════════════════════════
+def test_doc_es_filter_mirrors_doc_filter_rules():
+    """문서 사전 필터의 ES 판 — SQL doc_filter 와 같은 규칙: 열람 가능한 분류 + 부서한정 문서는 내 부서 문서만(관리자는 조건 없음)."""
+    adm = elastic.doc_es_filter(AccessScope(ctx=AccessContext(emp_no="1", is_admin=True, org_codes=set(), resources=None, offices=None, dept_docs=None), collections={}, full=[], gated=[], owned=set(), doc_classes=None))
+    assert adm == {"bool": {"filter": []}}
+    ctx = AccessContext(emp_no="2", is_admin=False, org_codes={"T211"}, resources=set(), offices=None, dept_docs={"doc-b", "doc-a"})
+    sc = elastic.doc_es_filter(AccessScope(ctx=ctx, collections={}, full=[], gated=[], owned=set(), doc_classes=["model_method", "branch_ref"]))
+    flt = sc["bool"]["filter"]
+    assert flt[0] == {"terms": {"doc_class": ["branch_ref", "model_method"]}}
+    dept = flt[1]["bool"]["should"]
+    assert dept[0] == {"bool": {"must_not": [{"term": {"access_class": "dept_only"}}]}} and dept[1] == {"terms": {"doc_code": ["doc-a", "doc-b"]}}
+    none = elastic.doc_es_filter(AccessScope(ctx=ctx, collections={}, full=[], gated=[], owned=set(), doc_classes=[]))
+    assert none == elastic.NOTHING  # 열람 가능한 문서 분류가 하나도 없으면 아무것도 (SQL 'FALSE')
+
+
+def test_doc_es_filter_for_workflow_and_doc_ids():
+    f = elastic.doc_es_filter_for(("bank", "ext"), {"bank": [3, 1], "ext": []}, ["gov_policy"])["bool"]["filter"]
+    assert f[0] == {"terms": {"origin": ["bank", "ext"]}} and f[1] == {"terms": {"doc_class": ["gov_policy"]}}
+    assert f[2]["bool"]["should"] == [{"bool": {"filter": [{"term": {"origin": "bank"}}, {"terms": {"document_id": [1, 3]}}]}}]  # 개념 경로 문서(출처별)만
+    assert elastic.doc_es_filter_for(("ext",), {"bank": [1]}, None) == elastic.NOTHING  # 고른 문서가 그 출처에 없으면 아무것도
+    assert elastic.doc_es_filter_for(("bank",), None, None) == {"bool": {"filter": [{"terms": {"origin": ["bank"]}}]}}
+    assert elastic.parse_doc_id("ext:42") == ("ext", 42) and elastic.doc_es_id("bank", 7) == "bank:7"
+    for bad in ("42", "app:1", "bank:x", None):
+        with pytest.raises(ValueError):
+            elastic.parse_doc_id(bad)
+
+
+def test_readiness_follows_backend_mode(db, es_clean, monkeypatch):
+    """auto(기본) — ES_URL 이 없으면 조용히 PostgreSQL(이유 없음), es — 이유를 남김, pg — 언제나 PostgreSQL."""
+    with db() as s:
+        monkeypatch.setattr(elastic, "configured", lambda: False)
+        assert elastic.readiness(s, "kb", "auto") == (None, None)
+        assert elastic.readiness(s, "doc", "es") == (None, "ES_URL 미설정")
+        monkeypatch.setattr(elastic, "configured", lambda: True)
+        assert elastic.readiness(s, "kb", "pg") == (None, None)
+        _drop_state(db)
+        assert elastic.readiness(s, "doc", "auto") == (None, "ES 아직 동기화 전")
+        elastic._save_state_of(s, elastic.DOC_STATE_KEY, synced_max_id={"bank": 5}, dims=None)
+        st, why = elastic.readiness(s, "doc", "auto")
+        assert why is None and st == {"synced_max_id": {"bank": 5, "ext": 0}, "dims": None}
+        elastic.mark_down()
+        assert elastic.readiness(s, "doc", "auto")[1] == "ES 연결 대기(차단기 열림)"
+        s.rollback()
+        assert elastic.backend_mode(s) == "auto"  # 시드 기본값(3-way)
+
+
+def test_user_dictionary_segments_ontology_aliases(db, monkeypatch):
+    """nori 사용자 사전 = 온톨로지 별칭 — 짧은 사전 낱말 · 흔한 끝말로 나눌 수 있으면 '낱말 앞 뒤', 나눌 수 없으면 기본 분석이 글자를 버리는 낱말만."""
+    elastic._DICT_CACHE.clear()
+    monkeypatch.setattr(elastic, "_drops_chars", lambda w: w in {"사잇돌"})
+    with db() as s:
+        rules = elastic.user_dictionary(s)
+    by = {r.split(" ")[0]: r.split(" ")[1:] for r in rules}
+    assert by["햇살론뱅크"] == ["햇살론", "뱅크"]  # 사전의 더 짧은 낱말(햇살론)로 시작
+    assert by["기업여신"] == ["기업", "여신"]  # 흔한 끝말(여신)
+    assert by["사잇돌"] == []  # 나눌 수 없고 기본 분석이 글자를 버리는 낱말 — 통째로
+    assert "외감" not in by  # 나눌 수 없고 기본 분석이 잘 다루는 낱말은 넣지 않는다(부분 검색을 막지 않게)
+    assert all("".join(seg) == w for w, seg in by.items() if seg)  # 조각을 이으면 낱말
+    assert elastic.dict_signature(rules) == elastic.dict_signature(list(rules)) and len(elastic.dict_signature(rules)) == 12
+    elastic._DICT_CACHE.clear()
+
+
+def test_ensure_recreates_index_when_definition_changes(es_clean):
+    """색인 정의(매핑 판 · 사용자 사전 서명)가 바뀌면 지우고 다시 만든다 — 원장이 PostgreSQL 이라 다시 올리면 된다. 같으면 그대로."""
+    calls: list[tuple[str, str]] = []
+    cur = {"meta": {"version": 1, "dict": "old"}}
+
+    def handler(req):
+        calls.append((req.method, req.url.path))
+        if req.method == "HEAD":
+            return httpx.Response(200)
+        if req.method == "GET" and req.url.path.endswith("/_mapping"):
+            return httpx.Response(200, json={"i": {"mappings": {"_meta": {"nhdip": cur["meta"]}}}})
+        if req.method == "GET":
+            return httpx.Response(200, json={"i": {"settings": {"index": {"analysis": {"tokenizer": {"t": {"type": "nori_tokenizer"}}}}}}})
+        return httpx.Response(200, json={"acknowledged": True})
+
+    elastic.set_client(_client(handler))
+    meta = {"version": 1, "dict": "new"}
+    assert elastic._ensure("i", lambda a, r: elastic.doc_index_body(a, r, meta), ["사잇돌"], meta) == ("nori", True)
+    assert ("DELETE", "/i") in calls and ("PUT", "/i") in calls
+    calls.clear()
+    cur["meta"] = meta
+    assert elastic._ensure("i", lambda a, r: elastic.doc_index_body(a, r, meta), ["사잇돌"], meta) == ("nori", False)
+    assert not any(m in ("DELETE", "PUT") for m, _ in calls)
+    body = elastic.doc_index_body("nori", ["사잇돌"], meta)
+    assert body["settings"]["analysis"]["tokenizer"]["ko_tokenizer"]["user_dictionary_rules"] == ["사잇돌"] and body["mappings"]["_meta"] == {"nhdip": meta}
+    assert body["mappings"]["dynamic"] == "strict" and set(body["mappings"]["_source"]["excludes"]) >= {"text", "title", "embedding"}
+
+
+def test_cli_kb_es_check_exit_code(monkeypatch, capsys):
+    from nhdip import cli
+
+    monkeypatch.setattr(elastic, "configured", lambda: True)
+    monkeypatch.setattr(elastic, "status", lambda s: {"configured": True, "up": True, "state": {"synced_at": "x", "analyzer": "nori"}, "es_docs": 3, "pg_chunks": 3, "lag": 0, "documents": {"state": {}, "es_docs": None}})
+    assert cli.main(["kb-es", "--check"]) == 1  # 문서 색인 동기화 전
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is False and any("문서" in p for p in out["problems"])
+    assert elastic.healthy({"configured": True, "up": True, "state": {"synced_at": "x"}, "lag": 0, "documents": {"state": {"synced_at": "y"}, "lag": 0}}) == (True, [])
+
+
+def _doc_rows(s, sql: str) -> list[tuple[str, int]]:
+    out = []
+    for o in ("bank", "ext"):
+        out += [(o, int(i)) for i in s.execute(text(sql.format(o=o))).scalars()]
+    return out
+
+
+def _use_doc_es(db, monkeypatch, handler, *, synced: dict[str, int] | None, dims: int | None = None):
+    monkeypatch.setattr(elastic, "configured", lambda: True)
+    elastic.reset_breaker()
+    elastic.set_client(_client(handler))
+    before = _set_setting(db, "knowledge.search", {"backend": "auto"})
+    with db() as s:
+        elastic._save_state_of(s, elastic.DOC_STATE_KEY, synced_max_id=synced, dims=dims)
+        s.commit()
+    return before
+
+
+def test_doc_es_hits_are_rechecked_so_dept_only_other_classes_and_old_versions_cannot_leak(db, es_clean, monkeypatch):
+    """ES 문서 색인이 낡아(권한 · 판) 영업점에 보이면 안 되는 청크를 돌려줘도 PostgreSQL 재확인에서 사라진다 — 3-way 핵심 불변식."""
+    from nhdip.knowledge.search import _doc_keyword_es, _doc_vector_es
+
+    admin = _admin()
+    _user(admin, "20269103", "BR301")
+    branch = _scope_for(db, "20269103")
+    with db() as s:
+        hidden = _doc_rows(s, "SELECT c.id FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.doc_class = 'model_method' OR d.meta->>'accessClass' = 'dept_only'")
+        visible = _doc_rows(s, "SELECT c.id FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.is_current AND d.doc_class = 'branch_ref' AND coalesce(d.meta->>'accessClass', 'internal') <> 'dept_only'")
+        assert hidden and visible
+        old_doc = visible[0]  # 이 청크의 문서를 '이전 판'으로 만든다(같은 트랜잭션 안에서만)
+        s.execute(text(f"UPDATE {old_doc[0]}.document SET is_current = false WHERE id = (SELECT document_id FROM {old_doc[0]}.chunk WHERE id = :i)"), {"i": old_doc[1]})
+        keys = [*hidden, ("bank", 98765432), *visible]
+        hits = [{"_id": f"{o}:{n}", "_score": 9.0 - i * 0.1, "matched_queries": ["s0"]} for i, (o, n) in enumerate(keys)]
+        elastic.set_client(_client(lambda req: httpx.Response(200, json={"hits": {"hits": hits}})))
+        diag: dict = {}
+        rows = _doc_keyword_es(s, branch, ["업적평가"], 80, 60, diag)
+        got = {(r["origin"], r["chunk_id"]) for r in rows}
+        assert got and got <= set(visible[1:]) and old_doc not in got, got  # 부서한정 · 모형 문서 · 이전 판 · 없는 청크는 사라진다
+        assert not got & set(hidden)
+        assert diag["es"]["doc_keyword"]["hits"] == len(keys) and all(int(r["sig"]["keyword_score"]) == 1 for r in rows)
+        vh = [{"_id": f"{o}:{n}", "_score": 0.9} for o, n in keys]
+        elastic.set_client(_client(lambda req: httpx.Response(200, json={"hits": {"hits": vh}})))
+        vrows = _doc_vector_es(s, branch, [0.1] * 4, "m", 80, 60, diag)
+        assert {(r["origin"], r["chunk_id"]) for r in vrows} == got and all(r["sig"]["cosine_distance"] == pytest.approx(0.2, abs=1e-3) for r in vrows)
+        s.rollback()
+
+
+def test_doc_channel_falls_back_and_supplements_new_chunks(db, es_clean, monkeypatch):
+    """문서 채널 — ES 오류면 PostgreSQL 로 같은 답, 아직 ES 에 없는 새 청크(출처별 id > 동기화 위치)는 PostgreSQL 이 보충한다."""
+    from nhdip.knowledge.search import retrieve
+
+    q = "포용금융 확대방안 정책 기조 근거는?"
+    with monkeypatch.context() as mp:
+        mp.setattr(elastic, "configured", lambda: False)
+        with db() as s:
+            base = retrieve(s, _admin_scope(s), q)
+    assert base.documents and base.diagnostics["docBackend"] == "pg"
+
+    def boom(req):
+        raise httpx.ConnectError("refused")
+
+    before = _use_doc_es(db, monkeypatch, boom, synced={"bank": 0, "ext": 0})
+    try:
+        with db() as s:
+            r1 = retrieve(s, _admin_scope(s), q)
+        assert r1.diagnostics["docBackend"] == "pg" and "doc_keyword" in r1.diagnostics["esDocFallback"]
+        assert [(d["origin"], d["chunk_id"]) for d in r1.documents] == [(d["origin"], d["chunk_id"]) for d in base.documents]  # 폴백해도 근거는 같다
+        empty = lambda req: httpx.Response(200, json={"hits": {"hits": []}})  # noqa: E731 — ES 는 빈손, 전부 '아직 안 올라감'
+        _use_doc_es(db, monkeypatch, empty, synced={"bank": 0, "ext": 0})
+        with db() as s:
+            r2 = retrieve(s, _admin_scope(s), q)
+        assert r2.diagnostics["docBackend"] == "es" and r2.diagnostics["es"]["doc_keyword"]["supplement"] > 0
+        assert [(d["origin"], d["chunk_id"]) for d in r2.documents] == [(d["origin"], d["chunk_id"]) for d in base.documents]
+        assert r2.diagnostics["engines"]["documents"] == "es"
+        with db() as s:
+            mx = {o: int(s.execute(text(f"SELECT coalesce(max(id), 0) FROM {o}.chunk")).scalar()) for o in ("bank", "ext")}
+        _use_doc_es(db, monkeypatch, empty, synced=mx)
+        with db() as s:
+            r3 = retrieve(s, _admin_scope(s), q)
+        assert r3.diagnostics["candidates"]["doc_keyword"] == 0  # 전부 올라갔다고 보면 ES 가 빈손일 때 보충도 없다
+    finally:
+        _restore_setting(db, "knowledge.search", before)
+        _drop_state(db)
+
+
+def test_workflow_evidence_search_uses_es_with_postgres_recheck(db, es_clean, monkeypatch):
+    """워크플로 근거 검색(hybrid_search)도 3-way — ES 후보를 PostgreSQL 에서 같은 조건(현재 판 · 분류 · 개념 경로 문서)으로 다시 걸러 읽고, ES 가 안 되면 PostgreSQL."""
+    from nhdip.graph.search import hybrid_search
+
+    with db() as s:
+        base_diag: dict = {}
+        with monkeypatch.context() as mp:
+            mp.setattr(elastic, "configured", lambda: False)
+            base = hybrid_search(s, "포용금융 확대", doc_classes=["gov_policy", "mgmt_decision"], k=6, diag=base_diag)
+        assert base and base_diag["engine"] == "pg"
+        allowed = _doc_rows(s, "SELECT c.id FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.is_current AND d.doc_class IN ('gov_policy', 'mgmt_decision')")
+        other = _doc_rows(s, "SELECT c.id FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.doc_class = 'model_method'")
+        mx = {o: int(s.execute(text(f"SELECT coalesce(max(id), 0) FROM {o}.chunk")).scalar()) for o in ("bank", "ext")}
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        hits = [{"_id": f"{o}:{n}", "_score": 5.0 - i * 0.01, "matched_queries": ["s0", "s1"]} for i, (o, n) in enumerate([*other[:2], ("ext", 99999999), *allowed])]
+        return httpx.Response(200, json={"hits": {"hits": hits}})
+
+    before = _use_doc_es(db, monkeypatch, handler, synced=mx)
+    try:
+        with db() as s:
+            d2: dict = {}
+            got = hybrid_search(s, "포용금융 확대", doc_classes=["gov_policy", "mgmt_decision"], k=6, diag=d2)
+        assert d2["engine"] == "es" and got
+        assert {(h["origin"], h["chunk_id"]) for h in got} <= set(allowed)  # 분류 밖 · 없는 청크는 PostgreSQL 재확인에서 빠진다
+        assert all(h["signals"]["keyword_score"] >= 2 for h in got)  # 정수부 = 맞춘 어절 수(근거 선별의 의미 단계 척도)
+        assert {"terms": {"doc_class": ["gov_policy", "mgmt_decision"]}} in seen["body"]["query"]["bool"]["filter"][0]["bool"]["filter"]
+
+        def boom(req):
+            raise httpx.ConnectError("refused")
+
+        elastic.set_client(_client(boom))
+        with db() as s:
+            d3: dict = {}
+            fb = hybrid_search(s, "포용금융 확대", doc_classes=["gov_policy", "mgmt_decision"], k=6, diag=d3)
+        assert d3["engine"] == "pg" and "keyword" in d3["esFallback"]
+        assert [(h["origin"], h["chunk_id"]) for h in fb] == [(h["origin"], h["chunk_id"]) for h in base]  # 폴백하면 PostgreSQL 결과 그대로
+    finally:
+        _restore_setting(db, "knowledge.search", before)
+        _drop_state(db)
+
+
+def test_retrieval_view_reports_engine_per_store(db, es_clean):
+    admin = _admin()
+    r = _ask(admin, "포용금융 충당금 비중은 얼마인가요?")
+    eng = r["retrieval"]["engines"]
+    assert set(eng) == {"analysis", "documents", "graph"} and eng["analysis"] in ("pg", "es") and eng["documents"] in ("pg", "es")
+
+
+def test_seed_upgrade_moves_old_default_backend_to_auto(db):
+    """예전 DB(검색 설정 backend = pg)는 시드 보강이 한 번 auto 로 — 이후 관리자가 pg 로 되돌리면 다시 바꾸지 않는다."""
+    from nhdip.models import Setting
+    from nhdip.seed.run import search_3way_upgrade
+
+    with db() as s:
+        st = s.get(Setting, "seed.applied_upgrades")
+        st.value = [x for x in st.value if x != "search-3way-v1"]
+        ks = s.get(Setting, "knowledge.search")
+        ks.value = {**ks.value, "backend": "pg"}
+        s.flush()
+        out: dict = {}
+        search_3way_upgrade(s, out)
+        assert out == {"search_3way_upgrade": 1} and s.get(Setting, "knowledge.search").value["backend"] == "auto"
+        ks.value = {**ks.value, "backend": "pg"}
+        s.flush()
+        search_3way_upgrade(s, {})
+        assert s.get(Setting, "knowledge.search").value["backend"] == "pg"  # 1회만
+        ks.value = {**ks.value, "backend": "auto"}
+        s.commit()
+
+
+# ── 실제 ES — 문서 색인 ──
+def _doc_es_keys(scope) -> set[tuple[str, int]]:
+    r = elastic.request("POST", f"/{elastic.doc_index_name()}/_search", json_body={"size": 10000, "_source": False, "track_total_hits": False, "query": elastic.doc_es_filter(scope)})
+    return {elastic.parse_doc_id(h["_id"]) for h in r["hits"]["hits"]}
+
+
+@ES_LIVE
+def test_live_doc_sync_is_idempotent_and_doc_filter_equals_sql(db, live):
+    """문서 색인 — 현재 판 청크만 · 멱등 · 접근 규칙 SQL(doc_filter) ↔ ES(doc_es_filter) 같은 집합(관리자 · 본부 · 신용리스크 · 영업점)."""
+    from nhdip.knowledge.access import doc_filter
+
+    admin = _admin()
+    for emp, org in (("20269101", "T121"), ("20269102", "T211"), ("20269111", "BR301")):
+        _user(admin, emp, org)
+    with db() as s:
+        out = elastic.sync_docs(s, limit=10**9, force=True)
+        s.commit()
+        total = sum(int(s.execute(text(f"SELECT count(*) FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.is_current")).scalar()) for o in ("bank", "ext"))
+        assert out["failed"] == 0 and out["indexed"] == total and out["pending"] == 0 and out["analyzer"] == "nori" and out["dictionary"] > 0, out
+        again = elastic.sync_docs(s, force=True)
+        assert again["indexed"] == 0 and again["deleted"] == 0
+    sets = []
+    for emp in (None, "20269101", "20269102", "20269111"):
+        with db() as s:
+            scope = _admin_scope(s) if emp is None else _scope_for(db, emp)
+            filt, fp = doc_filter(scope)
+            sql_keys = set()
+            for o in ("bank", "ext"):
+                sql_keys |= {(o, int(i)) for i in s.execute(text(f"SELECT c.id FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE {filt}"), fp).scalars()}
+        es_keys = _doc_es_keys(scope)
+        assert sql_keys and es_keys == sql_keys, f"{emp}: SQL {len(sql_keys)} ≠ ES {len(es_keys)}"
+        sets.append(frozenset(es_keys))
+    assert len(set(sets)) >= 3  # 범위가 실제로 다르다(부서한정 · 분류)
+
+
+@ES_LIVE
+def test_live_doc_version_change_and_dictionary(db, live):
+    """새 판이 적재되면(이전 판 is_current = false) 이전 판 청크는 다음 동기화에서 색인에서 빠진다. nori 사용자 사전이 별칭을 지킨다."""
+    with db() as s:
+        elastic.sync_docs(s, limit=10**9, force=True)
+        s.commit()
+        o, doc_id = "ext", int(s.execute(text("SELECT id FROM ext.document WHERE is_current ORDER BY id LIMIT 1")).scalar())
+        n = int(s.execute(text("SELECT count(*) FROM ext.chunk WHERE document_id = :d"), {"d": doc_id}).scalar())
+        s.execute(text("UPDATE ext.document SET is_current = false WHERE id = :d"), {"d": doc_id})
+        s.commit()
+        try:
+            out = elastic.sync_docs(s, force=True)
+            s.commit()
+            assert out["deleted"] == n
+        finally:
+            s.execute(text("UPDATE ext.document SET is_current = true WHERE id = :d"), {"d": doc_id})
+            s.commit()
+        assert elastic.sync_docs(s, force=True)["indexed"] == n  # 되돌리면 다시 올라간다
+        s.commit()
+    tok = elastic.request("POST", f"/{elastic.doc_index_name()}/_analyze", json_body={"analyzer": "ko", "text": "햇살론뱅크 새희망홀씨대출"})
+    words = {t["token"] for t in tok["tokens"]}
+    assert {"햇살론", "새희망홀씨"} <= words or {"햇살론뱅크", "새희망홀씨대출"} <= words, words  # 기본 nori 는 '론' · '새' 를 버린다 — 사전이 막는다
+
+
+@ES_LIVE
+def test_live_three_way_retrieve_and_workflow_search(db, live):
+    """3-way — 분석 결과 · 문서 모두 ES 에서 찾고(auto), 골든셋이 통과하며, 워크플로 근거 검색도 ES 를 쓴다."""
+    import test_golden as tg
+    from nhdip.evals import run
+    from nhdip.graph.search import hybrid_search
+    from nhdip.knowledge.search import retrieve
+
+    tg._drain(db)
+    with db() as s:
+        rep = elastic.sync_all(s, limit=10**9, force=True)
+        s.commit()
+    assert rep["analysis"]["failed"] == 0 and rep["documents"]["failed"] == 0, rep
+    _set_setting(db, "knowledge.search", {"backend": "auto"})
+    with db() as s:
+        ret = retrieve(s, _admin_scope(s), "포용금융 확대방안 정책 기조 근거는?")
+    d = ret.diagnostics
+    assert d["engines"]["analysis"] == "es" and d["engines"]["documents"] == "es", d
+    assert "esFallback" not in d and "esDocFallback" not in d and ret.documents and d["candidates"]["doc_keyword"] > 0
+    with db() as s:
+        sd: dict = {}
+        hits = hybrid_search(s, "포용금융 확대", doc_classes=["gov_policy", "mgmt_decision"], k=5, diag=sd)
+    assert sd["engine"] == "es" and hits and sd["es"]["keyword"]["kept"] > 0
+    count = lambda: int(elastic.request("GET", f"/{elastic.doc_index_name()}/_stats/search")["_all"]["primaries"]["search"]["query_total"])  # noqa: E731
+    before = count()
+    with db() as s:
+        g = run(s)
+    assert count() > before  # 골든셋(근거 · 질문하기)이 문서 색인을 거쳤다
+    bad = {k: v["failures"] for k, v in g["categories"].items() if k in ("retrieval", "knowledge") and not v["ok"]}  # 검색이 결정하는 범주(위 시험과 같은 이유)
+    assert not bad and g["categories"]["retrieval"]["total"] >= 1, bad

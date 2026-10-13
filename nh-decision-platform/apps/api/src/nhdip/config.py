@@ -21,11 +21,13 @@ class Settings(BaseSettings):
     neo4j_user: str = "neo4j"
     neo4j_password: str = "nhdip-neo4j"
 
-    # 선택 검색 엔진 Elasticsearch (설계 §21.18) — 주소를 비우면 쓰지 않는다(기본: PostgreSQL pgvector + 전문 검색). 쓰려면 관리자 설정 knowledge.search.backend = "es"
-    es_url: str = ""  # 예: http://elasticsearch:9200
+    # 검색 엔진 Elasticsearch — 3-way 구성(설계 §24: PostgreSQL 원장 · ES 키워드/의미 · Neo4j 그래프)의 표준 검색 엔진.
+    # 주소를 비우면 쓰지 않고 PostgreSQL(pgvector + 전문 검색)로 축소 동작한다. 검색 설정 knowledge.search.backend = auto(기본) | es | pg
+    es_url: str = ""  # 예: http://elasticsearch:9200 (docker compose 기본값)
     es_user: str = ""
     es_password: str = ""
-    es_index: str = "nhdip-kb-chunk"
+    es_index: str = "nhdip-kb-chunk"  # 분석 결과 청크(app.kb_chunk)
+    es_doc_index: str = "nhdip-doc-chunk"  # 문서 청크({bank,ext}.chunk, 현재 버전만)
     es_verify_certs: bool = True
     es_ca_certs: str = ""  # 사내 CA(PEM) 파일 경로 — https 의 ES 가 사설 인증서일 때 검증을 끄지 않고 이 CA 만 믿는다(비우면 시스템 신뢰 저장소)
     es_timeout_sec: float = 10.0

@@ -3,6 +3,7 @@
  * (탭을 닫으면 사라지고, 사용자별 키라 다른 사람이 같은 탭에서 로그인해도 보이지 않으며 로그인 때 다른 사용자의 기록은 지운다), 서버에는 후속 질문용 최근 3턴만 보낸다.
  */
 import type { CiteKind } from "@/lib/markdown";
+import type { RetrievalEngines } from "./search-engines";
 
 export interface AssistMetric {
   code: string;
@@ -57,6 +58,8 @@ export interface AssistRetrieval {
   timingsMs?: Record<string, number>;
   /** 실제로 쓴 검색 엔진 — ES 가 안 되어 폴백했으면 pg (없으면 pg) */
   backend?: "pg" | "es";
+  /** 3-way — 분석 결과 · 문서의 키워드 · 의미 후보를 찾은 엔진과 그래프 엔진(설계 §24) */
+  engines?: RetrievalEngines;
 }
 export interface ScopeItem {
   code: string;

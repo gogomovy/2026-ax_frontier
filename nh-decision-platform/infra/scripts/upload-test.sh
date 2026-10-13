@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 set -a; . ./.env; set +a
 P=nhdipe2e
-export WEB_PORT=${E2E_WEB_PORT:-3100} API_PORT=${E2E_API_PORT:-8100} NEO4J_HTTP_PORT=${E2E_NEO4J_HTTP_PORT:-7574} NEO4J_BOLT_PORT=${E2E_NEO4J_BOLT_PORT:-7787}
+export WEB_PORT=${E2E_WEB_PORT:-3100} API_PORT=${E2E_API_PORT:-8100} NEO4J_HTTP_PORT=${E2E_NEO4J_HTTP_PORT:-7574} NEO4J_BOLT_PORT=${E2E_NEO4J_BOLT_PORT:-7787} ES_PORT=${E2E_ES_PORT:-9300}
 FIX="${TMPDIR:-/tmp}/nhdip-upload-fixtures"
 cleanup() { [[ "${KEEP:-0}" == "1" ]] || docker compose -p "$P" down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT

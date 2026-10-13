@@ -115,7 +115,7 @@ graph TB
 | 임베딩 | LiteLLM 경유 임베딩 모델(관리자 설정, 예: BGE-m3 온프렘) | 미설정 시 키워드 검색만으로 축소(ONT-05) |
 | 원장 DB | PostgreSQL 16 | Fact·목표·계산이력·감사(ONT-03) |
 | 그래프 | Neo4j 5 + APOC + neosemantics | 온톨로지 인스턴스·경로 탐색·Cascade(ONT-04) |
-| 벡터 | **PostgreSQL pgvector** + 전문 검색(점수 결합 · RRF 선택, §21.15) | 별도 벡터 DB 없이 권한·시점 필터와 한 쿼리(§19.2, ONT-05) |
+| 검색 · 벡터 | **3-way(§24)**: 검색 엔진 **Elasticsearch**(키워드 BM25 + nori · 의미 kNN — 분석 결과 · 문서 색인) + 원장 **PostgreSQL pgvector**(임베딩 값 · 권한 재확인 · ES 없을 때 전문 검색 · pgvector 로 축소 동작) + 그래프 Neo4j. 결합은 애플리케이션(점수 결합 · RRF 선택, §21.15) | 처음 설계(§19.2)는 별도 벡터 DB 없이 PostgreSQL 한 쿼리 — 한국어 형태소 · 대용량 키워드 성능 때문에 Phase H 에서 ES 를 표준으로(Q130). 권한 판정은 여전히 PostgreSQL |
 | 객체 저장소 | 파일 볼륨 + 체크섬 (저장소 인터페이스로 분리) | 단일 노드 Docker 배포(DEP-02). 차기 S3 호환 저장소로 교체 가능 |
 | 배치 | APScheduler(컨테이너 내장 스케줄러) | 일/월/분기 배치, 재시도·SLA(AGT-08, NFR-08). Docker 단독 배포를 전제로 Airflow 대신 경량 스케줄러 채택. 운영 규모 확대 시 Airflow로 교체 가능한 잡 인터페이스 유지 |
 | 비동기 잡 | 워커 컨테이너(동일 이미지, 별도 커맨드) | 업로드 파싱, 변경 기반 워크플로우. 큐는 **PostgreSQL 작업 테이블 + 아웃박스**(§19.5) |
@@ -2864,6 +2864,8 @@ HNSW 생성은 24초(인덱스 781MB). 개선 후에도 가장 느린 것은 흔
 
 ### 21.18 벡터 · 검색 저장소 선택 근거와 전환 기준 (2026-10-13)
 
+> **갱신(Phase H · §24):** 아래의 '선택 사항(기본 꺼짐)' 은 같은 날 **3-way 표준 구성**으로 바뀌었다 — compose 기본 서비스 · 검색 설정 기본 `auto` · 문서 청크 색인 · 워크플로 근거 검색 · nori 사용자 사전. 측정 · 권한 원칙(PostgreSQL 재확인)은 그대로 유효하다.
+
 **현재**: 기본은 별도 벡터 DB 가 없다(결정 Q110). 분석 결과 청크(`app.kb_chunk`)와 문서 청크(`{bank|ext}.chunk`)의 벡터는 PostgreSQL `pgvector`(부분 HNSW 인덱스), 키워드는 같은 표의 `tsvector` + GIN, 개념 그래프만 Neo4j 투영이다. **선택 사항으로 분석 결과 청크의 키워드 · 의미 채널을 Elasticsearch 로 옮길 수 있다**(아래 「선택 검색 엔진 구현」, 기본 꺼짐). Milvus 는 쓰지 않는다.
 
 **유지하는 이유(측정 근거)**
@@ -3058,3 +3060,130 @@ if (await confirm({ title, body, confirmLabel, tone: "danger" | "default", input
 ### 23.6 참고 — 로컬 Elasticsearch 확인 (다른 브랜치 §21.18 작업 참고용, 2026-10-13)
 
 Windows 압축본 9.5.5 + `analysis-nori`(기본 basic 등급)로 확인: nori 가 '기업여신 증가율과 목표 대비 이탈은 얼마인가요?' 를 기업 · 여신 · 증가 · 목표 · 대비 · 이탈 · 얼마 · 이 로 나눔 / `dense_vector` 차원을 생략하면 첫 벡터 길이로 정해지고 다른 길이는 `document_parsing_exception` / kNN `filter` 가 사전 필터로 동작 / 이름 붙은 질의 `matched_queries` 로 맞춘 낱말을 셀 수 있으나 낱말 안 형태소 하나만 맞아도 맞음으로 보이므로 낱말마다 `operator: and` 가 필요 / RRF 리트리버는 basic 등급에서 403(`current license is non-compliant for [Reciprocal Rank Fusion (RRF)]`) → 결합은 앱에서.
+
+
+## 24. 3-way 검색 구성 — PostgreSQL · Elasticsearch · Neo4j (Phase H · 요구사항 §24 · Q130~Q134)
+
+### 24.1 구성
+
+```
+                 ┌──────────────── PostgreSQL (원장 · 권한 판정) ────────────────┐
+게시 · 적재 ───▶ │ app.kb_chunk(분석 결과 청크 · 컬렉션 · 개념 태그 · 임베딩 값)      │
+                 │ {bank,ext}.document / .chunk(문서 · 현재 판 · 부서한정 · 임베딩 값) │
+                 │ 사용자 · 조직 · 컬렉션 · 화면 권한 · 감사 · 설정                    │
+                 └──────┬──────────────────────────────┬──────────────────────────┘
+          워커 1분 동기화 │ (목록 대조 · 해시 · 모델)       │ 투영(collect_graph → MERGE)
+                        ▼                              ▼
+     Elasticsearch — 검색 색인(다시 만들 수 있음)    Neo4j — 개념 그래프(다시 만들 수 있음)
+       nhdip-kb-chunk  분석 결과(키워드 · kNN)        개념 · 문서 ↔ 개념 · 계보
+       nhdip-doc-chunk 문서(현재 판, 키워드 · kNN)
+       nori + 사용자 사전(온톨로지 별칭)
+                        │                              │
+  질문(AI 어시스턴트) ──┼── 키워드 · 의미 후보 ────────┼── 그래프 후보(개념 확장 · 문서 그래프)
+  근거 검색(워크플로) ──┘          │                    │
+                                   ▼                    ▼
+                  PostgreSQL 에서 접근 규칙으로 다시 걸러 본문 읽기 → 점수 결합 → 게이팅 → 재순위
+```
+
+| 저장소 | 맡는 일 | 없을 때(축소 동작) |
+|---|---|---|
+| PostgreSQL | 원장 · 권한 판정 · 임베딩 값 · ES 결과 재확인 · 보충 | (필수) |
+| Elasticsearch | 분석 결과 · 문서의 키워드(BM25 + nori + 사용자 사전) · 의미(kNN, 필터를 탐색 안에서) | 키워드 · 의미를 PostgreSQL(tsvector 접두 일치 · pgvector)로 — 같은 답 모양 |
+| Neo4j | 개념 확장(이웃) · 문서 ↔ 개념 관계 · 계보 · 영향 범위 | PostgreSQL 개념 태그 · 데이터셋 매핑 간선 |
+
+### 24.2 색인 두 개
+
+| | 분석 결과 `ES_INDEX`(nhdip-kb-chunk) | 문서 `ES_DOC_INDEX`(nhdip-doc-chunk) |
+|---|---|---|
+| 원장 | `app.kb_chunk` | `{bank,ext}.chunk` ⋈ `document` (**현재 판만**) |
+| `_id` | 청크 id | `<출처>:<청크 id>` (출처마다 id 순번이 따로라 겹치지 않게) |
+| 필터 필드 | `collection_code` · `required_resource` · `scope_key` · `owner_org` · `concepts` · `embedding_model` | `origin` · `document_id` · `doc_code` · `doc_class` · `access_class`(없으면 internal) · `embedding_model` · `page` · `published` |
+| 검색 필드 | `title^2` · `text` (ko) | `title` · `section`(절 경로) · `text` (ko) |
+| `_source` | 본문 · 제목 · 벡터 제외(원본은 PostgreSQL) | 같음 |
+| 동기화 해시 | 컬렉션 · 권한 · 범위 · 제목 · 절 · 본문 해시 · 기준일 · 메타 · 개념 | 문서 id · 코드 · 분류 · 등급 · 제목 · 절 · 면 · 본문 md5 · 시행일 |
+| 동기화 위치 | `synced_max_id` | 출처별 `synced_max_id` {bank, ext} |
+| 상태 키 | `knowledge.es_state` | `knowledge.es_doc_state` |
+| 정의 판(`_meta.nhdip`) | `{version: 2, dict: 사전 서명}` | `{version: 1, dict: 사전 서명}` |
+
+- **동기화**(`elastic.sync_all` ← `maintenance.run_maintenance`, 워커 1분): 서명(건수 · 최대 id · 임베딩 수, 문서는 출처별 + 최대 문서 id)이 같고 15분 전체 대조 때가 아니면 건너뛴다. 대조 → 다른 것만 올림(회당 `es_sync_max_per_run`) → 사라진 것(삭제 · 이전 판) 지움 → refresh. 동기화 위치 = ES 에 아직 없는 새 청크 중 가장 작은 id − 1.
+- **색인 정의가 바뀌면 다시 만든다**(`_ensure`): 기존 색인의 `_meta.nhdip` 이 지금 코드의 판 · 사전 서명과 다르면 지우고 만든 뒤 상태를 비운다 → 그 주기에 전부 다시 올린다. 그 사이 검색은 '동기화 전' 이라 PostgreSQL 이다. 사전이 바뀌는 때 = 관리자가 [온톨로지]에서 별칭을 저장한 뒤.
+- **만들기 순서**(`_create`): nori + 사용자 사전 → (사전 거부 시) nori → (플러그인 없음) standard. 경고는 로그 · 운영 점검.
+
+### 24.3 검색 경로
+
+**AI 어시스턴트**(`knowledge/search.retrieve`)
+
+| 채널 | 분석 결과 | 문서 |
+|---|---|---|
+| 키워드 | `_kb_keyword_es` → `_hydrate`(kb_filter) + PG 보충(id > 위치) | `_doc_keyword_es` → `_hydrate_docs`(doc_filter) + PG 보충(출처별 id > 위치) |
+| 의미 | `_kb_vector_es`(차원이 색인과 같을 때) | `_doc_vector_es`(같은 조건) |
+| 그래프 | `_kb_graph`(PostgreSQL 개념 태그) | `graph_doc_scores`(Neo4j) → `_doc_graph` |
+
+- 엔진 선택: `elastic.readiness(session, 'kb'|'doc', mode)` — `pg` 면 PostgreSQL, `auto` 인데 ES_URL 없음이면 조용히 PostgreSQL(이유 없음), 그 밖에 차단기 열림 · 동기화 전이면 PostgreSQL + 이유(`esFallback` · `esDocFallback`, 관리자 검색 진단에만).
+- 점수: 키워드 `raw = 맞춘 어절 수 + 0.1 × BM25/최대`(정수부 = 맞춘 어절 수 — PostgreSQL 채널과 같은 척도라 게이팅 · 점수 결합이 그대로), 의미 `거리 = 2 − 2 × ES 점수`. 문서 키워드는 어절 하나라도 맞으면 후보(PostgreSQL 문서 채널의 OR 질의와 같은 범위 — 걸러 내기는 게이팅이 한다).
+- 응답: `retrieval.engines = {analysis: es|pg|null, documents: es|pg, graph: neo4j|postgres|null}`, `backend` 는 이전 화면과의 호환(분석 결과 엔진, 분석 결과 범위가 없으면 문서 엔진).
+
+**워크플로 근거 검색**(`graph/search.hybrid_search` — `retrieve_evidence` · 화면 `/search` · 골든셋)
+
+- ES 필터 `doc_es_filter_for(출처, 개념 경로 문서 id, 문서 분류)` → 후보 id → PostgreSQL 에서 같은 WHERE(현재 판 · 분류 · 문서 id)로 다시 읽기 + 출처별 id > 위치 보충 → 같은 RRF. 결과 모양 불변, `diag` 에 `engine` · `esFallback`. 노드 결과 `searchEngine`.
+- 시스템 실행이라 사용자 권한 단계는 없다(기존과 같음 — `rank_evidence` 가 이후 단계).
+
+### 24.4 접근 규칙 — SQL 판 ↔ ES 판
+
+| | SQL | ES |
+|---|---|---|
+| 분석 결과 | `kb_filter` — 컬렉션 전체 열람 ∪ (청크 단위 열람 ∧ 내 화면 리소스) ∧ (지점 범위 없음 ∪ 내 지점) | `es_filter` (기존, §21.18) |
+| 문서 | `doc_filter` — 현재 판 ∧ 열람 가능한 분류(없으면 FALSE) ∧ (부서한정 아님 ∪ 내 부서 문서 코드) | `doc_es_filter` — 분류 `terms`(없으면 `match_none`) ∧ (`access_class` ≠ dept_only ∪ `doc_code` ∈ 내 부서 문서). 현재 판은 색인 자체가 현재 판만 |
+
+ES 판은 **사전 필터**일 뿐이고 판정은 PostgreSQL 이 한다 — 색인의 권한 필드가 최대 15분 늦어도 결과에는 SQL 판이 적용된다. 실제 ES 시험에서 관리자 · 본부 · 신용리스크 · 영업점 범위의 청크 집합이 두 판에서 같음을 고정했다.
+
+### 24.5 한국어 분석 — nori 사용자 사전(온톨로지 별칭)
+
+기본 nori(`mixed` 분해 + 품사 필터)는 관형사 · 접미사를 버린다(로컬 ES 9.5.4 `_analyze`):
+
+| 원문 | 기본 nori | 사전 적용 후 |
+|---|---|---|
+| 새희망홀씨대출 | 희망 · 홀씨 · 홀 · 씨 · 대출 ('새' 탈락) | 새희망홀씨대출 · 새희망홀씨 · 대출 |
+| 햇살론뱅크 | 햇살 · 햇 · 살 · 뱅크 ('론' 탈락) | 햇살론뱅크 · 햇살론 · 뱅크 |
+| 사잇돌중금리대출 | 사 · 잇돌 · 잇 · 돌 · 중 · 금리 · 대출 | 사잇돌중금리대출 · 사잇돌 · 중금리대출 |
+| 기업여신 · 가계자금대출 | 기업 · 여신 · 가계 · 자금 · 대출 | (기본과 같은 조각 + 합성어 자체) |
+
+규칙(`elastic.user_dictionary`): 활성 온톨로지 스키마의 별칭 사전(마스터 키 + 별칭) 중 한글 2~30자 낱말을 모아 ① 사전의 더 짧은 낱말로 시작하면 `낱말 그 낱말 나머지` ② 흔한 끝말(대출 · 모형 · 한도 · 배분 · 관리 · 확대 · 금융 · 여신 · 부채 · 기업 · 상품 · 자금 · 비율 · 제약 · 증가율 · 성장률)로 끝나면 `낱말 앞 끝말` ③ 나눌 수 없으면 기본 분석이 글자를 버리는 낱말만 통째로(버리지 않는 낱말을 통째로 넣으면 부분 질문이 안 맞게 되므로 넣지 않는다). `mixed` 분해라 합성어와 조각이 함께 색인되어 '대출' · '새희망홀씨' · '새희망홀씨대출' 질문이 모두 맞는다. 같은 사전이면 프로세스 안에서 다시 계산하지 않는다.
+
+### 24.6 배포 · 운영
+
+- **compose**: `elasticsearch` 서비스가 기본(프로필 없음) — `infra/elasticsearch/Dockerfile`(9.5.4 + analysis-nori), 단일 노드 · 보안 켬 · 내부망 HTTP · 힙 `ES_HEAP`(기본 1g) · 볼륨 `esdata`. api · worker 환경 `ES_URL=${ES_URL-http://elasticsearch:9200}` · `ES_USER=${ES_USER-elastic}` · `ES_PASSWORD` · `ES_INDEX` · `ES_DOC_INDEX`. `.env` 에서 `ES_URL=` 로 **명시해 비우면** ES 를 쓰지 않는다.
+- **`.env`**: `.env.example` 에 `ES_URL=http://elasticsearch:9200` · `ES_USER=elastic` · `ES_DOC_INDEX`, `ensure-env.sh`(make env)가 `ES_PASSWORD` 를 만든다. **이전 판 `.env.example` 로 만든 `.env` 는 `ES_URL=` 이 비어 있을 수 있다** — 그대로면 3-way 가 아니라 PostgreSQL 축소 동작(운영 점검 경고). `bash infra/scripts/set-env.sh ES_URL http://elasticsearch:9200` · `ES_USER elastic` 후 재기동.
+- **호스트**: `vm.max_map_count ≥ 262144`(make host-check 가 확인, 부족하면 ES 가 뜨지 않고 검색은 PostgreSQL). 메모리는 ES 힙 1GB + 오프힙만큼 더 필요.
+- **CI e2e**: `sysctl vm.max_map_count` → compose up(ES 포함) → wait-idle → `kb-es --sync` · `kb-es --check`(문제 있으면 실패) → E2E(`E2E_EXPECT_ES=1` — 3-way 항목이 분석 결과 · 문서 모두 ES 사용을 확인) → 접근성 → 골든셋(ES 경로).
+- **점검 · 도구**: CLI `kb-es`(상태) · `--sync` · `--rebuild` · `--check`, 운영 점검 `search_backend`(auto 인데 ES_URL 없음 · 연결 불가 · 동기화 미완 · nori 없음 → 경고), 관리자 [AI 어시스턴트 색인] 3-way 구성 카드(PostgreSQL · Elasticsearch · Neo4j — 역할 · 상태 · 색인 건수 · 분석기 · 사전 낱말 수).
+- **임베딩**: 문서 청크 `embed_chunks` 가 `embedding IS NULL OR embedding_model ≠ 지금 모델`(현재 판 우선)을 다시 임베딩 — 분석 결과 `embed_pending` 과 같은 규칙. PostgreSQL · ES 의미 검색 모두 같은 모델 벡터만 비교.
+
+### 24.7 측정 · 확인 (2026-10-13 · 로컬)
+
+Windows 압축본 Elasticsearch 9.5.4 + analysis-nori(단일 노드 · 보안 끔 · 힙 768MB) · WSL PostgreSQL 18 · Neo4j 없음 · 시드 + 워커 처리 DB(분석 결과 청크 218 · 현재 판 문서 16건 · 문서 청크 20).
+
+- **동기화**: 처음부터 다시 올리기(`kb-es --rebuild`) 분석 결과 218건 0.9초 · 문서 20건 0.4초, 사용자 사전 23낱말(예: `새희망홀씨대출 새희망홀씨 대출` · `햇살론뱅크 햇살론 뱅크` · `사잇돌중금리대출 사잇돌 중금리대출` · `햇살론` · `새희망홀씨`). 이어서 `kb-es --check` 통과(두 색인 동기화 · nori).
+- **문서 키워드 후보 수**(관리자 범위 · 같은 질의어, PostgreSQL `_doc_keyword` ↔ ES `_doc_keyword_es`):
+
+| 질의 | PostgreSQL | ES | ES 에만 | PostgreSQL 에만 |
+|---|---|---|---|---|
+| 여신 | 6 | 12 | 6 | 0 |
+| 대출 | 1 | 3 | 2 | 0 |
+| 새희망홀씨 | 2 | 3 | 1 | 0 |
+| 포용 금융(띄어 씀) | 9 | 11 | 2 | 0 |
+| 가계부채 관리 | 5 | 9 | 4 | 0 |
+| RWA 한도 | 3 | 4 | 1 | 0 |
+| 부도율 | 0 | 1 | 1 | 0 |
+| 증가율 관리 | 6 | 10 | 4 | 0 |
+| 햇살론 · 기업금융 활성화 | 1 · 2 | 1 · 2 | 0 | 0 |
+
+  ES 에만 걸린 것은 합성어 안의 낱말('기업여신' 의 '여신', '가계자금대출' 의 '대출') · 띄어쓰기 변형 · 활용형이다. 이 데이터에서는 PostgreSQL 에만 걸린 청크가 없었다(접두 일치가 더 느슨한 숫자 어절 사례는 §21.18). 후보가 늘어난 만큼 걸러 내기는 기존 게이팅(최소 신호 · 근거 6단계)이 한다 — 골든셋은 두 엔진 모두 통과.
+- **질문 전체 지연**(`retrieve`, 같은 질문 4개): PostgreSQL 13~27ms · ES 21~26ms(엔진 표시 analysis = es · documents = es). 첫 질문의 약 2초는 Neo4j 연결 시도(이 PC 는 연결 거부가 늦다 — 차단기가 다음부터 건너뜀)로 엔진과 무관. 규모 측정(10만 건)은 §21.18.
+- **시험**: 가짜 전송(ES 없이 CI 에서 상시) — 문서 필터 동치 형태 · 근거 검색 필터 · id 형식 · 엔진 선택(auto · es · pg) · 사용자 사전 분해 · 색인 정의 판 재생성 · `kb-es --check` · **ES 가 돌려준 부서한정 · 볼 수 없는 분류 · 이전 판 · 없는 청크가 PostgreSQL 재확인에서 사라짐** · 문서 채널 폴백(같은 근거) · 새 청크 보충 · 근거 검색 ES 경로 · 폴백 · 응답 엔진 · 시드 보강. 실제 ES — 문서 동기화 멱등 · **관리자 · 본부 · 신용리스크 · 영업점 범위의 SQL ↔ ES 문서 청크 집합 일치** · 판 교체(이전 판 삭제 → 되돌리면 다시 올림) · 사용자 사전 토큰 · 3-way 검색(분석 결과 · 문서 모두 ES) · 근거 검색 ES · 골든셋 통과.
+
+### 24.8 확인하지 못한 것
+
+- 로컬에 Docker 가 없어 **ES 컨테이너(`infra/elasticsearch` 이미지 빌드 · 보안 켬 · 헬스체크)는 CI e2e 에서만** 확인한다. 로컬 확인은 Windows 압축본 ES 9.5.4 + analysis-nori(보안 끔).
+- 운영 규모(수백만 건) · 다중 노드 · 복제본 · TLS 는 §21.18 과 같이 미확인. 실제 운영 임베딩 모델 벡터의 ES kNN 품질도 모델 확정 후 `kb-calibrate` 와 함께 다시 잰다.
+- 사용자 사전의 분해 규칙은 별칭 사전 낱말 기준이다 — 별칭에 없는 고유명사('일반기업모형' 등)는 기본 nori 분해를 따른다(별칭을 보강하면 다음 동기화에서 색인이 다시 만들어진다).

@@ -179,7 +179,7 @@ def _embedder(ctx: RunContext):
         return None
 
 
-@node_impl("retrieve_evidence", "그래프 필터 → 하이브리드(pgvector+키워드) 검색으로 근거 구간 수집")
+@node_impl("retrieve_evidence", "그래프 필터(Neo4j) → 하이브리드(키워드 · 의미 — Elasticsearch, 없으면 PostgreSQL) 검색으로 근거 구간 수집")
 def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     cfg = node.config or {}
     plan = ctx.state.get("plan")
@@ -207,18 +207,23 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     if doc_filter is None:
         note.append("그래프 필터 없음(개념 미연결 또는 그래프 장애) → 권한 범위 전체 검색")
     k = int(cfg.get("k", 5))
-    cand = hybrid_search(ctx.session, cfg.get("query", ""), doc_filter=doc_filter, query_vec=qvec, doc_classes=cfg.get("doc_classes"), k=k * 3)
+    model = emb.model if (emb is not None and qvec is not None) else None
+    sdiag: dict[str, Any] = {}  # 3-way — 키워드 · 의미 후보를 ES 문서 색인에서 찾았는지(engine) · 폴백 사유
+    cand = hybrid_search(ctx.session, cfg.get("query", ""), doc_filter=doc_filter, query_vec=qvec, doc_classes=cfg.get("doc_classes"), k=k * 3, model=model, diag=sdiag)
     if doc_filter is not None and not cand:
         doc_filter = None
-        cand = hybrid_search(ctx.session, cfg.get("query", ""), query_vec=qvec, doc_classes=cfg.get("doc_classes"), k=k * 3)
+        sdiag = {}
+        cand = hybrid_search(ctx.session, cfg.get("query", ""), query_vec=qvec, doc_classes=cfg.get("doc_classes"), k=k * 3, model=model, diag=sdiag)
         note.append("그래프 필터 결과 없음 → 전체 검색으로 확장")
+    if sdiag.get("esFallback") and sdiag.get("esFallback") != "ES 아직 동기화 전":
+        note.append(f"검색 엔진 폴백(PostgreSQL): {sdiag['esFallback']}")
     # 근거 선별(3.6) — 시스템 실행이라 권한 단계는 통과, 부문 · 시점 · 문서유형 · 의미 · 개념경로 게이팅 후 우선순위 · 범주 균형
     ranked = rank_evidence(ctx.session, cand, k=k, as_of=_setting(ctx.session, "ui.as_of"), domain=cfg.get("domain"), doc_classes=cfg.get("doc_classes"), doc_filter=doc_filter, query_terms=len(query_terms(cfg.get("query", ""))))
     hits = ranked["hits"]
     if ranked["missingCategories"]:
         note.append("근거 범주 부재: " + ", ".join(ranked["missingCategories"]))
     ctx.state.setdefault("evidence", []).extend(hits)
-    return NodeResult({"concepts": concepts, "graph_docs": doc_filter, "hits": [{k_: v for k_, v in h.items() if k_ != "text"} | {"text": h["text"][:300]} for h in hits], "rejected": ranked["rejected"][:30], "categories": ranked["categories"], "missing_categories": ranked["missingCategories"], "notes": note}, status)
+    return NodeResult({"concepts": concepts, "graph_docs": doc_filter, "searchEngine": sdiag.get("engine", "pg"), "hits": [{k_: v for k_, v in h.items() if k_ != "text"} | {"text": h["text"][:300]} for h in hits], "rejected": ranked["rejected"][:30], "categories": ranked["categories"], "missing_categories": ranked["missingCategories"], "notes": note}, status)
 
 
 LITERAL_NUM_DEFAULT = r"\d+(?:[.,]\d+)+\s*(?:%p?|bp|배)?|\d+\s*(?:%p?|bp|억|조|만|천|원|건|배)"
@@ -396,7 +401,7 @@ def _cause_documents(ctx: RunContext) -> list[tuple[str, int]]:
     return out
 
 
-@node_impl("embed_chunks", "임베딩 미생성 청크를 임베딩 모델로 벡터화 (pgvector)")
+@node_impl("embed_chunks", "임베딩 미생성 · 다른 모델 청크를 임베딩 모델로 벡터화 (PostgreSQL 원장 → 워커가 ES 문서 색인으로 동기화)")
 def n_embed(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     emb = None
     try:
@@ -408,7 +413,11 @@ def n_embed(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     done = 0
     for origin in ("bank", "ext"):
         t = source(origin)
-        chunks = ctx.session.execute(select(t.chunk).where(t.chunk.embedding.is_(None)).limit(limit)).scalars().all()
+        # 임베딩 없음 + 지금 모델과 다른 모델로 만든 것(모델 교체 후 다시 — 분석 결과 색인 embed_pending 과 같은 규칙). 현재 버전 문서 우선
+        stale = t.chunk.embedding.is_(None) | t.chunk.embedding_model.is_distinct_from(emb.model)
+        chunks = ctx.session.execute(
+            select(t.chunk).join(t.document, t.document.id == t.chunk.document_id).where(stale).order_by(t.document.is_current.desc(), t.chunk.id).limit(limit)
+        ).scalars().all()
         for i in range(0, len(chunks), batch):
             part = chunks[i : i + batch]
             try:

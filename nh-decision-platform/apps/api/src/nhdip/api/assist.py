@@ -313,6 +313,8 @@ def _retrieval_view(ret: Retrieval, rewrite_used: bool, rewritten: str | None, b
         "channels": d.get("channels", {}), "semantic": bool(d.get("semantic")), "graph": bool(d.get("graph")), "expanded": d.get("expanded", []), "intent": d.get("intent"),
         "rewritten": rewritten if rewrite_used else None, "rewriteBy": by if rewrite_used else None, "timingsMs": d.get("timingsMs", {}),
         "backend": d.get("backend", "pg"),  # 'pg' | 'es' — 실제로 쓴 검색 엔진(ES 가 안 되어 폴백했으면 pg). 폴백 사유 같은 내부 정보는 검색 진단(관리자)에만
+        # 3-way — 분석 결과 · 문서의 키워드 · 의미 후보를 찾은 엔진(es | pg)과 그래프(neo4j | postgres). 분석 결과 범위가 없는 사용자는 analysis = None
+        "engines": d.get("engines") or {"analysis": d.get("backend", "pg"), "documents": d.get("docBackend", "pg"), "graph": None},
     }
 
 

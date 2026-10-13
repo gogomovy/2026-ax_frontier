@@ -26,7 +26,7 @@ SEARCH_DEFAULT: dict[str, Any] = {
     "hnsw_dim": None,
     "hnsw_ef_search": 200,  # HNSW 후보 풀(pgvector 기본 40). 접근 범위가 좁은 사용자도 후보 수 · 재현율이 유지되게(10만 건 실측, 설계 §21.18). 0 이면 pgvector 기본값
     "hnsw_iterative_scan": "strict_order",  # pgvector 0.8+ 반복 탐색(요청한 건수가 찰 때까지 계속 탐색, 순서 유지). '' = 끔 · 'relaxed_order'. 0.8 미만이면 건너뜀
-    "backend": "pg",  # 'pg' = PostgreSQL(기본) · 'es' = 키워드 · 의미 채널을 Elasticsearch 로(ES_URL 설정 + 동기화 후 · 설계 §21.18). ES 가 안 되면 자동으로 pg 로 폴백
+    "backend": "auto",  # 3-way 구성(설계 §24) — 'auto'(기본) = ES_URL 이 있고 동기화됐으면 키워드 · 의미 채널(분석 결과 · 문서)을 Elasticsearch 로, 아니면 PostgreSQL · 'es' = ES 를 쓰기로 함(안 되면 경고 + PostgreSQL) · 'pg' = PostgreSQL 만
     "es_candidates": 60,  # ES 에서 채널별로 가져올 후보 수 — PostgreSQL 에서 권한을 다시 걸러 낼 몫까지 넉넉히
     "es_sync_max_per_run": 2000,  # 워커 한 번에 ES 로 올릴 청크 수 상한
 }

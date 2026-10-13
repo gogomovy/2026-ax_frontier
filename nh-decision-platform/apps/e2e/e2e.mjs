@@ -482,6 +482,31 @@ try {
     }
   }
 
+  // 9-00) 3-way 검색 구성 (Phase H · TW-01~10) — PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프.
+  // E2E_EXPECT_ES=1(CI 의 compose 스택)이면 분석 결과 · 문서 모두 Elasticsearch 로 찾아야 한다. 아니면 상태 표시만 확인(축소 구성)
+  {
+    const expectEs = process.env.E2E_EXPECT_ES === "1";
+    const st = await api("/admin/knowledge/status");
+    const sb = st.body?.searchBackend ?? {};
+    const eng = sb.engines ?? {};
+    ok(
+      "3-way: 검색 엔진 상태(분석 결과 · 문서 · 그래프)",
+      st.status === 200 && ["es", "pg"].includes(eng.analysis) && ["es", "pg"].includes(eng.documents) && ["neo4j", "postgres"].includes(eng.graph) &&
+        (!expectEs || (sb.configured && sb.es?.up && eng.analysis === "es" && eng.documents === "es" && (sb.es?.documents?.es_docs ?? 0) > 0 && sb.es?.state?.analyzer === "nori")),
+      JSON.stringify({ setting: sb.setting, eng, up: sb.es?.up, kb: sb.es?.es_docs, doc: sb.es?.documents?.es_docs, analyzer: sb.es?.state?.analyzer }),
+    );
+    const r = await api("/assist", { method: "POST", body: JSON.stringify({ question: "포용금융 확대방안 정책 기조 근거는?" }) });
+    const re = r.body?.retrieval?.engines ?? {};
+    ok(
+      "3-way: AI 어시스턴트 답의 문서 근거 · 검색 엔진",
+      r.status === 200 && (r.body?.evidence?.length ?? 0) > 0 && (!expectEs || (re.documents === "es" && re.analysis === "es")),
+      JSON.stringify({ engines: re, evidence: r.body?.evidence?.length }),
+    );
+    await a.goto(`${BASE}/admin/knowledge`, { waitUntil: "networkidle0" });
+    const cards = await a.evaluate(() => ["pg", "es", "neo4j"].map((k) => document.querySelector(`[data-stat="kb-3way-${k}"]`)?.innerText ?? ""));
+    ok("3-way: 관리자 구성 카드(PostgreSQL · Elasticsearch · Neo4j)", cards.every(Boolean) && cards[0].includes("원장") && (!expectEs || cards[1].includes("사용 중")), cards.join(" | ").replace(/\n/g, " "));
+  }
+
   // 9-0) 온톨로지 구성 지도 (Phase G · OV-01~05) — 원장 기준 3D 군집 지도 · 찾기 → 상세 · 구조도 · 표
   {
     await a.goto(`${BASE}/admin/ontology`, { waitUntil: "networkidle0" });

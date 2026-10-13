@@ -7,6 +7,7 @@ import { apiPost } from "@/lib/api-client";
 import { numberCites, type AssistAnalysis, type AssistEvidence, type AssistMeta, type AssistMetric, type AssistRetrieval, type BotMsg, type CiteTarget, type UserMsg } from "@/lib/assist-chat";
 import { copyText } from "@/lib/clipboard";
 import { collectCites, parseMarkdown, plainForCopy } from "@/lib/markdown";
+import { engineLabel } from "@/lib/search-engines";
 import { Markdown, type CiteApi } from "./Markdown";
 import { IconBot, IconCheck, IconChevron, IconCopy, IconRefresh, IconThumbDown, IconThumbUp } from "./icons";
 
@@ -65,6 +66,7 @@ function IconButton({ label, onClick, pressed, disabled, children }: { label: st
 /** 검색에 쓰인 채널 — 의미 · 그래프가 꺼졌으면 이유를 함께 (RAG-06) */
 function RetrievalNote({ r }: { r: AssistRetrieval }) {
   const ch = r.channels;
+  const engine = engineLabel(r.engines, r.backend);
   const notes: string[] = [];
   if (ch.vector && !ch.vector.on) notes.push(`의미 검색 비활성${ch.vector.reason ? ` — ${ch.vector.reason}` : ""}`);
   if (ch.graph?.on && ch.graph.docGraph === false) notes.push("문서 그래프 미연결 — 분석 결과의 개념 태그로 대신 찾았습니다");
@@ -74,7 +76,7 @@ function RetrievalNote({ r }: { r: AssistRetrieval }) {
       <Badge tone={ch.vector?.on ? "info" : "neutral"}>의미 {ch.vector?.on ? ch.vector.candidates : "꺼짐"}</Badge>
       <Badge tone={ch.graph?.on ? "info" : "neutral"}>그래프 {ch.graph?.on ? ch.graph.candidates : "꺼짐"}</Badge>
       {r.expanded.length ? <span>확장 개념: {r.expanded.slice(0, 4).join(" · ")}</span> : null}
-      {r.timingsMs?.total != null ? <span>검색 {r.timingsMs.total}ms{r.backend === "es" ? " · Elasticsearch" : ""}</span> : null}
+      {r.timingsMs?.total != null ? <span data-assist-engine>검색 {r.timingsMs.total}ms{engine ? ` · ${engine}` : ""}</span> : null}
       {notes.map((n) => (
         <span key={n}>· {n}</span>
       ))}

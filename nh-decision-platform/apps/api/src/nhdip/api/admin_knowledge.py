@@ -26,7 +26,7 @@ from nhdip.knowledge.calibration import apply_calibration, calibrate, calibrated
 from nhdip.knowledge import elastic
 from nhdip.knowledge.defaults import SEARCH_DEFAULT
 from nhdip.knowledge.maintenance import embedding_agent, reconcile, status as kb_status
-from nhdip.knowledge.search import retrieve
+from nhdip.knowledge.search import retrieve, search_mode
 from nhdip.knowledge.quality import quality as kb_quality
 from nhdip.llm import LlmUnavailable, resolve
 from nhdip.models import AppUser, KbCollection, OrgUnit
@@ -98,23 +98,32 @@ def status(session: Session = Depends(get_session)):
             v["stats"]["documents"] = sum(docs.get(x, 0) for x in classes)
         items.append(v)
     scfg = setting_dict(session, "knowledge.search", SEARCH_DEFAULT)
+    graph = graph_health()
     return {
-        "totals": st["totals"], "stale": st["stale"], "state": st["state"], "documentsByClass": docs, "embedding": emb, "graph": graph_health(),
+        "totals": st["totals"], "stale": st["stale"], "state": st["state"], "documentsByClass": docs, "embedding": emb, "graph": graph,
         "distance": {"threshold": float(scfg["max_cosine_distance"]), "calibratedModel": calibrated_model(session), "fusion": scfg.get("fusion", "convex")},
-        "searchBackend": _search_backend(session, str(scfg.get("backend", "pg"))),
+        "searchBackend": _search_backend(session, search_mode(scfg), bool(graph.get("ok"))),
         "unassigned": st["collections"].get("analysis.unassigned", {}).get("chunks", 0), "collections": sorted(items, key=lambda x: (x["sort"], x["code"])),
         "orphanChunks": int(session.execute(text("SELECT count(*) FROM app.kb_chunk c WHERE c.collection_code NOT IN (SELECT code FROM cfg.kb_collection)")).scalar() or 0),
     }
 
 
-def _search_backend(session: Session, setting: str) -> dict[str, Any]:
-    """질문하기 검색 엔진 — 설정(pg | es) · ES 연결 · 동기화 상태. ES 를 쓰지 않으면 연결 확인(네트워크)을 하지 않는다."""
+def _search_backend(session: Session, setting: str, graph_ok: bool = False) -> dict[str, Any]:
+    """AI 어시스턴트 검색 엔진(3-way) — 설정(auto | es | pg) · ES 연결 · 색인별 동기화 상태 · 실제로 쓸 엔진.
+    ES 를 쓰지 않으면 연결 확인(네트워크)을 하지 않는다. `engines` 는 지금 질문이 들어오면 키워드 · 의미 후보를 어디서 찾는지(분석 결과 · 문서)."""
     out: dict[str, Any] = {"setting": setting, "configured": elastic.configured()}
+    engines = {"analysis": "pg", "documents": "pg", "graph": "neo4j" if graph_ok else "postgres"}
     if elastic.configured():
         try:
             out["es"] = elastic.status(session)
+            if out["es"].get("up"):
+                for part, which in (("analysis", "kb"), ("documents", "doc")):
+                    st, _why = elastic.readiness(session, which, setting)
+                    engines[part] = "es" if st is not None else "pg"
         except Exception as exc:  # noqa: BLE001 — 상태 화면이 ES 때문에 깨지지 않게
+            session.rollback()
             out["es"] = {"configured": True, "up": False, "error": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    out["engines"] = engines
     return out
 
 

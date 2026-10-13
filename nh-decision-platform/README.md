@@ -6,7 +6,7 @@
 |---|---|
 | 스펙 | `.kiro/specs/nh-decision-ai-platform/` — `requirements.md`(§16) · `design.md`(§19) · `tasks.md`(Phase B) |
 | 프론트엔드 | Next.js 16 · React 19 — 업무 화면 3개 부서(종합기획부 · 신용리스크관리부 · 영업점) + 로그인·가입 + 관리자 화면 25종(묶음 6개 · 관리자 홈) |
-| 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), pgvector 검색, 외부 LiteLLM 연동, 변경 기반 워크플로우 |
+| 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), 3-way 검색(PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프), 외부 LiteLLM 연동, 변경 기반 워크플로우 |
 | 데이터 | 목데이터(시뮬레이션 버전)로 시드 — 실데이터는 관리자 화면에서 같은 데이터셋 정의로 업로드 |
 
 ---
@@ -29,7 +29,8 @@ make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트
 | web | http://localhost:3000 | 로그인 · 업무 화면 · 관리자(`/admin`) — `/backend/*` 를 api 로 프록시 |
 | api | http://localhost:8000/health | 인증 · 화면 API · 상태 API · 관리자 API (문서 `/docs` 는 `API_DOCS=true` 일 때) |
 | worker | - | 아웃박스 디스패처 · 워크플로우 엔진 · 임베딩 · 문서 구조화 · 그래프 투영 |
-| postgres | (내부) | 원장 · 설정 · 계산 이력 · pgvector · 작업 큐 |
+| postgres | (내부) | 원장 · 설정 · 계산 이력 · pgvector(임베딩 값) · 작업 큐 |
+| elasticsearch | 127.0.0.1:9200 | 검색 엔진 — 분석 결과 · 문서 색인(nori 형태소 + 온톨로지 별칭 사용자 사전 · kNN). 원장에서 다시 만들 수 있음(`kb-es --rebuild`), 꺼지면 검색은 PostgreSQL 로 축소 동작. 호스트 `vm.max_map_count ≥ 262144` |
 | neo4j | http://localhost:7474 | 온톨로지 그래프(투영) |
 | (LLM) | 외부 LiteLLM | 관리자 `/admin/llm` 에서 주소 · 키 · 모델 입력. 내장 게이트웨이가 필요하면 `.env` 에 `COMPOSE_PROFILES=litellm`(선택) |
 | files-init | - | 기동 때 한 번 실행하고 끝나는 준비 단계 — 파일 저장소 볼륨을 api · worker 계정이 쓸 수 있게 권한 정리(업무 자료 요청 파일 · 업로드 원본). `make preflight` 의 '파일 저장소' 항목으로 확인 |
@@ -94,7 +95,7 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 업로드(당행 bank.* / 외부 ext.*) ─ 품질 검증 ─ 버전 확정 + outbox 이벤트 (한 트랜잭션)
    └→ worker: 트리거 ∪ 계보(지표·바인딩이 참조하는 데이터셋) 매칭 → 관련 워크플로우만 작업 생성(디바운스 병합)
         load_inputs → compute_metrics(계산 커널, calc_run 기록) → judge(규칙) → build_views(화면 수치·표·차트)
-        → detect_changes(변화 감지) → plan_run(플래너) → retrieve_evidence(그래프 필터 → pgvector+키워드 RRF) → narrate(LLM, [[fig:ID]] 마커만) → critic → publish(새 세대)
+        → detect_changes(변화 감지) → plan_run(플래너) → retrieve_evidence(그래프 필터 → Elasticsearch 키워드 · 의미(없으면 PostgreSQL) RRF) → narrate(LLM, [[fig:ID]] 마커만) → critic → publish(새 세대)
    (오케스트레이터: 상위 워크플로우 — 그래프 투영 · 참조 지표 — 가 끝난 뒤 하위 실행)
 문서 업로드 → 청크 → 임베딩 → LLM 구조화(스키마 검증, 실패분 검토 대기 · LLM 미설정 시 별칭 규칙) → Neo4j 투영
 ```
@@ -109,6 +110,7 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 - 모니터링: `/admin/monitor/flow`(이벤트 → 매칭 사유 → 실행 → 게시) · `/admin/monitor/runs`(노드 입출력 · LLM 원문 · 계산) · `/admin/monitor/calc`(지표 값 · 추이 · 산출물 세대) · `/admin/monitor/agents`(에이전트 결정) · `/admin/monitor/trace`(요청 추적) · `/admin/monitor/evals`(골든셋) · `/admin/monitor/alerts`(운영 알림 · LLM 비용).
 - 관리자 화면 묶음(Phase C): 관리자 홈(`/admin` — 처리할 일 · 시스템 상태 · 24시간 실행) · 사용자와 권한 · 데이터와 지식(자료 승인 `/admin/uploads` 포함) · AI · 에이전트(분석 에이전트 `/admin/analysis-agents` 포함) · 계산과 규칙(운영 설정 `/admin/settings`) · 운영 모니터링(운영 개요 `/admin/monitor` — 시간대별 실행 · LLM · 이벤트 그래프, 그래프마다 '표로 보기'). 화면마다 위치 표시 · 요약 수치, 원본 JSON 은 '고급' 접기 안.
 - 업무 자료 올리기: 화면 권한 `자료 올리기`(기본 종합기획부 · 신용리스크관리부)를 받은 사용자는 `/knowledge/upload` 에서 정형 자료(기존 데이터셋의 새 버전)나 문서를 올립니다. 올리는 즉시 보안 · 형식 · 품질 검사를 하고(품질 실패는 요청 거절) '승인 대기' 로 남으며, 관리자(`/admin/uploads`)나 **부서 데이터 책임자**(관리자가 [사용자]에서 지정 — 자기 부서 사용자의 요청을 [자료 올리기 > 승인할 자료]에서 처리, 본인 요청은 불가)가 승인하면 관리자 직접 업로드와 같은 경로로 확정 · 재계산합니다. 올릴 수 있는 대상은 설정 `upload.user_targets`. 첫 단계는 파일 놓기 영역이고, 파일 이름(이름 규칙 · 보고서 번호 · 코드 · 낱말)으로 맞는 자료를 골라 두면 사용자가 확인합니다(Phase E · Q121). [데이터베이스] 표의 '새 버전 올리기' 는 `/knowledge/upload?target=<데이터셋 코드>` 로 그 자료를 고른 채 엽니다. 관리자 `/admin/datasets` 는 맨 위 '파일로 업로드' 에 놓으면 맞는 데이터셋 상세가 파일이 채워진 채 열립니다(즉시 확정은 확인 대화상자).
+- 3-way 검색(Phase H · 설계 §24): PostgreSQL = 원장 · 권한 판정 · 임베딩 값, Elasticsearch = AI 어시스턴트 · 워크플로 근거 검색의 키워드(BM25 + nori + 온톨로지 별칭 사용자 사전) · 의미(kNN) — 분석 결과 · 문서(현재 판) 색인 두 개, Neo4j = 개념 그래프. ES 후보는 PostgreSQL 에서 접근 규칙으로 다시 걸러 읽고(권한 누수 0), 워커가 1분마다 동기화(아직 못 올린 새 청크는 PostgreSQL 이 보충), ES 가 없거나 안 되면 같은 채널을 PostgreSQL 로. 검색 설정 `knowledge.search.backend` 기본 `auto` · 점검 `python -m nhdip.cli kb-es --check` · 관리자 [AI 어시스턴트 색인]의 3-way 구성 카드. 이전 `.env` 의 `ES_URL=` 이 비어 있으면 `bash infra/scripts/set-env.sh ES_URL http://elasticsearch:9200`.
 - 온톨로지 구성 지도(Phase G): 관리자 `/admin/ontology` 첫 탭 — PostgreSQL 원장에서 Neo4j 투영과 같은 코드(`graph/projection.collect_graph`)로 개체 · 관계를 모아 3D 군집 지도(Louvain 군집 · 서버 결정적 배치 · 회전 · 확대 · 2D) · 구조도(클래스 ↔ 관계 유형) · 표로 보여 줍니다. Neo4j 가 없어도 동작(`GET /admin/ontology/map?limit=&classes=&refresh=`).
 - 관리자 내비게이션(Phase E · Q122): 관리자의 첫 화면은 `/admin`, 사이드바는 관리 묶음 먼저(가입 · 자료 · 분석 승인 대기 건수 — `/me/menu` 의 `adminUsers` · `adminUploads` · `adminAnalyses` · `adminTodo`) · 업무 화면은 접힘 묶음. 되돌리기 어려운 작업은 앱 확인 대화상자(`useConfirm`, 초점 = 취소 · Esc). 권한 없음 화면은 요청한 화면 이름 · 메뉴 위치 · 요청 방법을 보입니다(`GET /me/screen?path=`).
 - 분석 에이전트(부서 맞춤 분석): 화면 권한 `분석 만들기`를 받은 사용자가 `/analysis/builder` 에서 도메인 지식 · 하고 싶은 분석을 글로 적으면 ① 정제 에이전트(LLM, 미연결 시 규칙)가 분석 명세(데이터 · 커널 수식 · 표 · 보고서 구성 · 의견 지시)로 정리하고 허용 목록으로 검증 → 미리보기(실제 계산, 저장 안 함) → 승인 요청. 관리자가 `/admin/analysis-agents` 에서 승인하면 지표(`dyn_*`) · 워크플로(`wf_an_*`) · 그 분석 전용 에이전트(`an_*`) · 트리거가 만들어지고, 실행마다 계산 커널 → ② 동적 수행 에이전트(판단 · 서술, 수치는 마커만) → ③ 범용 렌더링(결정론) → 검증 → 게시. 승인은 관리자만 하며, 승인하면서 실행 주기(cron) · 자료가 바뀌면 다시 계산 · LLM 의견 작성 여부를 정합니다. 결과는 그 부서의 **기존 분석 화면에 '맞춤' 탭**으로 나타납니다(신용리스크 [분석 결과] `/risk/analysis/<탭>`, 종합기획부 [데이터 분석] 탭 줄 `/hq/analysis/<탭>`). 기존 화면이 없는 새 부서는 설정 `analysis.spaces` + `POST /admin/screens` 로 코드 변경 없이 추가. 실 LLM 시험: `apps/e2e/analysis-agents-llm.mjs`(E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL).

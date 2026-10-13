@@ -132,9 +132,9 @@ def run_maintenance(session: Session) -> dict[str, Any]:
     session.commit()
     out["embed"] = embed_pending(session)
     if elastic.configured():
-        # 선택 검색 엔진(ES) 동기화 — 검색 설정이 아직 pg 여도 미리 올려 둬 전환 시 바로 쓰게 한다. ES 문제가 색인 작업을 막지 않는다(설계 §21.18)
+        # 검색 엔진(ES) 동기화 — 분석 결과 · 문서 색인 둘 다(3-way, 설계 §24). 검색 설정이 pg 여도 미리 올려 둬 전환 시 바로 쓰게 한다. ES 문제가 색인 작업을 막지 않는다
         try:
-            out["es"] = elastic.sync(session, limit=int(setting_dict(session, "knowledge.search", SEARCH_DEFAULT).get("es_sync_max_per_run", 2000)))
+            out["es"] = elastic.sync_all(session, limit=int(setting_dict(session, "knowledge.search", SEARCH_DEFAULT).get("es_sync_max_per_run", 2000)))
             session.commit()
         except Exception as exc:  # noqa: BLE001 — ES 동기화 실패는 경고만, 다음 주기에 다시
             session.rollback()

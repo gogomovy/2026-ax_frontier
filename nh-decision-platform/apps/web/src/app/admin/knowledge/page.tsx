@@ -5,6 +5,7 @@ import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, Sel
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPost, apiPut } from "@/lib/api-client";
+import { threeWayCards, type SearchBackendStatus } from "@/lib/search-engines";
 
 interface OrgRef {
   code: string;
@@ -42,12 +43,8 @@ interface Status {
   embedding: { agent: string; model: string | null; on: boolean; reason?: string };
   graph: { ok: boolean; nodes?: number; relationships?: number; error?: string };
   distance: { threshold: number; calibratedModel: string | null; fusion: string };
-  /** 선택 검색 엔진(Elasticsearch · 설계 §21.18) — ES_URL 이 없으면 es 는 없음 */
-  searchBackend?: {
-    setting: string;
-    configured: boolean;
-    es?: { up: boolean; es_docs?: number | null; pg_chunks?: number; error?: string; state?: { analyzer?: string | null } };
-  };
+  /** 검색 엔진(3-way 구성 · 설계 §24) — ES_URL 이 없으면 es 는 없음. engines = 지금 질문이 들어오면 어디서 찾는지 */
+  searchBackend?: SearchBackendStatus;
   unassigned: number;
   orphanChunks: number;
   collections: Collection[];
@@ -195,13 +192,26 @@ export default function KnowledgeAdmin() {
   );
 }
 
-/** 검색 엔진 한 줄 요약 — 기본 PostgreSQL, 설정이 es 면 Elasticsearch(안 되면 PostgreSQL 로 폴백 중임을 밝힌다) */
+/** 검색 엔진 한 줄 요약 — 분석 결과 · 문서의 키워드 · 의미 후보를 지금 어디서 찾는지(3-way: ES, 안 되면 PostgreSQL) */
 function backendNote(sb: Status["searchBackend"]): string {
-  if (!sb || (!sb.configured && sb.setting !== "es")) return "PostgreSQL";
-  const es = sb.es;
-  if (!sb.configured) return "PostgreSQL (설정은 ES 인데 ES_URL 이 비어 있음)";
-  const idx = es?.up ? `색인 ${es.es_docs ?? 0}/${es.pg_chunks ?? 0}${es.state?.analyzer ? ` · ${es.state.analyzer}` : ""}` : "연결 안 됨";
-  return sb.setting === "es" ? (es?.up ? `Elasticsearch (${idx})` : `PostgreSQL (ES ${idx} — 폴백 중)`) : `PostgreSQL (ES 준비: ${idx})`;
+  const e = sb?.engines;
+  if (!sb || !e) return "PostgreSQL";
+  const name = (x?: string) => (x === "es" ? "Elasticsearch" : "PostgreSQL");
+  return e.analysis === e.documents ? name(e.analysis) : `분석 결과 ${name(e.analysis)} · 문서 ${name(e.documents)}`;
+}
+/** 3-way 구성 — PostgreSQL(원장) · Elasticsearch(키워드 · 의미) · Neo4j(그래프)가 각각 무엇을 맡고 지금 어떤 상태인지 */
+function ThreeWayCards({ st }: { st: Status }) {
+  const docChunks = st.searchBackend?.es?.documents?.pg_chunks;
+  const cards = threeWayCards(st.searchBackend, st.graph, { chunks: st.totals.chunks, documentChunks: docChunks ?? undefined });
+  return (
+    <div className="mb-lg">
+      <StatGrid columns={3} label="검색 구성(3-way) — 원장 · 검색 엔진 · 그래프">
+        {cards.map((c) => (
+          <StatCard key={c.key} dataKey={`kb-3way-${c.key}`} label={`${c.label} — ${c.role}`} value={c.value} tone={c.tone} hint={c.hint} />
+        ))}
+      </StatGrid>
+    </div>
+  );
 }
 
 /** 의미 검색 기준(코사인 거리) 보정 — 모델마다 거리 눈금이 달라 임베딩 모델을 바꾸면 다시 잰다(설계 §21.15). 측정은 읽기 전용, 적용은 확신할 수 있을 때만 */
@@ -311,6 +321,7 @@ function StatusTab({ st, reload }: { st: Status; reload: () => unknown }) {
           />
         </StatGrid>
       </div>
+      <ThreeWayCards st={st} />
       <DistanceCard st={st} reload={reload} />
       <Card title="컬렉션별 현황" actions={<span className="text-[11.5px] text-stone" data-kb-backend>검색 엔진: {backendNote(st.searchBackend)} · 그래프: {st.graph.ok ? `연결됨 · 노드 ${st.graph.nodes} · 관계 ${st.graph.relationships}` : "연결 안 됨 — 개념 확장은 PostgreSQL 간선으로 계속 동작"}</span>}>
         <Table head={["컬렉션", "종류", "담당 팀", "공개 범위", "조각", "임베딩", "출처", "마지막 색인", "상태"]}>

@@ -139,25 +139,29 @@ def run_checks(session: Session) -> dict[str, Any]:
         session.rollback()
         add(_item("knowledge_index", "AI 어시스턴트 색인", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}", "마이그레이션 0014 적용 여부 확인 (alembic upgrade head)"))
 
-    # 질문하기 선택 검색 엔진(ES · 설계 §21.18) — 쓰지 않으면(ES_URL 비움 + backend=pg) 항목을 만들지 않는다. 쓰기로 했는데 안 되면 검색은 PostgreSQL 로 폴백하므로 경고
+    # 검색 엔진(3-way 구성 · 설계 §24) — PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프. 'pg' 로 정하고 ES 도 없으면 항목을 만들지 않는다.
+    # ES 가 없거나 안 되면 검색은 PostgreSQL 로 축소 동작하므로 실패(fail)가 아니라 경고(warn)
     try:
         from nhdip.knowledge import elastic
 
-        want = str(_setting(session, "knowledge.search", {}).get("backend", "pg")).strip().lower() == "es"
-        if elastic.configured() or want:
+        mode = elastic.backend_mode(session)
+        if elastic.configured() or mode != "pg":
             if not elastic.configured():
-                add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", "검색 설정이 ES 인데 ES_URL 이 비어 있음 — PostgreSQL 로 동작 중", "ES_URL 설정 후 api · worker 재기동, 또는 knowledge.search.backend 를 pg 로"))
+                add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn",
+                          ("검색 설정이 ES 인데 ES_URL 이 비어 있음" if mode == "es" else "3-way 표준 구성 아님 — ES_URL 미설정") + " · 키워드 · 의미 검색을 PostgreSQL 로 축소 동작 중",
+                          "docker compose 기본 구성(elasticsearch 서비스 · ES_URL=http://elasticsearch:9200) 확인 후 api · worker 재기동, 또는 검색 설정 knowledge.search.backend 를 pg 로"))
             else:
                 es = elastic.status(session)
-                stt = es.get("state") or {}
-                if not es.get("up"):
-                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if want else "ok", f"ES 에 연결하지 못함 — {es.get('error', '')[:100]}" + (" · PostgreSQL 로 폴백 중" if want else ""), "ES 기동 · ES_URL · 인증 확인"))
-                elif want and (stt.get("synced_at") is None or es.get("lag")):
-                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", f"ES 연결됨 · 동기화 미완료(색인 {es.get('es_docs')}/{es.get('pg_chunks')}) — 새 청크는 PostgreSQL 로 보충", "워커 주기 안에 따라잡음. 계속되면 python -m nhdip.cli kb-es --sync"))
-                elif stt.get("analyzer") == "standard":
-                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", "ES 연결됨 · nori 분석기 없음(standard) — 한국어 조사 · 합성어 처리가 약함", "ES 에 analysis-nori 설치 후 python -m nhdip.cli kb-es --rebuild"))
+                ok, probs = elastic.healthy(es)
+                d = es.get("documents") or {}
+                summary = f"분석 결과 {es.get('es_docs')}/{es.get('pg_chunks')} · 문서 {d.get('es_docs')}/{d.get('pg_chunks')} · 사용자 사전 {(es.get('state') or {}).get('dictionary') or 0}낱말"
+                if ok:
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "ok", f"Elasticsearch 연결됨 · {summary} · " + ("사용 중" if mode != "pg" else "준비됨(검색 설정은 pg)")))
+                elif not es.get("up"):
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if mode != "pg" else "ok", "; ".join(probs) + (" · PostgreSQL 로 폴백 중" if mode != "pg" else ""), "ES 기동 · ES_URL · 인증 확인"))
                 else:
-                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "ok", f"ES 연결됨 · 색인 {es.get('es_docs')}/{es.get('pg_chunks')} · {'사용 중' if want else '준비됨(검색 설정은 pg)'}"))
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if mode != "pg" else "ok", "; ".join(probs) + f" ({summary}) — 새 청크는 PostgreSQL 로 보충",
+                              "워커 주기 안에 따라잡음. 계속되면 python -m nhdip.cli kb-es --sync (nori 없음이면 analysis-nori 설치 후 kb-es --rebuild)"))
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn", f"상태를 읽지 못함 — {exc.__class__.__name__}"))

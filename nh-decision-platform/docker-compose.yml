@@ -14,7 +14,7 @@ name: nhdip
 #   neo4j     :7474  온톨로지 그래프 (브라우저 UI) / :7687 bolt
 #   litellm   :4000  (선택 · 기본 꺼짐) 내장 LiteLLM 게이트웨이 — 외부 LiteLLM 을 쓰면 띄우지 않는다.
 #                    켜려면 .env 에 COMPOSE_PROFILES=litellm
-#   elasticsearch :9200 (선택 · 기본 꺼짐) 질문하기 검색 엔진(nori 포함) — 기본은 PostgreSQL. 켜려면 COMPOSE_PROFILES=search (설계 §21.18)
+#   elasticsearch :9200 검색 엔진(nori 포함) — 3-way 구성(설계 §24): PostgreSQL 원장 · ES 키워드/의미 · Neo4j 그래프. 꺼져 있으면 검색은 PostgreSQL 로 축소 동작
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 로그 회전 (B.32) — 컨테이너 로그가 디스크를 채우지 않도록
@@ -72,11 +72,12 @@ x-api-env: &api-env
   ALERT_SMTP_FROM: ${ALERT_SMTP_FROM:-}
   ALERT_SMTP_TO: ${ALERT_SMTP_TO:-}
   ALERT_SMTP_STARTTLS: ${ALERT_SMTP_STARTTLS:-1}
-  # 선택 검색 엔진 Elasticsearch (설계 §21.18) — ES_URL 을 비우면 PostgreSQL 만 쓴다. 내장 ES 는 COMPOSE_PROFILES=search, 주소는 http://elasticsearch:9200
-  ES_URL: ${ES_URL:-}
-  ES_USER: ${ES_USER:-}
+  # 검색 엔진 Elasticsearch (3-way 구성 · 설계 §24) — 기본은 내장 elasticsearch 서비스. .env 에서 ES_URL= 로 비우면(명시) PostgreSQL 만 쓴다
+  ES_URL: ${ES_URL-http://elasticsearch:9200}
+  ES_USER: ${ES_USER-elastic}
   ES_PASSWORD: ${ES_PASSWORD:-}
   ES_INDEX: ${ES_INDEX:-nhdip-kb-chunk}
+  ES_DOC_INDEX: ${ES_DOC_INDEX:-nhdip-doc-chunk}
   ES_VERIFY_CERTS: ${ES_VERIFY_CERTS:-1}
   ES_CA_CERTS: ${ES_CA_CERTS:-}
 
@@ -150,10 +151,9 @@ services:
     restart: unless-stopped
 
   elasticsearch:
-    # 선택 서비스 (설계 §21.18) — 질문하기 키워드 · 의미 검색을 PostgreSQL 대신 ES 로 돌릴 때만. COMPOSE_PROFILES=search
-    # 켜면 .env 에 ES_PASSWORD(= elastic 계정 비밀번호)와 ES_URL=http://elasticsearch:9200 · ES_USER=elastic 이 필요하다.
+    # 3-way 구성의 검색 엔진 (설계 §24) — AI 어시스턴트 · 워크플로 근거 검색의 키워드(BM25 + nori) · 의미(kNN). 분석 결과 · 문서 색인 두 개.
+    # .env 의 ES_PASSWORD(= elastic 계정 비밀번호, make env 가 생성) · ES_URL=http://elasticsearch:9200 · ES_USER=elastic.
     # 호스트에 vm.max_map_count=262144 이상이 필요하다(sysctl). 데이터 원장은 PostgreSQL 이라 ES 볼륨을 잃어도 `python -m nhdip.cli kb-es --rebuild` 로 복구된다.
-    profiles: ["search"]
     build:
       context: ./infra/elasticsearch
       args:
@@ -175,7 +175,8 @@ services:
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -u elastic:$${ELASTIC_PASSWORD} http://127.0.0.1:9200/_cluster/health >/dev/null || exit 1"]
+      # curl 이 이미지에 없을 수도 있어(공식 이미지가 보장하지 않음) 없으면 포트 확인으로 — 실제 동작은 kb-es --check 가 본다
+      test: ["CMD-SHELL", "curl -fsS -u elastic:$${ELASTIC_PASSWORD} http://127.0.0.1:9200/_cluster/health >/dev/null || { command -v curl >/dev/null && exit 1; bash -c 'exec 3<>/dev/tcp/127.0.0.1/9200'; }"]
       interval: 15s
       timeout: 10s
       retries: 20

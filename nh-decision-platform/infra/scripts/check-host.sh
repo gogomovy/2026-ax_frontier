@@ -51,6 +51,13 @@ if [ -r /proc/meminfo ]; then
     ok "메모리 ${MEM}GB + 스왑 ${SWAP}GB"
   fi
 fi
+# Elasticsearch(3-way 검색 엔진 · 설계 §24) — 커널 설정 vm.max_map_count 262144 이상
+MMC=$(cat /proc/sys/vm/max_map_count 2>/dev/null || echo 0)
+if [ "${MMC:-0}" -lt 262144 ]; then
+  note "vm.max_map_count=${MMC} — Elasticsearch 는 262144 이상 필요(부족하면 ES 가 뜨지 않고 검색은 PostgreSQL 로 축소 동작)" "sudo sysctl -w vm.max_map_count=262144 && echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-elasticsearch.conf"
+else
+  ok "vm.max_map_count ${MMC}"
+fi
 DISK=$(df -Pk . | awk 'NR==2 {printf "%d", $4/1024/1024}')
 if [ "${DISK:-0}" -lt 15 ]; then note "남은 디스크 ${DISK}GB — 이미지 · 볼륨에 15GB 이상 권장" "docker system prune -af (사용하지 않는 이미지 정리) 또는 볼륨 확장"; else ok "남은 디스크 ${DISK}GB"; fi
 
@@ -64,7 +71,7 @@ else
   else
     ok ".env 키 중복 없음"
   fi
-  for k in SESSION_SECRET CONFIG_ENC_KEY POSTGRES_PASSWORD NEO4J_PASSWORD BOOTSTRAP_ADMIN_PASSWORD; do
+  for k in SESSION_SECRET CONFIG_ENC_KEY POSTGRES_PASSWORD NEO4J_PASSWORD BOOTSTRAP_ADMIN_PASSWORD ES_PASSWORD; do
     grep -qE "^${k}=.+" .env || bad ".env 의 ${k} 가 비어 있음" "bash infra/scripts/ensure-env.sh"
   done
 fi
