@@ -719,6 +719,12 @@ export interface DatasetMeta {
   qualityNote: string;
   registeredAt: string;
   usedBy: string[];
+  /** 서버 모드 — 데이터셋 코드 · 이름 · 출처 · 버전 · 자료 성격 ('새 버전 올리기' 연결 · Phase E UXF-05) */
+  dataset?: string;
+  datasetName?: string;
+  origin?: "bank" | "ext";
+  version?: number;
+  dataOrigin?: string;
 }
 
 /* ── 대시보드 ─────────────────────────────────────────────── */

@@ -146,10 +146,11 @@ export function AssistPanel() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-pill bg-ink-deep px-5 py-3 text-[13px] font-bold text-white shadow-pop no-print"
+        className="fixed bottom-4 right-4 z-40 flex h-12 min-w-[48px] items-center justify-center gap-2 rounded-pill bg-ink-deep px-4 text-[13px] font-bold text-white shadow-pop no-print sm:bottom-6 sm:right-6 sm:h-auto sm:px-5 sm:py-3"
         aria-haspopup="dialog"
       >
-        <span aria-hidden="true">?</span> 질문하기
+        {/* 좁은 화면은 아이콘 단추(이름은 화면 낭독기용으로 유지) — 내용을 덜 가린다 (Phase E · LAY-01) */}
+        <span aria-hidden="true">?</span> <span className="max-sm:sr-only">질문하기</span>
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} eyebrow="AI 질의" title="데이터에 질문하기" meta="확정 수치(계산 커널) · 우리 팀 분석 결과 · 근거 문서만으로 답합니다. 권한이 있는 범위만 검색합니다." width="lg">
         {scope ? (

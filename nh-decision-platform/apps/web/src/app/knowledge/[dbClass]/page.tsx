@@ -26,7 +26,7 @@ const META: Record<string, { title: string; description: string }> = {
   branch_ref: {
     title: "영업점 기준·공문",
     description:
-      "업적평가 세부기준(반기)과 본부가 영업점에 배포한 공문입니다. 영업점 Agent 는 이 분류와 정부정책 DB 만 근거로 쓰고, 본부 내부 문서는 인용하지 않습니다.",
+      "업적평가 세부기준(반기)과 본부가 영업점에 배포한 공문입니다. 영업점 AI는 이 분류와 정부정책 DB 만 근거로 쓰고, 본부 내부 문서는 인용하지 않습니다.",
   },
 };
 

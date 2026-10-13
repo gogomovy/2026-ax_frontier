@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Check, fmtTime, useAction } from "@/components/admin/kit";
 import { RequestPreview, RequestStatus, type UploadReq } from "@/components/knowledge/UploadWorkspace";
+import { useConfirm } from "@/components/providers/UiProvider";
 import { KeyValueList } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPost } from "@/lib/api-client";
@@ -13,6 +14,7 @@ import { apiPost } from "@/lib/api-client";
  */
 export function RequestReviewCard({ r, reload, base, canReview = true, blockedReason }: { r: UploadReq; reload: () => Promise<void>; base: string; canReview?: boolean; blockedReason?: string }) {
   const { run, busy } = useAction();
+  const confirm = useConfirm();
   const [note, setNote] = useState("");
   const [force, setForce] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -60,7 +62,19 @@ export function RequestReviewCard({ r, reload, base, canReview = true, blockedRe
           <div className="flex flex-wrap items-center gap-xs">
             {!rejecting ? (
               <>
-                <Button size="sm" variant="confirm" disabled={busy} onClick={() => run(() => apiPost(`${base}/${r.id}/approve`, { note: note || null, force }), "승인했습니다 — 관련 워크플로가 다시 계산합니다", reload)}>
+                <Button
+                  size="sm"
+                  variant={force ? "danger" : "confirm"}
+                  disabled={busy}
+                  onClick={async () => {
+                    // 품질 실패여도 확정 — 틀린 수치가 화면에 나갈 수 있어 한 번 더 묻는다 (Phase E · INT-01)
+                    if (force) {
+                      const ok = await confirm({ title: "품질 검사에 실패해도 확정할까요?", body: `${r.targetLabel} — 품질 검사를 통과하지 못한 자료도 현재 버전이 되고 관련 화면 수치가 다시 계산됩니다.`, confirmLabel: "실패해도 확정", tone: "danger" });
+                      if (!ok) return;
+                    }
+                    await run(() => apiPost(`${base}/${r.id}/approve`, { note: note || null, force }), "승인했습니다 — 관련 워크플로가 다시 계산합니다", reload);
+                  }}
+                >
                   승인하고 반영
                 </Button>
                 {r.kind === "dataset" ? <Check label={warned ? "승인 때 품질 실패여도 확정(주의 항목 있음)" : "승인 때 품질 실패여도 확정"} checked={force} onChange={setForce} /> : null}

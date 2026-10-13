@@ -2798,3 +2798,97 @@ LLM 프롬프트: `확정 수치` · `분석 결과(컬렉션 이름 표시)` ·
 - 검색: 문서 그래프 채널이 켜져(`docGraph=true`) 문서 후보를 개념 관계로 더하고, 팀별 격리는 그대로였다(종합기획부 관점의 후보에 신용리스크 컬렉션이 `analysis_tabs` 화면 권한 범위 밖으로 나오지 않음). 개념 확장의 Neo4j 이웃 질의가 실제로 동작함을 확인(포용금융 ↔ 햇살론 · 사잇돌 · 새희망홀씨대출, 소기업 ↔ 기업여신 · CORP_MICRO). 데이터셋 매핑 간선(PostgreSQL)과 같은 이웃이라 출처 표시는 `ontology` 로 나온다.
 - 보강: Neo4j 연결이 막혀 있을 때 질문이 기다리는 시간을 줄이려고 차단기를 **지수 대기**(30초 → 60 → 120 → … 최대 5분, 한 번 성공하면 처음부터)로 바꿨다. 연결 거부가 즉시 오지 않는 환경(개발 PC 에서 약 2초)에서 확인한 지연이다.
 - 확인하지 않은 것: Neo4j 클러스터 · 인증서 · 대용량 그래프(노드 수십만 이상)의 투영 시간.
+
+---
+
+## 22. 사용자 흐름 기준 UI/UX 개선 설계 (요구사항 §22 · Q121~Q126)
+
+### 22.1 한눈에 보기
+
+| 영역 | 바꾸는 것 | 주요 파일 |
+|---|---|---|
+| 공통 구성 요소 | `FileDrop`(파일 놓기 영역) · `ConfirmProvider`/`useConfirm`(앱 확인 대화상자) · 알림 성공/실패 구분 · 실행 상태 한국어 표기(`lib/labels.ts`) | `components/ui/FileDrop.tsx` · `components/ui/Confirm.tsx` · `components/layout/Toast.tsx` · `components/providers/UiProvider.tsx` |
+| 업로드(업무) | 파일 먼저 → 추천 → 확인 → 검사 · 요청, 깊은 링크 `?target=` | `components/knowledge/UploadWorkspace.tsx` · `lib/upload-match.ts` · `app/knowledge/upload/page.tsx` |
+| 업로드(관리자) | 머리 파일 놓기 → 추천 → 상세 양식(파일 채움) · 이동 · 초점, 확정 확인 | `app/admin/datasets/page.tsx` |
+| 데이터베이스 | 행 '새 버전 올리기' · 찾기 · 권한별 안내 | `app/knowledge/page.tsx` |
+| 내비게이션 | 관리자 첫 화면 · 메뉴 순서 · 관리 건수 · 가장 긴 일치 · 자료 성격 표시 | `api/auth.py` · `api/menu_counts.py` · `components/layout/AppShell.tsx` · `lib/nav.ts` |
+| 안내 화면 | 권한 없음(요청 화면 이름) · 없는 화면(내 첫 화면) | `app/forbidden/page.tsx` · `app/not-found.tsx` |
+| 위험 작업 | 확인 대화상자 적용 | `app/admin/{users,datasets,analysis-agents,llm}` · `components/knowledge/RequestReviewCard.tsx` |
+
+### 22.2 파일 놓기 영역 `FileDrop`
+
+```
+<FileDrop id accept=".csv,.xlsx" maxMb={50} file={file} onFile={(f|null)} label hint disabled />
+```
+
+- 영역 전체가 `<label>`(숨긴 `<input type=file>` 과 연결) — 눌러서 고르기 · Enter/Space · 화면 낭독기는 기본 파일 입력으로 동작. 끌어다 놓기(`dragenter/over/leave/drop`)는 영역 테두리 강조.
+- 검사(브라우저): 확장자가 `accept` 에 없으면 '허용 형식 아님', `maxMb` 초과면 '용량 초과' — 파일을 받지 않고 이유를 `role=alert` 로. 서버 검사(보안 · 품질)는 그대로.
+- 고른 뒤: 파일 이름 · 크기(KB/MB) · [다른 파일] · [빼기]. `data-file-drop` 속성(E2E). 용량 한도는 `/db/uploadable` 의 `maxMb`(설정 `upload.policy.max_mb`).
+
+### 22.3 파일 이름 → 자료 추천 `lib/upload-match.ts`
+
+```
+kindOf(name, accept) → "dataset" | "document" | null          // 확장자
+suggestDatasets(name, datasets) → [{code, score, reasons[]}]  // 점수 순, 0점 제외
+```
+
+점수(Q121): 이름 규칙 정규식(`filePattern`, 대소문자 무시) 일치 100 · 데이터셋 코드가 파일 이름에 있음 60 · 보고서 번호(이름의 4자리 숫자, 예 7790 · 2633 · 2020)가 파일 이름의 숫자 묶음과 같음 50 · 이름 낱말(2자 이상) 겹침 낱말당 10(최대 40). 정규식이 브라우저에서 해석되지 않으면(파이썬 전용 문법) 건너뛴다. 50점 이상 1순위를 선택해 두되 '추천' 표시와 근거를 보이고 사용자가 바꿀 수 있다. 20~49점은 '이름 비슷'(목록 앞쪽 · 근거), 20점 미만(낱말 하나만 겹침)은 표시하지 않는다. 문서 형식이면 문서 탭으로 바꾸고 제목 = 파일 이름(확장자 제외).
+
+### 22.4 업로드 화면 흐름 (업무 `/knowledge/upload`)
+
+```
+① 파일 올리기  [FileDrop — 정형 · 문서 형식 모두 허용]   (또는 '파일 없이 문서 본문 붙여 넣기')
+      │ 파일 형식으로 종류 결정 · 추천
+② 무엇인지 확인  정형: 추천 자료(근거) + 다른 자료 찾기(목록, 접기) / 문서: 분류 고르기 · 제목(파일 이름)
+③ 기준 정보     정형: 자료 성격 · 기준일 · 메모 / 문서: 발행 기관 · 시행일 · 메모
+④ 검사 후 승인 요청  [단추] + 못 누르는 이유 · 결과(요청 번호 · 검사 결과)로 초점
+```
+
+- `?target=코드`: 해당 정형 자료를 미리 선택(파일만 올리면 됨). [데이터베이스] 행의 '새 버전 올리기' 가 이 주소로 연결.
+- 자료 목록은 처음엔 추천 · 최근 사용 위주(최대 6개) + [전체 목록 보기], 모바일에서 내부 스크롤 상자를 쓰지 않는다.
+- 승인 주체 문구는 한곳(`APPROVER_TEXT`)에서 — '부서 데이터 책임자 또는 관리자'.
+- '내 요청' 불러오기 실패 → 오류 안내 + [다시 시도].
+
+### 22.5 관리자 업로드 (`/admin/datasets`)
+
+- 머리 카드 '파일로 업로드': `FileDrop`(정형 형식) → `suggestDatasets` 1순위를 열고(상세 양식의 파일 상태에 그 파일을 넣음) 상세 영역으로 `scrollIntoView` + 제목 초점. 추천이 없으면 '맞는 데이터셋이 없습니다 — 표에서 고르세요'.
+- 상세 양식: 파일은 `FileDrop`, 기준일은 `type=date`, 형식 안내는 `accept` 와 같은 값. [업로드(즉시 확정)]와 '품질 실패여도 확정' 은 확인 대화상자(결과 설명: 현재 버전 교체 · 관련 워크플로 재계산).
+- 문서 탭 등록 양식도 `FileDrop`.
+
+### 22.6 확인 대화상자 `useConfirm`
+
+```ts
+const confirm = useConfirm();
+if (await confirm({ title, body, confirmLabel, tone: "danger" | "default", input?: { label, type, validate } })) { … }
+// input 이 있으면 resolve 값은 입력 문자열(취소 = null)
+```
+
+- `UiProvider` 에 한 개의 대화상자(`role=alertdialog`, `aria-modal`, 제목 · 설명 연결, 포커스 가두기, Esc = 취소, 닫히면 연 단추로 초점 복귀, 열릴 때 초점 = [취소] — 위험 작업 기본은 취소).
+- 적용: 사용자 역할 → 관리자 · 사용자 중지 · 가입 반려 · 비밀번호 재설정(입력 + 정책 8자 이상 영문 · 숫자) · 버전 되돌리기 · 즉시 확정 업로드 · 강제 확정 · 강제 승인(자료 요청) · 분석 폐기 · LLM 연결 삭제.
+
+### 22.7 내비게이션
+
+- 서버 `_home`: 관리자이고 `ADMIN_HOME` 화면이 있으면 `/admin`.
+- 서버 `/me/menu`: `dataOrigin` = 현재 버전 데이터의 `data_origin` 종합(`simulated` · `mixed` · `actual`) — 사이드바 하단 표시(NAV-05). 관리 건수 키 `adminTodo`(홈 합계) · `adminUsers`(가입 대기) · `adminUploads`(자료 요청 대기) · `adminAnalyses`(분석 승인 대기) — 관리자에게만 계산. 화면 `count_key` 는 시드 1회 보강 `admin-counts-v1` 로(관리자가 바꾼 값은 보존).
+- 클라이언트 `groupsFromMenu`: 관리자(`user.role === "admin"`)이면 관리 묶음을 먼저, 업무 묶음은 부서별로 접히는 '업무 화면 · <부서>' 묶음으로 뒤에(현재 주소가 그 안이면 펼침). 관리 묶음에도 건수 배지, 접힌 묶음은 안 건수 합을 머리에.
+- 권한 없음: proxy 가 요청 헤더 `x-pathname` 에 화면 주소를 싣고, 서버 `apiGet` 의 403 이동은 그 주소를 `?from=` 으로 넘긴다. `/forbidden` 은 `GET /me/screen?path=`(로그인 필요 · 화면 이름 · 묶음 · 관리자 화면 여부 · 권한 여부 · 내 첫 화면만, 가장 긴 일치)로 '[화면] 화면에 대한 권한이 없습니다' · 메뉴 위치 · 요청 방법을 보인다. 없는 화면(404)은 [내 첫 화면] · [데이터베이스].
+- `lib/nav.ts`: 메뉴 전체에서 현재 주소와 가장 길게 일치하는 항목 하나만 활성(`activeHref(items, pathname)`).
+
+### 22.8 표기 (`lib/labels.ts`)
+
+| 값 | 표시 |
+|---|---|
+| succeeded · success | 성공 |
+| degraded | 축소 동작 |
+| failed · error | 실패 |
+| running · in_progress | 실행 중 |
+| queued · pending | 대기 |
+| passed / warning / failed (품질) | 통과 / 주의 / 실패 |
+
+업무 화면 문구의 'Agent' → 'AI', 'AI Attention' → 'AI 주목 사항', 브랜드 부제 'AI Decision Platform' → 'AI 의사결정 지원'.
+
+### 22.9 시험
+
+- 단위(vitest): `upload-match`(이름 규칙 · 코드 · 보고서 번호 · 낱말 · 문서 판정 · 잘못된 정규식), `activeHref`, 상태 표기.
+- 통합(pytest): 관리자 `home=/admin`, 관리 건수(가입 · 자료 · 분석 대기), `dataOrigin`.
+- E2E: 업로드 — 파일 놓기 영역 존재 → 파일 고르기 → 추천 선택 확인 → 요청, 데이터베이스 '새 버전 올리기' 깊은 링크, 관리자 첫 화면 `/admin` · 관리 건수, 역할 변경 확인 대화상자(취소 시 그대로). 접근성 목록 유지(위반 0).

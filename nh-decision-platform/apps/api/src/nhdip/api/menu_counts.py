@@ -47,4 +47,21 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
         if not can(res):
             for k in keys:
                 out[k] = 0
+    if user.role == "admin":
+        out.update(admin_counts(session))
     return out
+
+
+def admin_counts(session: Session) -> dict[str, int]:
+    """관리자 처리 대기 건수 (NAV-04 · Q122) — 가입 승인 · 자료 요청 · 분석 에이전트 승인."""
+    from sqlalchemy import func, select
+
+    from nhdip.models import AnalysisAgentVersion, UploadRequest
+
+    def n(model: Any, *where: Any) -> int:
+        return int(session.scalar(select(func.count()).select_from(model).where(*where)) or 0)
+
+    users = n(AppUser, AppUser.status == "pending")
+    uploads = n(UploadRequest, UploadRequest.status == "pending")
+    analyses = n(AnalysisAgentVersion, AnalysisAgentVersion.status == "pending")
+    return {"adminUsers": users, "adminUploads": uploads, "adminAnalyses": analyses, "adminTodo": users + uploads + analyses}

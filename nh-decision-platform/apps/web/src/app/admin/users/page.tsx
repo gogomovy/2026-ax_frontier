@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { AdminPage, C, Card, Check, Loading, Select, StatusBadge, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { useConfirm } from "@/components/providers/UiProvider";
 import { Button } from "@/components/ui/primitives";
 import { apiPatch, apiPost } from "@/lib/api-client";
+import { passwordRuleError } from "@/lib/password";
 
 interface UserRow {
   empNo: string;
@@ -41,7 +43,43 @@ export default function UsersAdmin() {
   const count = (s: string) => (users.data ?? []).filter((u) => u.status === s).length;
   const orgOptions = (orgs.data?.orgs ?? []).filter((o) => o.active).map((o) => ({ value: o.code, label: `${"　".repeat(o.level - 1)}${o.name}` }));
 
+  const confirm = useConfirm();
   const act = (emp: string, action: string, msg: string) => run(() => apiPost(`/admin/users/${emp}/${action}`), msg, users.reload);
+  const orgName = (code: string) => orgs.data?.orgs.find((o) => o.code === code)?.name ?? code;
+
+  // 되돌리기 어렵거나 권한이 바뀌는 작업은 결과를 설명하고 한 번 더 묻는다 (Phase E · INT-01 · Q123). 취소하면 선택 상자는 원래 값 그대로
+  const changeOrg = async (u: UserRow, code: string) => {
+    if (code === u.org.code) return;
+    const ok = await confirm({ title: "소속을 바꿀까요?", body: `${u.name}(${u.empNo}) — ${u.org.name} → ${orgName(code)}. 화면 권한이 새 소속 기준으로 바로 바뀝니다.`, confirmLabel: "소속 바꾸기" });
+    if (ok) await run(() => apiPatch(`/admin/users/${u.empNo}`, { org_code: code }), "소속을 바꿨습니다", users.reload);
+  };
+  const changeRole = async (u: UserRow, role: string) => {
+    if (role === u.role) return;
+    const toAdmin = role === "admin";
+    const ok = await confirm(
+      toAdmin
+        ? { title: "관리자 권한을 줄까요?", body: `${u.name}(${u.empNo})은(는) 사용자 · 화면 권한 · 데이터 확정 · LLM 연동 등 모든 관리자 화면을 쓸 수 있게 됩니다.`, confirmLabel: "관리자로 지정", tone: "danger" }
+        : { title: "관리자 권한을 회수할까요?", body: `${u.name}(${u.empNo})은(는) 소속 조직의 업무 화면만 쓰게 됩니다.`, confirmLabel: "권한 회수" },
+    );
+    if (ok) await run(() => apiPatch(`/admin/users/${u.empNo}`, { role }), "역할을 바꿨습니다", users.reload);
+  };
+  const disable = async (u: UserRow) => {
+    const ok = await confirm({ title: "사용을 중지할까요?", body: `${u.name}(${u.empNo})의 로그인 세션이 바로 끊기고 다시 로그인할 수 없습니다. [재사용]으로 되돌릴 수 있습니다.`, confirmLabel: "중지", tone: "danger" });
+    if (ok) await act(u.empNo, "disable", "중지했습니다(세션 폐기)");
+  };
+  const reject = async (u: UserRow) => {
+    const ok = await confirm({ title: "가입 신청을 반려할까요?", body: `${u.name}(${u.empNo})의 가입 신청을 반려합니다. 다시 쓰려면 새로 가입해야 합니다.`, confirmLabel: "반려", tone: "danger" });
+    if (ok) await act(u.empNo, "reject", "반려했습니다");
+  };
+  const resetPassword = async (u: UserRow) => {
+    const pw = await confirm({
+      title: "비밀번호를 초기화할까요?",
+      body: `${u.name}(${u.empNo})의 기존 로그인 세션이 모두 끊깁니다. 새 비밀번호는 본인에게 안전한 경로로 알려 주세요.`,
+      confirmLabel: "초기화",
+      input: { label: "새 비밀번호 (8자 이상 · 영문 + 숫자)", type: "password", validate: passwordRuleError },
+    });
+    if (typeof pw === "string" && pw) await run(() => apiPost(`/admin/users/${u.empNo}/password`, { password: pw }), "비밀번호를 초기화했습니다(기존 세션 폐기)", users.reload);
+  };
 
   return (
     <AdminPage
@@ -69,11 +107,11 @@ export default function UsersAdmin() {
                 <span className="font-bold text-ink-deep">{u.name}</span> {u.position ?? ""}
               </C>
               <C className="min-w-[220px]">
-                <Select value={u.org.code} options={orgOptions} onChange={(v) => run(() => apiPatch(`/admin/users/${u.empNo}`, { org_code: v }), "소속을 바꿨습니다", users.reload)} />
+                <Select ariaLabel={`${u.name} 소속`} value={u.org.code} options={orgOptions} onChange={(v) => void changeOrg(u, v)} />
                 <p className="mt-0.5 text-[10.5px] text-stone">{u.orgPath.map((o) => o.name).join(" > ")}</p>
               </C>
               <C className="w-[110px]">
-                <Select value={u.role} options={[{ value: "user", label: "사용자" }, { value: "admin", label: "관리자" }]} onChange={(v) => run(() => apiPatch(`/admin/users/${u.empNo}`, { role: v }), "역할을 바꿨습니다", users.reload)} />
+                <Select ariaLabel={`${u.name} 역할`} value={u.role} options={[{ value: "user", label: "사용자" }, { value: "admin", label: "관리자" }]} onChange={(v) => void changeRole(u, v)} />
               </C>
               <C className="min-w-[120px]">
                 <Check
@@ -100,7 +138,7 @@ export default function UsersAdmin() {
                       <Button size="sm" variant="confirm" disabled={busy} onClick={() => act(u.empNo, "approve", "승인했습니다")}>
                         승인
                       </Button>
-                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(u.empNo, "reject", "반려했습니다")}>
+                      <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reject(u)}>
                         반려
                       </Button>
                     </>
@@ -111,7 +149,7 @@ export default function UsersAdmin() {
                     </Button>
                   ) : null}
                   {u.status === "active" ? (
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(u.empNo, "disable", "중지했습니다(세션 폐기)")}>
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => void disable(u)}>
                       중지
                     </Button>
                   ) : null}
@@ -124,10 +162,8 @@ export default function UsersAdmin() {
                     size="sm"
                     variant="quiet"
                     disabled={busy}
-                    onClick={() => {
-                      const pw = window.prompt(`${u.name}(${u.empNo}) 새 비밀번호 (8자 이상 · 영문+숫자)`);
-                      if (pw) run(() => apiPost(`/admin/users/${u.empNo}/password`, { password: pw }), "비밀번호를 초기화했습니다(기존 세션 폐기)", users.reload);
-                    }}
+                    onClick={() => void resetPassword(u)}
+                    aria-label={`${u.name} 비밀번호 초기화`}
                   >
                     비밀번호
                   </Button>

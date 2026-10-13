@@ -49,7 +49,7 @@ const ACTION_DONE = {
 
 /**
  * STEP 3 — 경영목표 설정 (요구사항 DASH-03/04/05, GOAL-03~17, PROP-01~04)
- *  검토 사유(AI Attention · 확인·보고 요청) → 좌 현재 목표 / 우 AI 제안 → 상세 시트에서 처리
+ *  검토 사유(AI 주목 사항 · 확인·보고 요청) → 좌 현재 목표 / 우 AI 제안 → 상세 시트에서 처리
  *  전파 경로는 같은 화면의 내부 탭으로 둔다.
  */
 export function GoalsWorkspace({
@@ -108,7 +108,7 @@ export function GoalsWorkspace({
             />
             <div className="grid grid-cols-1 gap-xl xl:grid-cols-2">
               <div>
-                <p className="mb-2 text-[12px] font-bold text-steel">AI Attention · {attentions.length}건</p>
+                <p className="mb-2 text-[12px] font-bold text-steel">AI 주목 사항 · {attentions.length}건</p>
                 <RowList>
                   {[...attentions].sort((x, y) => (y.rankScore ?? 0) - (x.rankScore ?? 0)).map((a) => (
                     <li key={a.id}>

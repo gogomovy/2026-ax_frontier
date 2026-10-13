@@ -124,6 +124,9 @@ try {
   }
   await u.goto(`${BASE}/risk`, { waitUntil: "networkidle0" });
   ok("다른 부서 화면 → 권한 없음", u.url().includes("/forbidden"), u.url());
+  // Phase E (NAV-03) — 어느 화면인지 · 누구에게 요청하는지
+  const fb = await u.evaluate(() => ({ screen: document.querySelector("[data-forbidden-screen]")?.textContent ?? "", h1: document.querySelector("h1")?.textContent ?? "" }));
+  ok("권한 없음: 요청한 화면 이름 · 메뉴 위치", u.url().includes("from=%2Frisk") && fb.screen.includes("신용리스크") && fb.h1.startsWith("["), JSON.stringify(fb));
   await u.goto(`${BASE}/admin`, { waitUntil: "networkidle0" });
   ok("관리자 화면 → 권한 없음", u.url().includes("/forbidden"), u.url());
 
@@ -184,13 +187,25 @@ try {
   const before = (await api("/admin/monitor/flow?limit=1")).body[0]?.id ?? 0;
   await a.goto(`${BASE}/admin/datasets`, { waitUntil: "networkidle0" });
   await a.waitForFunction(() => [...document.querySelectorAll("tr")].some((tr) => tr.innerText.includes("PROVISION_BY_PRODUCT")));
-  await a.evaluate(() => {
-    const row = [...document.querySelectorAll("tr")].find((tr) => tr.innerText.includes("PROVISION_BY_PRODUCT"));
-    [...row.querySelectorAll("button")].find((x) => x.innerText.includes("열기")).click();
-  });
-  await a.waitForSelector('input[type="file"]');
-  await (await a.$('input[type="file"]')).uploadFile(csvPath);
-  await a.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.innerText.trim() === "업로드").click());
+  // Phase E (UXF-03) — 머리 '파일로 업로드' 에 파일을 놓으면 이름으로 데이터셋을 찾아 상세 양식(파일 채움)을 연다
+  ok("관리자 데이터셋: 머리 파일 놓기 영역", (await a.$('[data-file-drop="admin-dataset"]')) !== null);
+  await (await a.$('[data-file-drop="admin-dataset"] input[type="file"]')).uploadFile(csvPath);
+  await a.waitForSelector('[data-dataset-detail="PROVISION_BY_PRODUCT"] [data-file-chosen]', { timeout: 10000 });
+  const focusedDetail = await a.evaluate(() => document.activeElement?.getAttribute("data-dataset-detail") ?? document.activeElement?.closest("[data-dataset-detail]")?.getAttribute("data-dataset-detail") ?? "");
+  ok("관리자 데이터셋: 파일 이름 → 7790 상세 열림 · 초점 이동", focusedDetail === "PROVISION_BY_PRODUCT", focusedDetail);
+  // 즉시 확정 업로드는 확인 대화상자 — 취소하면 아무 일도 없다
+  await a.click('[data-dataset-detail="PROVISION_BY_PRODUCT"] [data-admin-upload]');
+  await a.waitForSelector("[data-confirm-dialog]", { timeout: 5000 });
+  const dlgFocus = await a
+    .waitForFunction(() => document.activeElement?.hasAttribute("data-confirm-cancel") ?? false, { timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  ok("확정 업로드: 확인 대화상자(초점 = 취소)", dlgFocus);
+  await a.keyboard.press("Escape");
+  await a.waitForFunction(() => !document.querySelector("[data-confirm-dialog]"), { timeout: 5000 });
+  await a.click('[data-dataset-detail="PROVISION_BY_PRODUCT"] [data-admin-upload]');
+  await a.waitForSelector("[data-confirm-ok]", { timeout: 5000 });
+  await a.click("[data-confirm-ok]");
   await a.waitForFunction(() => document.body.innerText.includes("업로드했습니다"), { timeout: 15000 });
   ok("관리자 화면 업로드(당행)", true);
   let ev = null;
@@ -474,6 +489,35 @@ try {
     ok("관리자 홈: 처리할 일 · 시스템 상태", t.includes("처리할 일") && t.includes("시스템 상태") && t.includes("워커") && t.includes("데이터베이스"), t.slice(0, 200).replace(/\n/g, " | "));
     const crumbs = await a.evaluate(() => document.querySelector('nav[aria-label="현재 위치"]')?.innerText ?? "");
     ok("관리자 홈: 위치 표시", crumbs.includes("관리자"), crumbs);
+    // Phase E (NAV-01 · NAV-04 · Q122) — 관리자 첫 화면 = 관리자 홈, 관리 묶음이 먼저, 처리 대기 건수
+    const me = (await api("/me")).body;
+    const mm = (await api("/me/menu")).body;
+    ok("관리자 첫 화면 = /admin · 처리 대기 건수", me?.home === "/admin" && typeof mm?.counts?.adminTodo === "number" && mm.counts.adminTodo === mm.counts.adminUsers + mm.counts.adminUploads + mm.counts.adminAnalyses, JSON.stringify({ home: me?.home, todo: mm?.counts?.adminTodo }));
+    const firstGroup = await a.evaluate(() => document.querySelector("aside nav")?.innerText.trim().split("\n")[0] ?? "");
+    ok("관리자 사이드바: 관리 묶음 먼저", !firstGroup.startsWith("업무 화면"), firstGroup);
+    // 역할 변경 = 확인 대화상자, 취소하면 그대로 (INT-01 · Q123)
+    await a.goto(`${BASE}/admin/users`, { waitUntil: "networkidle0" });
+    await a.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.startsWith("전체"))?.click());
+    await a.waitForFunction((emp) => [...document.querySelectorAll("tr")].some((tr) => tr.innerText.includes(emp)), { timeout: 10000 }, EMP);
+    await a.evaluate((emp) => {
+      const row = [...document.querySelectorAll("tr")].find((tr) => tr.innerText.includes(emp));
+      const s = row && [...row.querySelectorAll("select")].find((x) => (x.getAttribute("aria-label") ?? "").endsWith("역할"));
+      if (!s) return;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, "admin");
+      s.dispatchEvent(new Event("change", { bubbles: true }));
+    }, EMP);
+    await a.waitForSelector("[data-confirm-dialog]", { timeout: 5000 }).catch(() => undefined);
+    const dlg = await a.evaluate(() => document.querySelector("[data-confirm-dialog]")?.innerText ?? "");
+    await a.click("[data-confirm-cancel]").catch(() => undefined);
+    await sleep(500);
+    const role = (await api("/admin/users")).body?.find((x) => x.empNo === EMP)?.role;
+    const shown = await a.evaluate((emp) => {
+      const row = [...document.querySelectorAll("tr")].find((tr) => tr.innerText.includes(emp));
+      return row && [...row.querySelectorAll("select")].find((x) => (x.getAttribute("aria-label") ?? "").endsWith("역할"))?.value;
+    }, EMP);
+    ok("사용자 역할 → 관리자: 확인 대화상자 · 취소 시 그대로", dlg.includes("관리자 권한을 줄까요") && role === "user" && shown === "user", `${dlg.slice(0, 40).replace(/\n/g, " ")} / ${role} / ${shown}`);
+    await shot(a, "07a-admin-users");
+    await a.goto(`${BASE}/admin`, { waitUntil: "networkidle0" });
     await a.goto(`${BASE}/admin/monitor`, { waitUntil: "networkidle0" });
     await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
     const toggled = await a.evaluate(() => {
@@ -497,8 +541,33 @@ try {
     await u.goto(`${BASE}/knowledge`, { waitUntil: "networkidle0" });
     ok("데이터베이스: 자료 올리기 버튼(권한 있는 부서)", (await u.$("[data-upload-cta]")) !== null);
     ok("데이터베이스: 승인할 자료 버튼(데이터 책임자)", (await u.$("[data-steward-cta]")) !== null);
+    // Phase E (UXF-05) — 표 행의 '새 버전 올리기' → 그 자료를 고른 채 [자료 올리기]
+    ok("데이터베이스: 행마다 '새 버전 올리기'", (await u.$('[data-dataset-upload="PROVISION_BY_PRODUCT"]')) !== null);
+    await Promise.all([u.waitForNavigation({ waitUntil: "networkidle0" }), u.click('[data-dataset-upload="PROVISION_BY_PRODUCT"]')]);
+    await u.waitForSelector('[data-upload-selected="PROVISION_BY_PRODUCT"]', { timeout: 10000 }).catch(() => undefined);
+    const deep = await u.evaluate(() => ({
+      url: location.pathname + location.search,
+      selected: document.querySelector('[data-upload-target="PROVISION_BY_PRODUCT"]')?.getAttribute("aria-checked"),
+      blocker: document.querySelector("[data-upload-blocker]")?.textContent ?? "",
+      disabled: document.querySelector("[data-upload-submit]")?.disabled ?? false,
+    }));
+    ok("자료 올리기 깊은 링크: 자료 미리 선택 · 못 누르는 이유(파일)", deep.url.includes("target=PROVISION_BY_PRODUCT") && deep.selected === "true" && deep.blocker.includes("파일") && deep.disabled, JSON.stringify(deep));
+    // 파일 먼저 → 파일 이름으로 추천 (Q121 — 골라 두기만, 확정은 사용자)
     await u.goto(`${BASE}/knowledge/upload`, { waitUntil: "networkidle0" });
-    await u.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.includes("문서"))?.click());
+    ok("자료 올리기: 파일 놓기 영역이 첫 단계", (await u.$('[data-file-drop="upload"] input[type="file"]')) !== null);
+    await (await u.$('[data-file-drop="upload"] input[type="file"]')).uploadFile(csvPath);
+    await u.waitForSelector("[data-upload-suggestion]", { timeout: 10000 }).catch(() => undefined);
+    const sug = await u.evaluate(() => ({
+      text: document.querySelector("[data-upload-suggestion]")?.textContent ?? "",
+      checked: document.querySelector('[data-upload-target="PROVISION_BY_PRODUCT"]')?.getAttribute("aria-checked"),
+      reason: document.querySelector('[data-upload-target="PROVISION_BY_PRODUCT"]')?.textContent ?? "",
+      enabled: !(document.querySelector("[data-upload-submit]")?.disabled ?? true),
+    }));
+    ok("자료 올리기: 파일 이름 → 7790 추천 · 근거 · 요청 가능", sug.checked === "true" && sug.text.includes("7790") && sug.reason.includes("보고서 번호 7790") && sug.enabled, JSON.stringify(sug).slice(0, 220));
+    await shot(u, "08a-upload-suggest");
+    // 문서 — 파일 없이 본문 붙여 넣기
+    await u.goto(`${BASE}/knowledge/upload`, { waitUntil: "networkidle0" });
+    await u.click("[data-upload-text-mode]");
     await u.waitForFunction(() => [...document.querySelectorAll('[role="radio"]')].some((x) => x.innerText.includes("참고")), { timeout: 10000 });
     await u.evaluate(() => [...document.querySelectorAll('[role="radio"]')].find((x) => x.innerText.includes("참고"))?.click());
     await u.waitForSelector("#up-title");

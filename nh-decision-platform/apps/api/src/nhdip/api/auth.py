@@ -186,13 +186,66 @@ def change_password(body: PasswordIn, request: Request, user: AppUser = Depends(
 def _home(session: Session, user: AppUser) -> str:
     codes = user_screen_codes(session, user)
     screens = session.execute(select(Screen).where(Screen.code.in_(codes), Screen.kind.in_(["flow", "reference", "admin"])).order_by(Screen.sort)).scalars().all()
+    # 관리자의 첫 화면은 [관리자 홈] — 처리할 일 · 시스템 상태부터 (Phase E · NAV-01 · Q122)
+    if user.role == "admin":
+        home = next((s for s in screens if s.code == "ADMIN_HOME"), None)
+        if home is not None:
+            return home.path
     biz = [s for s in screens if s.kind != "admin"]
     return (biz or screens)[0].path if (biz or screens) else "/"
+
+
+def _data_origin(session: Session) -> str:
+    """현재 버전 데이터의 성격 (Phase E · NAV-05 · Q124) — simulated · mixed · actual · none(자료 없음)."""
+    from nhdip.models import source
+
+    kinds: set[str] = set()
+    for origin in ("bank", "ext"):
+        t = source(origin)
+        kinds |= {str(x or "simulated") for x in session.execute(select(t.version.data_origin).where(t.version.is_current).distinct()).scalars()}
+    if not kinds:
+        return "none"
+    if kinds == {"actual"}:
+        return "actual"
+    return "simulated" if "actual" not in kinds else "mixed"
 
 
 @router.get("/me")
 def me(user: AppUser = Depends(current_user), session: Session = Depends(get_session)):
     return {"user": user_json(session, user), "screens": sorted(user_screen_codes(session, user)), "home": _home(session, user)}
+
+
+def _match_len(path: str, pattern: str) -> int:
+    """화면 활성 판정 접두어(`=` 이면 정확히 같을 때만)와 주소의 일치 길이 — 맞지 않으면 -1 (웹 lib/nav.ts 와 같은 규칙)."""
+    exact = pattern.startswith("=")
+    p = pattern[1:] if exact else pattern
+    if not p:
+        return -1
+    if path == p:
+        return len(p)
+    if not exact and path.startswith(p.rstrip("/") + "/"):
+        return len(p)
+    return -1
+
+
+@router.get("/me/screen")
+def screen_for_path(path: str, user: AppUser = Depends(current_user), session: Session = Depends(get_session)):
+    """권한 없음 안내용 — 주소에 맞는 화면 이름 · 묶음 · 권한 여부 (Phase E · NAV-03). 화면 이름만 알려 주고 내용은 주지 않는다."""
+    path = path.split("?", 1)[0][:200]
+    best: Screen | None = None
+    best_len = -1
+    for s in session.execute(select(Screen).where(Screen.active, Screen.kind != "hidden")).scalars():
+        n = max((_match_len(path, m.strip()) for m in (s.match or s.path).split(",") if m.strip()), default=-1)
+        if n > best_len:
+            best, best_len = s, n
+    if best is None:
+        return {"screen": None}
+    admin = bool(best.admin_only or best.kind == "admin")
+    return {
+        "screen": {"code": best.code, "label": best.label, "section": best.section, "admin": admin},
+        "granted": best.code in user_screen_codes(session, user),
+        "home": _home(session, user),
+    }
 
 
 @router.get("/me/menu")
@@ -223,4 +276,5 @@ def my_menu(user: AppUser = Depends(current_user), session: Session = Depends(ge
         "counts": menu_counts(session, user),
         "asOf": ui_as_of.value if ui_as_of else get_settings().as_of_default,
         "batchLabel": batch.value if batch else "",
+        "dataOrigin": _data_origin(session),
     }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AdminPage, C, Card, Check, Loading, Select, Table, TextInput, useAction, useApiData } from "@/components/admin/kit";
+import { useConfirm } from "@/components/providers/UiProvider";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPatch, apiPost } from "@/lib/api-client";
 
@@ -26,6 +27,7 @@ interface UnitType {
 export default function OrgsAdmin() {
   const data = useApiData<{ unitTypes: UnitType[]; orgs: OrgRow[] }>("/admin/orgs");
   const { run, busy } = useAction();
+  const confirm = useConfirm();
   const types = data.data?.unitTypes ?? [];
   const orgs = data.data?.orgs ?? [];
   const [form, setForm] = useState({ code: "", name: "", unit_type: "DEPT", parent_code: "", sort: "0" });
@@ -103,7 +105,13 @@ export default function OrgsAdmin() {
                 <Select
                   value={o.parent ?? ""}
                   options={parentOptions(o.unitType ?? "", o.code)}
-                  onChange={(v) => run(() => apiPatch(`/admin/orgs/${o.code}`, { parent_code: v || null }), "상위 조직을 바꿨습니다 (하위 조직 함께 이동)", data.reload)}
+                  ariaLabel={`${o.name} 상위 조직`}
+                  onChange={async (v) => {
+                    if (v === (o.parent ?? "")) return;
+                    const to = orgs.find((x) => x.code === v)?.name ?? "없음(최상위)";
+                    const ok = await confirm({ title: "상위 조직을 바꿀까요?", body: `${o.name}과(와) 하위 조직이 ${to} 아래로 옮겨지고, 상속되는 화면 권한이 새 위치 기준으로 바뀝니다.`, confirmLabel: "옮기기" });
+                    if (ok) await run(() => apiPatch(`/admin/orgs/${o.code}`, { parent_code: v || null }), "상위 조직을 바꿨습니다 (하위 조직 함께 이동)", data.reload);
+                  }}
                 />
               </C>
               <C right>{o.users}</C>
@@ -116,9 +124,10 @@ export default function OrgsAdmin() {
                   size="sm"
                   variant="quiet"
                   disabled={busy}
-                  onClick={() => {
-                    const name = window.prompt("새 이름", o.name);
-                    if (name && name !== o.name) run(() => apiPatch(`/admin/orgs/${o.code}`, { name }), "이름을 바꿨습니다", data.reload);
+                  aria-label={`${o.name} 이름 변경`}
+                  onClick={async () => {
+                    const name = await confirm({ title: "조직 이름 바꾸기", confirmLabel: "저장", input: { label: "새 이름", initial: o.name, validate: (v) => (v.trim() ? (v.trim().length > 100 ? "100자 이하로 입력하세요" : null) : "이름을 입력하세요") } });
+                    if (typeof name === "string" && name.trim() && name.trim() !== o.name) await run(() => apiPatch(`/admin/orgs/${o.code}`, { name: name.trim() }), "이름을 바꿨습니다", data.reload);
                   }}
                 >
                   변경

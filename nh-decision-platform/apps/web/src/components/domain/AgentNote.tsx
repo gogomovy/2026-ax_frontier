@@ -5,11 +5,11 @@ import { VerificationRow } from "@/components/domain/Verification";
 import type { Evidence, Figure, Verification } from "@/lib/types";
 
 /**
- * Agent 해설 블록 — 분석 화면 공통.
+ * AI 해설 블록 — 분석 화면 공통.
  * 서술은 보고문서 어투, 수치는 모두 계산 추적 마커로 렌더된다(PRIN-05).
  */
 export function AgentNote({
-  label = "Agent 해설",
+  label = "AI 해설",
   title,
   text,
   figures,

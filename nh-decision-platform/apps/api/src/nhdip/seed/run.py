@@ -886,6 +886,23 @@ def analysis_agents_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["analysis_agents_upgrade"] = _merge_screen_resources(s, {"ANALYSIS_BUILDER"})
 
 
+def admin_counts_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """관리자 처리 대기 건수(Phase E · NAV-04 · Q122) — 1회. 관리자 홈 · 사용자 · 자료 승인 · 분석 에이전트 화면에 건수 키를 단다.
+    관리자가 건수 키를 이미 지정한 화면은 건드리지 않는다. 되돌리기: 관리자 [화면 권한]에서 건수 키를 비운다."""
+    if _applied(s, "admin-counts-v1"):
+        return
+    done = []
+    for spec in C.SCREENS:
+        key = spec.get("count_key")
+        if spec.get("kind") != "admin" or not key:
+            continue
+        sc = s.get(Screen, spec["code"])
+        if sc is not None and not sc.count_key:
+            sc.count_key = key
+            done.append(sc.code)
+    out["admin_counts_upgrade"] = done
+
+
 def seed_knowledge(s: Session, out: dict[str, Any]) -> None:
     """질문하기 통합 지식 색인(Phase D · 요구사항 §21) — 컬렉션 정의(없는 코드만, 관리자 편집 보존) + 분석 결과 색인 대조.
     새 DB · 업그레이드 · 직접 게시 경로를 모두 보강한다(멱등 — 이미 색인된 것은 건드리지 않음). 임베딩은 워커가 채운다."""
@@ -934,6 +951,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     upload_request_upgrade(s, out)
     analysis_spaces_upgrade(s, out)
     analysis_agents_upgrade(s, out)
+    admin_counts_upgrade(s, out)
     s.flush()
     seed_knowledge(s, out)
     s.flush()

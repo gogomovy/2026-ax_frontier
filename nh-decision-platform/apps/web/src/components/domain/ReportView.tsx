@@ -112,7 +112,7 @@ export function ReportActions({ report, tabKey, office }: { report: ReportDoc; t
 }
 /**
  * 보고서 뷰 (요구사항 MDL-07 / MDL-08 / MDL-09)
- *  - 좌: 목차(데스크톱 고정) / 본문: Agent 의견 → 섹션
+ *  - 좌: 목차(데스크톱 고정) / 본문: AI 의견 → 섹션
  *  - 의견을 누르면 관련 섹션으로 이동하고 잠시 강조한다. 의견 영역은 스크롤을 따라오지 않는다.
  */
 export function ReportView({ report }: { report: ReportDoc }) {
@@ -178,9 +178,9 @@ export function ReportView({ report }: { report: ReportDoc }) {
       </aside>
 
       <div className="min-w-0 max-w-[880px]">
-        {/* Agent 의견 (MDL-08) */}
-        <section aria-label="Agent 의견" className="mb-xxl">
-          <p className="mb-2.5 text-[12px] font-bold text-steel">Agent 의견</p>
+        {/* AI 의견 (MDL-08) */}
+        <section aria-label="AI 의견" className="mb-xxl">
+          <p className="mb-2.5 text-[12px] font-bold text-steel">AI 의견</p>
           <ul className="flex flex-col gap-md">
             {report.opinions.map((opinion) => (
               <li key={opinion.id} className="rounded-2xl bg-surface-soft px-lg py-lg">

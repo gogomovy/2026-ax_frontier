@@ -1,5 +1,5 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { SESSION_COOKIE } from "./config";
 
@@ -34,11 +34,20 @@ async function raw(path: string): Promise<Response> {
   });
 }
 
+async function pagePath(): Promise<string | null> {
+  try {
+    return (await headers()).get("x-pathname");
+  } catch {
+    return null;
+  }
+}
+
 /** 화면 데이터 — 실패 시 화면 이동(로그인/권한/404) */
 export async function apiGet<T>(path: string): Promise<T> {
   const res = await raw(path);
   if (res.status === 401) redirect("/login");
-  if (res.status === 403) redirect(`/forbidden?from=${encodeURIComponent(path)}`);
+  // 권한 없음 — 화면 주소(proxy 가 실은 x-pathname)가 있으면 그것을, 없으면 API 경로를 넘긴다 (Phase E · NAV-03)
+  if (res.status === 403) redirect(`/forbidden?from=${encodeURIComponent((await pagePath()) || path)}`);
   if (res.status === 404) notFound();
   if (!res.ok) throw new ApiError(res.status, `API ${path} → ${res.status}`);
   return (await res.json()) as T;

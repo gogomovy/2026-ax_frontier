@@ -21,9 +21,11 @@ export function proxy(req: NextRequest) {
   // 전달 헤더(X-Forwarded-For)는 시작점(server-entry.cjs)이 실제 접속 주소로 바로잡아 둔다 (B.33)
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", csp);
+  const { pathname, search } = req.nextUrl;
+  // 서버 컴포넌트가 권한 없음(403)으로 보낼 때 '어느 화면' 이었는지 알리려고 화면 주소를 싣는다 (Phase E · NAV-03)
+  headers.set("x-pathname", pathname);
   const pass = () => withCsp(NextResponse.next({ request: { headers } }), csp);
 
-  const { pathname, search } = req.nextUrl;
   if (PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`) || pathname.startsWith(p + "."))) {
     return pass();
   }

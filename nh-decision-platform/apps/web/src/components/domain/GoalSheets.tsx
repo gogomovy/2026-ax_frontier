@@ -83,7 +83,7 @@ export function proposalRange(p: Proposal) {
   return "방향성만 제시";
 }
 
-/* ═══════════════ AI Attention ═══════════════ */
+/* ═══════════════ AI 주목 사항 ═══════════════ */
 export function AttentionSheet({
   insight,
   onClose,
@@ -104,7 +104,7 @@ export function AttentionSheet({
       onClose={onClose}
       eyebrow={
         <>
-          <Badge tone="dark">AI Attention</Badge>
+          <Badge tone="dark">AI 주목 사항</Badge>
           <SeverityBadge severity={insight.severity} />
           {insight.subDomain ? <span className="text-[12px] text-steel">{SUB_LABEL[insight.subDomain]}</span> : null}
         </>
@@ -142,7 +142,7 @@ export function AttentionSheet({
         </>
       }
     >
-      <SheetSection title="Agent 판단" aside={<VerificationRow items={insight.verifications} />}>
+      <SheetSection title="AI 판단" aside={<VerificationRow items={insight.verifications} />}>
         <RichText text={insight.statement} figures={insight.figures} className="text-[14px] leading-[1.7] text-charcoal" />
       </SheetSection>
 
@@ -227,7 +227,7 @@ export function RequestSheet({
       </SheetSection>
       <SheetSection title="처리 안내">
         <p className="text-[12.5px] leading-relaxed text-steel">
-          AI Attention 과 달리 타 조직이 직접 올린 요청입니다. 검토 대상으로 저장하면 경영목표 검토 목록에 함께 표시됩니다.
+          AI 주목 사항과 달리 타 조직이 직접 올린 요청입니다. 검토 대상으로 저장하면 경영목표 검토 목록에 함께 표시됩니다.
         </p>
       </SheetSection>
     </Sheet>

@@ -8,6 +8,7 @@ import { useUi } from "@/components/providers/UiProvider";
 import { Breadcrumbs } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
+import { statusLabel } from "@/lib/labels";
 import { ScrollRegion } from "@/components/ui/ScrollRegion";
 
 /* ── 데이터 로드 ───────────────────────────────────────────── */
@@ -188,9 +189,14 @@ const STATUS_TONE: Record<string, "success" | "info" | "attention" | "critical" 
   accepted: "success",
 };
 
+/** 상태 배지 — 기본 표기는 한국어(lib/labels), 원래 코드는 마우스를 올리면 보인다 (Phase E · TXT-01 · Q125) */
 export function StatusBadge({ status, label }: { status?: string | null; label?: string }) {
   if (!status) return <Badge>-</Badge>;
-  return <Badge tone={STATUS_TONE[status] ?? "neutral"}>{label ?? status}</Badge>;
+  return (
+    <span title={status} data-status-code={status}>
+      <Badge tone={STATUS_TONE[status] ?? "neutral"}>{label ?? statusLabel(status)}</Badge>
+    </span>
+  );
 }
 
 export function OriginBadge({ origin }: { origin: string }) {

@@ -45,7 +45,7 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
       <PageHeader
         eyebrow="3단계"
         title="수행방안"
-        description="AI 제안안을 검토해 진행사업으로 등록하고, 영업점 Agent 가 참고할지를 정합니다. 등록된 사업은 종합기획부에서 바로 조회됩니다."
+        description="AI 제안안을 검토해 진행사업으로 등록하고, 영업점 AI가 참고할지를 정합니다. 등록된 사업은 종합기획부에서 바로 조회됩니다."
         actions={
           <Button size="sm" onClick={() => setSheet({ kind: "create" })}>
             <IconPlus /> 직접 추가
@@ -85,7 +85,7 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
                       checked={plan.branchShared}
                       onChange={() => {
                         toggleBranchShare(plan.id);
-                        showToast(plan.branchShared ? "영업점 참고를 중단했습니다" : "영업점 Agent 가 참고할 수 있습니다");
+                        showToast(plan.branchShared ? "영업점 참고를 중단했습니다" : "영업점 AI가 참고할 수 있습니다");
                       }}
                       label="영업점"
                       description={plan.branchShared ? "참고 가능" : "중단"}

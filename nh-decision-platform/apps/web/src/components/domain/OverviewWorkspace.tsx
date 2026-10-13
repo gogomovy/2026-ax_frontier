@@ -51,7 +51,7 @@ export function OverviewWorkspace({
           <span className="text-[14px] font-bold text-ink-deep">경영목표 검토가 필요한 사항이 있습니다</span>
           <span className="flex flex-wrap items-center gap-x-md gap-y-1 text-[12.5px] text-charcoal">
             <span>
-              AI Attention <b className="tnum text-ink-deep">{pending.attentions}</b>
+              AI 주목 사항 <b className="tnum text-ink-deep">{pending.attentions}</b>
             </span>
             <span>
               확인·보고 요청 <b className="tnum text-ink-deep">{pending.requests}</b>
@@ -249,7 +249,7 @@ export function OverviewWorkspace({
       <NextStep
         step={2}
         title="데이터 분석"
-        description="여신 실적을 Agent 해설과 함께 확인하고, 목표 조정이 필요한 지점을 찾습니다."
+        description="여신 실적을 AI 해설과 함께 확인하고, 목표 조정이 필요한 지점을 찾습니다."
         href="/hq/analysis"
       />
     </div>

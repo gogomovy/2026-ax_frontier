@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, OriginBadge, Select, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { ValueView } from "@/components/admin/ValueView";
+import { useConfirm } from "@/components/providers/UiProvider";
+import { FileDrop } from "@/components/ui/FileDrop";
 import { Advanced, EmptyState, KeyValueList } from "@/components/ui/Layout";
 import { Badge, Button, PillTabs } from "@/components/ui/primitives";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { api, apiGetC, apiPatch, apiPost } from "@/lib/api-client";
+import { confidentSuggestion, suggestDatasets, titleFromFile } from "@/lib/upload-match";
+
+/** 관리자 업로드 형식 — 안내 문구와 파일 입력의 accept 를 같은 값으로 (Phase E · F7) */
+const DATASET_ACCEPT = ".csv,.tsv,.xlsx,.json";
+const DOCUMENT_ACCEPT = ".pdf,.hwpx,.hwp,.txt,.md,.html";
+const fmtAccept = (a: string) => a.replaceAll(",", " · ");
 
 interface UploadResult {
   status?: string;
@@ -157,8 +165,35 @@ function Datasets() {
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [org, setOrg] = useState<"all" | "bank" | "ext">("all");
+  // 머리 '파일로 업로드' 에서 고른 파일 — 데이터셋을 열면 상세 양식에 채운다 (Phase E · UXF-03)
+  const [drop, setDrop] = useState<File | null>(null);
+  const [openFile, setOpenFile] = useState<File | null>(null);
+  const [stamp, setStamp] = useState(0);
+  const detailRef = useRef<HTMLDivElement>(null);
   const all = data.data ?? [];
   const cur = all.find((d) => d.code === sel) ?? null;
+  // 낱말 하나만 겹치는 것(10점)은 잡음이라 빼고 상위 3개 (업무 [자료 올리기]와 같은 기준)
+  const sugg = drop ? suggestDatasets(drop.name, all.map((d) => ({ code: d.code, name: d.name, filePattern: d.file_pattern }))).filter((s) => s.score >= 20).slice(0, 3) : [];
+
+  const open = (code: string, f: File | null) => {
+    setSel(code);
+    setOpenFile(f);
+    setStamp((n) => n + 1);
+  };
+  // 상세는 긴 표 아래에 열린다 — 열 때마다 그 자리로 옮기고 초점을 준다
+  useEffect(() => {
+    if (!stamp || !sel) return;
+    const el = detailRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.focus({ preventScroll: true });
+  }, [stamp, sel]);
+  const takeDrop = (f: File | null) => {
+    setDrop(f);
+    if (!f) return;
+    const top = confidentSuggestion(suggestDatasets(f.name, all.map((d) => ({ code: d.code, name: d.name, filePattern: d.file_pattern }))));
+    if (top) open(top.code, f);
+  };
   const list = all.filter((d) => (org === "all" || d.origin === org) && (!q || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(q.toLowerCase())));
   const warn = all.filter((d) => d.versions.some((v) => v.isCurrent && v.quality.status && !["passed", "ok"].includes(v.quality.status))).length;
   const empty = all.filter((d) => !d.versions.some((v) => v.isCurrent)).length;
@@ -173,6 +208,47 @@ function Datasets() {
           <StatCard label="시뮬레이션 자료" value={sim} unit="개" tone={sim ? "info" : "default"} hint="실데이터로 바꿔야 할 자료" />
         </StatGrid>
       </div>
+      <Card title="파일로 업로드">
+        <div className="grid grid-cols-1 gap-md lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <FileDrop
+            id="ds-drop"
+            accept={DATASET_ACCEPT}
+            file={drop}
+            onFile={takeDrop}
+            compact
+            label="정형 자료 파일을 끌어다 놓거나 눌러서 고르세요"
+            hint={`${fmtAccept(DATASET_ACCEPT)} — 파일 이름으로 데이터셋을 찾아 업로드 양식을 엽니다(확정 전에 한 번 더 묻습니다)`}
+            data-testid="admin-dataset"
+          />
+          <div className="text-[12.5px]" aria-live="polite">
+            {!drop ? (
+              <p className="text-steel">또는 아래 표에서 데이터셋을 [열기] 하고 업로드합니다.</p>
+            ) : sugg.length ? (
+              <div className="flex flex-col gap-xs" data-drop-suggestions>
+                <p className="font-bold text-ink-deep">파일 이름으로 찾은 데이터셋</p>
+                {sugg.map((s) => {
+                  const d = all.find((x) => x.code === s.code);
+                  return (
+                    <div key={s.code} className="flex flex-wrap items-center gap-xs rounded-xl border border-hairline-soft px-md py-2">
+                      <span className="min-w-0 flex-1">
+                        <span className="font-bold text-ink-deep">{d?.name ?? s.code}</span> <span className="font-mono text-[10.5px] text-stone">{s.code}</span>
+                        <span className="block text-[11.5px] text-steel">근거: {s.reasons.join(" · ")}</span>
+                      </span>
+                      <Button size="sm" variant={sel === s.code ? "primary" : "quiet"} onClick={() => open(s.code, drop)}>
+                        {sel === s.code ? "열림" : "이 데이터셋으로 열기"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="font-bold text-attention" data-drop-no-match>
+                맞는 데이터셋이 없습니다 — 아래 표에서 고르면 이 파일을 채워 엽니다.
+              </p>
+            )}
+          </div>
+        </div>
+      </Card>
       <Loading error={data.error} loading={!data.data && data.loading} />
       <Card
         title={`데이터셋 ${list.length}개`}
@@ -208,7 +284,7 @@ function Datasets() {
                 </C>
                 <C right>{d.usedByMetrics.length}</C>
                 <C>
-                  <Button size="sm" variant={sel === d.code ? "primary" : "quiet"} onClick={() => setSel(sel === d.code ? null : d.code)}>
+                  <Button size="sm" variant={sel === d.code ? "primary" : "quiet"} onClick={() => (sel === d.code ? setSel(null) : open(d.code, drop))} aria-label={`${d.name} ${sel === d.code ? "닫기" : "열기"}`}>
                     {sel === d.code ? "닫기" : "열기"}
                   </Button>
                 </C>
@@ -217,14 +293,19 @@ function Datasets() {
           })}
         </Table>
       </Card>
-      {cur ? <DatasetDetail ds={cur} reload={data.reload} /> : null}
+      {cur ? (
+        <div ref={detailRef} tabIndex={-1} aria-label={`${cur.name} 상세`} className="scroll-mt-24 outline-none focus-visible:ring-2 focus-visible:ring-primary" data-dataset-detail={cur.code}>
+          <DatasetDetail key={`${cur.code}-${stamp}`} ds={cur} reload={data.reload} initialFile={openFile} />
+        </div>
+      ) : null}
     </>
   );
 }
 
-function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) {
+function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Promise<void>; initialFile?: File | null }) {
   const { run, busy } = useAction();
-  const [file, setFile] = useState<File | null>(null);
+  const confirm = useConfirm();
+  const [file, setFile] = useState<File | null>(initialFile ?? null);
   const [origin, setOrigin] = useState<string>(ds.origin);
   const [dataOrigin, setDataOrigin] = useState("actual");
   const [asOf, setAsOf] = useState("");
@@ -246,24 +327,59 @@ function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
     <>
       <Card title={<span className="flex items-center gap-xs">{ds.name} <OriginBadge origin={ds.origin} /></span>}>
         <p className="mb-md text-[12.5px] text-steel">{ds.description}</p>
-        <div className="grid grid-cols-1 gap-md md:grid-cols-[1fr_auto_auto_auto_auto_auto]">
-          <label className="block">
-            <span className="mb-1 block text-[11.5px] font-bold text-steel">파일 (.csv · .xlsx · .json){ds.file_pattern ? ` — 파일명 규칙 ${ds.file_pattern}` : ""}</span>
-            <input type="file" accept=".csv,.tsv,.xlsx,.json" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[12.5px]" />
-          </label>
-          <Select label="출처 확인" value={origin} onChange={setOrigin} options={[{ value: "bank", label: "당행 데이터" }, { value: "ext", label: "외부 데이터" }]} />
-          <Select label="데이터 성격" value={dataOrigin} onChange={setDataOrigin} options={[{ value: "actual", label: "실데이터" }, { value: "simulated", label: "시뮬레이션" }]} />
-          <TextInput label="기준일(선택)" value={asOf} onChange={setAsOf} placeholder="YYYY-MM-DD" />
-          <div className="flex items-end">
-            <Check label="품질 실패 시에도 확정" checked={force} onChange={setForce} />
+        <div className="flex flex-col gap-md">
+          <FileDrop
+            id={`ds-file-${ds.code}`}
+            accept={DATASET_ACCEPT}
+            file={file}
+            onFile={(f) => {
+              setFile(f);
+              setPreview(null);
+            }}
+            compact
+            label="이 데이터셋의 새 파일을 끌어다 놓거나 눌러서 고르세요"
+            hint={`${fmtAccept(DATASET_ACCEPT)}${ds.file_pattern ? ` · 파일명 규칙 ${ds.file_pattern}` : ""}`}
+          />
+          <div className="grid grid-cols-1 gap-md sm:grid-cols-2 lg:grid-cols-[auto_auto_auto_1fr]">
+            <Select label="출처 확인" value={origin} onChange={setOrigin} options={[{ value: "bank", label: "당행 데이터" }, { value: "ext", label: "외부 데이터" }]} />
+            <Select label="데이터 성격" value={dataOrigin} onChange={setDataOrigin} options={[{ value: "actual", label: "실데이터" }, { value: "simulated", label: "시뮬레이션" }]} />
+            <TextInput label="기준일(선택)" type="date" value={asOf} onChange={setAsOf} />
+            <div className="flex items-end">
+              <Check label="품질 실패 시에도 확정" checked={force} onChange={setForce} />
+            </div>
           </div>
-          <div className="flex items-end gap-xs">
+          <div className="flex flex-wrap items-center gap-xs">
             <Button size="sm" variant="quiet" disabled={busy || !file} onClick={() => run(() => api<UploadResult>(`/admin/datasets/${ds.code}/preview`, { method: "POST", body: form() }), undefined).then((r) => r && setPreview(r))}>
               미리보기
             </Button>
-            <Button size="sm" variant="confirm" disabled={busy || !file} onClick={() => run(() => api<UploadResult>(`/admin/datasets/${ds.code}/upload`, { method: "POST", body: form() }), "업로드했습니다 — 관련 워크플로가 대기열에 올라갑니다", reload).then((r) => r && setPreview(r))}>
-              업로드
+            <Button
+              size="sm"
+              variant={force ? "danger" : "confirm"}
+              disabled={busy || !file}
+              onClick={async () => {
+                const curV = ds.versions.find((v) => v.isCurrent);
+                const ok = await confirm({
+                  title: force ? "품질 검사에 실패해도 확정할까요?" : "업로드하고 바로 확정할까요?",
+                  body: (
+                    <>
+                      <p>
+                        <strong>{ds.name}</strong>의 현재 버전{curV ? `(v${curV.version})` : ""}이 이 파일({file?.name})로 바뀌고, 관련 워크플로가 다시 계산됩니다. 되돌리려면 버전 표에서 [되돌리기]를 씁니다.
+                      </p>
+                      {force ? <p className="mt-xs font-bold text-critical">품질 검사에 실패한 자료도 현재 버전이 됩니다. 화면 수치가 틀릴 수 있습니다.</p> : null}
+                    </>
+                  ),
+                  confirmLabel: force ? "실패해도 확정" : "업로드(확정)",
+                  tone: force ? "danger" : "default",
+                });
+                if (!ok) return;
+                const r = await run(() => api<UploadResult>(`/admin/datasets/${ds.code}/upload`, { method: "POST", body: form() }), "업로드했습니다 — 관련 워크플로가 대기열에 올라갑니다", reload);
+                if (r) setPreview(r);
+              }}
+              data-admin-upload
+            >
+              업로드(즉시 확정)
             </Button>
+            {!file ? <span className="text-[12px] text-steel">파일을 고르면 미리보기 · 업로드할 수 있습니다.</span> : null}
           </div>
         </div>
         {preview ? <UploadResultView r={preview} /> : null}
@@ -309,7 +425,15 @@ function DatasetDetail({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
                     행
                   </Button>
                   {!v.isCurrent && (v.status === "committed" || v.status === "rolled_back") ? (
-                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => window.confirm(`v${v.version} 으로 되돌릴까요? 관련 워크플로우가 다시 계산합니다.`) && run(() => apiPost(`/admin/datasets/${ds.code}/versions/${v.id}/rollback`), "되돌렸습니다", reload)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={async () => {
+                        const ok = await confirm({ title: `v${v.version}(으)로 되돌릴까요?`, body: `${ds.name}의 현재 버전이 v${v.version}(으)로 바뀌고 관련 워크플로가 다시 계산됩니다.`, confirmLabel: "되돌리기" });
+                        if (ok) await run(() => apiPost(`/admin/datasets/${ds.code}/versions/${v.id}/rollback`), "되돌렸습니다", reload);
+                      }}
+                    >
                       되돌리기
                     </Button>
                   ) : null}
@@ -360,11 +484,15 @@ function Documents() {
   const [file, setFile] = useState<File | null>(null);
   const [detail, setDetail] = useState<unknown>(null);
 
-  const upload = () => {
+  const upload = async () => {
     const fd = new FormData();
     Object.entries(f).forEach(([k, v]) => v && fd.append(k, v));
     if (file) fd.append("file", file);
-    return run(() => api("/admin/documents/upload", { method: "POST", body: fd }), "문서를 등록했습니다 — 임베딩·구조화·관련 워크플로우가 이어서 실행됩니다", docs.reload);
+    const r = await run(() => api("/admin/documents/upload", { method: "POST", body: fd }), "문서를 등록했습니다 — 임베딩·구조화·관련 워크플로우가 이어서 실행됩니다", docs.reload);
+    if (r !== null) {
+      setFile(null);
+      setF((cur) => ({ ...cur, title: "", issuer: "", published_at: "", text: "" }));
+    }
   };
 
   return (
@@ -375,21 +503,33 @@ function Documents() {
           <Select label="문서 분류 DB" value={f.doc_class} onChange={(v) => setF({ ...f, doc_class: v })} options={[{ value: "gov_policy", label: "정부정책" }, { value: "mgmt_decision", label: "경영 의사결정" }, { value: "model_method", label: "모형·방법론" }, { value: "branch_ref", label: "영업점 기준·공문" }, { value: "reference", label: "참고" }]} />
           <TextInput label="제목" value={f.title} onChange={(v) => setF({ ...f, title: v })} className="md:col-span-2" />
           <TextInput label="발행 기관" value={f.issuer} onChange={(v) => setF({ ...f, issuer: v })} />
-          <TextInput label="시행일" value={f.published_at} onChange={(v) => setF({ ...f, published_at: v })} placeholder="YYYY-MM-DD" />
+          <TextInput label="시행일" type="date" value={f.published_at} onChange={(v) => setF({ ...f, published_at: v })} />
         </div>
-        <div className="mt-md grid grid-cols-1 gap-md md:grid-cols-[auto_1fr]">
-          <label className="block">
-            <span className="mb-1 block text-[11.5px] font-bold text-steel">파일 (.pdf · .txt · .md · .html)</span>
-            <input type="file" accept=".pdf,.hwpx,.hwp,.txt,.md,.html" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[12.5px]" />
-          </label>
+        <div className="mt-md grid grid-cols-1 gap-md md:grid-cols-2">
+          <FileDrop
+            id="doc-file"
+            accept={DOCUMENT_ACCEPT}
+            file={file}
+            onFile={(x) => {
+              setFile(x);
+              // 제목이 비었으면 파일 이름(확장자 제외)으로
+              if (x && !f.title.trim()) setF((cur) => ({ ...cur, title: titleFromFile(x.name) }));
+            }}
+            compact
+            label="문서 파일을 끌어다 놓거나 눌러서 고르세요"
+            hint={`${fmtAccept(DOCUMENT_ACCEPT)} · 스캔 PDF 는 글자 인식(OCR) 후`}
+          />
           <label className="block">
             <span className="mb-1 block text-[11.5px] font-bold text-steel">또는 본문 텍스트</span>
-            <textarea className="input text-[12.5px]" rows={3} value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} />
+            <textarea className="input text-[12.5px]" rows={4} value={f.text} disabled={Boolean(file)} onChange={(e) => setF({ ...f, text: e.target.value })} />
           </label>
         </div>
-        <Button size="sm" variant="confirm" className="mt-md" disabled={busy || !f.title || (!file && !f.text)} onClick={upload}>
-          등록
-        </Button>
+        <div className="mt-md flex flex-wrap items-center gap-xs">
+          <Button size="sm" variant="confirm" disabled={busy || !f.title || (!file && !f.text)} onClick={upload}>
+            등록
+          </Button>
+          {!f.title ? <span className="text-[12px] text-steel">제목을 입력하세요.</span> : !file && !f.text ? <span className="text-[12px] text-steel">파일을 고르거나 본문을 넣으세요.</span> : null}
+        </div>
       </Card>
       <Card title="문서">
         <Loading error={docs.error} loading={!docs.data && docs.loading} />

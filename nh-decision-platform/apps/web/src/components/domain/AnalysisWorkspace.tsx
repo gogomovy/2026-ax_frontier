@@ -23,7 +23,7 @@ const TABS: { key: TabKey; label: string }[] = [
 
 /**
  * STEP 2 — 데이터 설명과 분석
- * 4개 영역을 화면 내부 탭으로 묶고, 영역마다 핵심 지표 → Agent 해설 → 표·차트 순서를 지킨다.
+ * 4개 영역을 화면 내부 탭으로 묶고, 영역마다 핵심 지표 → AI 해설 → 표·차트 순서를 지킨다.
  */
 export function AnalysisWorkspace({
   overview,
@@ -214,7 +214,7 @@ export function AnalysisWorkspace({
         <NextStep
           step={3}
           title="경영목표 설정"
-          description="AI Attention 과 목표 수정·신규 제안을 검토해 확정하고, 사업부서로 전파합니다."
+          description="AI 주목 사항과 목표 수정·신규 제안을 검토해 확정하고, 사업부서로 전파합니다."
           href="/hq/goals"
         />
       </div>

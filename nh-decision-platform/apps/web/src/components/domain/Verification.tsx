@@ -35,7 +35,7 @@ export function VerificationRow({ items }: { items: Verification[] }) {
       </button>
       {open ? (
         <div className="absolute left-0 top-[calc(100%+6px)] z-40 w-[320px] rounded-lg border border-hairline-soft bg-canvas p-3 shadow-pop">
-          <p className="mb-2 text-[11px] font-bold text-steel">Critic Agent 검증 항목</p>
+          <p className="mb-2 text-[11px] font-bold text-steel">AI 검증 항목</p>
           <ul className="flex flex-col gap-1.5">
             {items.map((item) => (
               <li key={item.checkCode} className="flex items-start gap-2">
