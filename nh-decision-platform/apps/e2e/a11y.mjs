@@ -39,7 +39,7 @@ if (!ADMIN || !ADMIN_PW) {
 fs.mkdirSync(OUT, { recursive: true });
 
 // 탭(role=tab)으로 내용이 바뀌는 화면 — 첫 탭 외의 탭도 눌러 다시 점검한다 (B.45). 쉼표로 바꿀 수 있다.
-const TAB_PAGES = (process.env.A11Y_TAB_PAGES ?? "/admin/pipeline").split(",").filter(Boolean);
+const TAB_PAGES = (process.env.A11Y_TAB_PAGES ?? "/admin/pipeline,/admin/ontology").split(",").filter(Boolean);
 
 async function settle(page) {
   await page.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);

@@ -481,6 +481,38 @@ try {
     }
   }
 
+  // 9-0) 온톨로지 구성 지도 (Phase G · OV-01~05) — 원장 기준 3D 군집 지도 · 찾기 → 상세 · 구조도 · 표
+  {
+    await a.goto(`${BASE}/admin/ontology`, { waitUntil: "networkidle0" });
+    await a.waitForSelector("[data-ontology-map] canvas[data-map-canvas]", { timeout: 30000 });
+    await sleep(800);
+    const drawn = await a.evaluate(() => {
+      const cv = document.querySelector("[data-map-canvas]");
+      const ctx = cv.getContext("2d");
+      const { width, height } = cv;
+      const img = ctx.getImageData(0, 0, width, height).data;
+      let lit = 0;
+      for (let i = 0; i < img.length; i += 4 * 37) if (img[i] + img[i + 1] + img[i + 2] > 200) lit++;
+      return { lit, legend: document.querySelectorAll("[data-map-legend] button").length, clusters: document.querySelectorAll("[data-map-clusters] li").length, label: cv.getAttribute("aria-label") ?? "" };
+    });
+    ok("온톨로지 지도: 3D 군집 지도가 그려짐 · 범례 · 군집 목록", drawn.lit > 20 && drawn.legend >= 5 && drawn.clusters >= 2 && drawn.label.includes("군집"), JSON.stringify({ ...drawn, label: drawn.label.slice(0, 60) }));
+    await a.type("[data-map-search]", "햇살");
+    await a.waitForSelector("[data-map-hits] button", { timeout: 5000 }).catch(() => undefined);
+    await a.evaluate(() => document.querySelector("[data-map-hits] button")?.click());
+    await a.waitForSelector("[data-map-detail]", { timeout: 5000 }).catch(() => undefined);
+    const det = await a.evaluate(() => document.querySelector("[data-map-detail]")?.innerText ?? "");
+    ok("온톨로지 지도: 찾기 → 상세(출처 · 관계별 이웃)", det.includes("출처") && det.includes("관계") && det.includes("햇살"), det.slice(0, 120).replace(/\n/g, " | "));
+    await shot(a, "07c-admin-ontology-map");
+    await a.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.trim() === "구조도")?.click());
+    await a.waitForSelector("[data-schema-map] svg", { timeout: 5000 }).catch(() => undefined);
+    const schemaArrows = await a.$$eval("[data-schema-map] path[marker-end]", (els) => els.length).catch(() => 0);
+    ok("온톨로지 구조도: 클래스 ↔ 관계 유형 화살표", schemaArrows >= 5, `화살표 ${schemaArrows}`);
+    await a.evaluate(() => [...document.querySelectorAll('[role="tab"]')].find((x) => x.innerText.trim() === "표")?.click());
+    await a.waitForSelector("[data-ontology-tables] table", { timeout: 5000 }).catch(() => undefined);
+    const tables = await a.$$eval("[data-ontology-tables] table", (els) => els.length).catch(() => 0);
+    ok("온톨로지 표 보기: 군집 · 관계 구조 · 클래스 표", tables >= 3, `표 ${tables}`);
+  }
+
   // 9-1) 관리자 홈 · 운영 개요 (Phase C · ADM-02 · MON-01) — 처리할 일 · 시스템 상태 · 시간대별 그래프(표로 보기)
   {
     await a.goto(`${BASE}/admin`, { waitUntil: "networkidle0" });

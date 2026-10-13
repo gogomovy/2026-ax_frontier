@@ -380,8 +380,17 @@
 - [x] E.7 위험 작업 확인 (INT-01) — 사용자(역할 · 중지 · 반려 · 비밀번호) · 버전 되돌리기 · 분석 폐기 · LLM · 자료 강제 승인
 - [x] E.8 표기 · 배치 (TXT-01 · LAY-01 · INT-02) — 업무 화면 영어 · 내부 용어 정리, 실행 · 품질 상태 한국어, [질문하기] 단추 가림 해소
 - [x] E.9 시험 — vitest · pytest(첫 화면 · 관리 건수 · 자료 성격) · E2E(업로드 새 흐름 · 깊은 링크 · 관리자 첫 화면 · 확인 대화상자) · 접근성
-- [ ] E.10 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · README, 커밋 · 푸시 · CI
+- [x] E.10 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · README, 커밋 · 푸시 · CI
 - 후속(Q126): 글자 크기 토큰 일괄 치환(약 900곳) · 긴 표 페이지 나눔 · 관리자 화면 구성 요소 통합(`AdminPage`/`PageHeader`, kit `Tabs`/`PillTabs`)
+## Phase G. 온톨로지 구성 시각화 (2026-10-13 착수 · 요구사항 §23 · 설계 §23 · Q127~Q129)
+> 사용자 요청(2026-10-13): 온톨로지 구성을 관리자 화면에서 보기 쉽게 시각화(3D 군집 가능, 추천 방향으로). 같은 요청의 벡터 저장소(Elasticsearch · Milvus) 전환은 다른 작업 브랜치(feat/ask-knowledge-hybrid-rag · 설계 §21.18)에서 진행 중이라 여기서 하지 않음(Q129).
+- [x] G.1 문서 — 요구사항 §23(OV) · 결정 Q127~Q129 · 설계 §23 · 이 목록
+- [x] G.2 수집 분리 — `graph/projection.collect_graph`(투영 결과 불변 · 근거 부가 정보), `project_all` 은 수집 + 반영
+- [x] G.3 지도 계산 — `graph/ontology_map.py`(상한 · Louvain · 군집 이름 · 3D/2D 배치 · 구조 요약 · 보관), `GET /admin/ontology/map`
+- [x] G.4 화면 — '구성 지도' 탭: 3D 군집 지도(회전 · 확대 · 자동 회전 · 2D) · 찾기 · 범례 · 군집 초점 · 상세 패널 · 구조도 · 표로 보기 · 원장 기준 요약
+- [x] G.5 시험 — pytest(수집 = 투영 입력 · 군집 · 배치 결정성 · 상한 · API), vitest(투영 수학 · 선택), E2E(지도 · 찾기 → 상세 · 표 · 구조도), 접근성
+- [ ] G.6 검증 · 문서 — 전체 pytest · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
+- 후속: 의미 임베딩 기반 '의미 지도'(임베딩 모델 확정 후) · 지도에서 추출 검토(잘못된 관계 바로 제외)
 
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
 
