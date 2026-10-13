@@ -407,7 +407,7 @@
 - [x] H.4 워크플로 근거 검색 — `hybrid_search` ES 경로(분류 · 개념 경로 문서 필터 · 재확인 · 보충 · 폴백), `retrieve_evidence` 의 `searchEngine`, 문서 청크 재임베딩(모델 교체) · 같은 모델 벡터만 비교
 - [x] H.5 배포 — compose 기본 서비스 elasticsearch · `.env.example`(ES_URL · ES_USER · ES_DOC_INDEX) · `ensure-env` ES_PASSWORD · `check-host` vm.max_map_count · CI e2e(sysctl · `kb-es --sync`/`--check` · `E2E_EXPECT_ES=1`)
 - [x] H.6 시험 — pytest(가짜 전송: 문서 필터 동치 형태 · 재확인(부서한정 · 분류 · 이전 판) · 폴백 · 보충 · 근거 검색 · 엔진 선택 · 사전 · 색인 재생성 · 시드 보강 · CLI / 실제 ES: 문서 동기화 멱등 · SQL ↔ ES 범위 동치 · 판 교체 · 사전 · 3-way 검색 · 골든셋), vitest(엔진 표시 · 구성 카드), E2E(3-way 상태 · 답의 엔진 · 구성 카드)
-- [ ] H.7 검증 · 문서 — 전체 pytest(ES 없이 = CI · ES 와 함께) · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 저장 구조 문서 · 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
+- [x] H.7 검증 · 문서 — 전체 pytest(ES 없이 = CI · ES 와 함께) · import-linter · tsc · eslint · vitest · build · E2E · 접근성, 저장 구조 문서 · 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
 - 후속: 운영 규모 · 다중 노드 · TLS 에서 재측정(설계 §21.18) · 사용자 사전 분해 규칙 보강(별칭 밖 고유명사) · 숫자만 있는 어절의 원문 일치 필드
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
 

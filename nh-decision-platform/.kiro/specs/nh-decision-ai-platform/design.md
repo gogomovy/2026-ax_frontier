@@ -3184,6 +3184,6 @@ Windows 압축본 Elasticsearch 9.5.4 + analysis-nori(단일 노드 · 보안 �
 
 ### 24.8 확인하지 못한 것
 
-- 로컬에 Docker 가 없어 **ES 컨테이너(`infra/elasticsearch` 이미지 빌드 · 보안 켬 · 헬스체크)는 CI e2e 에서만** 확인한다. 로컬 확인은 Windows 압축본 ES 9.5.4 + analysis-nori(보안 끔).
+- 로컬에 Docker 가 없어 **ES 컨테이너(`infra/elasticsearch` 이미지 빌드 · 보안 켬 · 헬스체크)는 CI e2e 에서만** 확인했다 — run `38358147787`: `kb-es --check` ok · E2E 3-way 항목(분석 결과 · 문서 = es, 그래프 = neo4j) · 골든셋 retrieval 7/7 · knowledge 4/4. 첫 실행은 디스크 비율 기준(90%) 때문에 보안 색인이 배치되지 않아 실패했고 남은 용량 기준으로 고쳤다(§24.6). 로컬 확인은 Windows 압축본 ES 9.5.4 + analysis-nori(보안 끔).
 - 운영 규모(수백만 건) · 다중 노드 · 복제본 · TLS 는 §21.18 과 같이 미확인. 실제 운영 임베딩 모델 벡터의 ES kNN 품질도 모델 확정 후 `kb-calibrate` 와 함께 다시 잰다.
 - 사용자 사전의 분해 규칙은 별칭 사전 낱말 기준이다 — 별칭에 없는 고유명사('일반기업모형' 등)는 기본 nori 분해를 따른다(별칭을 보강하면 다음 동기화에서 색인이 다시 만들어진다).
