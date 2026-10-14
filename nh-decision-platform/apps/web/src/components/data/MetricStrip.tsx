@@ -1,5 +1,7 @@
 "use client";
 
+import type { CSSProperties } from "react";
+
 import clsx from "clsx";
 import { DeltaFigure, FigureText } from "@/components/data/FigureText";
 import type { Figure } from "@/lib/types";
@@ -29,8 +31,8 @@ export function MetricStrip({ items, columns = 4 }: { items: MetricStripItem[]; 
         columns === 4 ? "lg:grid-cols-4" : "lg:grid-cols-3",
       )}
     >
-      {items.map((item) => (
-        <div key={item.label} className="bg-canvas px-6 py-5">
+      {items.map((item, i) => (
+        <div key={item.label} className="bg-canvas px-6 py-5 motion-safe:animate-fade-up" style={{ "--i": i } as CSSProperties}>
           <p className="flex items-center gap-1.5 text-[14px] text-steel">
             {item.tone === "attention" || item.tone === "critical" ? (
               <span aria-hidden="true" className={clsx("h-[7px] w-[7px] rounded-circle", item.tone === "critical" ? "bg-critical" : "bg-attention")} />

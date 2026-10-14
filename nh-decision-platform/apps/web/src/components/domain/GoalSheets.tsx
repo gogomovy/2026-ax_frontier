@@ -7,7 +7,7 @@ import { RichText } from "@/components/data/RichText";
 import { EvidenceSummary } from "@/components/evidence/EvidenceChips";
 import { VerificationRow } from "@/components/domain/Verification";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
-import { useSession } from "@/components/providers/SessionProvider";
+import { useSession, useUiConfig } from "@/components/providers/SessionProvider";
 import { useUi } from "@/components/providers/UiProvider";
 import { Sheet, SheetSection } from "@/components/ui/Sheet";
 import { Badge, Button, IconCheck, IconChevron, SeverityBadge } from "@/components/ui/primitives";
@@ -17,14 +17,6 @@ import { proposalRange, resolveGoal } from "@/lib/goalView";
 import { goalPeriodOptions } from "@/lib/period";
 import type { Goal, Insight, Proposal } from "@/lib/types";
 
-export const SUB_LABEL: Record<string, string> = {
-  corporate: "기업여신",
-  household: "가계여신",
-  revenue: "여신 종합수익",
-  portfolio: "포트폴리오",
-  model_risk: "모형 리스크",
-  inclusive_finance: "포용금융",
-};
 
 /** 서버 변경 이력 (`GET /state/goals/{id}/history`, 6.4.8) */
 interface GoalHistoryEntry {
@@ -54,14 +46,6 @@ const HISTORY_ACTION: Record<string, string> = {
   "goal.reset": "처리 초기화",
 };
 
-const DETAIL_HREF: Record<string, string> = {
-  corporate: "/hq/analysis",
-  household: "/hq/analysis",
-  revenue: "/hq/analysis",
-  portfolio: "/hq/analysis",
-  inclusive_finance: "/risk/analysis",
-};
-
 /* ═══════════════ AI 주목 사항 ═══════════════ */
 export function AttentionSheet({
   insight,
@@ -74,8 +58,10 @@ export function AttentionSheet({
 }) {
   const { registerReviewItem, reviewItems } = useGoalState();
   const { showToast } = useUi();
+  const cfg = useUiConfig();
   const saved = reviewItems.includes(insight.title);
-  const detailHref = insight.subDomain ? DETAIL_HREF[insight.subDomain] : undefined;
+  // 하위 영역 이름 · 상세 분석 화면은 [화면 설정 › 표시 이름] (Phase K · HC-02)
+  const detailHref = insight.subDomain ? cfg.labels.subDomainHref?.[insight.subDomain] : undefined;
 
   return (
     <Sheet
@@ -85,7 +71,7 @@ export function AttentionSheet({
         <>
           <Badge tone="dark">AI 주목 사항</Badge>
           <SeverityBadge severity={insight.severity} />
-          {insight.subDomain ? <span className="text-[12px] text-steel">{SUB_LABEL[insight.subDomain]}</span> : null}
+          {insight.subDomain ? <span className="text-[12px] text-steel">{cfg.labels.subDomain?.[insight.subDomain] ?? insight.subDomain}</span> : null}
         </>
       }
       title={insight.title}
@@ -132,7 +118,7 @@ export function AttentionSheet({
       {insight.rankBasis ? (
         <SheetSection title="우선순위 산출 근거" aside={<span className="text-[12px] font-bold text-ink tnum">{insight.rankScore?.toFixed(1)}점</span>}>
           <p className="text-[12.5px] leading-relaxed text-charcoal">{insight.rankBasis}</p>
-          <p className="mt-1.5 text-[11px] text-stone">ATTENTION_SCORE v1 · 가중합 규칙</p>
+          {insight.rankRule ? <p className="mt-1.5 text-[11px] text-stone">{insight.rankRule} · 가중합 규칙</p> : null}
         </SheetSection>
       ) : null}
     </Sheet>
@@ -298,17 +284,15 @@ function HistoryItem({ title, meta, current }: { title: string; meta: string; cu
 }
 
 /* ═══════════════ 목표 직접 추가 ═══════════════ */
-/** 담당조직 선택지 — 로그인 사용자 소속을 맨 앞에 둔다 */
-const OWNER_ORGS = ["종합기획부", "여신관리부", "신용리스크관리부"];
-
 export function NewGoalSheet({ onClose }: { onClose: () => void }) {
   const { addManualGoal } = useGoalState();
   const { showToast } = useUi();
   const { menu } = useSession();
-  // 적용기간 · 담당조직 기본값 — 기준일 연도(없으면 올해) · 로그인 사용자 소속
+  const cfg = useUiConfig();
+  // 적용기간 = 기준일 연도의 기간(기준일을 모르면 고를 수 없음), 담당조직 = 업무 영역 설정의 종기부 · 사업부서 조직(로그인 사용자 소속을 맨 앞) — Phase K · HC-02
   const periods = goalPeriodOptions(menu?.asOf);
   const userOrg = menu?.user.org.name ?? "";
-  const owners = userOrg ? [userOrg, ...OWNER_ORGS.filter((o) => o !== userOrg)] : OWNER_ORGS;
+  const owners = userOrg ? [userOrg, ...cfg.ownerOrgs.filter((o) => o !== userOrg)] : cfg.ownerOrgs;
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState("");
   const [period, setPeriod] = useState(periods[0]);

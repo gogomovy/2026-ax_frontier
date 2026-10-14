@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, type CSSProperties } from "react";
 import clsx from "clsx";
 import { IconTable } from "@/components/ui/icons";
 import { DataTable, Td } from "@/components/ui/primitives";
@@ -151,7 +151,8 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                           width={barW}
                           height={Math.max(1, y(min) - top)}
                           rx="3"
-                          style={{ fill: s.color ?? PALETTE[si % PALETTE.length] }}
+                          className="origin-bottom [transform-box:fill-box] motion-safe:animate-grow-y"
+                          style={{ fill: s.color ?? PALETTE[si % PALETTE.length], "--i": i } as CSSProperties}
                           opacity={si === 0 ? 0.92 : 0.78}
                         />
                       );
@@ -170,6 +171,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                       <polygon
                         points={`${xs[0]},${y(min)} ${pts.join(" ")} ${xs[xs.length - 1]},${y(min)}`}
                         fill={`url(#${gradientId})`}
+                        className="motion-safe:animate-fade-late"
                       />
                     ) : null}
                     <polyline
@@ -179,7 +181,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                       strokeWidth="2.2"
                       strokeLinejoin="round"
                       strokeLinecap="round"
-                      strokeDasharray={si >= 1 && !s.color ? "5 4" : undefined}
+                      {...(si >= 1 && !s.color ? { strokeDasharray: "5 4", className: "motion-safe:animate-fade-late" } : { pathLength: 100, strokeDasharray: "100 100", className: "motion-safe:animate-draw" })}
                     />
                     {s.points.map((p, i) =>
                       p.value === null ? null : (
@@ -188,7 +190,7 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                           cx={x(i)}
                           cy={y(p.value)}
                           r="3.2"
-                          className="fill-canvas"
+                          className="fill-canvas motion-safe:animate-fade-late"
                           style={{ stroke: s.color ?? PALETTE[si % PALETTE.length] }}
                           strokeWidth="2"
                         />
@@ -236,7 +238,7 @@ export function TargetGauge({
   return (
     <div className="pt-4">
       <div className="relative h-2.5 w-full rounded-pill bg-surface-soft">
-        <div className={clsx("absolute inset-y-0 left-0 rounded-pill", toneClass)} style={{ width: `${actualPct}%` }} />
+        <div className={clsx("absolute inset-y-0 left-0 origin-left rounded-pill motion-safe:animate-grow-x", toneClass)} style={{ width: `${actualPct}%` }} />
         <div className="absolute -top-1 bottom-[-4px] w-[2px] bg-ink-deep" style={{ left: `${targetPct}%` }} aria-hidden="true" />
         <span
           className="absolute -top-5 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold text-ink-deep"

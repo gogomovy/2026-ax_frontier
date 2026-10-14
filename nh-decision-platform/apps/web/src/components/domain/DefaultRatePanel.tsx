@@ -6,6 +6,7 @@ import { Chart, PALETTE } from "@/components/charts/Chart";
 import { FigureText } from "@/components/data/FigureText";
 import { EvidenceChips } from "@/components/evidence/EvidenceChips";
 import { PillTabs, SEVERITY_TEXT, SectionHead, StatusDot } from "@/components/ui/primitives";
+import { pointCount } from "@/lib/loanView";
 import type { DefaultRateSeries, DefaultRateTrend } from "@/lib/types";
 
 type View = "corp" | "retail";
@@ -20,6 +21,8 @@ export function DefaultRatePanel({ trend }: { trend: DefaultRateTrend }) {
   const [hidden, setHidden] = useState<string[]>([]);
   const active = view === "corp" ? trend.corpSegments : trend.retailPools;
   const note = view === "corp" ? trend.corpNote : trend.retailNote;
+  // 기간은 계열의 시점 수에서 (Phase K · HC-04)
+  const months = Math.max(0, ...active.map((s) => pointCount(s.points)));
 
   const colored = active.map((s, i) => ({ series: s, color: PALETTE[i % PALETTE.length] }));
   const shown = colored.filter((c) => !hidden.includes(c.series.key));
@@ -30,7 +33,7 @@ export function DefaultRatePanel({ trend }: { trend: DefaultRateTrend }) {
     <section>
       <SectionHead
         title="월별 부도율 추이"
-        hint="최근 12개월 · 모형 성능 판단의 선행 지표"
+        hint={`${months ? `최근 ${months}개월 · ` : ""}모형 성능 판단의 선행 지표`}
         right={
           <PillTabs
             size="sm"

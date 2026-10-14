@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+from nhdip.ui_config import DEFAULTS as UI_DEFAULTS
+
 # ═════════════════════════ 조직 (요구사항 Q12 확정) ═════════════════════════
 # 본점: 본부 > 부 > 국 > 팀 / 영업 조직: 지역본부 > 영업점 (지역본부 직속 국·팀 허용)
 # 유형 정의와 허용 상위 유형은 setting 'org.unit_types' — 관리자 화면에서 수정
@@ -72,8 +74,8 @@ SCREENS = [
     dict(code="BRANCH_TARGETS", path="/branch/targets", label="본부 전파 목표·가이드", section="영업점", kind="reference", sort=32, resources=["branch_targets", "action_plans", "plan_state", "cascade", "goals"]),
     dict(code="KNOWLEDGE", path="/knowledge", label="데이터베이스", section="공통", kind="reference", sort=80, resources=["documents", "datasets", "terms", "search"]),
     # 업무 자료 올리기 (Phase C · UPL · Q99) — 화면을 받은 조직만 [데이터베이스]에서 자료를 올려 승인 요청
-    # 분석 만들기 (Phase C · DAG-01) — 화면을 받은 조직은 부서 분석 공간에 새 분석을 요청(관리자 승인)
-    dict(code="ANALYSIS_BUILDER", path="/analysis/builder", label="분석 만들기", section="공통", kind="reference", sort=82, match="/analysis/builder", resources=["analysis_builder"]),
+    # 분석 에이전트 만들기 (Phase C · DAG-01 · 이름 Phase K · Q155) — 화면을 받은 조직은 부서 분석 공간에 새 분석을 요청(관리자 승인)
+    dict(code="ANALYSIS_BUILDER", path="/analysis/builder", label="분석 에이전트 만들기", section="공통", kind="reference", sort=82, match="/analysis/builder", resources=["analysis_builder"]),
     dict(code="KNOWLEDGE_UPLOAD", path="/knowledge/upload", label="자료 올리기", section="공통", kind="reference", sort=81, resources=["db_upload"]),
     # 관리자 — 묶음 6개 (Phase C · ADM-01 · Q104). 화면 코드 · 경로는 그대로, 묶음(section) · 이름 · 정렬만
     dict(code="ADMIN_HOME", path="/admin", label="관리자 홈", section="관리자 홈", kind="admin", sort=100, admin_only=True, match="=/admin", count_key="adminTodo"),
@@ -93,6 +95,8 @@ SCREENS = [
     dict(code="ADMIN_METRICS", path="/admin/metrics", label="지표·계산", section="계산과 규칙", kind="admin", sort=141, admin_only=True),
     dict(code="ADMIN_RULES", path="/admin/rules", label="판정 규칙", section="계산과 규칙", kind="admin", sort=142, admin_only=True),
     dict(code="ADMIN_SETTINGS", path="/admin/settings", label="운영 설정", section="계산과 규칙", kind="admin", sort=143, admin_only=True),
+    # 화면 설정 (Phase K · Q148) — 판정 구간 · 기준값 · 목표 역할 · 업무 영역 · 예시 질문 · 알림
+    dict(code="ADMIN_UI", path="/admin/ui", label="화면 설정", section="계산과 규칙", kind="admin", sort=144, admin_only=True),
     dict(code="ADMIN_MONITOR", path="/admin/monitor", label="운영 개요", section="운영 모니터링", kind="admin", sort=150, admin_only=True, match="=/admin/monitor"),
     dict(code="ADMIN_PIPELINE", path="/admin/pipeline", label="파이프라인", section="운영 모니터링", kind="admin", sort=151, admin_only=True),
     dict(code="ADMIN_FLOW", path="/admin/monitor/flow", label="데이터 흐름", section="운영 모니터링", kind="admin", sort=152, admin_only=True),
@@ -175,7 +179,7 @@ SETTINGS = {
     "report.pdf_fonts": ({"regular": "/usr/share/fonts/truetype/nanum/NanumGothic.ttf", "bold": "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"}, "PDF 한글 글꼴 경로 (없으면 내장 CID 글꼴 HYGothic-Medium)"),
     "obs.slow_request_ms": (1000, "느린 조회 기준(ms) — 이보다 오래 걸린 GET 요청도 추적 기록(ops.request_log)에 남김. 변경 요청 · 오류는 항상 기록"),
     "upload.policy": ({"max_mb": 50, "zip_max_uncompressed_mb": 300, "zip_max_ratio": 150, "zip_max_entries": 5000, "block_pdf_active": True, "av_timeout_sec": 60}, "업로드 보안 정책 — 크기 · 압축 폭탄 한도 · PDF 스크립트 차단 · 백신 시간 제한(백신 명령은 배포 환경변수 UPLOAD_AV_COMMAND)"),
-    "analysis.spaces": ({}, "부서 분석 공간(Phase C · DAG-07) — 기본(risk · branch · hq)에 덧붙이거나 바꿀 값. 공간 = {label, path, tabs(기존 탭 산출물), tabsResource, resource(보고서 열람 리소스), reportPrefix, scoped, builder(분석 만들기 허용), domain, persona, enabled}. 새 공간은 관리자 [화면 권한] 화면 등록과 함께"),
+    "analysis.spaces": ({}, "부서 분석 공간(Phase C · DAG-07) — 기본(risk · branch · hq)에 덧붙이거나 바꿀 값. 공간 = {label, path, tabs(기존 탭 산출물), tabsResource, resource(보고서 열람 리소스), reportPrefix, scoped, builder(분석 에이전트 만들기 허용), domain, persona, enabled}. 새 공간은 관리자 [화면 권한] 화면 등록과 함께"),
     "upload.user_targets": ({"datasets": "*", "doc_classes": "*"}, "업무 화면 [자료 올리기]에서 올릴 수 있는 대상 — datasets · doc_classes 에 \"*\"(전체) 또는 코드 목록. 올린 자료는 관리자 [자료 승인] 후 반영 (Phase C · UPL)"),
     "obs.request_log_days": (30, "요청 추적 기록(ops.request_log) 보관 일수 — 지난 기록은 워커가 하루 1회 정리"),
     "analysis.min_interval_sec": (60, "업무 화면 온디맨드 분석 — 같은 분석을 다시 요청할 수 있는 최소 간격(초). 간격 안의 요청은 진행 중인 실행을 함께 본다"),
@@ -213,6 +217,8 @@ SETTINGS = {
     "goal.rule_links": ({"goal-corp-growth": {"rule": "GOAL_TARGETS", "path": "corp_loan_growth"}, "goal-hh-control": {"rule": "GOAL_TARGETS", "path": "hh_loan_growth"}}, "경영목표 확정 시 갱신할 규칙 값 (목표 → 규칙 경로)"),
     "ui.batch_label": ("변경 기반 실행 (wf_model_monitoring · wf_inclusive_risk · wf_hq_goal_review · wf_branch_kpi)", "화면 상단 실행 라벨"),
     "branch.office_codes": ({}, "영업점 조직 코드 → 사무소 코드 (비우면 조직 코드 = 사무소 코드). 영업점 데이터(조사자사무소코드 · 사무소코드)와 사용자 소속을 잇는 기준 (Q43)"),
+    # 화면 설정 (Phase K · Q148~Q151) — 기본값 · 설명은 nhdip.ui_config 한 곳에
+    **UI_DEFAULTS,
 }
 
 # ═════════════════════════ 판정 규칙 (버전 관리) ═════════════════════════

@@ -430,6 +430,14 @@ def setting_put(key: str, body: SettingIn, request: Request, session: Session = 
         reqs = dict(pend.value)
         reqs.pop(key, None)
         pend.value = reqs
+    if key.startswith("ui."):
+        # 화면 설정 형식 검사 (Phase K · Q148) — 깨진 값이 저장되면 모든 화면이 기본값으로 돌아가므로 저장 전에 막는다
+        from nhdip.ui_config import UiConfigError, validate
+
+        try:
+            body.value = validate(session, key, body.value)
+        except UiConfigError as exc:
+            raise HTTPException(422, str(exc)) from exc
     s = session.get(Setting, key)
     before = s.value if s else None
     if s:
@@ -443,6 +451,14 @@ def setting_put(key: str, body: SettingIn, request: Request, session: Session = 
     audit(session, admin.emp_no, "admin.setting.update", "setting", key, {"before": before, "after": body.value}, client_ip(request))
     session.commit()
     return {"ok": True}
+
+
+@router.get("/ui-config")
+def ui_config_meta(session: Session = Depends(get_session)):
+    """관리자 [화면 설정] (Phase K · Q148) — 현재 값 · 기본값 · 설명 · 선택지(목표 · 조직 · 메뉴 묶음 · 건수 키). 저장은 PUT /admin/settings/{key}."""
+    from nhdip.ui_config import admin_meta
+
+    return admin_meta(session)
 
 
 @router.get("/audit")

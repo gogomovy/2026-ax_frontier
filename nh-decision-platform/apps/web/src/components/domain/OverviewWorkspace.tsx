@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { BigFigure } from "@/components/data/BigFigure";
 import { FigureText } from "@/components/data/FigureText";
@@ -11,26 +11,31 @@ import { TrendChart, type TrendPoint } from "@/components/charts/TrendChart";
 import { ProposalPopup } from "@/components/domain/ProposalPopup";
 import { useSector } from "@/components/domain/SectorTitle";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
+import { useUiConfig } from "@/components/providers/SessionProvider";
+import { useSeen } from "@/components/ui/useSeen";
 import { IconInfoCircle, IconSparkle } from "@/components/ui/icons";
 import { EmptyCard } from "@/components/ui/StateViews";
 import { Badge, IconChevron, IconWarn, NextStep } from "@/components/ui/primitives";
 import { derivedFigure } from "@/lib/derived";
 import { UNIT_LABEL, formatFigure } from "@/lib/format";
 import { GOAL_VERDICT, directionSuffix, proposalRange, resolveGoal } from "@/lib/goalView";
-import { lastStep, revenueRowsOf, trendPhrase } from "@/lib/loanView";
+import { lastStep, revenueRowsOf, targetPath, trendPhrase } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { signatureOf } from "@/lib/seen";
+import { TONE_BADGE, TONE_BAR, TONE_GAUGE, bandOf, goalByRole, threshold, type Band } from "@/lib/uiConfig";
 import type { CapitalView, DomainCardInfo, Figure, Goal, Insight, LoanOverview, Proposal } from "@/lib/types";
 
 type Verdict = NonNullable<Goal["gapVerdict"]>;
 
-/** 값이 없어 판정할 수 없을 때(업로드 전 빈 템플릿) */
-const NO_STATUS = { label: "자료 없음", tone: "neutral" as const, gauge: "primary" as const };
+type Status = { label: string; tone: "neutral" | "info" | "success" | "attention" | "critical"; gauge?: "primary" | "warning" | "danger" };
 
-/** 한도형 비율의 상태 — 85% 이상 근접, 100% 이상 초과 */
-function limitStatus(pct: number) {
-  if (pct >= 100) return { label: "한도 초과", tone: "critical" as const, gauge: "danger" as const };
-  if (pct >= 85) return { label: "한도 근접", tone: "attention" as const, gauge: "warning" as const };
-  return { label: "정상", tone: "neutral" as const, gauge: "primary" as const };
+/** 값이 없어 판정할 수 없을 때(업로드 전 빈 템플릿 · 구간 설정 없음) */
+const NO_STATUS: Status = { label: "자료 없음", tone: "neutral", gauge: "primary" };
+
+/** 한도형 비율의 상태 — 구간(경계 · 이름 · 색)은 관리자 [화면 설정]의 판정 구간 (Phase K · HC-01) */
+function bandStatus(value: number | null, bands: Band[] | undefined): Status {
+  const b = bandOf(value, bands);
+  return b ? { label: b.label, tone: TONE_BADGE[b.tone], gauge: TONE_GAUGE[b.tone] } : NO_STATUS;
 }
 
 /** 추천 범위가 지금 목표보다 높은지 낮은지 — 한도형 목표는 낮추는 것이 강화 */
@@ -44,8 +49,6 @@ function changeWord(goal: Goal, p: Proposal, overridden?: number): string {
   return "유지";
 }
 
-/** 이슈로 보여 줄 목표의 심각도 순서 — 초과 > 미달 > 근접 */
-const ISSUE_ORDER: Partial<Record<Verdict, number>> = { breach: 0, below: 1, near_limit: 2 };
 
 /**
  * 1단계 — 경영 현황·목표 (가이드 7155 · 7166 · 7167)
@@ -71,6 +74,8 @@ export function OverviewWorkspace({
   aside?: ReactNode;
 }) {
   const { overrides, proposalActions, staged } = useGoalState();
+  const cfg = useUiConfig();
+  const seen = useSeen();
   const { code, domain, select } = useSector(domains);
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [showAllIssues, setShowAllIssues] = useState(false);
@@ -88,12 +93,13 @@ export function OverviewWorkspace({
   const bank = capital.bankTarget;
   const bankCeiling = bank.ceiling.value;
   const bankPct = bank.value.value != null && bankCeiling ? (bank.value.value / bankCeiling) * 100 : null;
-  const bankStatus = bankPct === null ? NO_STATUS : limitStatus(bankPct);
+  const bankStatus = bandStatus(bankPct, cfg.bands.limitUsage);
 
   // 신용RWA — 서버가 계산한 조직별 배분 · 사용 · 소진율만 쓴다(화면에서 합계 수치를 만들지 않는다)
   const rwaRows = capital.rwaAllocation.filter((r) => r.used.value != null || r.usageRate.value != null);
 
-  const revenueGoal = goals.find((g) => g.id === "goal-annual-revenue");
+  // 화면이 집어 쓰는 목표는 역할로 — 관리자 [화면 설정 › 목표 역할] (Phase K · HC-03)
+  const revenueGoal = goalByRole(goals, cfg, "bankRevenue");
   const revenueProgress = revenueGoal?.gap?.value ?? null;
   // 연간 경과율 = 기준월 ÷ 12 × 100 — 기준월을 알 때만 계산한다
   const elapsed = month !== null ? (month / 12) * 100 : null;
@@ -110,29 +116,40 @@ export function OverviewWorkspace({
           inputs: [{ key: "month", label: "기준월", value: String(month), unit: "월", source: `기준일 ${capital.asOf}` }],
           asOf: capital.asOf,
         });
-  const onPlan = revenueProgress !== null && elapsed !== null ? revenueProgress >= elapsed - 5 : null;
+  // 계획 수준 = 진행률이 경과율보다 허용 폭 이상 낮지 않음 — 허용 폭은 [화면 설정 › 기준값]
+  const tolerance = threshold(cfg, "planPaceTolerancePp");
+  const onPlan = revenueProgress !== null && elapsed !== null && tolerance !== null ? revenueProgress >= elapsed - tolerance : null;
 
   /* ── 선택 부문: 요약 · 이슈 ──────────────────────── */
   const counts = domainGoals.reduce<Record<Verdict, number>>((acc, g) => ({ ...acc, [g.gapVerdict ?? "on_track"]: acc[g.gapVerdict ?? "on_track"] + 1 }), { on_track: 0, near_limit: 0, below: 0, breach: 0 });
-  const issues = domainGoals
-    .filter((g) => g.gapVerdict && g.gapVerdict in ISSUE_ORDER)
-    .sort((a, b) => (ISSUE_ORDER[a.gapVerdict as Verdict] ?? 9) - (ISSUE_ORDER[b.gapVerdict as Verdict] ?? 9));
+  // 이슈로 볼 판정과 순서 — [화면 설정 › 주요 이슈 순서]
+  const rank = (v: string | null | undefined) => (v ? cfg.issueOrder.indexOf(v) : -1);
+  const issues = domainGoals.filter((g) => rank(g.gapVerdict) >= 0).sort((a, b) => rank(a.gapVerdict) - rank(b.gapVerdict));
   const shownIssues = showAllIssues ? issues : issues.slice(0, 2);
   const proposalOf = (goalId: string) => proposals.find((p) => p.targetGoalId === goalId);
   const reviewProposal = proposals.find((p) => p.id === reviewId);
-  const flagged = Object.fromEntries(domains.map((d) => [d.domainCode, attentions.some((a) => a.domainCode === d.domainCode)]));
+  // 레드닷 = 그 부문의 확인하지 않은 새 이슈 (Phase K · DOT-01) — 탭을 열면 사라지고, 이슈가 바뀌면 다시
+  const dotSig = (domainCode: string) => signatureOf(attentions.filter((a) => a.domainCode === domainCode).map((a) => a.id), capital.asOf);
+  const dotKey = (domainCode: string) => `ov.domain.${domainCode}`;
+  const flagged = Object.fromEntries(domains.map((d) => [d.domainCode, seen.fresh(dotKey(d.domainCode), dotSig(d.domainCode))]));
+  useEffect(() => {
+    if (code) seen.mark(dotKey(code), dotSig(code));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 선택한 부문 · 이슈가 바뀔 때만
+  }, [code, attentions, capital.asOf]);
 
   /* ── 차트 ────────────────────────────────────────── */
-  const corpGoal = goals.find((g) => g.id === "goal-corp-growth");
+  const corpGoal = goalByRole(goals, cfg, "corpGrowth");
   const corpTarget = corpGoal ? resolveGoal(corpGoal, overrides[corpGoal.id]) : null;
   const corpGrowth = corpGoal ? (overrides[corpGoal.id]?.targetValue ?? corpGoal.targetValue) : null;
   // 목표 경로의 출발점 = 전년 동월 잔액 — 연도별 계열에서 전년 동월 라벨로 찾는다(기준일에서 계산)
   const corpBase = lp.prevYm === NO_VALUE ? null : (loan.corporate.yearly.find((p) => p.label.endsWith(lp.prevYm))?.value ?? null);
   const corpPoints = loan.corporate.monthly;
-  const corpPath = corpBase !== null && corpGrowth !== null && corpGrowth !== undefined ? corpPoints.map((_, i) => corpBase * (1 + (corpGrowth / 100) * ((i + 1) / 12))) : null;
+  const corpPath = targetPath(corpBase, corpGrowth, corpPoints.length);
 
-  const hhLimitGoal = goals.find((g) => g.id === "goal-hh-balance");
+  const hhLimitGoal = goalByRole(goals, cfg, "hhLimit");
   const hhLimit = hhLimitGoal ? (overrides[hhLimitGoal.id]?.targetValue ?? hhLimitGoal.targetValue) : null;
+  // 한도 여유가 이 폭보다 작으면 강조 — [화면 설정 › 기준값] (없으면 강조하지 않음)
+  const headroomAlert = threshold(cfg, "headroomAlert");
 
   // 표기 단위 · 기간은 잔액 수치의 단위와 기준일에서 정한다
   const corpUnit = UNIT_LABEL[loan.corporate.balance.unit] || "";
@@ -170,7 +187,7 @@ export function OverviewWorkspace({
               ["여유", <FigureText key="h" figure={bank.headroom} signed plain strong />],
             ]}
           />
-          <RwaCard rows={rwaRows} />
+          <RwaCard rows={rwaRows} bands={cfg.bands.rwaUsage} />
           {revenueGoal?.actual ? (
             <BankCard
               title="여신 이자마진 수익"
@@ -421,7 +438,7 @@ export function OverviewWorkspace({
                           head: `${ymOf(i)} · 가계여신`,
                           value: tn(v),
                           unit: hhUnit,
-                          rows: hhLimit ? [{ label: "관리 한도", value: `${hhLimit.toFixed(2)}${hhUnit}` }, { label: "한도 여유", value: `${tn(hhLimit - v)}${hhUnit}`, tone: hhLimit - v < 1 ? "danger" : undefined }] : undefined,
+                          rows: hhLimit ? [{ label: "관리 한도", value: `${hhLimit.toFixed(2)}${hhUnit}` }, { label: "한도 여유", value: `${tn(hhLimit - v)}${hhUnit}`, tone: headroomAlert !== null && hhLimit - v < headroomAlert ? "danger" : undefined }] : undefined,
                         };
                       }}
                     />
@@ -450,7 +467,7 @@ export function OverviewWorkspace({
 
       {aside}
 
-      <NextStep step={2} title="데이터 분석" description={`${domain?.name ?? "여신"} 부문 이슈를 Agent 해설과 함께 분석하고, 목표 조정이 필요한 지점을 찾아요.`} href="/hq/analysis" cta="분석 시작" />
+      <NextStep step={2} title="데이터 분석" description={`${domain?.name ? `${domain.name} 부문` : "사업부문"} 이슈를 Agent 해설과 함께 분석하고, 목표 조정이 필요한 지점을 찾아요.`} href="/hq/analysis" cta="분석 시작" />
 
       {reviewProposal ? <ProposalPopup proposal={reviewProposal} goal={goals.find((g) => g.id === reviewProposal.targetGoalId)} onClose={() => setReviewId(null)} /> : null}
     </div>
@@ -461,9 +478,13 @@ export function OverviewWorkspace({
  * 여신 신용RWA 소진 — 서버가 계산한 조직별 배분 · 사용 · 소진율 수치만 그린다(화면에서 합계 수치를 만들지 않는다).
  * 사용 수치가 하나도 없으면(업로드 전) 빈 상태.
  */
-function RwaCard({ rows }: { rows: CapitalView["rwaAllocation"] }) {
+function RwaCard({ rows, bands }: { rows: CapitalView["rwaAllocation"]; bands: Band[] | undefined }) {
   const worst = rows.reduce<number | null>((m, r) => (r.usageRate.value == null ? m : m === null ? r.usageRate.value : Math.max(m, r.usageRate.value)), null);
-  const status = worst === null ? NO_STATUS : limitStatus(worst);
+  const status = bandStatus(worst, bands);
+  const barOf = (v: number | null | undefined) => {
+    const b = bandOf(v, bands);
+    return b ? TONE_BAR[b.tone] : "bg-primary";
+  };
   return (
     <article className="rounded-xl border border-hairline-soft bg-canvas p-6" data-rwa-card>
       <header className="flex items-center justify-between gap-2">
@@ -486,7 +507,7 @@ function RwaCard({ rows }: { rows: CapitalView["rwaAllocation"] }) {
                 </span>
               </div>
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-pill bg-track" role="presentation">
-                <div className={clsx("h-full rounded-pill", (r.usageRate.value ?? 0) >= 100 ? "bg-critical" : (r.usageRate.value ?? 0) >= 85 ? "bg-attention" : "bg-primary")} style={{ width: `${Math.min(100, Math.max(0, r.usageRate.value ?? 0))}%` }} />
+                <div className={clsx("h-full origin-left rounded-pill motion-safe:animate-grow-x", barOf(r.usageRate.value))} style={{ width: `${Math.min(100, Math.max(0, r.usageRate.value ?? 0))}%` }} />
               </div>
             </li>
           ))}
@@ -525,7 +546,7 @@ function BankCard({
   rows,
 }: {
   title: string;
-  status: { label: string; tone: "neutral" | "attention" | "critical" };
+  status: Status;
   gauge: React.ReactNode;
   main: React.ReactNode;
   rows: [string, React.ReactNode][];

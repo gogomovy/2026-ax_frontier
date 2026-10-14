@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { lastStep, pointCount, prevStepPhrase, revenueRowsOf, trendPhrase } from "@/lib/loanView";
+import { lastStep, pointCount, prevStepPhrase, revenueRowsOf, sourceLabel, trendPhrase } from "@/lib/loanView";
 import type { ComparisonRow, Figure } from "@/lib/types";
 
-const fig = (value: number | null, unit: Figure["unit"] = "KRW_BN", decimals?: number): Figure => ({ id: "f", label: "x", value, unit, decimals, dataOrigin: "simulated" });
-const row = (label: string): ComparisonRow => ({ label, current: fig(1), prior: fig(1), diff: fig(0), diffRate: fig(0, "PCT") });
+const fig = (value: number | null, unit: Figure["unit"] = "KRW_BN", decimals?: number, id = "f"): Figure => ({ id, label: "x", value, unit, decimals, dataOrigin: "simulated" });
+const row = (label: string, id: string): ComparisonRow => ({ label, current: fig(1, "KRW_BN", undefined, id), prior: fig(1), diff: fig(0), diffRate: fig(0, "PCT") });
 const pts = (...v: (number | null)[]) => v.map((value, i) => ({ label: String(2024 + i), value }));
 
-describe("여신 종합수익 행 — 인덱스가 아니라 라벨로", () => {
-  it("순서가 바뀌어도 찾는다", () => {
-    const r = revenueRowsOf([row("가계자금대출금이자"), row("전체 수익"), row("기업자금대출금이자"), row("여신(일반)부문 이자마진 수익")]);
-    expect(r.total?.label).toBe("전체 수익");
-    expect(r.nim?.label).toBe("여신(일반)부문 이자마진 수익");
-    expect(r.corporate?.label).toBe("기업자금대출금이자");
-    expect(r.household?.label).toBe("가계자금대출금이자");
+describe("여신 종합수익 행 — 인덱스 · 라벨이 아니라 수치 id 로", () => {
+  it("순서 · 표시 이름이 바뀌어도 찾는다", () => {
+    const r = revenueRowsOf([row("가계 이자", "hh_int_cur"), row("총수익", "total_rev_cur"), row("기업 이자", "corp_int_cur"), row("이름 바꾼 NIM", "nim_cur")]);
+    expect(r.total?.label).toBe("총수익");
+    expect(r.nim?.label).toBe("이름 바꾼 NIM");
+    expect(r.corporate?.label).toBe("기업 이자");
+    expect(r.household?.label).toBe("가계 이자");
+  });
+  it("원천 이름 — 계산 추적의 파일 · 표에서", () => {
+    const f: Figure = { ...fig(1), calc: { calcId: "c", formulaId: "VALUE", formulaVersion: 1, expression: "", inputs: [{ key: "v", label: "v", value: "1", source: "(202608)2633_상품부문별손익계산서.xlsx!D12" }], executedAt: "" } };
+    expect(sourceLabel(f)).toBe("(202608)2633_상품부문별손익계산서");
+    expect(sourceLabel(fig(1))).toBeUndefined();
   });
   it("행이 없으면 undefined", () => {
     expect(revenueRowsOf([]).total).toBeUndefined();

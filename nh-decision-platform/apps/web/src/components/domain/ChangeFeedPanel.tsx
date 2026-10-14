@@ -2,7 +2,8 @@ import { Badge, RowEmpty, SectionHead } from "@/components/ui/primitives";
 import { formatDateTime, formatFigure, formatSigned } from "@/lib/format";
 import type { ChangeFeed, ChangeItem, Figure } from "@/lib/types";
 
-const fig = (i: ChangeItem, value: number, unit: Figure["unit"] = i.unit): Figure => ({ id: i.code, label: i.label, value, unit, decimals: i.decimals ?? undefined, dataOrigin: "simulated" });
+/** 변화 항목의 표시용 수치 — 원천 성격 정보가 없으므로 unknown (Phase K · HC-05: 꾸며 넣지 않는다) */
+const fig = (i: ChangeItem, value: number, unit: Figure["unit"] = i.unit): Figure => ({ id: i.code, label: i.label, value, unit, decimals: i.decimals ?? undefined, dataOrigin: "unknown" });
 
 /**
  * 최근 감지된 변화 (B.30) — 변화 감지 에이전트가 직전 확정값 대비 유의 기준(규칙 CHANGE_SIGNIFICANCE)을 넘은 변화만 기록한다.

@@ -189,19 +189,9 @@ def branch_artifact(session: Session, user: AppUser, key: str, office: str | Non
 @router.get("/branch/offices")
 def branch_offices(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_dashboard"))):
     """볼 수 있는 계산 대상 지점 목록 (B.47 · BRM-05) — 지역본부 · 관리자 화면의 지점 선택 상자. 영업점 직원은 자기 지점 하나."""
-    from nhdip.orgs import can_view_office, org_of_office
-    from nhdip.scopes import office_scope, resolve_office, scoped_key
+    from nhdip.ui_config import office_list
 
-    primary, offices = office_scope(session)
-    out = []
-    for code in offices:
-        if not can_view_office(session, user, code):
-            continue
-        v = get_current(session, scoped_key("branch_dashboard", code, primary))
-        org = org_of_office(session, code)
-        name = ((v or {}).get("office") or {}).get("name") if isinstance(v, dict) else None
-        out.append({"code": code, "name": name or (org.name if org else code), "available": isinstance(v, dict), "primary": code == primary})
-    return {"offices": out, "default": resolve_office(session, user, None)}
+    return office_list(session, user)
 
 
 @router.get("/branch/dashboard")

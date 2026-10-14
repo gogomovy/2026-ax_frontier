@@ -19,14 +19,15 @@ describe("기간 라벨 — 기준일에서 계산 (Phase I · 하드코딩 제�
 });
 
 describe("기준 연도 · 목표 적용기간 선택지", () => {
-  it("기준일 연도 기준", () => {
+  it("기준일에서 남은 기간 — 연간 · 남은 반기 · 남은 분기 · 다음 해", () => {
     expect(baseYear("2026-08-31")).toBe(2026);
-    expect(goalPeriodOptions("2026-08-31")).toEqual(["2026 연간", "2026.4Q", "2027 상반기", "2027 연간"]);
+    expect(goalPeriodOptions("2026-08-31")).toEqual(["2026 연간", "2026 하반기", "2026.3Q", "2026.4Q", "2027 상반기", "2027 연간"]);
+    expect(goalPeriodOptions("2027-02-28")).toEqual(["2027 연간", "2027 상반기", "2027 하반기", "2027.1Q", "2027.2Q", "2027.3Q", "2027.4Q", "2028 상반기", "2028 연간"]);
+    expect(goalPeriodOptions("2026-12-31")).toEqual(["2026 연간", "2026 하반기", "2026.4Q", "2027 상반기", "2027 연간"]);
   });
-  it("기준일이 없으면 올해(KST)", () => {
-    const y = Number(todayKst().slice(0, 4));
-    expect(baseYear(null)).toBe(y);
-    expect(goalPeriodOptions(undefined)[0]).toBe(`${y} 연간`);
+  it("기준일을 모르면 올해로 대신하지 않는다 (Phase K · HC-04)", () => {
+    expect(baseYear(null)).toBeNull();
+    expect(goalPeriodOptions(undefined)).toEqual([]);
   });
   it("오늘 날짜는 YYYY-MM-DD", () => {
     expect(todayKst()).toMatch(/^\d{4}-\d{2}-\d{2}$/);

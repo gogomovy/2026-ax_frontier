@@ -2,7 +2,8 @@ import { FigureText } from "@/components/data/FigureText";
 import { BranchGuides } from "@/components/domain/BranchGuides";
 import { ReportRequestForm } from "@/components/domain/ReportRequestForm";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { ProgressBar, SectionHead } from "@/components/ui/primitives";
+import { BandProgress } from "@/components/ui/BandProgress";
+import { SectionHead } from "@/components/ui/primitives";
 import { getBranchTargets } from "@/lib/data";
 
 /** 영업점 참고 — 본부에서 전파된 목표와 사업부서 가이드 (요구사항 BR-01 / BR-02) */
@@ -48,7 +49,7 @@ export default async function BranchTargetsPage() {
                 </div>
 
                 {target.progress !== undefined ? (
-                  <ProgressBar value={target.progress} tone={target.progress > 90 ? "attention" : "primary"} label={`진행률 ${target.progress}%`} />
+                  <BandProgress value={target.progress} band="targetProgress" label={`진행률 ${target.progress}%`} />
                 ) : null}
 
                 <p className="rounded-xl bg-surface-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-charcoal">{target.guideline}</p>

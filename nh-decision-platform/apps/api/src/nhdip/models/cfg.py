@@ -240,6 +240,23 @@ class Setting(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class Secret(Base):
+    """관리자 화면에서 입력한 외부 연결 비밀값 (Phase K · ES-03 · Q154) — 예: es.connection.
+
+    `meta` 는 가리지 않는 값(주소 · 계정), `secret_enc` 는 AES-GCM 암호문(security.encrypt_secret). 설정(`cfg.setting`)과
+    분리해 관리자 [운영 설정] 목록 · 설정 요약 API 에 나오지 않게 한다.
+    """
+
+    __tablename__ = "secret"
+    __table_args__ = S
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    meta: Mapped[Any] = mapped_column(JSONB, default=dict)
+    secret_enc: Mapped[str] = mapped_column(Text, default="")
+    updated_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class ColumnContract(Base):
     """컬럼 정의서(화면 데이터 계약) — 업무 담당자가 엑셀로 정의한 '화면 테이블의 컬럼 · 원천 · 산식 · 기대 화면값'.
 

@@ -12,6 +12,7 @@ from .cfg import (
     Prompt,
     Rule,
     RuleVersion,
+    Secret,
     Setting,
     ViewBinding,
     Workflow,

@@ -29,7 +29,7 @@ export default async function AnalysisSpaceTabPage(props: { params: Promise<{ sp
         others.length ? (
           <NextStep step={2} title={others[0].label} description="같은 부서의 다른 분석 결과를 확인합니다." href={`/analysis/${space}/${others[0].tabKey}`} />
         ) : builderHref ? (
-          <NextStep step={1} title="새 분석 만들기" description="다른 관점의 분석이 필요하면 글로 적어 분석 에이전트에게 맡기세요." href={builderHref} />
+          <NextStep step={1} title="새 분석 에이전트 만들기" description="다른 관점의 분석이 필요하면 글로 적어 분석 에이전트에게 맡기세요." href={builderHref} />
         ) : null
       }
     />

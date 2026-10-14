@@ -215,7 +215,7 @@ export function ProgressBar({
   return (
     <div>
       <div className="h-2 w-full overflow-hidden rounded-pill bg-track">
-        <div className={clsx("h-full rounded-pill", toneClass)} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
+        <div className={clsx("h-full origin-left rounded-pill motion-safe:animate-grow-x", toneClass)} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
       </div>
       {label ? <p className="mt-1 text-[12px] text-steel">{label}</p> : null}
     </div>

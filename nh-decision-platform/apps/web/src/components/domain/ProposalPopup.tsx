@@ -8,6 +8,7 @@ import { AlignmentPanel, VerificationRow } from "@/components/domain/Verificatio
 import { useCascadeModel } from "@/components/domain/useCascadeModel";
 import { EvidenceRow } from "@/components/evidence/EvidenceChips";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
+import { useUiConfig } from "@/components/providers/SessionProvider";
 import { useUi } from "@/components/providers/UiProvider";
 import { IconCheckCircle, IconSparkle } from "@/components/ui/icons";
 import { Sheet, SheetSection } from "@/components/ui/Sheet";
@@ -16,6 +17,7 @@ import { api } from "@/lib/api-client";
 import { UNIT_LABEL } from "@/lib/format";
 import { directionSuffix, proposalRange, resolveGoal } from "@/lib/goalView";
 import type { CascadeNode, Goal, Proposal } from "@/lib/types";
+import { threshold } from "@/lib/uiConfig";
 
 interface ConsistencyIssue {
   code: string;
@@ -50,6 +52,8 @@ export function ProposalPopup({ proposal, goal, onClose, inGoalStep = false }: {
   const [editing, setEditing] = useState(false);
   const [check, setCheck] = useState<PendingCheck | null>(null);
   const [reason, setReason] = useState("");
+  // 사유 최소 글자 수 — [화면 설정 › 기준값] (서버도 같은 값으로 검사)
+  const minReason = Math.max(1, threshold(useUiConfig(), "proposalReasonMin") ?? 1);
   const [busy, setBusy] = useState(false);
 
   const isNew = proposal.kind === "goal_new";
@@ -112,7 +116,7 @@ export function ProposalPopup({ proposal, goal, onClose, inGoalStep = false }: {
       </ul>
       {check.blocked ? null : (
         <label className="flex flex-col gap-1">
-          <span className="text-[12px] font-bold text-ink-deep">경고를 확인하고 담는 사유 (5자 이상 · 변경 이력에 남아요)</span>
+          <span className="text-[12px] font-bold text-ink-deep">경고를 확인하고 담는 사유 ({minReason}자 이상 · 변경 이력에 남아요)</span>
           <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className="input" aria-label="경고 확인 사유" />
         </label>
       )}
@@ -120,7 +124,7 @@ export function ProposalPopup({ proposal, goal, onClose, inGoalStep = false }: {
         {check.blocked ? null : (
           <Button
             className="flex-1"
-            disabled={reason.trim().length < 5}
+            disabled={reason.trim().length < minReason}
             onClick={() => {
               stageProposal({ proposal, mode: check.mode, value: check.value, reason: reason.trim(), force: true });
               toastStaged();

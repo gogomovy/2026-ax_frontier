@@ -119,6 +119,12 @@ const config: Config = {
         "pop-in": { from: { transform: "translateY(8px) scale(0.98)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
         "toast-in": { from: { transform: "translate(-50%, 8px)", opacity: "0" }, to: { transform: "translate(-50%, 0)", opacity: "1" } },
         shimmer: { "0%,100%": { opacity: "1" }, "50%": { opacity: "0.55" } },
+        // 데이터 등장 효과 (Phase K · ANI-01 · Q153) — 최종 값은 처음부터 DOM 에 있고 모양만 자란다(낭독 · 시험 안정)
+        "grow-x": { from: { transform: "scaleX(0)" }, to: { transform: "scaleX(1)" } },
+        "grow-y": { from: { transform: "scaleY(0)" }, to: { transform: "scaleY(1)" } },
+        // pathLength=100 인 선 · 호 — 대시 길이를 0 에서 요소 값(strokeDasharray)까지 늘린다
+        draw: { from: { strokeDasharray: "0 100" } },
+        "fade-up": { from: { opacity: "0", transform: "translateY(6px)" }, to: { opacity: "1", transform: "none" } },
       },
       animation: {
         "fade-in": "fade-in 140ms ease-out both",
@@ -126,6 +132,12 @@ const config: Config = {
         "pop-in": "pop-in 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both",
         "toast-in": "toast-in 180ms ease-out both",
         shimmer: "shimmer 1.4s ease-in-out infinite",
+        // --i(순서)만큼 조금씩 늦게 — 막대 · 점이 차례로 나온다
+        "grow-x": "grow-x 700ms cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 70ms) both",
+        "grow-y": "grow-y 700ms cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 50ms) both",
+        draw: "draw 900ms cubic-bezier(0.4, 0, 0.2, 1) both",
+        "fade-up": "fade-up 420ms ease-out calc(var(--i, 0) * 60ms) both",
+        "fade-late": "fade-in 400ms ease-out 500ms both",
       },
       maxWidth: {
         shell: "var(--shell-max)",

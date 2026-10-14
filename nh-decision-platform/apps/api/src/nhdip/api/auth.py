@@ -16,7 +16,7 @@ from nhdip.events import audit
 from nhdip.models import AppUser, OrgUnit, Screen, Setting, UserSession, utcnow
 from nhdip.security import hash_password, new_session_id, password_policy_error, session_hash, sign_session, verify_password
 
-from .deps import client_ip, current_user, user_json, user_screen_codes
+from .deps import client_ip, current_user, user_json, user_resources, user_screen_codes
 from .menu_counts import menu_counts
 
 router = APIRouter(tags=["auth"])
@@ -250,13 +250,21 @@ def screen_for_path(path: str, user: AppUser = Depends(current_user), session: S
 
 @router.get("/me/menu")
 def my_menu(user: AppUser = Depends(current_user), session: Session = Depends(get_session)):
+    from nhdip.ui_config import client_config, section_scopes
+
     codes = user_screen_codes(session, user)
     screens = session.execute(select(Screen).where(Screen.code.in_(codes)).order_by(Screen.sort)).scalars().all()
+    # 메뉴 묶음 → 업무 영역(종류 · 조직) — 설정 ui.scopes 의 단위와 이름으로 맞춘다 (Phase K · SCP-01 · Q151)
+    owners = section_scopes(session)
     sections: dict[str, dict[str, Any]] = {}
     for s in screens:
         if s.kind == "hidden":
             continue
-        sec = sections.setdefault(s.section, {"section": s.section, "admin": s.kind == "admin", "flow": [], "reference": [], "sort": s.sort})
+        own = owners.get(s.section) or {}
+        sec = sections.setdefault(
+            s.section,
+            {"section": s.section, "admin": s.kind == "admin", "flow": [], "reference": [], "sort": s.sort, "scope": None if s.kind == "admin" else own.get("scope"), "orgCode": own.get("orgCode"), "orgName": own.get("orgName") or s.section},
+        )
         item = {
             "code": s.code,
             "label": s.label,
@@ -278,4 +286,11 @@ def my_menu(user: AppUser = Depends(current_user), session: Session = Depends(ge
         "asOf": display_as_of(session),  # 관리자 지정 기준일 또는 올라온 자료의 최신 기준일 (자료가 없으면 null)
         "batchLabel": batch.value if batch else "",
         "dataOrigin": _data_origin(session),
+        # 화면 설정 (Phase K · Q148) — 판정 구간 · 기준값 · 목표 역할 · 업무 영역 단위 · 예시 질문 · 알림 · 지점 목록
+        "config": client_config(session, user, branch=_has_resource(session, user, "branch_dashboard")),
     }
+
+
+def _has_resource(session: Session, user: AppUser, resource: str) -> bool:
+    allowed = user_resources(session, user)
+    return allowed is None or resource in allowed

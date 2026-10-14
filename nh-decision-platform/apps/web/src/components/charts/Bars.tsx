@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { DataTable, Td } from "@/components/ui/primitives";
 
 /*
@@ -60,7 +60,7 @@ export function BarList({ title, items, max, unit = "" }: { title: string; items
             <li key={k} className="grid grid-cols-[minmax(0,180px)_1fr_auto] items-center gap-2 text-[12px]">
               <span className="truncate text-charcoal">{i.label}</span>
               <span className="h-2.5 overflow-hidden rounded-pill bg-surface-soft">
-                <span className={clsx("block h-full rounded-pill", BG[i.tone ?? "primary"])} style={{ width: `${Math.max(2, (i.value / top) * 100)}%` }} />
+                <span className={clsx("block h-full origin-left rounded-pill motion-safe:animate-grow-x", BG[i.tone ?? "primary"])} style={{ width: `${Math.max(2, (i.value / top) * 100)}%`, "--i": k } as CSSProperties} />
               </span>
               <span className="tnum font-bold text-ink-deep">{fmt(i)}</span>
             </li>
@@ -106,7 +106,7 @@ export function StackedBars({ title, buckets, series, height = 120 }: { title: s
       <div aria-hidden="true">
         <div className="flex items-end gap-[3px]" style={{ height }}>
           {buckets.map((b, i) => (
-            <div key={b.label} className="flex h-full min-w-0 flex-1 flex-col-reverse" title={`${b.label} · ${totals[i]}건`}>
+            <div key={b.label} className="flex h-full min-w-0 flex-1 origin-bottom flex-col-reverse motion-safe:animate-grow-y" style={{ "--i": Math.min(i, 24) } as CSSProperties} title={`${b.label} · ${totals[i]}건`}>
               {series.map((s) => {
                 const v = b.values[s.key] ?? 0;
                 return v ? <span key={s.key} className={clsx("block w-full first:rounded-b-sm last:rounded-t-sm", BG[s.tone])} style={{ height: `${(v / top) * 100}%` }} /> : null;
@@ -163,7 +163,7 @@ export function Timeline({ title, items }: { title: string; items: { key: string
             </span>
             <span className="relative h-3 rounded-sm bg-surface-soft" aria-hidden="true">
               <span
-                className={clsx("absolute inset-y-0 rounded-sm", BG[tone(i.status)])}
+                className={clsx("absolute inset-y-0 origin-left rounded-sm motion-safe:animate-grow-x", BG[tone(i.status)])}
                 style={{ left: `${(i.startMs / end) * 100}%`, width: `${Math.max(0.6, (i.durationMs / end) * 100)}%` }}
               />
             </span>

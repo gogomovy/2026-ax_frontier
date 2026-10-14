@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, Select, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { EsConnectionCard } from "@/components/admin/EsConnectionCard";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPost, apiPut } from "@/lib/api-client";
@@ -322,6 +323,7 @@ function StatusTab({ st, reload }: { st: Status; reload: () => unknown }) {
         </StatGrid>
       </div>
       <ThreeWayCards st={st} />
+      {st.searchBackend?.setting !== "pg" ? <EsConnectionCard es={st.searchBackend?.es} reload={reload} /> : null}
       <DistanceCard st={st} reload={reload} />
       <Card title="컬렉션별 현황" actions={<span className="text-[11.5px] text-stone" data-kb-backend>검색 엔진: {backendNote(st.searchBackend)} · 그래프: {st.graph.ok ? `연결됨 · 노드 ${st.graph.nodes} · 관계 ${st.graph.relationships}` : "연결 안 됨 — 개념 확장은 PostgreSQL 간선으로 계속 동작"}</span>}>
         <Table head={["컬렉션", "종류", "담당 팀", "공개 범위", "조각", "임베딩", "출처", "마지막 색인", "상태"]}>

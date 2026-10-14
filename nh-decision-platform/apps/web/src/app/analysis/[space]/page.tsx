@@ -24,10 +24,10 @@ export default async function AnalysisSpacePage(props: { params: Promise<{ space
           action={
             tabs.builder.allowed ? (
               <Link href={`/analysis/builder?space=${encodeURIComponent(space)}`} className="inline-flex h-10 items-center rounded-pill bg-ink-button px-5 text-[13.5px] font-bold text-on-ink-button" data-builder-link>
-                분석 만들기
+                분석 에이전트 만들기
               </Link>
             ) : (
-              <p className="text-[12px] text-stone">분석 만들기 권한은 관리자에게 요청하세요.</p>
+              <p className="text-[12px] text-stone">분석 에이전트 만들기 권한은 관리자에게 요청하세요.</p>
             )
           }
         />

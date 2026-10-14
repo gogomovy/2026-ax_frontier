@@ -538,6 +538,9 @@ def n_rank_attentions(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     rule_code = (node.config or {}).get("rule", "ATTENTION_SCORE")
     body = _rule_body(ctx.session, rule_code)
     importance = body.get("importance_points") or {}
+    # 화면의 산출 규칙 표시 — 규칙 코드 · 적용 판 (Phase K · HC-04: 화면 코드에 규칙 판을 두지 않는다)
+    rule_row = ctx.session.get(Rule, rule_code)
+    rule_label = f"{rule_code} v{rule_row.active_version}" if rule_row is not None else rule_code
     arts = ctx.load_artifacts()
     out = []
     for att_id, comps in (body.get("items") or {}).items():
@@ -563,8 +566,8 @@ def n_rank_attentions(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         hits = 0
         for key, payload in arts.items():
             for d in _walk_dicts(payload):
-                if d.get("id") == att_id and "rankScore" in d and (d.get("rankScore") != score or d.get("rankBasis") != basis or d.get("rankCalcId") is None):
-                    d["rankScore"], d["rankBasis"], d["rankCalcId"] = score, basis, run.id
+                if d.get("id") == att_id and "rankScore" in d and (d.get("rankScore") != score or d.get("rankBasis") != basis or d.get("rankCalcId") is None or d.get("rankRule") != rule_label):
+                    d["rankScore"], d["rankBasis"], d["rankCalcId"], d["rankRule"] = score, basis, run.id, rule_label
                     ctx.changed.add(key)
                     hits += 1
         out.append({"id": att_id, "score": score, "basis": basis, "calc_run_id": run.id, "patched": hits})

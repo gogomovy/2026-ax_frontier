@@ -69,7 +69,7 @@ export default async function RiskDashboardPage() {
           </section>
         </div>
 
-        <ModelMonitoringPanel corp={dashboard.corpModels} retail={dashboard.retailModels} />
+        <ModelMonitoringPanel corp={dashboard.corpModels} retail={dashboard.retailModels} asOf={dashboard.asOf} />
         <ChangeFeedPanel feed={changes} />
 
         <NextStep

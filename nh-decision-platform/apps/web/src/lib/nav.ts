@@ -21,8 +21,8 @@ export function isActive(item: NavItem, pathname: string) {
 
 /** 현재 주소와 일치하는 경로 접두어의 길이(가장 긴 것) — 0 이면 일치하지 않음 */
 export function matchLength(item: NavItem, pathname: string): number {
-  // `/risk` 는 하위 경로(/risk/analysis 등)와 겹치므로 정확히 일치할 때만 활성
-  if (item.exact || item.href === "/risk") return pathname === item.match[0] || pathname === item.href ? Math.max(item.href.length, 1) : 0;
+  // 하위 경로와 겹치는 상위 화면은 서버 메뉴의 정확 일치 표시(`=`, exact)로 — 주소를 코드에 두지 않는다 (Phase K)
+  if (item.exact) return pathname === item.match[0] || pathname === item.href ? Math.max(item.href.length, 1) : 0;
   return Math.max(0, ...item.match.filter((m) => pathname === m || pathname.startsWith(m)).map((m) => m.length));
 }
 

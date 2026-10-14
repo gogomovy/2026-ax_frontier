@@ -34,7 +34,7 @@ export default async function BranchHomePage(props: { searchParams: Promise<Reco
       <PageHeader
         eyebrow="1단계 · 현황"
         title={`${dashboard.office.name} 현황`}
-        description={`${dashboard.periodLabel} 업적평가 득점과 사업부문 현황입니다. 상반기 대비 바뀐 평가기준은 AI가 분석해 영업 가이드로 정리했습니다.`}
+        description={`${dashboard.periodLabel ? `${dashboard.periodLabel} ` : ""}업적평가 득점과 사업부문 현황입니다. 직전 평가 기간 대비 바뀐 평가기준은 AI가 분석해 영업 가이드로 정리했습니다.`}
         actions={picker}
       />
 

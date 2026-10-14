@@ -28,6 +28,9 @@ export function useCascadeModel(): CascadeNode[] {
   const CASCADE = session.cascade ?? NO_NODES;
   const GOALS = session.goals ?? NO_GOALS;
   const userOrg = session.menu?.user.org.name ?? "";
+  // 영업점 전파 노드의 조직 이름 — 업무 영역 이름(관리자 [화면 설정 › 업무 영역])에서 (Phase K)
+  const branchLabel = session.menu?.config?.scopes.branch?.label;
+  const branchAll = branchLabel ? `${branchLabel} 전체` : "–";
 
   return useMemo(() => {
     /* 1) 목표 노드 라벨을 현재 목표값으로 갱신 */
@@ -83,7 +86,7 @@ export function useCascadeModel(): CascadeNode[] {
               kind: "branch_target",
               label: "영업점 가이드로 전파됨",
               detail: `모니터링 지표 ${plan.monitoringMetrics.slice(0, 2).join(" · ") || "미지정"}`,
-              org: "전 영업점",
+              org: branchAll,
             },
           ]
         : undefined,
@@ -118,5 +121,5 @@ export function useCascadeModel(): CascadeNode[] {
     }
 
     return nodes;
-  }, [overrides, addedGoals, inProgressPlans, CASCADE, GOALS, userOrg]);
+  }, [overrides, addedGoals, inProgressPlans, CASCADE, GOALS, userOrg, branchAll]);
 }

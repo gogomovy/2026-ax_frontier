@@ -2,6 +2,7 @@
 
 import clsx from "clsx";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useUiConfig } from "@/components/providers/SessionProvider";
 import { Badge } from "@/components/ui/primitives";
 import { apiGetC } from "@/lib/api-client";
 import type { ScopeItem } from "@/lib/assist-chat";
@@ -10,12 +11,7 @@ import { ASSIST_NAME } from "./brand";
 import { IconArrowDown, IconBot, IconClose, IconCollapse, IconExpand, IconList, IconPlus, IconSend, IconStop, IconTrash } from "./icons";
 import type { useAssistChat } from "./useAssistChat";
 
-const EXAMPLES = [
-  { q: "포용금융 충당금 비중은 얼마인가요?", hint: "확정 수치와 분석 결과" },
-  { q: "소기업 6B 등급 부도율은 예측 대비 어떤가요?", hint: "모형 모니터링" },
-  { q: "기업여신 증가율과 목표 대비 이탈은?", hint: "목표 대비 현황" },
-  { q: "가계부채 관리 기조 관련 근거를 알려줘", hint: "정책 근거 문서" },
-];
+
 const MAX_LEN = 500;
 
 type Chat = ReturnType<typeof useAssistChat>;
@@ -31,6 +27,8 @@ function relTime(ts: number): string {
 /** ChatGPT 형 대화 화면 — 대화 목록 · 메시지(스트리밍) · 하단 입력창. 답변은 확정 수치 · 팀 분석 결과 · 근거 문서만으로 */
 export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClose, titleId }: { chat: Chat; pathname: string; expanded: boolean; onToggleExpand: () => void; onClose: () => void; titleId: string }) {
   const { active, convs, busyId } = chat;
+  // 예시 질문 — 관리자 [화면 설정 › 예시 질문] (Phase K · HC-02). 비어 있으면 예시를 그리지 않는다
+  const examples = useUiConfig().examples.assist ?? [];
   const messages = active?.messages ?? [];
   const busy = busyId !== null;
   const [q, setQ] = useState("");
@@ -231,7 +229,7 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
                     </div>
                   ) : null}
                   <ul className="mt-6 grid w-full max-w-[640px] grid-cols-1 gap-2 sm:grid-cols-2">
-                    {EXAMPLES.map((ex) => (
+                    {examples.map((ex) => (
                       <li key={ex.q}>
                         <button type="button" onClick={() => ask(ex.q)} disabled={busy} className="h-full w-full rounded-2xl border border-hairline-soft px-4 py-3 text-left transition-colors hover:border-hairline hover:bg-surface-soft disabled:opacity-50">
                           <span className="block text-[13px] font-medium text-ink-deep">{ex.q}</span>

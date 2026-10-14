@@ -40,7 +40,14 @@ export interface SearchBackendStatus {
   setting: string;
   configured: boolean;
   engines?: { analysis?: StoreEngine; documents?: StoreEngine; graph?: GraphEngine };
-  es?: IndexPart & { up: boolean; error?: string; documents?: IndexPart };
+  es?: IndexPart & {
+    up: boolean;
+    error?: string;
+    /** 실패 종류 (Phase K · ES-01) — auth = 인증 · 권한 거절(401 · 403), down = 연결 불가, rejected = 그 밖의 거절 */
+    errorKind?: "auth" | "down" | "rejected";
+    remedy?: string[];
+    documents?: IndexPart;
+  };
 }
 
 export interface EngineCard {
@@ -82,7 +89,16 @@ export function threeWayCards(
   } else if (!sb?.configured) {
     esCard = { key: "es", label: "Elasticsearch", role: "키워드(nori) · 의미(kNN)", value: "미구성", hint: "ES_URL 없음 — PostgreSQL 로 축소 동작 중(3-way 표준 구성 아님)", tone: "attention" };
   } else if (!es?.up) {
-    esCard = { key: "es", label: "Elasticsearch", role: "키워드(nori) · 의미(kNN)", value: "연결 안 됨", hint: `PostgreSQL 로 폴백 중${es?.error ? ` — ${es.error}` : ""}`, tone: "attention" };
+    // 인증 실패는 원문(HTTP 본문) 대신 원인 한 줄 — 조치는 [Elasticsearch 연결] 카드에서 (Phase K · ES-01)
+    const auth = es?.errorKind === "auth";
+    esCard = {
+      key: "es",
+      label: "Elasticsearch",
+      role: "키워드(nori) · 의미(kNN)",
+      value: auth ? "인증 실패" : "연결 안 됨",
+      hint: auth ? "PostgreSQL 로 폴백 중 — ES 계정 · 비밀번호가 맞지 않습니다. 아래 [Elasticsearch 연결]에서 조치하세요" : `PostgreSQL 로 폴백 중${es?.error ? ` — ${es.error}` : ""}`,
+      tone: "attention",
+    };
   } else {
     const both = using?.analysis === "es" && using?.documents === "es";
     const analyzer = es.state?.analyzer ?? "-";

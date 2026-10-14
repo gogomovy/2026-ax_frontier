@@ -9,7 +9,7 @@ interface MineDetail {
   versions: { version: number; status: string; sourceText?: string; spec?: Record<string, unknown> }[];
 }
 
-/** 분석 만들기 (Phase C · DAG-01~04) — 글 → 정제 → 명세 확인 · 수정 → 미리보기 → 승인 요청. 권한(analysis_builder) 없으면 권한 없음 화면 */
+/** 분석 에이전트 만들기 (Phase C · DAG-01~04) — 글 → 정제 → 명세 확인 · 수정 → 미리보기 → 승인 요청. 권한(analysis_builder) 없으면 권한 없음 화면 */
 export default async function AnalysisBuilderPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await props.searchParams;
   const space = typeof sp.space === "string" && /^[a-z][a-z0-9_]{0,30}$/.test(sp.space) ? sp.space : undefined;
@@ -25,8 +25,8 @@ export default async function AnalysisBuilderPage(props: { searchParams: Promise
   return (
     <>
       <PageHeader
-        crumbs={[{ label: spaceLabel, href: catalog.spaces.find((s) => s.key === catalog.space)?.path }, { label: editing ? "분석 고치기" : "분석 만들기" }]}
-        title={editing ? "분석 고치기 — 새 버전 요청" : "분석 만들기"}
+        crumbs={[{ label: spaceLabel, href: catalog.spaces.find((s) => s.key === catalog.space)?.path }, { label: editing ? "분석 고치기" : "분석 에이전트 만들기" }]}
+        title={editing ? "분석 고치기 — 새 버전 요청" : "분석 에이전트 만들기"}
         description="하고 싶은 분석을 글로 적으면 분석 에이전트가 데이터 · 지표 · 보고서 구성으로 정리합니다. 수치는 계산 커널이 계산하고, 관리자 승인 뒤 부서 분석 화면에 탭으로 나타나 자료가 바뀔 때마다 다시 계산됩니다."
       />
       <div className="shell pb-section">

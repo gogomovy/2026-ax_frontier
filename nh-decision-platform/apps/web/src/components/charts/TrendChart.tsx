@@ -162,16 +162,16 @@ export function TrendChart({
         ) : null}
 
         {gapFill && targetOk.length > 1 && actualPts.length > 1 ? (
-          <polygon points={`${line(targetOk)} ${line([...actualPts].reverse())}`} fill="var(--color-primary-soft)" opacity="0.5" />
+          <polygon points={`${line(targetOk)} ${line([...actualPts].reverse())}`} fill="var(--color-primary-soft)" opacity="0.5" className="motion-safe:animate-fade-late" />
         ) : !target && actualPts.length > 1 ? (
-          <polygon points={`${actualPts[0][0]},${y(yMin)} ${line(actualPts)} ${last[0]},${y(yMin)}`} fill={`url(#${gradId})`} />
+          <polygon points={`${actualPts[0][0]},${y(yMin)} ${line(actualPts)} ${last[0]},${y(yMin)}`} fill={`url(#${gradId})`} className="motion-safe:animate-fade-late" />
         ) : null}
 
         {targetOk.length > 1 ? (
-          <polyline points={line(targetOk)} fill="none" stroke="var(--chart-4)" strokeWidth="1.6" strokeDasharray="5 4" strokeLinejoin="round" />
+          <polyline points={line(targetOk)} fill="none" stroke="var(--chart-4)" strokeWidth="1.6" strokeDasharray="5 4" strokeLinejoin="round" className="motion-safe:animate-fade-late" />
         ) : null}
         {lastTarget ? (
-          <g>
+          <g className="motion-safe:animate-fade-late">
             <circle cx={lastTarget[0]} cy={lastTarget[1]} r="3.5" fill="var(--color-canvas)" stroke="var(--chart-4)" strokeWidth="1.6" />
             {lastTargetValue !== null ? (
               <text x={lastTarget[0] + 8} y={lastTarget[1] - (last && last[1] > lastTarget[1] ? 4 : 0) + 4} fontSize="11" fill="var(--color-steel)" className="tnum">
@@ -181,12 +181,12 @@ export function TrendChart({
           </g>
         ) : null}
 
-        {actualPts.length > 1 ? <polyline points={line(actualPts)} fill="none" stroke="var(--color-primary)" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {actualPts.length > 1 ? <polyline points={line(actualPts)} fill="none" stroke="var(--color-primary)" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" pathLength={100} strokeDasharray="100 100" className="motion-safe:animate-draw" /> : null}
         {actual.map((p, i) =>
-          p === null || i === n - 1 ? null : <circle key={i} cx={p[0]} cy={p[1]} r={hover === i ? 5 : 3} fill="var(--color-canvas)" stroke="var(--color-primary)" strokeWidth="2" />,
+          p === null || i === n - 1 ? null : <circle key={i} cx={p[0]} cy={p[1]} r={hover === i ? 5 : 3} fill="var(--color-canvas)" stroke="var(--color-primary)" strokeWidth="2" className="motion-safe:animate-fade-late" />,
         )}
         {last ? (
-          <g>
+          <g className="motion-safe:animate-fade-late">
             <circle cx={last[0]} cy={last[1]} r={hover === n - 1 ? 7 : 5.5} fill="var(--color-primary)" />
             {lastValue !== null ? (
               <text x={last[0] + 10} y={last[1] + (lastTarget && lastTarget[1] < last[1] ? 14 : 4)} fontSize="13" fontWeight="700" fill="var(--color-primary-text)" className="tnum">

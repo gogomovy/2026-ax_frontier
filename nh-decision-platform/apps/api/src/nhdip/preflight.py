@@ -158,7 +158,8 @@ def run_checks(session: Session) -> dict[str, Any]:
                 if ok:
                     add(_item("search_backend", "AI 어시스턴트 검색 엔진", "ok", f"Elasticsearch 연결됨 · {summary} · " + ("사용 중" if mode != "pg" else "준비됨(검색 설정은 pg)")))
                 elif not es.get("up"):
-                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if mode != "pg" else "ok", "; ".join(probs) + (" · PostgreSQL 로 폴백 중" if mode != "pg" else ""), "ES 기동 · ES_URL · 인증 확인"))
+                    add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if mode != "pg" else "ok", "; ".join(probs) + (" · PostgreSQL 로 폴백 중" if mode != "pg" else ""),
+                              "make es-password(내장 ES 비밀번호를 .env 와 맞춤) 또는 관리자 [AI 어시스턴트 색인 › 연결 설정]" if es.get("errorKind") == "auth" else "ES 기동 · ES_URL · 인증 확인"))
                 else:
                     add(_item("search_backend", "AI 어시스턴트 검색 엔진", "warn" if mode != "pg" else "ok", "; ".join(probs) + f" ({summary}) — 새 청크는 PostgreSQL 로 보충",
                               "워커 주기 안에 따라잡음. 계속되면 python -m nhdip.cli kb-es --sync (nori 없음이면 analysis-nori 설치 후 kb-es --rebuild)"))

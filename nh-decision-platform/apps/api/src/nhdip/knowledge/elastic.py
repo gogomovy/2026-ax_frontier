@@ -59,15 +59,92 @@ class EsError(EsUnavailable):
         self.status, self.body = status, body
 
 
+AUTH_MESSAGE = {
+    401: "Elasticsearch 인증 실패 — 계정(ES_USER) 또는 비밀번호(ES_PASSWORD)가 Elasticsearch 에 저장된 값과 다릅니다",
+    403: "Elasticsearch 권한 부족 — 계정에 색인 · 클러스터 조회 권한이 없습니다",
+}
+AUTH_REMEDY = [
+    "내장 Elasticsearch: 서버에서 `make es-password` — ES 볼륨의 elastic 비밀번호를 .env 의 ES_PASSWORD 로 맞추고 api · worker 를 다시 띄웁니다(데이터 유지)",
+    "비밀번호를 알고 있거나 외부 Elasticsearch 를 쓰면: 이 화면 [연결 설정]에서 주소 · 계정 · 비밀번호를 입력하고 [연결 시험] 후 저장",
+    ".env 를 고친 뒤에는 컨테이너를 다시 만들어야 반영됩니다: docker compose up -d api worker (restart 로는 환경변수가 바뀌지 않음)",
+]
+
+
+class EsAuthError(EsError):
+    """ES 가 인증 · 권한을 거절(401 · 403) — 저절로 낫지 않으므로 차단기를 걸고 조치 안내를 남긴다 (Phase K · ES-01 · Q154)."""
+
+    def __init__(self, status: int, body: str):
+        super().__init__(status, body)
+        self.args = (f"{AUTH_MESSAGE.get(status, AUTH_MESSAGE[401])} (HTTP {status})",)
+
+
 # ── 연결 · 차단기 ─────────────────────────────────────────────
 _client: httpx.Client | None = None
 _lock = threading.Lock()
 _DOWN_UNTIL = 0.0
 _FAILS = 0
 
+# 관리자 입력 연결 값 (Phase K · ES-03) — cfg.secret['es.connection'] 이 있으면 환경변수보다 먼저. 프로세스(api · worker)마다 30초 캐시
+SECRET_KEY = "es.connection"
+OVERRIDE_TTL = 30.0
+_OVERRIDE: dict[str, str] | None = None
+_OVERRIDE_AT = -1e9
+
+
+def _read_override() -> dict[str, str] | None:
+    from nhdip.db import SessionLocal
+    from nhdip.models import Secret
+    from nhdip.security import decrypt_secret
+
+    with SessionLocal() as s:
+        row = s.get(Secret, SECRET_KEY)
+        if row is None:
+            return None
+        meta = row.meta if isinstance(row.meta, dict) else {}
+        url = str(meta.get("url") or "").strip()
+        if not url:
+            return None
+        return {"url": url, "user": str(meta.get("user") or ""), "password": decrypt_secret(row.secret_enc)}
+
+
+def _override() -> dict[str, str] | None:
+    global _OVERRIDE, _OVERRIDE_AT, _client
+    now = time.monotonic()
+    if now - _OVERRIDE_AT < OVERRIDE_TTL:
+        return _OVERRIDE
+    _OVERRIDE_AT = now
+    try:
+        new = _read_override()
+    except Exception:  # noqa: BLE001 — DB 가 잠시 안 되면 직전 값 유지(검색은 계속)
+        return _OVERRIDE
+    if new != _OVERRIDE:
+        with _lock:
+            _client = None
+        mark_ok()
+    _OVERRIDE = new
+    return new
+
+
+def invalidate_override() -> None:
+    """관리자가 연결 값을 바꾼 뒤 — 이 프로세스는 바로, 다른 프로세스(worker)는 30초 안에 새 값으로 다시 연결한다."""
+    global _OVERRIDE_AT, _client
+    _OVERRIDE_AT = -1e9
+    with _lock:
+        _client = None
+    mark_ok()
+
+
+def connection() -> dict[str, Any]:
+    """지금 쓰는 연결 값 — {url, user, password, source: db|env}."""
+    o = _override()
+    if o:
+        return {**o, "source": "db"}
+    s = get_settings()
+    return {"url": s.es_url.strip(), "user": s.es_user, "password": s.es_password, "source": "env"}
+
 
 def configured() -> bool:
-    return bool(get_settings().es_url.strip())
+    return bool(connection()["url"])
 
 
 def index_name() -> str:
@@ -80,20 +157,41 @@ def doc_index_name() -> str:
 
 def client() -> httpx.Client:
     global _client
+    conn = connection()
     with _lock:
         if _client is None:
-            s = get_settings()
-            verify: Any = s.es_verify_certs
-            if s.es_ca_certs and s.es_verify_certs:
-                verify = ssl.create_default_context(cafile=s.es_ca_certs)  # 사설 CA 만 추가로 믿는다
-            _client = httpx.Client(
-                base_url=s.es_url.rstrip("/"),
-                auth=(s.es_user, s.es_password) if s.es_user else None,
-                verify=verify,
-                timeout=httpx.Timeout(connect=3.0, read=float(s.es_timeout_sec), write=15.0, pool=5.0),
-                headers={"Accept": "application/json"},
-            )
+            _client = make_client(conn["url"], conn["user"], conn["password"])
         return _client
+
+
+def make_client(url: str, user: str, password: str, *, read_timeout: float | None = None) -> httpx.Client:
+    """ES HTTP 클라이언트 — 인증서 검증 · 사설 CA 는 환경변수(ES_VERIFY_CERTS · ES_CA_CERTS)."""
+    s = get_settings()
+    verify: Any = s.es_verify_certs
+    if s.es_ca_certs and s.es_verify_certs:
+        verify = ssl.create_default_context(cafile=s.es_ca_certs)  # 사설 CA 만 추가로 믿는다
+    return httpx.Client(
+        base_url=url.rstrip("/"),
+        auth=(user, password) if user else None,
+        verify=verify,
+        timeout=httpx.Timeout(connect=3.0, read=float(read_timeout or s.es_timeout_sec), write=15.0, pool=5.0),
+        headers={"Accept": "application/json"},
+    )
+
+
+def probe(url: str, user: str, password: str) -> dict[str, Any]:
+    """저장 없이 연결 시험 (관리자 [연결 설정]) — {ok, errorKind, message, cluster}."""
+    try:
+        with make_client(url, user, password, read_timeout=8.0) as c:
+            r = c.get("/_cluster/health")
+    except (httpx.HTTPError, OSError) as exc:
+        return {"ok": False, "errorKind": "down", "message": f"연결할 수 없습니다 — {type(exc).__name__}: {str(exc)[:160]}"}
+    if r.status_code in (401, 403):
+        return {"ok": False, "errorKind": "auth", "message": AUTH_MESSAGE[r.status_code]}
+    if r.status_code != 200:
+        return {"ok": False, "errorKind": "rejected", "message": f"HTTP {r.status_code}: {r.text[:160]}"}
+    h = r.json() if "json" in r.headers.get("content-type", "") else {}
+    return {"ok": True, "errorKind": None, "message": "연결됨", "cluster": {"status": h.get("status"), "nodes": h.get("number_of_nodes")}}
 
 
 def set_client(c: httpx.Client | None) -> None:
@@ -136,6 +234,11 @@ def request(method: str, path: str, *, json_body: Any = None, content: str | Non
     if r.status_code >= 500 or r.status_code == 429:
         mark_down()
         raise EsUnavailable(f"HTTP {r.status_code}: {r.text[:300]}")
+    if r.status_code in (401, 403):
+        # 인증 · 권한 거절은 다시 불러도 같다 — 차단기로 호출을 줄이고(검색은 PostgreSQL 폴백) 조치를 안내한다
+        mark_down()
+        log.warning("Elasticsearch 인증 실패 HTTP %s (%s %s)", r.status_code, method, path)
+        raise EsAuthError(r.status_code, r.text)
     raise EsError(r.status_code, r.text)
 
 
@@ -883,9 +986,24 @@ def status(session: Session) -> dict[str, Any]:
         dpg = sum(int(session.execute(text(f"SELECT count(*) FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.is_current")).scalar() or 0) for o in ORIGINS)
         d["pg_chunks"] = dpg
         d["lag"] = None if d.get("es_docs") is None else abs(dpg - int(d["es_docs"]))
+    except EsAuthError as exc:
+        out["error"] = str(exc)[:200]
+        out["errorKind"] = "auth"
+        out["remedy"] = AUTH_REMEDY
+    except EsError as exc:
+        out["error"] = str(exc)[:200]
+        out["errorKind"] = "rejected"
     except EsUnavailable as exc:
         out["error"] = str(exc)[:200]
+        out["errorKind"] = "down"
+    conn = connection()
+    out["connection"] = {"source": conn["source"], "url": safe_url(conn["url"]), "user": conn["user"]}
     return out
+
+
+def safe_url(url: str) -> str:
+    """화면 · 로그용 주소 — 주소에 섞인 계정 정보(user:pass@)는 뺀다."""
+    return re.sub(r"//[^/@]*@", "//", url or "")
 
 
 def healthy(st: dict[str, Any]) -> tuple[bool, list[str]]:

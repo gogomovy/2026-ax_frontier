@@ -6,6 +6,8 @@ import { IconExternal } from "@/components/ui/icons";
 import { Badge } from "@/components/ui/primitives";
 import { DB_CLASS_LABEL, EVIDENCE_CATEGORY_LABEL, formatDate } from "@/lib/format";
 import type { Evidence, EvidenceCategory } from "@/lib/types";
+import { TONE_BADGE, bandOf, type Band } from "@/lib/uiConfig";
+import { useUiConfig } from "@/components/providers/SessionProvider";
 
 /** 원본 문서 뷰어 주소 — 파일명 · 제목으로 문서를 찾고, 인용문 위치를 하이라이트한다 (F.12) */
 export function docViewerHref(item: Evidence): string {
@@ -19,13 +21,12 @@ export function docViewerHref(item: Evidence): string {
 
 const ORDER: EvidenceCategory[] = ["bank_data", "internal_direction", "external_policy"];
 
-/** 검색 적합도는 값이 없을 수 있다(undefined · null) — 그때는 라벨을 그리지 않는다 */
-function relevanceTag(r?: number | null): { label: string; tone: "info" | "neutral" } | null {
-  if (typeof r !== "number") return null;
-  if (r >= 0.8) return { label: "해설과 관련도 높음", tone: "info" };
-  if (r >= 0.6) return { label: "해설과 관련도 보통", tone: "neutral" };
-  return { label: "해설과 관련도 낮음", tone: "neutral" };
+/** 검색 적합도는 값이 없을 수 있다(undefined · null) — 그때는 라벨을 그리지 않는다. 구간 · 이름은 [화면 설정 › 판정 구간 › 근거 관련도] */
+function relevanceTag(r: number | null | undefined, bands: Band[] | undefined): { label: string; tone: ReturnType<typeof toneOf> } | null {
+  const b = bandOf(r, bands);
+  return b ? { label: b.label, tone: toneOf(b.tone) } : null;
 }
+const toneOf = (t: Band["tone"]) => TONE_BADGE[t];
 
 /**
  * 근거 원문 서랍 본문 (가이드 7157): 경로 → 검증할 해설 → 범주별 근거(선택됨 표시) → 참고한 내용.
@@ -114,7 +115,7 @@ export function EvidenceBody({
 }
 
 function EvidenceDetail({ item }: { item: Evidence }) {
-  const rel = relevanceTag(item.relevance);
+  const rel = relevanceTag(item.relevance, useUiConfig().bands.evidenceRelevance);
   const openable = item.doc && item.doc.dbClass !== "external_web";
   return (
     <section className="rounded-xl bg-surface-soft p-5">

@@ -58,7 +58,7 @@ describe("사이드바 현재 위치 하나 (NAV-03)", () => {
   const items: NavItem[] = [
     { label: "데이터베이스", href: "/knowledge", match: ["/knowledge"] },
     { label: "자료 올리기", href: "/knowledge/upload", match: ["/knowledge/upload"] },
-    { label: "현황", href: "/risk", match: ["/risk"] },
+    { label: "현황", href: "/risk", match: ["/risk"], exact: true },
     { label: "분석 결과", href: "/risk/analysis", match: ["/risk/analysis"] },
     { label: "관리자 홈", href: "/admin", match: ["/admin"], exact: true },
     { label: "운영 개요", href: "/admin/monitor", match: ["/admin/monitor"], exact: true },

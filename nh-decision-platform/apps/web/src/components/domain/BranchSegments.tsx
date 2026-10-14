@@ -15,7 +15,10 @@ import type { BranchDashboard } from "@/lib/types";
  */
 export function BranchSegments({ dashboard, office }: { dashboard: BranchDashboard; office?: string | null }) {
   const { segments, loan } = dashboard;
-  const [selected, setSelected] = useState("loan");
+  // 처음 선택 = 상세가 준비된 첫 부문 (Phase K — 부문 코드를 코드에 두지 않는다)
+  const firstReady = segments.find((s) => s.status === "active") ?? segments[0];
+  const [picked, setSelected] = useState<string | null>(null);
+  const selected = picked ?? firstReady?.domainCode ?? "";
   const active = segments.find((s) => s.domainCode === selected);
   const ready = active?.status === "active";
   const worse = (loan.avgGradeGap.value ?? 0) > 0;
@@ -51,14 +54,14 @@ export function BranchSegments({ dashboard, office }: { dashboard: BranchDashboa
 
       {ready ? (
         <div>
-          <SectionHead title="여신 부문 현황" hint={`${dashboard.asOfLabel}`} right={<TextLink href={withOffice("/branch/analysis", office)}>상세 분석</TextLink>} />
+          <SectionHead title={`${active?.name ?? ""} 부문 현황`} hint={`${dashboard.asOfLabel}`} right={<TextLink href={withOffice("/branch/analysis", office)}>상세 분석</TextLink>} />
           <MetricStrip
             items={[
               { label: "여신 잔액(기업 + 소매)", figure: loan.total },
               { label: "기업여신 대출잔액", figure: loan.corp, caption: `차주 ${formatFigure(loan.corpCount)}` },
               { label: "소매여신 익스포저", figure: loan.retail, caption: `차주 ${formatFigure(loan.retailCount)}` },
               {
-                label: "기업여신 평균 신용등급(1~16)",
+                label: "기업여신 평균 신용등급",
                 figure: loan.avgGrade,
                 caption: `전행 ${formatFigure(loan.bankAvgGrade)} · 값이 클수록 위험`,
                 tone: worse ? "attention" : "default",
@@ -74,10 +77,12 @@ export function BranchSegments({ dashboard, office }: { dashboard: BranchDashboa
               {active.headline.label} <FigureText figure={active.headline} />
             </p>
           ) : null}
-          <p className="max-w-[520px] text-[13px] leading-relaxed text-steel">이번 시나리오 범위는 여신 부문입니다. 다른 부문은 영업점 데이터셋과 지표만 등록하면 같은 구조로 동작합니다.</p>
-          <button type="button" onClick={() => setSelected("loan")} className="mt-2 rounded-pill bg-ink-button px-5 py-2.5 text-[13px] font-bold text-white">
-            여신 부문 보기
-          </button>
+          <p className="max-w-[520px] text-[13px] leading-relaxed text-steel">이 부문의 영업점 데이터셋과 지표를 등록하면 같은 구조로 동작합니다.</p>
+          {firstReady && firstReady.domainCode !== selected ? (
+            <button type="button" onClick={() => setSelected(firstReady.domainCode)} className="mt-2 rounded-pill bg-ink-button px-5 py-2.5 text-[13px] font-bold text-white">
+              {firstReady.name} 부문 보기
+            </button>
+          ) : null}
         </div>
       )}
     </section>

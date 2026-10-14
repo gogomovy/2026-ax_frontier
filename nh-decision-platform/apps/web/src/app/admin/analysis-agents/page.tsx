@@ -84,7 +84,7 @@ export default function AdminAnalysisAgents() {
   return (
     <AdminPage
       title="분석 에이전트"
-      description="부서 사용자가 [분석 만들기]로 요청한 분석입니다. 정제된 명세(데이터 · 계산식 · 보고서 구성 · 에이전트 지시)와 미리보기를 확인해 승인하면 지표 · 워크플로 · 그 분석 전용 에이전트가 만들어지고 부서 분석 화면에 탭으로 나타납니다."
+      description="부서 사용자가 [분석 에이전트 만들기]로 요청한 분석입니다. 정제된 명세(데이터 · 계산식 · 보고서 구성 · 에이전트 지시)와 미리보기를 확인해 승인하면 지표 · 워크플로 · 그 분석 전용 에이전트가 만들어지고 부서 분석 화면에 탭으로 나타납니다."
       summary={
         <StatGrid columns={4} label="분석 에이전트 요약">
           <StatCard label="승인 대기" value={c.pendingVersions ?? 0} unit="건" tone={c.pendingVersions ? "attention" : "success"} hint={c.pendingVersions ? "검토가 필요합니다" : "대기 중인 요청 없음"} />
@@ -109,7 +109,7 @@ export default function AdminAnalysisAgents() {
       <div className="grid grid-cols-1 gap-lg xl:grid-cols-[380px_1fr]">
         <Card title={`분석 ${list.data?.items.length ?? 0}개`}>
           <Loading error={list.error} loading={!list.data && list.loading} />
-          {list.data && !list.data.items.length ? <EmptyState compact title="해당하는 분석이 없습니다" description="부서가 [분석 만들기]로 요청하면 여기와 관리자 홈의 처리할 일에 나타납니다." /> : null}
+          {list.data && !list.data.items.length ? <EmptyState compact title="해당하는 분석이 없습니다" description="부서가 [분석 에이전트 만들기]로 요청하면 여기와 관리자 홈의 처리할 일에 나타납니다." /> : null}
           <ul className="flex flex-col">
             {(list.data?.items ?? []).map((a) => (
               <li key={a.code}>

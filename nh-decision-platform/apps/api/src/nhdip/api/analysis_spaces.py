@@ -1,6 +1,6 @@
 """부서 분석 공간 화면 API (Phase C · DAG-07 · Q101) — 분석 목록 · 보고서를 레지스트리에서.
 
-- `GET /screens/analysis/spaces` — 볼 수 있는 분석 공간(이름 · 경로 · 탭 수 · 분석 만들기 가능 여부)
+- `GET /screens/analysis/spaces` — 볼 수 있는 분석 공간(이름 · 경로 · 탭 수 · 분석 에이전트 만들기 가능 여부)
 - `GET /screens/analysis/{space}/tabs?office=` — 기존 탭 + 분석 에이전트 탭 (공간 탭 리소스)
 - `GET /screens/analysis/{space}/reports/{tab}?office=` — 보고서 (공간 보고서 리소스). 범위 공간(영업점)은 지점 산출물
 기존 경로(`/screens/analysis-tabs` · `/screens/reports/*` · `/screens/branch/*`)는 그대로 둔다.

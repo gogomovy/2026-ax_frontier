@@ -48,7 +48,7 @@ export function BigFigure({
       onClick={() => openDrawer({ kind: "calc", title: figure.label, figure })}
       aria-label={`${figure.label} ${body}${unit} — 계산 추적 보기`}
       className={clsx(
-        "tnum cursor-pointer text-left font-bold decoration-icon decoration-dotted underline-offset-[6px] hover:underline",
+        "tnum cursor-pointer text-left font-bold decoration-icon decoration-dotted underline-offset-[6px] hover:underline motion-safe:animate-fade-up",
         SIZE[size],
         missing ? "text-steel" : TONE[tone],
         className,

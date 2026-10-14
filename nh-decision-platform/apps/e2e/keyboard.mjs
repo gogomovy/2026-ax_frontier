@@ -32,6 +32,7 @@ const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] 
 const errors = [];
 try {
   const page = await (await browser.createBrowserContext()).newPage();
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]); // 등장 애니메이션 중간 상태를 검사하지 않게 (Phase K)
   await page.setViewport({ width: 1440, height: 900 });
   page.on("pageerror", (e) => errors.push(`${page.url()} ${e.message}`));
   /** 키 입력 — "Shift+Tab" · "Alt+KeyQ" 처럼 수식키 조합도 받는다 */

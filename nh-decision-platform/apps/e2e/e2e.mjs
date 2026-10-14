@@ -37,6 +37,8 @@ const errors = [];
 async function newPage(ctx) {
   const page = await ctx.newPage();
   await page.setViewport({ width: 1440, height: 900 });
+  // 등장 애니메이션(Phase K · ANI-01)은 최종 값만 본다 — 접근성 대비 계산이 움직이는 중간 상태를 읽지 않게 동작 줄이기로
+  await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
   page.on("pageerror", (e) => errors.push(`${page.url()} ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && errors.push(`${page.url()} console: ${m.text()}`));
   return page;
@@ -309,9 +311,14 @@ try {
   // 8-2b) 경영목표 정합성 검증 (6.4.7) — 상한 초과 직접 수정 → 경고 · 사유 입력 요구 (확정하지 않고 취소)
   await api("/state/goals/reset", { method: "POST", body: "{}" });
   await a.goto(`${BASE}/hq/goals`, { waitUntil: "networkidle0" });
-  await a.evaluate(() => [...document.querySelectorAll("button.row-button")].find((x) => x.innerText.includes("목표 수정 제안") && x.innerText.includes("기업여신"))?.click());
-  await a.waitForFunction(() => [...document.querySelectorAll("button")].some((x) => x.innerText.trim() === "직접 수정"), { timeout: 15000 }).catch(() => undefined);
-  await a.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.innerText.trim() === "직접 수정")?.click());
+  // 리디자인(목업 기준) — 목표 행의 [제안 검토] → 팝업 [값 직접 수정] → 값 입력 → [조정안에 담기] 에서 서버 정합성 검증
+  await a.evaluate(() => {
+    const btns = [...document.querySelectorAll("button")].filter((x) => x.innerText.trim() === "제안 검토");
+    const row = (b) => { let n = b; for (let i = 0; i < 6 && n; i++) { if ((n.innerText ?? "").includes("기업여신")) return true; n = n.parentElement; } return false; };
+    (btns.find(row) ?? btns[0])?.click();
+  });
+  await a.waitForFunction(() => [...document.querySelectorAll("button")].some((x) => x.innerText.trim() === "값 직접 수정"), { timeout: 15000 }).catch(() => undefined);
+  await a.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.innerText.trim() === "값 직접 수정")?.click());
   await a.waitForSelector('input[aria-label="직접 입력 목표값"]', { timeout: 10000 }).catch(() => undefined);
   await a.evaluate(() => {
     const el = document.querySelector('input[aria-label="직접 입력 목표값"]');
@@ -319,7 +326,11 @@ try {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, "9.0");
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await a.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.innerText.trim() === "반영")?.click());
+  await a.evaluate(() => {
+    const el = document.querySelector('input[aria-label="직접 입력 목표값"]');
+    const scope = el?.closest("label")?.parentElement ?? document;
+    [...scope.querySelectorAll("button")].find((x) => x.innerText.trim() === "조정안에 담기")?.click();
+  });
   const consistency = await a.waitForSelector("[data-consistency]", { timeout: 15000 }).then(() => a.evaluate(() => document.querySelector("[data-consistency]").innerText)).catch(() => "");
   ok("경영목표 정합성 검증: 상한 초과 경고 · 사유 입력", consistency.includes("상한") && consistency.includes("사유"), consistency.slice(0, 80).replace(/\n/g, " | "));
   await shot(a, "08b-goal-consistency");
@@ -441,8 +452,9 @@ try {
     const bx = await text(a);
     ok("다지점: 지점 바꾸기 → 같은 화면 구조 · 그 지점 산출물", a.url().endsWith(`/branch?office=${X}`) && h1.includes(NAME) && h0.includes("수원영통지점") && bx.includes("업적평가 득점 현황") && bx.includes("사업부문"), `${a.url()} · ${h0} → ${h1}`);
     const next = `/branch/analysis?office=${X}`;
-    await a.waitForFunction((n) => document.querySelector(`aside a[href="${n}"]`), { timeout: 10000 }, next).catch(() => undefined);
-    const links = await a.evaluate(() => [...document.querySelectorAll("a")].map((x) => ({ href: x.getAttribute("href") ?? "", side: !!x.closest("aside") })).filter((x) => x.href.startsWith("/branch")));
+    // 리디자인 — 단계 메뉴는 상단 헤더(업무 단계 · 영역 전환 지점 메뉴)에 있다
+    await a.waitForFunction((n) => document.querySelector(`header a[href="${n}"]`), { timeout: 10000 }, next).catch(() => undefined);
+    const links = await a.evaluate(() => [...document.querySelectorAll("a")].map((x) => ({ href: x.getAttribute("href") ?? "", side: !!x.closest("header") })).filter((x) => x.href.startsWith("/branch")));
     const step = links.filter((x) => !x.side && x.href.startsWith("/branch/analysis")).map((x) => x.href);
     const side = links.filter((x) => x.side).map((x) => x.href);
     const keep = (hs) => hs.every((h) => h.endsWith(`?office=${X}`));
@@ -564,7 +576,58 @@ try {
     const firstGroup = await a.evaluate(() => document.querySelector('aside nav[aria-label="관리자 메뉴"]')?.innerText.trim().split("\n")[0] ?? "");
     ok("관리자 사이드바: 관리 묶음만 · 관리자 홈이 먼저", firstGroup.startsWith("관리자 홈") && !(await a.evaluate(() => document.querySelector('aside nav[aria-label="관리자 메뉴"]')?.innerText ?? "")).includes("경영목표 설정"), firstGroup);
     await a.goto(`${BASE}/hq/overview`, { waitUntil: "networkidle0" });
-    ok("관리자 헤더: [관리] 메뉴 + 세 영역 전환(종기부 · 사업부서 · 영업점)", await a.evaluate(() => !!document.querySelector('header a[href="/admin"]') && ["종기부", "사업부서", "영업점"].every((n) => [...document.querySelectorAll('header nav[aria-label="업무 영역 전환"] a')].some((x) => x.innerText.includes(n)))));
+    ok("관리자 헤더: [관리] 메뉴 + 세 영역 전환(종기부 · 사업부서 · 영업점)", await a.evaluate(() => !!document.querySelector('header a[href="/admin"]') && ["종기부", "사업부서", "영업점"].every((n) => [...document.querySelectorAll('header nav[aria-label="업무 영역 전환"] a, header nav[aria-label="업무 영역 전환"] button')].some((x) => x.innerText.includes(n)))));
+    // Phase K (SCP-02) — 사업부서가 둘 이상이면 영역 칸에서 부서를 고른다. 화면이 없는 부서는 '준비 중'
+    {
+      const cfg = mm?.config ?? {};
+      const deptUnits = cfg.scopes?.dept?.units ?? [];
+      await a.click('header [data-scope-menu="dept"]').catch(() => undefined);
+      await sleep(300);
+      const menuText = await a.evaluate(() => document.querySelector('header [data-scope-menu="dept"]')?.parentElement?.innerText ?? "");
+      ok("영역 전환: 사업부서 메뉴(부서 목록 · 준비 중)", deptUnits.length >= 2 && deptUnits.every((u) => menuText.includes(u.name)) && (deptUnits.every((u) => u.available) || menuText.includes("준비 중")), menuText.replace(/\n/g, " | "));
+      await a.keyboard.press("Escape").catch(() => undefined);
+      ok("화면 설정: 판정 구간 · 목표 역할 · 예시 질문이 메뉴 설정으로", Array.isArray(cfg.bands?.limitUsage) && cfg.bands.limitUsage.at(-1)?.max === null && typeof cfg.goalRoles?.corpGrowth === "string" && (cfg.examples?.assist ?? []).length > 0, JSON.stringify(cfg.thresholds ?? {}));
+    }
+    // Phase K (DOT-01) — 레드닷은 열면 사라지고 다시 와도 없다(새것이 생길 때만)
+    {
+      await a.goto(`${BASE}/hq/analysis`, { waitUntil: "networkidle0" });
+      const dotted = await a.evaluate(() => [...document.querySelectorAll('[role="tablist"] [role="tab"]')].findIndex((t) => t.getAttribute("aria-selected") !== "true" && t.querySelector("span.rounded-circle")));
+      if (dotted >= 0) {
+        await a.evaluate((i) => document.querySelectorAll('[role="tablist"] [role="tab"]')[i].click(), dotted);
+        await sleep(400);
+        await a.evaluate(() => document.querySelectorAll('[role="tablist"] [role="tab"]')[0].click());
+        await a.reload({ waitUntil: "networkidle0" });
+        const still = await a.evaluate((i) => !!document.querySelectorAll('[role="tablist"] [role="tab"]')[i]?.querySelector("span.rounded-circle"), dotted);
+        ok("레드닷: 탭을 열면 사라지고 다시 와도 없다", !still);
+      } else {
+        ok("레드닷: 확인하지 않은 탭이 없으면 점도 없다", true);
+      }
+      const builder = await a.evaluate(() => document.querySelector("[data-builder-link]")?.innerText ?? "");
+      ok("이름: '분석 에이전트 만들기'", builder.includes("분석 에이전트 만들기"), builder);
+      // Phase K (ANI-01) — 차트 · 막대 · 수치에 등장 애니메이션(동작 줄이기 설정이면 꺼짐 · 이 시험은 동작 줄이기로 돈다)
+      const anim = await a.evaluate(() => document.querySelectorAll('[class*="motion-safe:animate-"]').length);
+      const reduced = await a.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches && getComputedStyle(document.querySelector('[class*="motion-safe:animate-"]') ?? document.body).animationName === "none");
+      ok("등장 애니메이션: 데이터 요소에 적용 · 동작 줄이기에서는 꺼짐", anim > 0 && reduced, `${anim}개`);
+    }
+    // Phase K (Q148) — 관리자 [화면 설정] 저장 → 메뉴 설정에 바로 반영, 형식이 틀리면 422
+    {
+      await a.goto(`${BASE}/admin/ui`, { waitUntil: "networkidle0" });
+      const ut = await text(a);
+      ok("관리자 [화면 설정]: 판정 구간 · 기준값 · 목표 역할 · 업무 영역 탭", ["판정 구간", "기준값", "목표 역할", "업무 영역", "예시 질문", "알림"].every((x) => ut.includes(x)), ut.slice(0, 160).replace(/\n/g, " | "));
+      const t0 = (await api("/admin/ui-config")).body?.values?.["ui.thresholds"] ?? {};
+      const bad = await api("/admin/settings/ui.thresholds", { method: "PUT", body: JSON.stringify({ value: { ...t0, shareReferencePct: 500 } }) });
+      const put = await api("/admin/settings/ui.thresholds", { method: "PUT", body: JSON.stringify({ value: { ...t0, shareReferencePct: 40 } }) });
+      const after = (await api("/me/menu")).body?.config?.thresholds?.shareReferencePct;
+      await api("/admin/settings/ui.thresholds", { method: "PUT", body: JSON.stringify({ value: t0 }) });
+      ok("화면 설정: 형식 검사(422) · 저장 즉시 반영", bad.status === 422 && put.status === 200 && after === 40, `${bad.status} ${put.status} ${after}`);
+    }
+    // Phase K (ES-01 · ES-03) — AI 어시스턴트 색인: Elasticsearch 연결 카드(인증 실패면 원인 · 조치 안내)
+    {
+      await a.goto(`${BASE}/admin/knowledge`, { waitUntil: "networkidle0" });
+      const sb = (await api("/admin/knowledge/status")).body?.searchBackend ?? {};
+      const card = await a.evaluate(() => document.querySelector("[data-es-connection]")?.innerText ?? "");
+      ok("AI 어시스턴트 색인: Elasticsearch 연결 카드", sb.setting === "pg" || (card.includes("Elasticsearch 연결") && card.includes("지금 쓰는 값")), card.slice(0, 160).replace(/\n/g, " | "));
+    }
     await a.goto(`${BASE}/admin`, { waitUntil: "networkidle0" });
     // 역할 변경 = 확인 대화상자, 취소하면 그대로 (INT-01 · Q123)
     await a.goto(`${BASE}/admin/users`, { waitUntil: "networkidle0" });
@@ -672,24 +735,24 @@ try {
     await api(`/admin/users/${EMP}`, { method: "PATCH", body: JSON.stringify({ data_steward: false }) });
   }
 
-  // 9-3) 분석 만들기 → 관리자 승인 → 부서 분석 탭 (Phase C · DAG-01~07)
+  // 9-3) 분석 에이전트 만들기 → 관리자 승인 → 부서 분석 탭 (Phase C · DAG-01~07)
   {
     await u.goto(`${BASE}/hq/analysis`, { waitUntil: "networkidle0" });
-    ok("데이터 분석(종합기획부): 탭 줄에 '분석 만들기'", (await u.$("[data-custom-tabs] [data-builder-link]")) !== null);
+    ok("데이터 분석(종합기획부): 탭 줄에 '분석 에이전트 만들기'", (await u.$("[data-custom-tabs] [data-builder-link]")) !== null);
     await u.goto(`${BASE}/analysis/builder?space=hq`, { waitUntil: "networkidle0" });
     await u.type("[data-builder-text]", "7790 상품별 충당금 자료로 상품명별 충당금 합계와 충당금이 많은 상위 상품을 보고 싶습니다.");
     await u.click("[data-builder-refine]");
     await u.waitForSelector("[data-builder-spec]", { timeout: 60000 });
     const specText = await u.evaluate(() => document.querySelector("[data-builder-spec]")?.innerText ?? "");
-    ok("분석 만들기: 정제 → 명세(지표 · 표 · 의견)", specText.includes("지표") && specText.includes("SUM") && specText.includes("검증 통과"), specText.slice(0, 200).replace(/\n/g, " | "));
+    ok("분석 에이전트 만들기: 정제 → 명세(지표 · 표 · 의견)", specText.includes("지표") && specText.includes("SUM") && specText.includes("검증 통과"), specText.slice(0, 200).replace(/\n/g, " | "));
     await u.click("[data-builder-preview]");
     await u.waitForSelector("[data-builder-report]", { timeout: 60000 });
     const pv = await u.evaluate(() => document.querySelector("[data-builder-report]")?.innerText ?? "");
-    ok("분석 만들기: 미리보기(계산 · 표 · 기본 의견)", pv.includes("저장되지 않았습니다") && (await u.$$("[data-builder-report] [data-report-metrics] li")).length >= 1, pv.slice(0, 160).replace(/\n/g, " | "));
+    ok("분석 에이전트 만들기: 미리보기(계산 · 표 · 기본 의견)", pv.includes("저장되지 않았습니다") && (await u.$$("[data-builder-report] [data-report-metrics] li")).length >= 1, pv.slice(0, 160).replace(/\n/g, " | "));
     await shot(u, "09-analysis-builder");
     await u.click("[data-builder-request]");
     await u.waitForFunction(() => document.body.innerText.includes("승인 요청을 보냈습니다"), { timeout: 30000 });
-    ok("분석 만들기: 승인 요청", (await text(u)).includes("승인 요청을 보냈습니다"));
+    ok("분석 에이전트 만들기: 승인 요청", (await text(u)).includes("승인 요청을 보냈습니다"));
     const pend = (await api("/admin/analysis-agents?status=pending")).body?.items ?? [];
     const agent = pend.find((x) => x.space === "hq");
     await a.goto(`${BASE}/admin/analysis-agents`, { waitUntil: "networkidle0" });

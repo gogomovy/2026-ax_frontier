@@ -68,9 +68,9 @@ export function ComparisonTable({
                   type="button"
                   onClick={() => setDir((d) => (d === "none" ? "desc" : d === "desc" ? "asc" : "none"))}
                   className="inline-flex items-center gap-1 font-bold hover:text-ink-deep"
-                  aria-label="증감률로 정렬"
                 >
                   증감률
+                  <span className="sr-only"> 정렬</span>
                   <IconSort className={dir === "none" ? "text-icon" : "text-primary"} />
                 </button>
               ) : (

@@ -12,6 +12,7 @@
   python -m nhdip.cli kb-hnsw --dim N              질문하기 분석 결과 색인에 부분 HNSW 인덱스 생성 + 검색 설정(knowledge.search.hnsw_dim) 반영 (임베딩 모델 확정 후)
   python -m nhdip.cli kb-calibrate [--apply]       현재 임베딩 모델의 코사인 거리 임계값 추천(엉뚱한 질문 vs 제목 질문 분포), --apply 면 확신할 때만 반영
   python -m nhdip.cli kb-es [--sync|--rebuild|--check]  검색 엔진(Elasticsearch — 3-way 구성 설계 §24) 분석 결과 · 문서 색인 상태 · 동기화 · 처음부터 다시 올리기 · 점검(문제 있으면 종료 코드 1). 인자 없으면 상태
+  python -m nhdip.cli es-password [--timeout 60]   내장 Elasticsearch 계정 비밀번호를 ES_PASSWORD 로 맞춤 (make es-password — 임시 관리 계정 환경변수 필요)
 """
 from __future__ import annotations
 
@@ -21,6 +22,62 @@ import json
 import sys
 
 from nhdip.db import SessionLocal
+
+
+def _es_password(timeout: int) -> int:
+    """ES 볼륨에 저장된 계정(ES_USER, 기본 elastic) 비밀번호를 환경변수 ES_PASSWORD 로 바꾼다 (Phase K · ES-02 · Q154).
+
+    ES 는 ELASTIC_PASSWORD 를 볼륨을 처음 만들 때만 쓴다 — 그 뒤 .env 를 다시 만들면 api 는 401 을 받는다.
+    임시 관리 계정(file realm, 환경변수 ES_RESET_USER · ES_RESET_PASSWORD — infra/scripts/es-sync-password.sh 가 만들고 지움)으로
+    `_security/user/<계정>/_password` 를 호출한다. 비밀번호는 인자로 받지 않는다(프로세스 목록 노출 방지).
+    """
+    import os
+    import time
+
+    from nhdip.config import get_settings
+    from nhdip.knowledge.elastic import make_client, safe_url
+
+    st = get_settings()
+    url, user, new = st.es_url.strip(), (st.es_user or "elastic").strip(), st.es_password
+    if not url or not new:
+        print("ES_URL · ES_PASSWORD 가 필요합니다(.env — make env)", file=sys.stderr)
+        return 2
+    with make_client(url, user, new, read_timeout=10.0) as c:
+        try:
+            if c.get("/_security/_authenticate").status_code == 200:
+                print(json.dumps({"ok": True, "changed": False, "message": f"{user} 비밀번호가 이미 ES_PASSWORD 와 같습니다", "url": safe_url(url)}, ensure_ascii=False))
+                return 0
+        except Exception as exc:  # noqa: BLE001
+            print(f"Elasticsearch 에 연결할 수 없습니다 — {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 2
+    via_user, via_pw = os.environ.get("ES_RESET_USER", ""), os.environ.get("ES_RESET_PASSWORD", "")
+    if not via_user or not via_pw:
+        print("임시 관리 계정(ES_RESET_USER · ES_RESET_PASSWORD)이 없습니다 — make es-password 로 실행하세요", file=sys.stderr)
+        return 2
+    deadline = time.monotonic() + max(5, timeout)
+    last = ""
+    with make_client(url, via_user, via_pw, read_timeout=15.0) as c:
+        while time.monotonic() < deadline:
+            try:
+                r = c.post(f"/_security/user/{user}/_password", json={"password": new})
+            except Exception as exc:  # noqa: BLE001
+                last = f"{type(exc).__name__}: {exc}"
+                time.sleep(2)
+                continue
+            if r.status_code == 200:
+                break
+            last = f"HTTP {r.status_code}: {r.text[:200]}"
+            if r.status_code != 401:  # 401 = 임시 계정이 아직 반영 전(file realm 은 몇 초마다 다시 읽음)
+                print(f"비밀번호 변경 실패 — {last}", file=sys.stderr)
+                return 1
+            time.sleep(2)
+        else:
+            print(f"시간 안에 바꾸지 못했습니다 — {last}", file=sys.stderr)
+            return 1
+    with make_client(url, user, new, read_timeout=10.0) as c:
+        ok = c.get("/_security/_authenticate").status_code == 200
+    print(json.dumps({"ok": ok, "changed": True, "message": f"{user} 비밀번호를 ES_PASSWORD 로 맞췄습니다" if ok else "변경 후 확인 실패", "url": safe_url(url)}, ensure_ascii=False))
+    return 0 if ok else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,7 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     g_es.add_argument("--sync", action="store_true", help="PostgreSQL ↔ ES 목록을 대조해 다른 것만 올리고 사라진 것은 지움(분석 결과 · 문서 색인, 제한 없이 한 번에)")
     g_es.add_argument("--rebuild", action="store_true", help="두 색인을 지우고 처음부터 다시 올림(임베딩 차원 · 분석기가 바뀐 뒤)")
     g_es.add_argument("--check", action="store_true", help="3-way 검색 점검 — ES 연결 · 두 색인 동기화 · nori 를 확인해 문제가 있으면 종료 코드 1 (CI · 기동 직후)")
+    ap_ep = sub.add_parser("es-password", help="내장 Elasticsearch 의 계정 비밀번호를 환경변수 ES_PASSWORD 로 맞춤 (make es-password 가 호출)")
+    ap_ep.add_argument("--timeout", type=int, default=60, help="임시 계정이 ES 에 반영될 때까지 기다리는 초")
     args = ap.parse_args(argv)
+
+    if args.cmd == "es-password":
+        return _es_password(args.timeout)
 
     if args.cmd == "kb-es":
         from nhdip.knowledge import elastic

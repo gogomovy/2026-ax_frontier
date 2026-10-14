@@ -2,28 +2,21 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AssistPanel } from "@/components/assist/AssistPanel";
 import { IconDb, IconGear } from "@/components/ui/icons";
 import { IconClose } from "@/components/ui/primitives";
 import { apiPost } from "@/lib/api-client";
-import { navHrefWithOffice, officeFromSearch } from "@/lib/branchOffice";
 import { formatDate, formatKstDateTime } from "@/lib/format";
 import { activeHref } from "@/lib/nav";
 import { AdminNav } from "./AdminNav";
 import { Brand, TopBar } from "./TopBar";
 import { ScopeList } from "./ScopeSwitcher";
-import { useNavModel, type NavModel } from "./nav-model";
+import { officeHrefOf, useNavModel, type NavModel } from "./nav-model";
 
 /** 셸 없이 그리는 화면 (로그인 · 가입 · 권한 없음) */
 const BARE_PATHS = ["/login", "/signup", "/forbidden"];
 
-function subscribeLocation(onChange: () => void) {
-  window.addEventListener("popstate", onChange);
-  return () => window.removeEventListener("popstate", onChange);
-}
-const readSearch = () => window.location.search;
-const emptySearch = () => "";
 
 /**
  * 앱 셸
@@ -169,9 +162,8 @@ function MobileMenu({ onClose, children }: { onClose: () => void; children: Reac
 
 /** 모바일 메뉴 본문 — 업무 영역 · 단계 · 참고 · 관리 · 사용자 */
 function DrawerBody({ model }: { model: NavModel }) {
-  const search = useSyncExternalStore(subscribeLocation, readSearch, emptySearch);
   const scope = model.current;
-  const office = model.pathname.startsWith("/branch") ? officeFromSearch(search) : null;
+  const hrefOf = officeHrefOf(model);
   const reference = [...(scope?.reference ?? []), ...model.sharedReference].filter((i) => i.href !== "/knowledge");
   const items = [...(scope?.flow ?? []), ...reference];
   const active = activeHref(items, model.pathname);
@@ -189,7 +181,7 @@ function DrawerBody({ model }: { model: NavModel }) {
 
   return (
     <div className="flex flex-1 flex-col gap-5 px-5 py-5">
-      {model.scopes.length > 1 ? (
+      {model.scopes.length > 1 || (model.scopes[0]?.units.length ?? 0) > 1 ? (
         <section>
           <h2 className="mb-2 text-[12px] font-bold text-steel">업무 영역</h2>
           <ScopeList scopes={model.scopes} currentId={scope?.id ?? null} />
@@ -206,7 +198,7 @@ function DrawerBody({ model }: { model: NavModel }) {
               return (
                 <li key={item.href}>
                   <Link
-                    href={navHrefWithOffice(item.href, office)}
+                    href={hrefOf(item)}
                     aria-current={on ? "page" : undefined}
                     className={clsx("flex items-center gap-3 rounded-md px-1 py-2.5 text-[14px]", on ? "font-bold text-primary" : "font-medium text-ink")}
                   >
@@ -230,7 +222,7 @@ function DrawerBody({ model }: { model: NavModel }) {
             {reference.map((item) => (
               <li key={item.href}>
                 <Link
-                  href={navHrefWithOffice(item.href, office)}
+                  href={hrefOf(item)}
                   aria-current={item.href === active ? "page" : undefined}
                   className={clsx("block rounded-md px-1 py-2.5 text-[14px]", item.href === active ? "font-bold text-primary" : "font-medium text-ink")}
                 >

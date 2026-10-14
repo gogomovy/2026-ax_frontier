@@ -6,16 +6,8 @@ import { PlanRowMain } from "@/components/domain/GuideWorkspace";
 import { PlanSheet } from "@/components/domain/PlanSheet";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { usePlanState } from "@/components/providers/PlanStateProvider";
+import { useSession, useUiConfig } from "@/components/providers/SessionProvider";
 import { IconChevron, PillTabs, RowEmpty, RowList, SectionHead } from "@/components/ui/primitives";
-
-/** 사업부서 목록 — 1차 범위는 신용리스크관리부, 나머지는 편입 대기 */
-const DEPARTMENTS = [
-  { key: "신용리스크관리부", active: true },
-  { key: "여신관리부", active: false },
-  { key: "수신부", active: false },
-] as const;
-
-type Dept = (typeof DEPARTMENTS)[number]["key"];
 
 /**
  * 사업부서별 진행 사업 현황 (요구사항 PROP-06)
@@ -23,12 +15,20 @@ type Dept = (typeof DEPARTMENTS)[number]["key"];
  */
 export function InitiativesWorkspace() {
   const { inProgressPlans } = usePlanState();
-  const [dept, setDept] = useState<Dept>("신용리스크관리부");
+  const { menu } = useSession();
+  const cfg = useUiConfig();
+  // 사업부서 목록 = [화면 설정 › 업무 영역]의 사업부서 단위 — 화면이 있는 부서는 편입, 없는 부서는 편입 대기 (Phase K · HC-02 · SCP-02)
+  const departments = (cfg.scopes.dept?.units ?? []).map((u) => ({ key: u.name, section: u.section, active: u.available }));
+  const [picked, setDept] = useState<string | null>(null);
+  const dept = picked ?? departments.find((d) => d.active)?.key ?? departments[0]?.key ?? "";
   const [openId, setOpenId] = useState<string | null>(null);
 
   const countOf = (org: string) => inProgressPlans.filter((p) => p.ownerOrg === org).length;
   const plans = inProgressPlans.filter((p) => p.ownerOrg === dept);
-  const active = DEPARTMENTS.find((d) => d.key === dept)?.active;
+  const current = departments.find((d) => d.key === dept);
+  const active = current?.active;
+  // 수행방안 화면 — 그 부서 메뉴 묶음에서 건수 키가 수행방안(proposedPlans)인 화면(볼 권한이 있을 때만)
+  const guideHref = menu?.sections.find((s) => s.section === current?.section)?.flow.find((i) => i.countKey === "proposedPlans")?.href ?? null;
   const viewing = openId ? inProgressPlans.find((p) => p.id === openId) : undefined;
 
   return (
@@ -40,7 +40,7 @@ export function InitiativesWorkspace() {
       >
         <PillTabs
           label="사업부서"
-          items={DEPARTMENTS.map((d) => ({ key: d.key, label: d.key, count: d.active ? countOf(d.key) : undefined }))}
+          items={departments.map((d) => ({ key: d.key, label: d.key, count: d.active ? countOf(d.key) : undefined }))}
           value={dept}
           onChange={(k) => {
             setDept(k);
@@ -69,9 +69,11 @@ export function InitiativesWorkspace() {
             title="등록된 진행사업이 없습니다"
             description="사업부서가 수행방안 화면에서 제안안을 진행사업으로 등록하면 이곳에 모입니다."
             action={
-              <Link href="/risk/guides" className="inline-flex items-center gap-1 text-[12.5px] font-bold text-primary">
-                사업부서 수행방안 화면 <IconChevron />
-              </Link>
+              guideHref ? (
+                <Link href={guideHref} className="inline-flex items-center gap-1 text-[12.5px] font-bold text-primary">
+                  사업부서 수행방안 화면 <IconChevron />
+                </Link>
+              ) : undefined
             }
           />
         ) : (

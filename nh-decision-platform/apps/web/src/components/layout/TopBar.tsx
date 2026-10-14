@@ -2,28 +2,22 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { useSyncExternalStore } from "react";
 import { IconChevronLeft, IconDb, IconGear } from "@/components/ui/icons";
 import { IconMenu } from "@/components/ui/primitives";
-import { navHrefWithOffice, officeFromSearch } from "@/lib/branchOffice";
 import { activeHref, type NavItem } from "@/lib/nav";
 import { ICON_BUTTON, NotificationBell, ReferenceMenu, UserMenu } from "./HeaderMenus";
 import { OrgChip, ScopeSwitcher } from "./ScopeSwitcher";
-import type { NavModel } from "./nav-model";
+import { officeHrefOf, type NavModel } from "./nav-model";
 
-/** 영업점 화면에서 고른 지점(?office=)을 단계 이동에도 유지 — 서버 렌더 · 하이드레이션은 인자 없이 그린 뒤 주소에서 읽는다 */
-function subscribeLocation(onChange: () => void) {
-  window.addEventListener("popstate", onChange);
-  return () => window.removeEventListener("popstate", onChange);
-}
-const readSearch = () => window.location.search;
-const emptySearch = () => "";
 
 export function Brand({ href = "/", compact }: { href?: string; compact?: boolean }) {
   return (
-    <Link href={href} className="flex shrink-0 items-center gap-2.5" aria-label="AI 경영 의사결정 플랫폼 홈">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-deep text-[12px] font-bold text-white">NH</span>
+    // 링크 이름 = 보이는 글자 + ' 홈'(보이는 글자가 이름에 그대로 들어가야 한다 — WCAG 2.5.3). 좁은 화면에서는 글자 대신 화면 낭독용 글자
+    <Link href={href} className="flex shrink-0 items-center gap-2.5">
+      <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-deep text-[12px] font-bold text-white">NH</span>
       <span className={clsx("whitespace-nowrap text-[15px] font-bold text-ink-deep", compact ? "hidden sm:block" : "hidden xl:block")}>AI 경영 의사결정 플랫폼</span>
+      <span className={clsx("sr-only", compact ? "sm:hidden" : "xl:hidden")}>AI 경영 의사결정 플랫폼</span>
+      <span className="sr-only"> 홈</span>
     </Link>
   );
 }
@@ -60,9 +54,8 @@ export function StepLink({ item, href, active, count }: { item: NavItem; href: s
 
 /** 단계 · 참고 · 관리 — 현재 업무 영역의 흐름 */
 export function PrimaryNav({ model, className }: { model: NavModel; className?: string }) {
-  const search = useSyncExternalStore(subscribeLocation, readSearch, emptySearch);
+  const hrefOf = officeHrefOf(model);
   const scope = model.current;
-  const office = model.pathname.startsWith("/branch") ? officeFromSearch(search) : null;
   const flow = scope?.flow ?? [];
   const reference = [...(scope?.reference ?? []), ...model.sharedReference].filter((i) => i.href !== "/knowledge");
   const refActive = activeHref([...flow, ...reference], model.pathname);
@@ -73,12 +66,12 @@ export function PrimaryNav({ model, className }: { model: NavModel; className?: 
         <StepLink
           key={item.href}
           item={item}
-          href={navHrefWithOffice(item.href, office)}
+          href={hrefOf(item)}
           active={item.href === refActive}
           count={item.countKey ? model.counts[item.countKey] : undefined}
         />
       ))}
-      <ReferenceMenu items={reference} activeHref={refActive} hrefOf={(i) => navHrefWithOffice(i.href, office)} />
+      <ReferenceMenu items={reference} activeHref={refActive} hrefOf={hrefOf} />
       {model.adminAvailable ? (
         <>
           <span aria-hidden="true" className="h-5 w-px bg-hairline-soft" />
@@ -116,11 +109,10 @@ export function AdminLink({ active }: { active: boolean }) {
  * 좁은 화면(<lg)에서는 메뉴 단추 + 단계 줄로 줄어든다.
  */
 export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adminShell: boolean; onOpenMenu: () => void }) {
-  const search = useSyncExternalStore(subscribeLocation, readSearch, emptySearch);
+  const hrefOf = officeHrefOf(model);
   const scope = model.current;
   const home = adminShell ? "/admin" : (scope?.home ?? "/");
   const multi = model.scopes.length > 1;
-  const office = model.pathname.startsWith("/branch") ? officeFromSearch(search) : null;
   const flow = scope?.flow ?? [];
   const flowActive = activeHref(flow, model.pathname);
   const knowledgeOn = model.pathname.startsWith("/knowledge");
@@ -174,7 +166,7 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
               <StepLink
                 key={item.href}
                 item={item}
-                href={navHrefWithOffice(item.href, office)}
+                href={hrefOf(item)}
                 active={item.href === flowActive}
                 count={item.countKey ? model.counts[item.countKey] : undefined}
               />

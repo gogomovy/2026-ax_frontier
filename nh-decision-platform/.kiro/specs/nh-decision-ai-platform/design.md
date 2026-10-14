@@ -3272,3 +3272,59 @@ Windows 압축본 Elasticsearch 9.5.4 + analysis-nori(단일 노드 · 보안 �
 - API: `GET/POST /admin/datasets/{code}/versions/{vid}/delete-preview|delete`, `GET/POST /admin/documents/{origin}/{did}/delete-preview|delete`(`all_versions`), `GET /admin/purge-tasks`, `POST /admin/purge-tasks/run`.
 ### 26.4 시험
 - 권한(관리자 · 데이터 관리자 아님 → 403), 사유 누락 422, 두 번 삭제 409, 현재 버전 삭제 → 직전 버전 현재 · 화면 값 되돌아감 · 버전 번호 재사용 없음, 문서 삭제 → 청크 · 이슈 0 · 기본 목록 제외 · purge_task 생성, Elasticsearch 가짜 전송으로 `_bulk delete` 확인, Neo4j 대체 함수로 Cypher 확인 · 재업로드 시 건너뜀, 파일 정리(공유 파일은 남김).
+## 27. 화면 하드코딩 제거 · 업무 영역 · 레드닷 · 애니메이션 · ES 인증 (Phase K · 요구사항 §27 · Q148~Q155)
+
+### 27.1 화면 설정 (`nhdip.ui_config`)
+| 키 | 모양 | 쓰는 곳 |
+|---|---|---|
+| `ui.bands` | `{limitUsage, rwaUsage, branchAchievement, evidenceRelevance: [{max, label, tone}]}` — tone = neutral · positive · attention · critical | 은행 종합목표 카드 · 신용RWA 막대 · 총자산 · 수익성 기준 · 본부 전파 목표 · 근거 관련도 |
+| `ui.thresholds` | `{planPaceTolerancePp, headroomAlert, shareReferencePct, proposalReasonMin}` | 계획 수준 판정 · 한도 여유 경고 · 구성비 기준선 · 의견 사유 |
+| `ui.goal_roles` | `{bankRevenue, corpGrowth, hhLimit, hhControl}` → 목표 id | 종합 현황 · 데이터 분석 |
+| `ui.scopes` | `{hq|dept|branch: {label, units: [{org, section}]}}` | 영역 전환 · 사업부서 진행 사업 · 담당 조직 |
+| `ui.examples` | `{assist: [질문]}` | AI 어시스턴트 첫 화면 |
+| `ui.notices` | `[{countKey, label, href, scope}]` | 알림 종 |
+| `ui.issue_order` | `[판정]` (앞일수록 먼저) | 주요 이슈 정렬 |
+| `ui.labels` | `{subDomain: {코드: 이름}, subDomainHref: {코드: 주소}}` | 주목 사항 하위 영역 이름 · [상세 분석] 주소 |
+- 규칙 판 표기는 서버가 채운다 — `rank_attentions` 가 `rankRule = '<규칙> v<적용 판>'`. 제안 강제 반영 사유 최소 글자 수는 서버(`/state/goals/apply`)도 같은 `ui.thresholds.proposalReasonMin` 으로 검사.
+- `validate(key, value)` — 키별 형식 검사(구간 오름차순 · 마지막 `null` · tone 목록 · 목표 id 존재 · 조직 코드 존재 · 주소 `/` 시작). `PUT /admin/settings/{key}` 가 `ui.*` 에 적용(422).
+- `client_config(session, user)` → `/me/menu.config`: 위 값 + `ownerOrgs`(조직 마스터 DEPT · 활성) + `departments`(dept 단위: 코드 · 이름 · 홈 · 화면 있음) + `offices`(볼 수 있는 지점 · 기본). 값이 없거나 형식이 깨졌으면 기본값.
+- 기본값은 지금 화면에 있던 값(한도 85/100 · 허용 5%p · 여유 1 · 기준선 50 · 사유 5자 · 관련도 0.6/0.8 · 달성 90%). 시드는 없는 키만 넣는다.
+- 관리자 [화면 설정](`ADMIN_UI` · `/admin/ui`, 묶음 '계산과 규칙'): 구간 표 편집(행 추가 · 삭제 · 경계 · 이름 · 색), 기준값 숫자, 목표 역할(목표 선택), 업무 영역 표(종류 · 이름 · 단위 = 조직 + 메뉴 묶음), 예시 질문 · 알림 목록 편집. 저장 = `PUT /admin/settings/{key}`(감사 · `config.changed`).
+
+### 27.2 화면 쪽
+- `useUiConfig()`(SessionProvider) — 메뉴의 `config`. `bandOf(value, bands)` · `toneClass(tone)` 공통 함수.
+- 목표: `goalByRole(goals, config, role)`. 화면 코드에 목표 id 없음.
+- 기간 · 문장: `periodOf(asOf)` · 계열 라벨 · `periodLabel` · `asOfLabel` · 서버 서술. `baseYear` 를 모르면 `NO_VALUE`. `nim_share_2025` → 비중 계열의 직전 시점 값.
+- `dataOrigin` 기본값 = `"none"`(알 수 없음 표시), 파생 수치는 입력 수치의 성격을 물려받는다.
+- 오프라인(서버 없음) 분기 제거 — 실패는 오류 안내.
+
+### 27.3 업무 영역
+```
+/me/menu.sections[] + {scope, orgCode, orgName}   ← ui.scopes 단위(section 이름) 매칭
+nav-model: 종류별 Scope { id=kind, label, units[], unit(현재), flow/reference = 현재 단위 }
+  dept 단위 = 메뉴 묶음(화면 있음) + 설정 단위 중 화면 없음(준비 중)
+  branch 단위 = config.offices (주소 ?office=) — 현재 = 주소 · 기본 지점
+ScopeSwitcher: 단위가 둘 이상인 칸은 ▾ 메뉴(현재 표시 · 준비 중 비활성). 모바일 목록도 같은 단위
+```
+- 현재 영역 판정: 주소가 그 영역 단위의 화면과 맞는지(`kindOfPath` 삭제). 공통 화면은 마지막 영역 유지.
+- 영업점 화면 3개 모두 지점 선택 표시(지점 둘 이상), 링크는 `?office=` 를 잇는다(기존 `withOffice`).
+
+### 27.4 레드닷 (`lib/seen.ts`)
+- `useSeen(key, signature)` → `{fresh, markSeen}`. 저장소 `localStorage["nhdip.seen.<사번>"] = {key: signature}`(최대 500개 · 오래된 것부터 정리), `useSyncExternalStore` 로 탭 간 동기화.
+- 서명: 부문 = 그 부문 이슈 id 정렬 + 기준일, 분석 탭 = 탭 키 + 심각도 + 기준일, 동적 탭 = 탭 키 + 생성 시각, 메뉴 정보성 건수 = 건수 + 기준일.
+- 열기 = 탭 클릭 · 화면 진입(그 주소). 점은 `fresh && 심각도` 일 때만.
+
+### 27.5 애니메이션
+- `tailwind.config.ts` keyframes: `grow-x` · `grow-y`(scale 0→1, origin 시작점), `draw`(stroke-dashoffset 100→0, `pathLength=100`), `fade-up`, `fade`. 지속 600~900ms · `ease-out` · 순서 지연(`--i`).
+- 적용: `Bars` · `ShareBars` · RWA · 진행 막대(grow-x/y), `TrendChart` 선(draw) · 면적 · 점(fade), `SemiGauge`(draw), `BigFigure` · `MetricStrip` · 카드(fade-up). 모두 `motion-safe:` + 전역 `prefers-reduced-motion` 규칙.
+
+### 27.6 Elasticsearch 인증
+- `request()` 401 · 403 → `EsAuthError(EsError)` + 차단기(`mark_down`), 메시지 = '인증 실패 — ES 계정(ES_USER) · 비밀번호가 Elasticsearch 에 저장된 값과 다릅니다'. `status()` → `errorKind: "auth" | "down" | "rejected"`, `remedy: [...]`.
+- 연결 값 = `cfg.secret['es.connection']`(마이그레이션 0016 · `{url, user, password_enc}`, `encrypt_secret`) 우선, 없으면 환경변수. `client()` 는 30초마다 서명을 다시 읽어 바뀌면 다시 만든다(api · worker 각각).
+- API: `GET /admin/knowledge/es-connection`(가린 값 · 출처 env/db), `POST …/es-connection/test`(저장 없이 시험), `PUT …/es-connection`(시험 통과 후 저장 · 감사(값 가림)), `DELETE …`(환경변수로 되돌림), `POST /admin/knowledge/es-reconnect`(차단기 · 클라이언트 초기화).
+- `make es-password` → `infra/scripts/es-sync-password.sh`: `.env` 의 ES_PASSWORD 확인 → ES 컨테이너에 임시 file realm superuser 추가 → api 컨테이너에서 `python -m nhdip.cli es-password --via <임시계정>`(`PUT _security/user/elastic/_password`, 최대 60초 재시도) → 임시 계정 삭제 → `up -d api worker` → `kb-es --check`.
+
+### 27.7 시험
+- pytest: 설정 검사(구간 · 목표 · 조직 · 주소 오류 422), `/me/menu.config` 기본값 · 변경 반영 · 단위 매칭, ES 401 → `EsAuthError` · 상태 `errorKind=auth` · 차단기, 연결 설정 저장 · 가림 · 환경변수 복귀, 이름 바꾸기 업그레이드.
+- vitest: `bandOf` · `goalByRole` · 영역 묶기(부서 둘 · 지점 둘) · `useSeen` 저장 · 서명 변경, 하드코딩 감시(`hardcode.test.ts` — 연도 · 반기 · 분기 문구, `goal-` id, 판정 숫자 패턴).
+- E2E: 영역 전환 부서 · 지점 메뉴, 레드닷 클릭 후 사라짐, '분석 에이전트 만들기', 관리자 [화면 설정] 저장 → 화면 반영.

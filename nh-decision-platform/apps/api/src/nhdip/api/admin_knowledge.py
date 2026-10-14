@@ -127,6 +127,112 @@ def _search_backend(session: Session, setting: str, graph_ok: bool = False) -> d
     return out
 
 
+# ── Elasticsearch 연결 설정 (Phase K · ES-01~03 · Q154) ─────────────────────
+class EsConnIn(BaseModel):
+    url: str = Field(min_length=1, max_length=300)
+    user: str = Field(default="", max_length=80)
+    # 비우면 지금 저장된(또는 환경변수) 비밀번호를 그대로 쓴다 — 화면에는 가린 값만 보여 주므로
+    password: str | None = Field(default=None, max_length=200)
+    force: bool = False  # 시험이 실패해도 저장(ES 를 나중에 띄울 때)
+
+
+def _es_url(url: str) -> str:
+    from .admin_core import _check_base_url
+
+    try:
+        return _check_base_url(url) or ""
+    except HTTPException as exc:
+        raise HTTPException(exc.status_code, str(exc.detail).replace("LLM", "Elasticsearch")) from exc
+
+
+def _mask_pw(p: str) -> str:
+    """비밀번호는 앞뒤 글자도 보이지 않게 — 저장 여부만."""
+    return "••••••••" if p else ""
+
+
+def _es_conn_view(session: Session) -> dict[str, Any]:
+    from nhdip.config import get_settings
+    from nhdip.models import Secret
+    from nhdip.security import decrypt_secret
+
+    st = get_settings()
+    row = session.get(Secret, elastic.SECRET_KEY)
+    meta = row.meta if row is not None and isinstance(row.meta, dict) else {}
+    return {
+        "source": "db" if row is not None and meta.get("url") else "env",
+        "saved": {"url": elastic.safe_url(str(meta.get("url") or "")), "user": str(meta.get("user") or ""), "password": _mask_pw(decrypt_secret(row.secret_enc)) if row is not None else "", "updatedBy": row.updated_by if row else None, "updatedAt": row.updated_at.isoformat() if row and row.updated_at else None} if row is not None else None,
+        "env": {"url": elastic.safe_url(st.es_url), "user": st.es_user, "passwordSet": bool(st.es_password)},
+    }
+
+
+def _es_password_for(session: Session, body: EsConnIn) -> str:
+    """입력 비밀번호가 없으면 저장값 → 환경변수 순으로."""
+    if body.password:
+        return body.password
+    from nhdip.config import get_settings
+    from nhdip.models import Secret
+    from nhdip.security import decrypt_secret
+
+    row = session.get(Secret, elastic.SECRET_KEY)
+    return decrypt_secret(row.secret_enc) if row is not None and row.secret_enc else get_settings().es_password
+
+
+@router.get("/es-connection")
+def es_connection(session: Session = Depends(get_session)):
+    """지금 쓰는 Elasticsearch 연결 — 출처(db = 관리자 입력 · env = 환경변수) · 주소 · 계정 · 가린 비밀번호."""
+    return _es_conn_view(session)
+
+
+@router.post("/es-connection/test")
+def es_connection_test(body: EsConnIn, session: Session = Depends(get_session)):
+    """저장하지 않고 연결 시험 — 인증 실패 · 연결 불가 · 거절을 나눠 알려 준다."""
+    return elastic.probe(_es_url(body.url), body.user.strip(), _es_password_for(session, body))
+
+
+@router.put("/es-connection")
+def es_connection_save(body: EsConnIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """연결 값 저장 — 시험을 통과해야 저장(force 면 실패해도). 비밀번호는 암호화, 감사 기록에는 가린 값만."""
+    from nhdip.models import Secret
+    from nhdip.security import encrypt_secret
+
+    url = _es_url(body.url)
+    password = _es_password_for(session, body)
+    result = elastic.probe(url, body.user.strip(), password)
+    if not result["ok"] and not body.force:
+        raise HTTPException(422, f"연결 시험 실패 — {result['message']}")
+    row = session.get(Secret, elastic.SECRET_KEY)
+    meta = {"url": url, "user": body.user.strip()}
+    if row is None:
+        session.add(Secret(key=elastic.SECRET_KEY, meta=meta, secret_enc=encrypt_secret(password), updated_by=admin.emp_no))
+    else:
+        row.meta, row.secret_enc, row.updated_by = meta, encrypt_secret(password), admin.emp_no
+    audit(session, admin.emp_no, "admin.es_connection.save", "secret", elastic.SECRET_KEY, {"url": elastic.safe_url(url), "user": meta["user"], "password": _mask_pw(password), "test": result.get("errorKind") or "ok", "forced": bool(body.force and not result["ok"])}, client_ip(request))
+    session.commit()
+    elastic.invalidate_override()
+    return {**_es_conn_view(session), "test": result}
+
+
+@router.delete("/es-connection")
+def es_connection_clear(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """관리자 입력 값을 지우고 환경변수(ES_URL · ES_USER · ES_PASSWORD)로 되돌린다."""
+    from nhdip.models import Secret
+
+    row = session.get(Secret, elastic.SECRET_KEY)
+    if row is not None:
+        session.delete(row)
+        audit(session, admin.emp_no, "admin.es_connection.clear", "secret", elastic.SECRET_KEY, None, client_ip(request))
+        session.commit()
+    elastic.invalidate_override()
+    return _es_conn_view(session)
+
+
+@router.post("/es-reconnect")
+def es_reconnect(session: Session = Depends(get_session)):
+    """차단기 · 클라이언트를 비우고 바로 다시 연결해 본다(비밀번호를 맞춘 뒤 30초를 기다리지 않게). 워커는 다음 주기에."""
+    elastic.invalidate_override()
+    return elastic.status(session) if elastic.configured() else {"configured": False, "up": False}
+
+
 def _clean_orgs(session: Session, codes: list[str], field: str) -> list[str]:
     out = list(dict.fromkeys(c.strip() for c in codes if c and c.strip()))
     bad = [c for c in out if session.get(OrgUnit, c) is None]

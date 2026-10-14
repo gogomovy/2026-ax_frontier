@@ -34,6 +34,7 @@ export function SemiGauge({
             strokeLinecap="round"
             pathLength={100}
             strokeDasharray={`${clamped} 100`}
+            className="motion-safe:animate-draw"
           />
         ) : null}
       </svg>

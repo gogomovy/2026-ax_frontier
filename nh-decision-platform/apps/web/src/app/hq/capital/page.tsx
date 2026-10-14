@@ -2,13 +2,17 @@ import { Chart } from "@/components/charts/Chart";
 import { FigureText } from "@/components/data/FigureText";
 import { EvidenceChips } from "@/components/evidence/EvidenceChips";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Badge, DataTable, IconWarn, ProgressBar, SectionHead, Td } from "@/components/ui/primitives";
+import { BandProgress } from "@/components/ui/BandProgress";
+import { Badge, DataTable, IconWarn, SectionHead, Td } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
 import { getCapitalView, getProfitability } from "@/lib/data";
+import { pointCount } from "@/lib/loanView";
 
 /** 총자산·RWA 제약 + 수익성 트래킹 (요구사항 AST-01 ~ AST-06) */
 export default async function CapitalPage() {
   const [capital, profitability] = await Promise.all([getCapitalView(), getProfitability()]);
+  // 비교 연수는 계열에서 센다 (Phase K · HC-04 — 기간 문구를 코드에 두지 않는다)
+  const years = Math.max(0, ...profitability.map((row) => pointCount(row.trend)));
 
   return (
     <>
@@ -83,17 +87,8 @@ export default async function CapitalPage() {
                         <FigureText figure={row.used} /> / <FigureText figure={row.allocated} />
                       </span>
                     </div>
-                    <ProgressBar
-                      value={row.usageRate.value ?? 0}
-                      tone={
-                        (row.usageRate.value ?? 0) > 90
-                          ? "critical"
-                          : (row.usageRate.value ?? 0) > 75
-                            ? "attention"
-                            : "primary"
-                      }
-                      label={`소진율 ${row.usageRate.value}%`}
-                    />
+                    {/* 소진율 색 = [화면 설정 › 판정 구간 › 신용RWA 소진율] — 종합 현황 카드와 같은 구간 (Phase K · Q149) */}
+                    <BandProgress value={row.usageRate.value ?? 0} band="rwaUsage" label={`소진율 ${row.usageRate.value ?? "–"}%`} />
                   </div>
                 ))}
               </div>
@@ -137,7 +132,7 @@ export default async function CapitalPage() {
         <section>
           <SectionHead
             title="자산군별 수익성 트래킹"
-            hint="3개년 · 규모 대비 수익률 기준 순위 · 제약 범위 내에서 목표 방향에 반영"
+            hint={`${years ? `${years}개년 · ` : ""}규모 대비 수익률 기준 순위 · 제약 범위 내에서 목표 방향에 반영`}
           />
           <DataTable
             columns={[
@@ -172,7 +167,7 @@ export default async function CapitalPage() {
           <div className="mt-lg">
             <Chart
               kind="line"
-              title="자산군별 규모 대비 수익률 추이 (3개년)"
+              title={`자산군별 규모 대비 수익률 추이${years ? ` (${years}개년)` : ""}`}
               unit="PCT"
               decimals={3}
               series={profitability.slice(0, 4).map((row) => ({ name: row.assetClass, points: row.trend }))}

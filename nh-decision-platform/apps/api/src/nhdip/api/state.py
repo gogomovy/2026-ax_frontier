@@ -13,6 +13,7 @@ from nhdip.db import get_session
 from nhdip.events import audit, emit
 from nhdip.models import AppUser, AuditLog, Rule, RuleVersion, Setting
 from nhdip.views.goal_check import check_goal
+from nhdip.ui_config import hq_org_name, value_of
 from nhdip.views.store import get_current
 
 from . import state_service as S
@@ -184,8 +185,10 @@ def apply_proposal(body: ApplyIn, request: Request, session: Session = Depends(g
     if not chk["passed"]:
         if not body.force:
             raise HTTPException(409, {"message": "정합성 경고가 있습니다 — 사유를 입력하고 확정하세요", "issues": chk["issues"]})
-        if len((body.reason or "").strip()) < 5:
-            raise HTTPException(422, {"message": "강제 확정 사유를 5자 이상 입력하세요", "issues": chk["issues"]})
+        # 최소 글자 수 = [화면 설정 › 기준값 › 제안 사유 최소 글자 수] — 화면 버튼과 같은 값 (Phase K · HC-01)
+        min_len = int(value_of(session, "ui.thresholds").get("proposalReasonMin") or 1)
+        if len((body.reason or "").strip()) < min_len:
+            raise HTTPException(422, {"message": f"강제 확정 사유를 {min_len}자 이상 입력하세요", "issues": chk["issues"]})
     override = {
         "status": "active",
         "targetValue": resolved,
@@ -217,12 +220,21 @@ def keep_goal(body: ProposalIn, request: Request, session: Session = Depends(get
     return S.goal_state(session)
 
 
+def _annual_label(session: Session) -> str | None:
+    """'<기준 연도> 연간' — 기준일을 모르면 None(화면은 '–')."""
+    from nhdip.data.datasets import display_as_of
+
+    a = display_as_of(session)
+    return f"{str(a)[:4]} 연간" if a else None
+
+
 @router.post("/goals/add-new")
 def add_new_goal(body: AddNewIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
     p = _proposal(session, body.proposalId)
     gid = f"goal-new-{p['id']}"
     if not S.get_ns(session, S.NS_GOAL_ADDED).get(gid):
-        S.put(session, S.NS_GOAL_ADDED, gid, {"id": gid, "title": p["title"].replace("신규 경영목표 제안 — ", ""), "targetLabel": body.targetLabel, "creationMode": "ai_proposed", "status": "active", "sourceProposalId": p["id"], "periodLabel": "2026 연간", "ownerOrg": "종합기획부", "addedAt": S.today()}, user.emp_no)
+        # 기간 · 담당 조직은 제안 · 기준일 · 업무 영역 설정에서 (Phase K · HC-04 — 연도 · 부서 이름을 코드에 두지 않는다)
+        S.put(session, S.NS_GOAL_ADDED, gid, {"id": gid, "title": p["title"].replace("신규 경영목표 제안 — ", ""), "targetLabel": body.targetLabel, "creationMode": "ai_proposed", "status": "active", "sourceProposalId": p["id"], "periodLabel": p.get("periodLabel") or _annual_label(session), "ownerOrg": p.get("ownerOrg") or hq_org_name(session), "addedAt": S.today()}, user.emp_no)
     S.put(session, S.NS_PROPOSAL_ACTION, p["id"], {"action": "added"}, user.emp_no)
     emit(session, "goal.confirmed", {"goal": gid, "proposal": p["id"], "mode": "added"}, user.emp_no)
     audit(session, user.emp_no, "goal.add_new", "goal", gid, {"proposal": p["id"], "target": body.targetLabel}, client_ip(request))
@@ -233,7 +245,7 @@ def add_new_goal(body: AddNewIn, request: Request, session: Session = Depends(ge
 @router.post("/goals/manual")
 def add_manual_goal(body: ManualGoalIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
     gid = f"goal-manual-{secrets.token_hex(4)}"
-    S.put(session, S.NS_GOAL_ADDED, gid, {"id": gid, "title": body.title, "targetLabel": body.targetLabel, "creationMode": "user_manual", "status": "active", "periodLabel": body.periodLabel, "metricLabel": body.metricLabel, "ownerOrg": (body.ownerOrg if user.role == "admin" and body.ownerOrg else None) or _user_dept(session, user) or "종합기획부", "addedAt": S.today()}, user.emp_no)
+    S.put(session, S.NS_GOAL_ADDED, gid, {"id": gid, "title": body.title, "targetLabel": body.targetLabel, "creationMode": "user_manual", "status": "active", "periodLabel": body.periodLabel, "metricLabel": body.metricLabel, "ownerOrg": (body.ownerOrg if user.role == "admin" and body.ownerOrg else None) or _user_dept(session, user) or hq_org_name(session), "addedAt": S.today()}, user.emp_no)
     emit(session, "goal.confirmed", {"goal": gid, "mode": "manual"}, user.emp_no)
     audit(session, user.emp_no, "goal.add_manual", "goal", gid, body.model_dump(), client_ip(request))
     session.commit()

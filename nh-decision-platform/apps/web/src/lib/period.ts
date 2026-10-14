@@ -47,16 +47,25 @@ export function todayKst(): string {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 }
 
-/** 기준 연도 — 기준일 연도, 없으면 올해(KST) */
-export function baseYear(asOf?: string | null): number {
+/** 기준 연도 — 기준일 연도. 모르면 null(올해로 대신하지 않는다 · Phase K · HC-04) */
+export function baseYear(asOf?: string | null): number | null {
   const p = periodOf(asOf);
-  return p.year !== NO_VALUE ? Number(p.year) : Number(todayKst().slice(0, 4));
+  return p.year !== NO_VALUE ? Number(p.year) : null;
 }
 
-/** 경영목표 적용기간 선택지 — 기준 연도 연간 · 4분기 · 다음 해 상반기 · 연간 */
+/**
+ * 경영목표 적용기간 선택지 — 기준일에서 남은 기간을 만든다: 기준 연도 연간 · 남은 반기 · 남은 분기 · 다음 해 상반기 · 연간.
+ * 기준일을 모르면 빈 목록(고를 수 없음).
+ */
 export function goalPeriodOptions(asOf?: string | null): string[] {
-  const y = baseYear(asOf);
-  return [`${y} 연간`, `${y}.4Q`, `${y + 1} 상반기`, `${y + 1} 연간`];
+  const p = periodOf(asOf);
+  if (p.year === NO_VALUE) return [];
+  const y = Number(p.year);
+  const month = Number(p.month.replace("월", ""));
+  const quarter = Math.ceil(month / 3);
+  const halves = month <= 6 ? [`${y} 상반기`, `${y} 하반기`] : [`${y} 하반기`];
+  const quarters = Array.from({ length: 4 - quarter + 1 }, (_, i) => `${y}.${quarter + i}Q`);
+  return [`${y} 연간`, ...halves, ...quarters, `${y + 1} 상반기`, `${y + 1} 연간`];
 }
 
 /* ── 추세 문구 ─────────────────────────────────────────── */

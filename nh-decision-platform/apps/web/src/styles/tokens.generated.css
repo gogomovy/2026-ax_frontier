@@ -26,8 +26,8 @@
   --color-ink: #1e1f2e;
   --color-charcoal: #3d3f52;
   --color-slate: #4b4d60;
-  --color-steel: #6b6e82;          /* neutral/600 · 보조 글자 · 단위(글자 최소 색) */
-  --color-stone: #6b6e82;          /* 글자에는 neutral/400 을 쓰지 않으므로 neutral/600 */
+  --color-steel: #64677b;          /* neutral/600 · 보조 글자 · 단위(글자 최소 색) — neutral/100 바탕에서도 4.5:1 이상(Phase K 접근성 · 가이드 #6b6e82 는 4.38:1) */
+  --color-stone: #64677b;          /* 글자에는 neutral/400 을 쓰지 않으므로 neutral/600 (steel 과 같은 값) */
   --color-disabled-text: #a3a5b6;  /* neutral/400 */
   --color-icon: #a3a5b6;           /* neutral/400 · 아이콘 · 비활성 선 */
 
@@ -41,8 +41,8 @@
   --color-primary-text: #3b3fb8;     /* primary/700 */
   --color-success-text: #4a4d60;
   --color-critical-text: #c4363b;    /* danger/700 */
-  --color-attention-text: #b8621f;   /* warning/700 */
-  --color-warning-text: #b8621f;
+  --color-attention-text: #a8561a;   /* warning/700 보정 — 주의 옅은 바탕(#fdf3ea)에서 4.5:1 이상(가이드 #b8621f 는 3.99:1) */
+  --color-warning-text: #a8561a;
 
   /* 옅은 배경 · 선 — faint < soft, line = 테두리 */
   --color-info-faint: #f6f6fe;       /* primary/50 · AI 제안 줄 · 선택 배경 */

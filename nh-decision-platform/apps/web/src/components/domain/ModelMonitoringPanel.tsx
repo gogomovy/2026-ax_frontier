@@ -5,6 +5,7 @@ import { FigureText } from "@/components/data/FigureText";
 import { RichText } from "@/components/data/RichText";
 import { TermText } from "@/components/data/TermText";
 import { Badge, PillTabs, SEVERITY_TONE, SectionHead } from "@/components/ui/primitives";
+import { formatDate } from "@/lib/format";
 import type { Figure, ModelSummaryRow } from "@/lib/types";
 import { ScrollRegion } from "@/components/ui/ScrollRegion";
 /** 판정 근거 문구의 [[fig:ID]] 마커 → 같은 행의 계산 수치 */
@@ -18,7 +19,7 @@ function rowFigures(row: ModelSummaryRow): Record<string, Figure> {
  * 모형 모니터링 지표 (요구사항 CRM-01/02, MDL-02/03/10)
  * 1화면 하단 참고 정보 — 모형군을 탭으로 나눠 한 번에 하나의 표만 보여준다.
  */
-export function ModelMonitoringPanel({ corp, retail }: { corp: ModelSummaryRow[]; retail: ModelSummaryRow[] }) {
+export function ModelMonitoringPanel({ corp, retail, asOf }: { corp: ModelSummaryRow[]; retail: ModelSummaryRow[]; asOf?: string | null }) {
   const [tab, setTab] = useState<"corp" | "retail">("corp");
   const rows = tab === "corp" ? corp : retail;
   const showPsi = tab === "corp";
@@ -27,7 +28,7 @@ export function ModelMonitoringPanel({ corp, retail }: { corp: ModelSummaryRow[]
     <section>
       <SectionHead
         title="모형 모니터링 지표"
-        hint={tab === "corp" ? "일반기업 규모별 모형 · 안정성·변별력·등급계량화" : "소매여신모형 · '25년 3분기 보고서 지표 체계"}
+        hint={`${tab === "corp" ? "일반기업 규모별 모형 · 안정성·변별력·등급계량화" : "소매여신모형 · 변별력·등급계량화"}${asOf ? ` · 기준 ${formatDate(asOf)}` : ""}`}
         right={
           <PillTabs
             size="sm"

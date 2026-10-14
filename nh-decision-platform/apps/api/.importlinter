@@ -22,6 +22,7 @@ source_modules =
     nhdip.analysis_registry
     nhdip.analysis_agents
     nhdip.knowledge
+    nhdip.ui_config
 forbidden_modules =
     nhdip.api
     nhdip.main

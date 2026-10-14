@@ -76,20 +76,17 @@ interface Notice {
   href: string;
 }
 
-function buildNotices(model: NavModel): Notice[] {
-  const has = (kind: string) => model.scopes.some((s) => s.kind === kind);
-  const c = model.counts;
-  const out: Notice[] = [];
-  if (has("hq") && c.goalProposals > 0) out.push({ key: "goals", label: "경영목표 AI 제안 검토", count: c.goalProposals, href: "/hq/goals" });
-  if (has("dept") && c.proposedPlans > 0) out.push({ key: "plans", label: "수행방안 제안 확인", count: c.proposedPlans, href: "/risk/guides" });
-  if (model.adminAvailable) {
-    const specific = c.adminUsers + c.adminUploads + c.adminAnalyses;
-    if (c.adminUsers > 0) out.push({ key: "users", label: "가입 승인 대기", count: c.adminUsers, href: "/admin/users" });
-    if (c.adminUploads > 0) out.push({ key: "uploads", label: "자료 승인 대기", count: c.adminUploads, href: "/admin/uploads" });
-    if (c.adminAnalyses > 0) out.push({ key: "analyses", label: "분석 에이전트 승인 대기", count: c.adminAnalyses, href: "/admin/analysis-agents" });
-    if (specific === 0 && c.adminTodo > 0) out.push({ key: "todo", label: "관리자 처리할 일", count: c.adminTodo, href: "/admin" });
-  }
-  return out;
+/**
+ * 알림 목록 — 항목 · 이름은 관리자 [화면 설정 › 알림], 주소는 같은 건수 키를 가진 메뉴 화면(권한이 있을 때만) (Phase K · HC-02).
+ * fallback 항목은 다른 알림이 하나도 없을 때만 보인다(예: 관리자 처리할 일 합계).
+ */
+export function buildNotices(model: Pick<NavModel, "counts" | "hrefByCount" | "config">): Notice[] {
+  const counts = model.counts as Record<string, number>;
+  const rows = model.config.notices
+    .map((n) => ({ key: n.countKey, label: n.label, count: counts[n.countKey] ?? 0, href: model.hrefByCount[n.countKey], fallback: Boolean(n.fallback) }))
+    .filter((n) => n.count > 0 && n.href);
+  const main = rows.filter((n) => !n.fallback);
+  return (main.length ? main : rows).map(({ key, label, count, href }) => ({ key, label, count, href: href as string }));
 }
 
 /** 알림 — 지금 처리해야 할 건수를 모아 보여 준다 */

@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "@/lib/api-client";
-import { baseYear, todayKst } from "@/lib/period";
 import type { Goal, GoalStatus, Proposal } from "@/lib/types";
 import { useSession } from "./SessionProvider";
 import { useUi } from "./UiProvider";
@@ -92,18 +91,19 @@ interface GoalStateValue extends GoalStateShape {
 const GoalStateContext = createContext<GoalStateValue | null>(null);
 const EMPTY: GoalStateShape = { overrides: {}, proposalActions: {}, addedGoals: [], reviewItems: [] };
 
-const today = todayKst;
-
 export function GoalStateProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GoalStateShape>(EMPTY);
   const [staged, setStaged] = useState<Record<string, StagedItem>>({});
   const [lastConfirmed, setLastConfirmed] = useState<ConfirmedBatch | null>(null);
   const session = useSession();
   const { showToast } = useUi();
+  // 목표 상태는 서버(/state/goals)에만 둔다 — 로그인 정보가 없으면(서버 없음) 바꾸지 않고 안내만 한다.
+  // 화면이 값 · 사유 · 기간을 지어내는 오프라인 분기는 두지 않는다 (Phase K · HC-05)
   const remote = Boolean(session.menu);
-  // 낙관적 목표의 기간 · 담당조직 — 기준일 연도 · 로그인 사용자 소속에서
-  const defaultPeriod = `${baseYear(session.menu?.asOf)} 연간`;
-  const userOrg = session.menu?.user.org.name ?? "";
+  const offline = useCallback(() => {
+    showToast("서버에 연결되어 있지 않아 처리하지 못했습니다 — 다시 로그인해 주세요");
+    return false;
+  }, [showToast]);
 
   useEffect(() => {
     if (!remote) return;
@@ -129,57 +129,18 @@ export function GoalStateProvider({ children }: { children: ReactNode }) {
   const applyCore = useCallback(
     async (proposal: Proposal, mode: "adopt" | "manual_edit", value?: number, reason?: string, force?: boolean): Promise<boolean> => {
       if (!proposal.targetGoalId) return false;
-      if (remote) return call("/state/goals/apply", { proposalId: proposal.id, mode, value, reason, force: Boolean(force) });
-      const rec = proposal.recommendation;
-      const resolved =
-        value ??
-        rec.value ??
-        (rec.high !== undefined && rec.low !== undefined ? Number(((rec.high + rec.low) / 2).toFixed(2)) : undefined);
-      setState((prev) => ({
-        ...prev,
-        overrides: {
-          ...prev.overrides,
-          [proposal.targetGoalId as string]: {
-            status: "active",
-            targetValue: resolved,
-            updatedAt: today(),
-            changeReason: reason ?? (mode === "adopt" ? `AI 제안 반영 — ${rec.text}` : "담당자 직접 수정"),
-            creationMode: mode === "adopt" ? "ai_proposed" : "user_manual",
-          },
-        },
-        proposalActions: { ...prev.proposalActions, [proposal.id]: mode },
-      }));
-      return true;
+      if (!remote) return offline();
+      return call("/state/goals/apply", { proposalId: proposal.id, mode, value, reason, force: Boolean(force) });
     },
-    [remote, call],
+    [remote, call, offline],
   );
 
   const addNewCore = useCallback(
     async (proposal: Proposal, targetLabel: string): Promise<boolean> => {
-      if (remote) return call("/state/goals/add-new", { proposalId: proposal.id, targetLabel });
-      setState((prev) => ({
-        ...prev,
-        addedGoals: prev.addedGoals.some((g) => g.sourceProposalId === proposal.id)
-          ? prev.addedGoals
-          : [
-              ...prev.addedGoals,
-              {
-                id: `goal-new-${proposal.id}`,
-                title: proposal.title.replace("신규 경영목표 제안 — ", ""),
-                targetLabel,
-                creationMode: "ai_proposed",
-                status: "active",
-                sourceProposalId: proposal.id,
-                periodLabel: defaultPeriod,
-                ownerOrg: userOrg,
-                addedAt: today(),
-              },
-            ],
-        proposalActions: { ...prev.proposalActions, [proposal.id]: "added" },
-      }));
-      return true;
+      if (!remote) return offline();
+      return call("/state/goals/add-new", { proposalId: proposal.id, targetLabel });
     },
-    [remote, call, defaultPeriod, userOrg],
+    [remote, call, offline],
   );
 
   const applyProposal = useCallback(
@@ -198,57 +159,35 @@ export function GoalStateProvider({ children }: { children: ReactNode }) {
 
   const keepGoal = useCallback(
     (proposal: Proposal) => {
-      if (remote) {
-        void call("/state/goals/keep", { proposalId: proposal.id });
+      if (!remote) {
+        offline();
         return;
       }
-      setState((prev) => ({
-        ...prev,
-        overrides: proposal.targetGoalId
-          ? { ...prev.overrides, [proposal.targetGoalId]: { status: "active", updatedAt: today(), changeReason: "기존 목표 유지 결정" } }
-          : prev.overrides,
-        proposalActions: { ...prev.proposalActions, [proposal.id]: "keep" },
-      }));
+      void call("/state/goals/keep", { proposalId: proposal.id });
     },
-    [remote, call],
+    [remote, call, offline],
   );
 
   const addManualGoal = useCallback(
     (input: ManualGoalInput) => {
-      if (remote) {
-        void call("/state/goals/manual", input);
+      if (!remote) {
+        offline();
         return;
       }
-      setState((prev) => ({
-        ...prev,
-        addedGoals: [
-          ...prev.addedGoals,
-          {
-            id: `goal-manual-${Date.now().toString(36)}`,
-            title: input.title,
-            targetLabel: input.targetLabel,
-            creationMode: "user_manual",
-            status: "active",
-            periodLabel: input.periodLabel,
-            metricLabel: input.metricLabel,
-            ownerOrg: input.ownerOrg ?? userOrg,
-            addedAt: today(),
-          },
-        ],
-      }));
+      void call("/state/goals/manual", input);
     },
-    [remote, call, userOrg],
+    [remote, call, offline],
   );
 
   const registerReviewItem = useCallback(
     (title: string) => {
-      if (remote) {
-        void call("/state/goals/review-items", { title });
+      if (!remote) {
+        offline();
         return;
       }
-      setState((prev) => ({ ...prev, reviewItems: prev.reviewItems.includes(title) ? prev.reviewItems : [...prev.reviewItems, title] }));
+      void call("/state/goals/review-items", { title });
     },
-    [remote, call],
+    [remote, call, offline],
   );
 
   const stageProposal = useCallback((item: Omit<StagedItem, "at">) => {

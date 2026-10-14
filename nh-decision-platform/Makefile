@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: upload-test help env build up down logs ps restart seed sample sample-verify reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set
+.PHONY: upload-test help env build up down logs ps restart seed sample sample-verify reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set es-password
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
@@ -26,6 +26,7 @@ help:
 	@echo "make backup      - DB(업무 · litellm) 덤프 + 업로드 파일 → backups/<시각>/"
 	@echo "make restore FROM=backups/<시각> CONFIRM=yes - 백업에서 복구 (현재 데이터 덮어씀)"
 	@echo "make wait-idle   - 이벤트 · 작업 처리가 끝날 때까지 대기"
+	@echo "make es-password - Elasticsearch 401(인증 실패) 해결 — ES 볼륨의 elastic 비밀번호를 .env 의 ES_PASSWORD 로 맞춤 (데이터 유지)"
 	@echo ""
 	@echo "── 프론트만 (도커 없이 · 백엔드 API 필요) ─────────────────"
 	@echo "make web-dev     - apps/web 개발 서버 (API_INTERNAL_URL 의 백엔드에 연결 · 기본 http://localhost:8000)"
@@ -111,3 +112,6 @@ set:
 	@bash infra/scripts/set-env.sh "$(k)" "$(v)"
 wait-idle:
 	$(COMPOSE) exec -T api python -m nhdip.cli wait-idle --timeout $${t:-300}
+# Elasticsearch 인증 실패(HTTP 401) — ES 는 ELASTIC_PASSWORD 를 볼륨을 처음 만들 때만 쓴다. .env 와 다르면 맞춘다 (Phase K · ES-02)
+es-password: env
+	@bash infra/scripts/es-sync-password.sh

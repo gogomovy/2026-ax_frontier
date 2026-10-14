@@ -136,8 +136,10 @@ export function BranchKpiBoard({ dashboard, office }: { dashboard: BranchDashboa
       {alerts.length > 0 ? (
         <section aria-label="업적평가 기준 변경과 AI 영업 가이드" className="overflow-hidden rounded-2xl border border-info-line bg-info-faint">
           <div className="flex flex-wrap items-baseline gap-x-md gap-y-1 px-lg pt-base">
-            <p className="text-[14px] font-bold text-ink-deep">하반기 업적평가 기준 변경 {alerts.length}건 · AI 영업 가이드</p>
-            <p className="text-[12px] text-steel">상반기 대비 신설 · 변경 항목을 분석했습니다 · 선택하면 분석 결과로 이동합니다</p>
+            <p className="text-[14px] font-bold text-ink-deep">
+              {dashboard.periodLabel ? `${dashboard.periodLabel} ` : ""}업적평가 기준 변경 {alerts.length}건 · AI 영업 가이드
+            </p>
+            <p className="text-[12px] text-steel">직전 평가 기간 대비 신설 · 변경 항목을 분석했습니다 · 선택하면 분석 결과로 이동합니다</p>
           </div>
           <ul className="mt-2 divide-y divide-info-line-soft border-t border-info-line-soft">
             {/* 행 전체가 분석 탭 링크(stretched link) — 수치(계산 추적 버튼)는 링크 위로 올려 따로 누를 수 있게 한다 */}

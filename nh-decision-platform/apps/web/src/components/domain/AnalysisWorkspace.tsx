@@ -24,7 +24,11 @@ import { IconWarn, NextStep, SeverityBadge, StatusDot, TextLink, tabClass } from
 import { formatFigure } from "@/lib/format";
 import { lastStep, pointCount, prevStepPhrase, revenueRowsOf, trendPhrase } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { signatureOf, tabSeenKey, tabSignature } from "@/lib/seen";
 import type { AnalysisTab, ComparisonView, DomainCardInfo, Goal, Insight, LoanOverview, Severity } from "@/lib/types";
+import { goalByRole, threshold } from "@/lib/uiConfig";
+import { useUiConfig } from "@/components/providers/SessionProvider";
+import { useSeen } from "@/components/ui/useSeen";
 
 type TabKey = "revenue" | "corporate" | "household" | "comparison";
 
@@ -74,19 +78,35 @@ export function AnalysisWorkspace({
   workflow?: string | null;
   /** 맞춤 분석 탭 (분석 에이전트 · 공간 hq · Q109) — 같은 화면의 탭으로 이어 붙인다 */
   custom?: AnalysisTab[];
-  /** 분석 만들기 (권한 있을 때만) */
+  /** 분석 에이전트 만들기 (권한 있을 때만) */
   builderHref?: string | null;
 }) {
   const [tab, setTab] = useState<TabKey>("revenue");
+  const cfg = useUiConfig();
+  const seen = useSeen();
   const { domain } = useSector(domains);
   const ready = domain?.status === "active";
   const { corporate, household } = overview;
   const cp = periodOf(comparison.asOf);
 
-  const dots: Partial<Record<TabKey, Severity>> = {
-    corporate: dotOf(goals.find((g) => g.id === "goal-corp-growth")),
-    household: dotOf(goals.find((g) => g.id === "goal-hh-control")),
-    comparison: comparison.divergence ? "critical" : undefined,
+  // 탭 점 — 역할로 지정된 목표의 판정(Phase K · HC-03) · 확인하지 않은 것만(DOT-01: 탭을 열면 사라지고 판정 · 기준일이 바뀌면 다시)
+  const corpGoal = goalByRole(goals, cfg, "corpGrowth");
+  const hhGoal = goalByRole(goals, cfg, "hhControl");
+  const rawDots: Partial<Record<TabKey, { severity: Severity; sig: string }>> = {};
+  const put = (k: TabKey, severity: Severity | undefined, ...parts: (string | null | undefined)[]) => {
+    if (severity) rawDots[k] = { severity, sig: signatureOf([severity, ...parts], overview.asOf) };
+  };
+  put("corporate", dotOf(corpGoal), corpGoal?.id, corpGoal?.gapVerdict);
+  put("household", dotOf(hhGoal), hhGoal?.id, hhGoal?.gapVerdict);
+  put("comparison", comparison.divergence ? "critical" : undefined, "divergence", comparison.asOf);
+  const dotKey = (k: TabKey) => `hq.analysis.${k}`;
+  const dotFor = (k: TabKey) => {
+    const d = rawDots[k];
+    return d && seen.fresh(dotKey(k), d.sig) ? d.severity : undefined;
+  };
+  const openTab = (k: TabKey) => {
+    setTab(k);
+    seen.mark(dotKey(k), rawDots[k]?.sig);
   };
 
   // 기업 · 가계 구성비 흐름 — 계열마다 방향을 계산해 잇는다
@@ -112,27 +132,30 @@ export function AnalysisWorkspace({
         }
       >
         {ready ? (
-          <div role="tablist" aria-label="분석 영역" className="flex flex-wrap items-center gap-x-6 border-b border-hairline-soft">
+          // 화면 안 탭(tablist)과 다른 주소로 가는 맞춤 분석 · 만들기 링크는 같은 줄에 두되 역할을 나눈다(tablist 안에는 tab 만)
+          <div data-custom-tabs className="flex flex-wrap items-center gap-x-6 border-b border-hairline-soft">
+            <div role="tablist" aria-label="분석 영역" className="flex flex-wrap items-center gap-x-6">
             {TABS.map((t) => {
               const on = tab === t.key;
-              const dot = on ? undefined : dots[t.key];
+              const dot = on ? undefined : dotFor(t.key);
               return (
-                <button key={t.key} type="button" role="tab" aria-selected={on} onClick={() => setTab(t.key)} className={clsx(tabClass(on, "md"), "-mb-px")}>
+                <button key={t.key} type="button" role="tab" aria-selected={on} onClick={() => openTab(t.key)} className={clsx(tabClass(on, "md"), "-mb-px")}>
                   {t.label}
                   {dot ? <StatusDot severity={dot} /> : null}
                 </button>
               );
             })}
+            </div>
             {custom.map((t) => (
-              <Link key={t.tabKey} href={`/hq/analysis/${t.tabKey}`} className={clsx(tabClass(false, "md"), "-mb-px")} data-custom-tab={t.tabKey}>
+              <Link key={t.tabKey} href={`/hq/analysis/${t.tabKey}`} onClick={() => seen.mark(tabSeenKey(t), tabSignature(t))} className={clsx(tabClass(false, "md"), "-mb-px")} data-custom-tab={t.tabKey}>
                 {t.label}
-                <StatusDot severity={t.severity} />
+                {seen.fresh(tabSeenKey(t), tabSignature(t)) ? <StatusDot severity={t.severity} /> : null}
                 <span className="rounded-sm bg-info-soft px-1.5 text-[12px] font-bold text-primary">{t.status === "paused" ? "중지" : "맞춤"}</span>
               </Link>
             ))}
             {builderHref ? (
               <Link href={builderHref} className={clsx(tabClass(false, "md"), "-mb-px !text-primary")} data-builder-link>
-                + 분석 만들기
+                + 분석 에이전트 만들기
               </Link>
             ) : null}
           </div>
@@ -143,7 +166,7 @@ export function AnalysisWorkspace({
         {!ready ? (
           <EmptyCard
             title={`${domain?.name ?? "이"} 부문은 아직 준비 중이에요`}
-            description="1차 범위는 여신 부문이에요. 데이터셋과 지표를 등록하면 같은 구조로 분석이 열려요."
+            description="이 부문의 데이터셋과 지표를 등록하면 같은 구조로 분석이 열려요."
             actionLabel="현황·목표로 돌아가기"
             href="/hq/overview"
           />
@@ -227,9 +250,13 @@ function RevenueTab({ overview, headline }: { overview: LoanOverview; headline: 
   const p = periodOf(overview.asOf);
   const rows = revenueRowsOf(revenue.rows);
   const { total, nim } = rows;
+  const cfg = useUiConfig();
   const f = revenue.narrativeFigures;
   const delta = f.nim_share_delta;
-  const prior = f.nim_share_2025;
+  // 전년 동기 비중 = 비중 계열의 직전 시점 (지표 키에 연도를 박지 않는다 · Phase K · HC-04)
+  const trendPts = revenue.nimShareTrend.filter((pt) => pt.value !== null);
+  const prior = trendPts.length >= 2 ? trendPts[trendPts.length - 2] : null;
+  const years = pointCount(revenue.nimShareTrend);
   const down = (delta?.value ?? 0) < 0;
   const conclusion = headline?.title ?? (revenue.narrative ? lastSentence(revenue.narrative) : "");
   const shareStep = lastStep(revenue.nimShareTrend);
@@ -267,8 +294,8 @@ function RevenueTab({ overview, headline }: { overview: LoanOverview; headline: 
                   <p className={clsx("mt-1.5 flex flex-wrap items-center gap-x-1.5 text-[13px] font-bold", down ? "text-attention" : "text-ink-deep")}>
                     {down ? <IconTriangleDown /> : <IconTriangleUp />}
                     <FigureText figure={delta} plain className={clsx(down ? "!text-attention" : "")} />
-                    <span className="font-medium text-steel">
-                      전년 <FigureText figure={prior} plain className="!font-medium !text-steel" />
+                    <span className="font-medium text-steel tnum">
+                      {prior.label} {prior.value?.toFixed(2)}%
                     </span>
                   </p>
                 ) : shareStep ? (
@@ -316,17 +343,14 @@ function RevenueTab({ overview, headline }: { overview: LoanOverview; headline: 
         <div className="rounded-xl border border-hairline-soft bg-canvas p-6">
           <h2 className="flex flex-wrap items-baseline gap-x-3 text-[20px] font-bold leading-[1.25] text-ink-deep">
             전년 동기 대비
-            <span className="text-[12px] font-normal text-steel">3개년 {monthLabel}</span>
+            <span className="text-[12px] font-normal text-steel">
+              {years ? `${years}개년 ` : ""}
+              {monthLabel}
+            </span>
           </h2>
           <div className="mt-5">
             <ComparisonTable rows={revenue.rows} asOf={overview.asOf} highlight={(r) => r === nim} sortable />
           </div>
-          {nim && total && compared ? (
-            <p className="mt-4 text-[12px] leading-normal text-steel">
-              여신 이자마진(<FigureText figure={nim.diffRate} signed plain className="!font-medium !text-steel" />)이 전체 수익(<FigureText figure={total.diffRate} signed plain className="!font-medium !text-steel" />)보다{" "}
-              {nimSlower ? "느리게" : "빠르게"} 늘어 비중이 {down ? "줄었습니다" : "커졌습니다"}.
-            </p>
-          ) : null}
         </div>
 
         <ChartCard
@@ -350,7 +374,7 @@ function RevenueTab({ overview, headline }: { overview: LoanOverview; headline: 
           }}
           className="min-h-[300px]"
         >
-          <ShareBars points={revenue.nimShareTrend} targetName="여신 이자마진" otherName="기타 수익" />
+          <ShareBars points={revenue.nimShareTrend} targetName="여신 이자마진" otherName="기타 수익" referenceAt={threshold(cfg, "shareReferencePct")} />
         </ChartCard>
       </section>
 

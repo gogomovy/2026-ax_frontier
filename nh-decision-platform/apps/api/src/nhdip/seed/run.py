@@ -815,6 +815,16 @@ def assist_rename_upgrade(s: Session, out: dict[str, Any]) -> None:
         out["assist_rename_upgrade"] = 1
 
 
+def builder_rename_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """화면 이름 '분석 만들기' → '분석 에이전트 만들기'(Phase K · REN-01 · Q155) — 1회. 이전 기본 이름일 때만(관리자가 바꾼 이름은 보존)."""
+    if _applied(s, "analysis-builder-rename-v1"):
+        return
+    sc = s.get(Screen, "ANALYSIS_BUILDER")
+    if sc is not None and sc.label == "분석 만들기":
+        sc.label = "분석 에이전트 만들기"
+        out["builder_rename_upgrade"] = 1
+
+
 def search_3way_upgrade(s: Session, out: dict[str, Any]) -> None:
     """3-way 검색 구성(Phase H · 설계 §24) — 1회. 검색 설정 knowledge.search.backend 가 예전 기본값 'pg' 이면 'auto' 로
     (ES_URL 이 있으면 Elasticsearch, 없으면 지금처럼 PostgreSQL). 관리자가 이후 'pg' 로 되돌리면 다시 바꾸지 않는다."""
@@ -1020,6 +1030,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     ontology_extraction_upgrade(s, out)
     admin_ia_upgrade(s, out)
     assist_rename_upgrade(s, out)
+    builder_rename_upgrade(s, out)
     upload_request_upgrade(s, out)
     analysis_spaces_upgrade(s, out)
     analysis_agents_upgrade(s, out)

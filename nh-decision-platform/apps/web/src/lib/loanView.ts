@@ -5,11 +5,32 @@ import { formatFigure } from "./format";
 import { seriesTrend, stepChange } from "./period";
 import type { ComparisonRow, Figure, SeriesPoint } from "./types";
 
-/** 여신 종합수익 행 — 라벨로 찾는다(전체 수익 · 이자마진 · 기업 · 가계). 없으면 undefined */
+/**
+ * 여신 종합수익 행 — 산출물 수치 id(화면 계약: total_rev_cur · nim_cur · corp_int_cur · hh_int_cur)로 찾는다.
+ * 표시 이름(라벨)은 관리자가 바꿀 수 있으므로 기준으로 쓰지 않는다 (Phase K). 없으면 undefined
+ */
+export const REVENUE_ROW_IDS = { total: "total_rev_cur", nim: "nim_cur", corporate: "corp_int_cur", household: "hh_int_cur" } as const;
 export function revenueRowsOf(rows: ComparisonRow[] | null | undefined) {
   const list = rows ?? [];
-  const by = (kw: string) => list.find((r) => r.label.includes(kw));
-  return { total: by("전체 수익"), nim: by("이자마진"), corporate: by("기업"), household: by("가계") };
+  const by = (id: string) => list.find((r) => r.current?.id === id);
+  return { total: by(REVENUE_ROW_IDS.total), nim: by(REVENUE_ROW_IDS.nim), corporate: by(REVENUE_ROW_IDS.corporate), household: by(REVENUE_ROW_IDS.household) };
+}
+
+/**
+ * 목표 경로 — 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12), 경과월 = 1 … n.
+ * 화면 차트 · 표 · 툴팁이 같은 함수를 쓴다(수식은 차트 캡션에 그대로 공개). 입력이 없으면 null.
+ */
+export function targetPath(base: number | null | undefined, growthPct: number | null | undefined, months: number): number[] | null {
+  if (!isNum(base) || !isNum(growthPct) || months <= 0) return null;
+  return Array.from({ length: months }, (_, i) => base * (1 + (growthPct / 100) * ((i + 1) / 12)));
+}
+
+/** 수치의 원천 이름 — 계산 추적 첫 입력의 원천(파일 · 표)에서 셀 위치 · 확장자를 뺀 것. 없으면 undefined */
+export function sourceLabel(figure: Figure | null | undefined): string | undefined {
+  const src = figure?.sourceRef ?? figure?.calc?.inputs?.find((i) => i.source)?.source;
+  if (!src) return undefined;
+  const name = src.split("!")[0].split("/").pop()?.replace(/\.(xlsx|xls|csv|json|pdf)$/i, "").trim();
+  return name || undefined;
 }
 
 const isNum = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v);

@@ -94,7 +94,7 @@ def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ())
         if "relevance" in d and isinstance(d.get("relevance"), (int, float)) and ("doc" in d or "snippet" in d):
             d["relevance"] = None  # 근거 관련도는 검색 시점 점수 — 틀에 두지 않는다
         if "statement" in d:
-            for k in ("asOf", "rankScore", "rankBasis", "rankCalcId"):
+            for k in ("asOf", "rankScore", "rankBasis", "rankCalcId", "rankRule"):
                 if k in d:
                     d[k] = None
         for k in [k for k in d if k.endswith("Metric") and len(k) > 6 and isinstance(d[k], str)]:

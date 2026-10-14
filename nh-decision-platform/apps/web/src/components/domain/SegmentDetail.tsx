@@ -4,7 +4,7 @@ import { MetricStrip, type MetricStripItem } from "@/components/data/MetricStrip
 import { AgentNote } from "@/components/domain/AgentNote";
 import { Badge, TextLink } from "@/components/ui/primitives";
 import { GOAL_VERDICT } from "@/lib/goalView";
-import { pointCount } from "@/lib/loanView";
+import { pointCount, sourceLabel } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
 import type { Figure, LoanSegmentDetail } from "@/lib/types";
 
@@ -32,7 +32,8 @@ export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; a
       positiveIsGood: !isHousehold,
     },
     { label: "구성비 (기업+가계 기준)", figure: segment.share },
-    { label: `이자수익 (${p.month} 누계)`, figure: segment.interestRevenue, caption: "2633 손익계산서" },
+    // 출처는 계산 추적의 원천(파일 · 표)에서 (Phase K · HC-04 — 보고서 번호를 코드에 두지 않는다)
+    { label: `이자수익 (${p.month} 누계)`, figure: segment.interestRevenue, caption: sourceLabel(segment.interestRevenue) },
   ];
   if (gap) {
     items.push({

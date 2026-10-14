@@ -1,5 +1,7 @@
-import { PillTabLinks, SEVERITY_TEXT, StatusDot } from "@/components/ui/primitives";
+import { SEVERITY_TEXT, StatusDot } from "@/components/ui/primitives";
+import { SeenTabLinks } from "@/components/ui/SeenTabLinks";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { tabSeenKey, tabSignature } from "@/lib/seen";
 import type { AnalysisTab } from "@/lib/types";
 
 /**
@@ -26,7 +28,7 @@ export function DynamicTabBar({
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-md no-print">
-      <PillTabLinks
+      <SeenTabLinks
         label="분석 탭"
         activeHref={`${basePath}/${activeKey}${query}`}
         items={[...lead.map((l) => ({ href: l.href, label: l.label })), ...tabs.map((tab) => ({
@@ -41,7 +43,10 @@ export function DynamicTabBar({
           ) : (
             tab.label
           ),
+          // 레드닷 — 확인하지 않은 새 분석만(Phase K · DOT-01). 열면 사라지고, 다시 생성돼 내용이 바뀌면 다시 뜬다
           dot: tab.severity,
+          seenKey: tabSeenKey(tab),
+          signature: tabSignature(tab),
         }))]}
       />
 

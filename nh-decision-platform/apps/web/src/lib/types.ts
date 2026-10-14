@@ -3,7 +3,8 @@
  * (설계서 §11.4 응답 예시 기준 — 업로드 전에는 값이 빈 템플릿이 같은 형태로 온다)
  */
 
-export type DataOrigin = "actual" | "simulated" | "mixed";
+/** 자료 성격 — unknown = 알 수 없음(화면이 만든 표시용 수치 · 원천 정보 없음, 꾸며 넣지 않는다 · Phase K · HC-05) */
+export type DataOrigin = "actual" | "simulated" | "mixed" | "unknown";
 export type Severity = "info" | "watch" | "caution" | "critical";
 export type EvidenceCategory = "bank_data" | "internal_direction" | "external_policy";
 export type AlignmentVerdict = "aligned" | "conflict" | "unknown";
@@ -102,6 +103,8 @@ export interface Insight {
   verifications: Verification[];
   rankScore?: number;
   rankBasis?: string;
+  /** 우선순위 산출 규칙 · 적용 판 (예: ATTENTION_SCORE v2 — 서버가 채움, Phase K) */
+  rankRule?: string | null;
   relatedGoalId?: string;
   reportKind?: ReportKind;
   reportAnchor?: string;

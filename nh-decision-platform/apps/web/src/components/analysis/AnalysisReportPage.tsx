@@ -37,7 +37,7 @@ export function AnalysisReportPage({
   /** 내려받기 키 (영업점: branch-<탭>) */
   exportKey?: string;
   office?: string | null;
-  /** 분석 만들기 (권한 있을 때만) */
+  /** 분석 에이전트 만들기 (권한 있을 때만) */
   builderHref?: string | null;
   next?: ReactNode;
   /** 앞에 붙일 고정 탭(기존 분석 화면으로 돌아가는 링크 · Q109) */
@@ -55,7 +55,7 @@ export function AnalysisReportPage({
           <>
             {builderHref ? (
               <Link href={builderHref} className="inline-flex h-9 items-center rounded-pill border border-hairline px-4 text-[13px] font-bold text-ink" data-builder-link>
-                분석 만들기
+                분석 에이전트 만들기
               </Link>
             ) : null}
             <ReportActions report={report} tabKey={exportKey ?? activeKey} office={office ?? undefined} />

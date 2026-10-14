@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { derivedFigure } from "@/lib/derived";
+import { derivedFigure, originOf } from "@/lib/derived";
 import { formatKstShort, formatSignedValue, formatYearMonth, formatValue } from "@/lib/format";
 import { GOAL_VERDICT, directionSuffix, proposalRange } from "@/lib/goalView";
+import { targetPath } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
 import type { Figure, Proposal } from "@/lib/types";
 
@@ -88,21 +89,26 @@ describe("목표 판정 태그 — 정상은 무채색, 미달 · 근접은 주�
   });
 });
 
-describe("기업여신 목표 경로 — 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12)", () => {
-  // 전년 동월 잔액 · 연 목표 증가율 · 이번 달 실적 (조원 · %)
-  const base = 110.86;
-  const growthPct = 7;
-  const actual8 = 115.34;
-  const path = (month: number) => base * (1 + (growthPct / 100) * (month / 12));
+describe("기업여신 목표 경로 — 화면이 쓰는 targetPath 함수 (전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12))", () => {
+  // 시험 입력(임의 값) — 화면 수치가 아니라 함수 동작을 본다
+  const base = 100;
+  const growthPct = 12;
 
-  it("8월 목표 경로는 116.03조원, 실적 115.34조원과의 차이는 -0.69조원", () => {
-    expect(path(8)).toBeCloseTo(116.03, 2);
-    expect(actual8 - path(8)).toBeCloseTo(-0.69, 2);
+  it("경과월마다 연 증가율의 1/12 씩 — 12개월이면 연 목표에 닿는다", () => {
+    const p = targetPath(base, growthPct, 12)!;
+    expect(p).toHaveLength(12);
+    expect(p[0]).toBeCloseTo(101, 6);
+    expect(p[11]).toBeCloseTo(112, 6);
   });
   it("달이 갈수록 목표 경로가 일정하게 늘어난다", () => {
-    const steps = [1, 2, 3, 4, 5, 6, 7, 8].map(path);
+    const steps = targetPath(base, growthPct, 8)!;
     for (let i = 1; i < steps.length; i++) expect(steps[i]).toBeGreaterThan(steps[i - 1]);
     expect(steps[1] - steps[0]).toBeCloseTo(steps[7] - steps[6], 6);
+  });
+  it("입력이 없으면 경로를 그리지 않는다", () => {
+    expect(targetPath(null, growthPct, 8)).toBeNull();
+    expect(targetPath(base, undefined, 8)).toBeNull();
+    expect(targetPath(base, growthPct, 0)).toBeNull();
   });
   it("전년 동월 라벨은 기준일에서 계산한다", () => {
     expect(periodOf("2026-08-31").prevYm).toBe("2025.08");
@@ -124,6 +130,15 @@ describe("화면 파생 수치 — 계산 추적이 붙는다", () => {
     expect(f.calc?.expression).toBe("기준월 ÷ 12개월 × 100");
     expect(f.calc?.inputs).toHaveLength(1);
     expect(f.value).toBe(66.7);
-    expect(f.dataOrigin).toBe("mixed");
+    // 입력이 수치가 아니면(기준월) 자료 성격은 알 수 없음 — 꾸며 넣지 않는다 (Phase K · HC-05)
+    expect(f.dataOrigin).toBe("unknown");
+    expect(f.calc?.executedAt).toBe("");
+  });
+  it("자료 성격은 입력 수치에서 물려받는다", () => {
+    const a = { ...fig(1, "PCT"), dataOrigin: "actual" as const };
+    const s = { ...fig(1, "PCT"), dataOrigin: "simulated" as const };
+    expect(originOf([a, a])).toBe("actual");
+    expect(originOf([a, s])).toBe("mixed");
+    expect(originOf([])).toBe("unknown");
   });
 });

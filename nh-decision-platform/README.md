@@ -21,7 +21,7 @@ make ps | logs | down | reset(볼륨 삭제) | test(백엔드 테스트) | e2e(�
 make wait-idle   # 이벤트 · 작업 처리가 끝날 때까지 대기 (기동 직후 선계산 확인)
 make backup      # DB(업무 · litellm) + 업로드 파일 → backups/<시각>/
 make restore FROM=backups/<시각> CONFIRM=yes   # 복구 (현재 데이터 덮어씀 · 그래프는 관리자 [온톨로지] 재투영)
-make preflight   # 운영 준비 점검 · make host-check 서버 점검 · make a11y 자동 접근성 점검 · make set k=키 v=값 (.env 지정)
+make preflight   # 운영 준비 점검 · make host-check 서버 점검 · make a11y 자동 접근성 점검 · make set k=키 v=값 (.env 지정) · make es-password (Elasticsearch 401)
 make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트 3100)에 2026.09 시험 엑셀 · PDF 를 올려 워크플로우 · 에이전트 · mart 갱신 확인 후 내림 (LLM: E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL 환경변수, 없으면 규칙 경로 판정 · E2E_EXPECT_LLM=0/1)
 ```
 
@@ -115,9 +115,12 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 - 3-way 검색(Phase H · 설계 §24): PostgreSQL = 원장 · 권한 판정 · 임베딩 값, Elasticsearch = AI 어시스턴트 · 워크플로 근거 검색의 키워드(BM25 + nori + 온톨로지 별칭 사용자 사전) · 의미(kNN) — 분석 결과 · 문서(현재 판) 색인 두 개, Neo4j = 개념 그래프. ES 후보는 PostgreSQL 에서 접근 규칙으로 다시 걸러 읽고(권한 누수 0), 워커가 1분마다 동기화(아직 못 올린 새 청크는 PostgreSQL 이 보충), ES 가 없거나 안 되면 같은 채널을 PostgreSQL 로. 검색 설정 `knowledge.search.backend` 기본 `auto` · 점검 `python -m nhdip.cli kb-es --check` · 관리자 [AI 어시스턴트 색인]의 3-way 구성 카드. 이전 `.env` 의 `ES_URL=` 이 비어 있으면 `bash infra/scripts/set-env.sh ES_URL http://elasticsearch:9200`.
 - 온톨로지 구성 지도(Phase G): 관리자 `/admin/ontology` 첫 탭 — PostgreSQL 원장에서 Neo4j 투영과 같은 코드(`graph/projection.collect_graph`)로 개체 · 관계를 모아 3D 군집 지도(Louvain 군집 · 서버 결정적 배치 · 회전 · 확대 · 2D) · 구조도(클래스 ↔ 관계 유형) · 표로 보여 줍니다. Neo4j 가 없어도 동작(`GET /admin/ontology/map?limit=&classes=&refresh=`).
 - 관리자 내비게이션(Phase E · Q122): 관리자의 첫 화면은 `/admin`, 사이드바는 관리 묶음 먼저(가입 · 자료 · 분석 승인 대기 건수 — `/me/menu` 의 `adminUsers` · `adminUploads` · `adminAnalyses` · `adminTodo`) · 업무 화면은 접힘 묶음. 되돌리기 어려운 작업은 앱 확인 대화상자(`useConfirm`, 초점 = 취소 · Esc). 권한 없음 화면은 요청한 화면 이름 · 메뉴 위치 · 요청 방법을 보입니다(`GET /me/screen?path=`).
-- 분석 에이전트(부서 맞춤 분석): 화면 권한 `분석 만들기`를 받은 사용자가 `/analysis/builder` 에서 도메인 지식 · 하고 싶은 분석을 글로 적으면 ① 정제 에이전트(LLM, 미연결 시 규칙)가 분석 명세(데이터 · 커널 수식 · 표 · 보고서 구성 · 의견 지시)로 정리하고 허용 목록으로 검증 → 미리보기(실제 계산, 저장 안 함) → 승인 요청. 관리자가 `/admin/analysis-agents` 에서 승인하면 지표(`dyn_*`) · 워크플로(`wf_an_*`) · 그 분석 전용 에이전트(`an_*`) · 트리거가 만들어지고, 실행마다 계산 커널 → ② 동적 수행 에이전트(판단 · 서술, 수치는 마커만) → ③ 범용 렌더링(결정론) → 검증 → 게시. 승인은 관리자만 하며, 승인하면서 실행 주기(cron) · 자료가 바뀌면 다시 계산 · LLM 의견 작성 여부를 정합니다. 결과는 그 부서의 **기존 분석 화면에 '맞춤' 탭**으로 나타납니다(신용리스크 [분석 결과] `/risk/analysis/<탭>`, 종합기획부 [데이터 분석] 탭 줄 `/hq/analysis/<탭>`). 기존 화면이 없는 새 부서는 설정 `analysis.spaces` + `POST /admin/screens` 로 코드 변경 없이 추가. 실 LLM 시험: `apps/e2e/analysis-agents-llm.mjs`(E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL).
+- 분석 에이전트(부서 맞춤 분석): 화면 권한 `분석 에이전트 만들기`를 받은 사용자가 `/analysis/builder` 에서 도메인 지식 · 하고 싶은 분석을 글로 적으면 ① 정제 에이전트(LLM, 미연결 시 규칙)가 분석 명세(데이터 · 커널 수식 · 표 · 보고서 구성 · 의견 지시)로 정리하고 허용 목록으로 검증 → 미리보기(실제 계산, 저장 안 함) → 승인 요청. 관리자가 `/admin/analysis-agents` 에서 승인하면 지표(`dyn_*`) · 워크플로(`wf_an_*`) · 그 분석 전용 에이전트(`an_*`) · 트리거가 만들어지고, 실행마다 계산 커널 → ② 동적 수행 에이전트(판단 · 서술, 수치는 마커만) → ③ 범용 렌더링(결정론) → 검증 → 게시. 승인은 관리자만 하며, 승인하면서 실행 주기(cron) · 자료가 바뀌면 다시 계산 · LLM 의견 작성 여부를 정합니다. 결과는 그 부서의 **기존 분석 화면에 '맞춤' 탭**으로 나타납니다(신용리스크 [분석 결과] `/risk/analysis/<탭>`, 종합기획부 [데이터 분석] 탭 줄 `/hq/analysis/<탭>`). 기존 화면이 없는 새 부서는 설정 `analysis.spaces` + `POST /admin/screens` 로 코드 변경 없이 추가. 실 LLM 시험: `apps/e2e/analysis-agents-llm.mjs`(E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL).
 - 파이프라인: `/admin/pipeline` — 원천(데이터셋 · 문서 · 규칙) → 워크플로 노드 · 에이전트 → 산출물 → 화면 연결을 DB 정의에서 그린 지도와 이벤트 흐름.
 - 다지점 영업점: 규칙 `BRANCH_SCOPE.office_codes`(`/admin/rules`)에 사무소 코드를 더하고 그 지점 자료(`BRANCH_OFFICE_MASTER` · `BRANCH_KPI_SCORE` · `BRANCH_BIZ_BALANCE`)를 올리면 같은 지표 정의로 지점마다 계산합니다. 지역본부 · 관리자 화면에는 지점 선택 상자가 나오고(`/branch?office=<코드>`), 영업점 직원은 자기 지점만 봅니다. 자료가 없는 지점은 '준비 중', 지점 수 상한 · LLM 을 쓸 지점 수는 설정 `workflow.scopes`(`max` · `narrate_max`).
+- 화면 설정(Phase K · 설계 §27): 화면 코드에 두던 판정 구간(한도 · 신용RWA 소진율 · 본부 전파 목표 진행률 · 근거 관련도) · 기준값(계획 수준 허용 폭 · 한도 여유 경고 · 구성비 기준선 · 제안 사유 최소 글자 수) · 화면이 집어 쓰는 목표(역할 → 목표 id) · 업무 영역(종기부 · 사업부서 · 영업점 이름과 단위 = 조직 + 메뉴 묶음) · AI 어시스턴트 예시 질문 · 알림 목록 · 주요 이슈 순서 · 하위 영역 표시 이름은 관리자 `/admin/ui` 에서 바꿉니다(설정 `ui.*`, 저장 전 형식 검사 · 감사). 화면은 `/me/menu.config` 로 받아 쓰고, 화면 코드에 다시 연도 · 반기 문구 · 목표 id · 판정 숫자를 넣으면 시험(`apps/web/src/lib/hardcode.test.ts`)이 실패합니다.
+- 업무 영역 전환(Phase K): 헤더의 영역 칸에서 사업부서 · 영업점 지점이 둘 이상이면 눌러서 고릅니다(화면이 아직 없는 부서는 '준비 중'). 새 부서는 [화면 권한]에서 화면을 등록(묶음 = 부서 이름) → [화면 설정 › 업무 영역]에 한 줄. 빨간 점(레드닷)은 확인하지 않은 새 이슈 · 분석에만 붙고, 열면 사라지며 내용이 바뀌면 다시 뜹니다(사용자별 브라우저 기록). 화면이 열릴 때 막대 · 선 · 게이지 · 수치에 등장 효과가 있고, OS 의 '동작 줄이기'를 켜면 없습니다.
+- Elasticsearch 인증 실패(HTTP 401 · `unable to authenticate user [elastic]`): ES 는 `.env` 의 `ES_PASSWORD` 를 볼륨을 처음 만들 때만 씁니다. `.env` 를 다시 만들었거나 볼륨이 먼저 있었다면 `make es-password` 로 볼륨의 elastic 비밀번호를 `.env` 값으로 맞춥니다(데이터 유지 · 임시 관리 계정으로 바꾸고 지움 · api · worker 재시작). 외부 ES 이거나 비밀번호를 알면 관리자 [AI 어시스턴트 색인 › Elasticsearch 연결]에서 주소 · 계정 · 비밀번호를 입력 · 시험 · 저장합니다(암호화 저장 · 환경변수보다 우선 · 지우면 환경변수로).
 
 ---
 
@@ -128,7 +131,7 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 | 종합기획부 | `/hq/overview` 현황·목표 → `/hq/analysis` 데이터 분석 → `/hq/goals` 경영목표 설정 · 참고 `/hq/initiatives` `/hq/capital` |
 | 신용리스크관리부 | `/risk` 현황 → `/risk/analysis/[tabKey]` 분석 결과(보고서) → `/risk/guides` 수행방안 |
 | 영업점 | `/branch` 현황(업적평가 득점 · 기준 변경 알림 · 사업부문) → `/branch/analysis/[tabKey]` 영업 가이드 보고서(우량기업여신 · 서민금융) · 참고 `/branch/targets` 본부 전파 목표·가이드 |
-| 공통 | `/knowledge` 데이터베이스(문서·데이터셋·용어집) · `/knowledge/upload` 자료 올리기(승인 요청 · 내 요청) · `/analysis/builder` 분석 만들기(정제 → 확인 · 수정 → 미리보기 → 승인 요청 · 내 분석) |
+| 공통 | `/knowledge` 데이터베이스(문서·데이터셋·용어집) · `/knowledge/upload` 자료 올리기(승인 요청 · 내 요청) · `/analysis/builder` 분석 에이전트 만들기(정제 → 확인 · 수정 → 미리보기 → 승인 요청 · 내 분석) |
 
 경영목표 처리(유지·반영·직접 수정·신설)와 진행사업 등록·영업점 전파는 서버 상태로 저장되어 모든 사용자에게 공유되고, 목표 확정은 `goal.confirmed` · `rule.changed` 이벤트로 관련 수치를 다시 계산합니다.
 
