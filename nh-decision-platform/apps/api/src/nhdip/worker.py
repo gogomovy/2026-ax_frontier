@@ -9,6 +9,7 @@ import time
 import traceback
 from datetime import timedelta
 
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 
 from nhdip.config import get_settings
@@ -89,28 +90,54 @@ def _process(worker_id: str, job_id: int, wf: str, causes: list) -> bool:
                     status, error = "failed", run.error
         except Exception as exc:  # noqa: BLE001
             status, error = "failed", f"{exc}\n{traceback.format_exc()[-2000:]}"
-        with SessionLocal() as s:
-            if run_id:
-                # 실행 요약에 DB 구간(질의 수 · 소요) · 전체 소요를 남긴다
-                r = s.get(WorkflowRun, run_id)
-                if r is not None:
-                    r.summary = {**(r.summary or {}), "obs": {"db_queries": int(db_stats["queries"]), "db_ms": round(db_stats["ms"]), "wall_ms": round((time.perf_counter() - t0) * 1000)}}
-            j = s.get(Job, job_id)
-            if status == "failed" and j.attempts < j.max_attempts:
-                j.status = "queued"
-                j.run_after = utcnow() + timedelta(seconds=30 * j.attempts)
-            else:
-                j.status = status
-                j.finished_at = utcnow()
-            j.error = error
-            j.locked_by = None
-            s.commit()
-            if j.status in ("done", "failed"):
-                from nhdip.workflow.orchestrator import release_downstream
-
-                release_downstream(s, wf)
-        log.info("job %s %s (db %d queries · %.0f ms)", job_id, status, db_stats["queries"], db_stats["ms"])
+        final = _finalize_job(job_id, wf, run_id, status, error, db_stats, t0)
+        log.info("job %s %s (db %d queries · %.0f ms)", job_id, final, db_stats["queries"], db_stats["ms"])
     return True
+
+
+def _finalize_job(job_id: int, wf: str, run_id: str | None, status: str, error: str | None, db_stats: dict, t0: float) -> str:
+    """작업 상태 저장 — 실패하면 새 연결로 다시 시도한다. 끝내 못 저장하면 프로세스를 끝낸다.
+    저장하지 못하면 작업이 'running' 으로 남고, 살아 있는 워커가 잡은 작업이라 복구도 안 되며 그 워크플로우는 영영 실행되지 않는다.
+    프로세스를 끝내면 컨테이너가 다시 떠서 기동 때 이 호스트의 고아 작업을 복구한다(recover_own_orphans)."""
+    for attempt in range(3):
+        try:
+            with SessionLocal() as s:
+                if run_id:
+                    # 실행 요약에 DB 구간(질의 수 · 소요) · 전체 소요를 남긴다
+                    r = s.get(WorkflowRun, run_id)
+                    if r is not None:
+                        r.summary = {**(r.summary or {}), "obs": {"db_queries": int(db_stats["queries"]), "db_ms": round(db_stats["ms"]), "wall_ms": round((time.perf_counter() - t0) * 1000)}}
+                if status == "failed":
+                    # 실행 준비 중 예외 등으로 '실행 중'인 채 남은 이 작업의 실행을 닫는다 (영원히 running 으로 보이지 않게)
+                    s.execute(
+                        text("UPDATE ops.workflow_run SET status='failed', error=COALESCE(error, :why), finished_at=now() WHERE job_id=:j AND status='running'"),
+                        {"j": job_id, "why": (error or "작업 실패")[:4000]},
+                    )
+                j = s.get(Job, job_id)
+                if status == "failed" and j.attempts < j.max_attempts:
+                    j.status = "queued"
+                    j.run_after = utcnow() + timedelta(seconds=30 * j.attempts)
+                else:
+                    j.status = status
+                    j.finished_at = utcnow()
+                j.error = error
+                j.locked_by = None
+                s.commit()
+                final = j.status
+            if final in ("done", "failed"):
+                try:
+                    from nhdip.workflow.orchestrator import release_downstream
+
+                    with SessionLocal() as s2:
+                        release_downstream(s2, wf)
+                except Exception:  # noqa: BLE001 — 하위 작업 앞당기기 실패는 대기 시간만 늘릴 뿐(최대 대기 후 자동 실행)
+                    log.warning("release_downstream failed (%s)", wf, exc_info=True)
+            return final
+        except Exception:  # noqa: BLE001
+            log.exception("job %s 상태 저장 실패 (시도 %d/3)", job_id, attempt + 1)
+            time.sleep(2 * (attempt + 1))
+    log.critical("job %s 상태를 저장하지 못했습니다 — 워커를 재시작해 복구합니다", job_id)
+    os._exit(3)
 
 
 def max_run_minutes() -> float:
@@ -177,23 +204,33 @@ def housekeeping(worker_id: str, stats: dict, last: dict[str, float]) -> None:
             return True
         return False
 
+    # 단계마다 오류를 가둔다 — 한 단계의 지속적인 오류가 다음 단계와 작업 집기를 막지 않게
     if due("cron", 20):
-        with SessionLocal() as s:
-            stats["scheduled"] = stats.get("scheduled", 0) + schedule_due(s)
+        try:
+            with SessionLocal() as s:
+                stats["scheduled"] = stats.get("scheduled", 0) + schedule_due(s)
+        except Exception:  # noqa: BLE001
+            log.exception("scheduler failed")
     if due("alert", 60):
         from nhdip.alerts import scan as scan_alerts
 
-        with SessionLocal() as s:
-            if try_lock(s, "housekeeping:alerts"):
-                stats["alerts"] = stats.get("alerts", 0) + scan_alerts(s)
-            else:
-                s.rollback()
+        try:
+            with SessionLocal() as s:
+                if try_lock(s, "housekeeping:alerts"):
+                    stats["alerts"] = stats.get("alerts", 0) + scan_alerts(s)
+                else:
+                    s.rollback()
+        except Exception:  # noqa: BLE001
+            log.exception("alert scan failed")
     if due("recover", 300):
-        with SessionLocal() as s:
-            if try_lock(s, "housekeeping:recover"):
-                stats["recovered"] = stats.get("recovered", 0) + recover_stale(s)
-            else:
-                s.rollback()
+        try:
+            with SessionLocal() as s:
+                if try_lock(s, "housekeeping:recover"):
+                    stats["recovered"] = stats.get("recovered", 0) + recover_stale(s)
+                else:
+                    s.rollback()
+        except Exception:  # noqa: BLE001
+            log.exception("stale job recovery failed")
     if due("knowledge", 60):
         # 질문하기 지식 색인 — 대조(놓친 게시 복구) · 임베딩 채우기 · 그래프 반영 이벤트 (KB-09)
         from nhdip.knowledge.maintenance import run_maintenance

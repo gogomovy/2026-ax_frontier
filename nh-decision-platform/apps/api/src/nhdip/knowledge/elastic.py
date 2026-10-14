@@ -777,11 +777,13 @@ def sync(session: Session, *, limit: int = 2000, full_diff_min: float = 15.0, fo
             done += ok
             failed_ids += bad
         removed = 0
+        del_failed = 0
         for i in range(0, len(delete), BULK_BATCH):
-            ok, _ = _bulk([{"delete": {"_index": index_name(), "_id": str(x)}} for x in delete[i : i + BULK_BATCH]])
+            ok, bad = _bulk([{"delete": {"_index": index_name(), "_id": str(x)}} for x in delete[i : i + BULK_BATCH]])
             removed += ok
+            del_failed += len(bad)  # 지우지 못한 것도 '남은 일' — 다음 주기(1분)에 다시 (15분 전체 대조를 기다리지 않는다)
         pending_ids = upsert[len(batch_ids) :]
-        remaining = len(pending_ids) + len(failed_ids)
+        remaining = len(pending_ids) + len(failed_ids) + del_failed
         if done or removed:
             request("POST", f"/{index_name()}/_refresh")
         # '동기화됨' = ES 에 아직 없는(새) 청크 중 가장 작은 id 바로 앞까지. 그 뒤의 새 청크는 검색이 PostgreSQL 로 보충한다.
@@ -843,11 +845,13 @@ def sync_docs(session: Session, *, limit: int = 2000, full_diff_min: float = 15.
             done += ok
             failed += bad
         removed = 0
+        del_failed = 0
         for i in range(0, len(delete), BULK_BATCH):
-            ok, _ = _bulk([{"delete": {"_index": idx, "_id": x}} for x in delete[i : i + BULK_BATCH]], str)
+            ok, bad = _bulk([{"delete": {"_index": idx, "_id": x}} for x in delete[i : i + BULK_BATCH]], str)
             removed += ok
+            del_failed += len(bad)
         pending = upsert[len(batch) :]
-        remaining = len(pending) + len(failed)
+        remaining = len(pending) + len(failed) + del_failed
         if done or removed:
             request("POST", f"/{idx}/_refresh")
         missing_new = [parse_doc_id(k) for k in (*pending, *failed) if k not in es]

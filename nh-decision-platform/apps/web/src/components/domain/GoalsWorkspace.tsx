@@ -181,7 +181,7 @@ export function GoalsWorkspace({
                           <IconSparkle className="shrink-0 text-primary" />
                           <span className="truncate">
                             {attention.title}
-                            {attention.rankScore !== undefined ? ` · 우선순위 ${attention.rankScore.toFixed(1)}` : ""}
+                            {attention.rankScore != null ? ` · 우선순위 ${attention.rankScore.toFixed(1)}` : ""}
                           </span>
                         </button>
                       ) : null}
@@ -316,7 +316,7 @@ export function GoalsWorkspace({
                     <button type="button" onClick={() => setSheet({ kind: "attention", id: a.id })} className="min-w-0 flex-1 text-left font-medium leading-snug text-ink-deep hover:underline">
                       {a.title}
                     </button>
-                    {a.rankScore !== undefined ? <span className="shrink-0 text-[12px] text-steel tnum">우선순위 {a.rankScore.toFixed(1)}</span> : null}
+                    {a.rankScore != null ? <span className="shrink-0 text-[12px] text-steel tnum">우선순위 {a.rankScore.toFixed(1)}</span> : null}
                   </li>
                 ))}
                 {reviewItems.map((t) => (

@@ -215,6 +215,7 @@ SETTINGS = {
     "ui.timezone": ("Asia/Seoul", "화면 산출물 생성 시각의 시간대"),
     "doc_class.labels": ({"gov_policy": "정부정책 DB", "mgmt_decision": "경영 의사결정 DB", "model_method": "모형·방법론", "branch_ref": "영업점 기준·공문", "reference": "참고 자료"}, "문서 분류 코드 → 화면 표시명"),
     "doc_class.default_origin": ({"gov_policy": "ext", "mgmt_decision": "bank", "model_method": "bank", "branch_ref": "bank", "reference": "ext"}, "문서 분류별 기본 출처(업로드 화면 기본값)"),
+    "goal.verdict_policy": ({"near_pct": 10, "maintain_tol_pp": 1.0}, "경영목표 판정 기준 — near_pct: 한도형 목표가 목표의 몇 % 이내로 다가오면 '한도 근접', maintain_tol_pp: 비중 유지형 목표의 허용 부족분(%p). 판정은 실적 수치와 목표 값으로 서버가 계산"),
     "goal.rule_links": ({"goal-corp-growth": {"rule": "GOAL_TARGETS", "path": "corp_loan_growth"}, "goal-hh-control": {"rule": "GOAL_TARGETS", "path": "hh_loan_growth"}}, "경영목표 확정 시 갱신할 규칙 값 (목표 → 규칙 경로)"),
     "ui.batch_label": ("변경 기반 실행 (wf_model_monitoring · wf_inclusive_risk · wf_hq_goal_review · wf_branch_kpi)", "화면 상단 실행 라벨"),
     "branch.office_codes": ({}, "영업점 조직 코드 → 사무소 코드 (비우면 조직 코드 = 사무소 코드). 영업점 데이터(조사자사무소코드 · 사무소코드)와 사용자 소속을 잇는 기준 (Q43)"),

@@ -253,6 +253,15 @@ export function ReportView({ report }: { report: ReportDoc }) {
   );
 }
 
+/** 표 · 그래프를 다시 계산하지 못했을 때(자료 삭제 포함) — 수치의 '갱신 실패' 표시와 같은 취지로 이전 값임을 알린다 */
+function StaleNotice({ reason, what }: { reason?: string; what: string }) {
+  return (
+    <p role="status" className="mb-2 rounded-lg bg-critical-faint px-md py-2 text-[12px] text-critical" data-report-stale>
+      <strong className="font-bold">갱신 실패 — 이전 값</strong>입니다. 이 {what}은(는) 최근 계산에 실패해 마지막 값을 보여 주고 있습니다{reason ? ` (${reason})` : ""}.
+    </p>
+  );
+}
+
 function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
   switch (block.type) {
     case "p":
@@ -316,6 +325,7 @@ function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
     case "chart":
       return block.chart ? (
         <div className="my-lg rounded-2xl border border-hairline-soft p-lg">
+          {block.chart.stale ? <StaleNotice reason={block.chart.staleReason} what="그래프" /> : null}
           <Chart
             kind={block.chart.kind === "line" ? "line" : "bar"}
             title={block.chart.title}
@@ -331,6 +341,7 @@ function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
       if (!t) return null;
       return (
         <div className="my-lg">
+          {t.stale ? <StaleNotice reason={t.staleReason} what="표" /> : null}
           <DataTable
             dense
             caption={t.caption}

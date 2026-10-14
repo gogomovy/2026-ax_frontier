@@ -101,7 +101,7 @@ export interface Insight {
   figures: Record<string, Figure>;
   evidence: Evidence[];
   verifications: Verification[];
-  rankScore?: number;
+  rankScore?: number | null;
   rankBasis?: string;
   /** 우선순위 산출 규칙 · 적용 판 (예: ATTENTION_SCORE v2 — 서버가 채움, Phase K) */
   rankRule?: string | null;
@@ -164,7 +164,8 @@ export interface Goal {
   gapLabel?: string;
   /** gap 을 부호와 함께 표시할지 (진행률처럼 부호가 불필요한 경우 false) */
   gapSigned?: boolean;
-  gapVerdict?: "on_track" | "below" | "near_limit" | "breach";
+  /** 서버가 실적 수치로 계산한 판정 — 계산할 수 없으면 null(배지를 달지 않는다) */
+  gapVerdict?: "on_track" | "below" | "near_limit" | "breach" | null;
   history?: GoalHistoryEntry[];
 }
 
@@ -199,12 +200,13 @@ export interface Proposal {
   /** 왜 이 수치인가 (Question 2) */
   recommendation: {
     mode: "range" | "point" | "direction_only";
-    low?: number;
-    high?: number;
-    value?: number;
+    /** 계산 커널이 채운다 — 자료가 올라와 계산되기 전에는 null */
+    low?: number | null;
+    high?: number | null;
+    value?: number | null;
     unit: Figure["unit"];
     decimals?: number;
-    currentValue?: number;
+    currentValue?: number | null;
     text: string;
   };
   ruleId: string;
@@ -398,6 +400,9 @@ export interface ReportTableBlock {
   highlightRowKey?: string;
   highlightRowValue?: string | number;
   note?: string;
+  /** 최근 계산이 실패해(자료 삭제 포함) 이전 값을 보여 주는 중 — 수치(Figure)와 같은 표시 (DEL-11) */
+  stale?: boolean;
+  staleReason?: string;
 }
 
 export interface ReportBlock {
@@ -413,6 +418,8 @@ export interface ReportBlock {
     title: string;
     series: { name: string; points: SeriesPoint[] }[];
     unit: Figure["unit"];
+    stale?: boolean;
+    staleReason?: string;
   };
   table?: ReportTableBlock;
   kv?: { label: string; value: string; term?: string }[];

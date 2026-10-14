@@ -430,6 +430,36 @@
 - [x] J.6 시험 — 권한 · 사유 · 중복 · 승격 · 화면 값 · 버전 번호 · 청크/이슈 · 파일 · Elasticsearch 가짜 전송 · Neo4j 대체 함수 · 재업로드 건너뜀
 - 결과(2026-10-13): pytest 294(282 passed · 11 건너뜀(실제 ES) · 실패 1 = `test_antivirus_hook` Windows 전용) — 신규 `test_data_delete.py` 8 · `test_phase_i_units.py` 13, 계층 계약 4/4, `sample selftest` ok(업로드 43 · 엑셀 대조 0건 · 교란 2벌 그대로인 데이터 자리 0 · 예외 설정 99 · 규칙 130), `sample verify`(HTTP) ok, `sample check` 사본 일치, tsc · eslint · vitest 114 · next build 통과, 로컬 스택(정의 시드 → 패키지 업로드 → 워커) 브라우저 E2E 133/133(삭제 흐름 +8) · 접근성 47쪽 위반 0 · 골든셋 7범주 100%
 - CI(janlight `feat/backend-phase-b` `0d0a1ea` · gogomovy `d125f7f`) — run `38421831072` 3개 잡 성공: backend(pytest · 커버리지 게이트 · 사본 일치 · 교란 검사) · frontend · e2e(compose 정의 시드 → HTTP 업로드 43개 → 엑셀 대조 → E2E 133/133 · 접근성 0 · 골든셋 100%). CI 에서 고친 것: 모형 보정 값 고정(운영체제별 반올림) · SDR 순위 예외 · 서술 시험 순서 의존 제거 · 골든셋 영업점 예외(cascade · goals) 명시
+### Phase J 후속. 부서 데이터 책임자 삭제 (2026-10-14 · 요구사항 §26 DEL-09~12 · 설계 §26.4 · Q157~Q159)
+> 사용자 요청(2026-10-14): 팀별 데이터 책임자가 올리고 삭제 — 삭제한 데이터가 활용되면 안 되니 벡터 DB · Neo4j 등에서도 삭제.
+- [x] J2.1 전파 점검 — 코드로 확인: 행 · pgvector · ES 문서 청크 · Neo4j 는 삭제됨, 검색은 PostgreSQL 에서 다시 걸러 읽음. 틈: stale 수치가 검색 색인 · 서술에 실림, 요청 미리보기에 내용 잔존, ES 분석 색인 삭제 실패는 15분 지연
+- [x] J2.2 백엔드 — `deletion.owned_by` 부서 소유 판정, `/db/steward/items|delete-preview|delete|purge-status|purge-run`, 감사 `via=steward`
+- [x] J2.3 틈 보강 — `fig_text` stale 제외 · 서술 재료 제외 · ES 삭제 실패 재시도 · 요청 `preview` 내용 정리
+- [x] J2.4 화면 — [자료 올리기 > 우리 부서 자료](`StewardData`): 목록 · 삭제 전 확인 + 사유 · 삭제한 기록 · 내 삭제 반영 상태
+- [x] J2.5 시험 — `test_steward_delete.py` 5
+- [x] J2.6 남은작업 — 표 · 차트 stale 표시 · 지표 이력 건너뜀은 J3.3, 옛 산출물 세대 정리 · llm_call · node_run 본문 정리 · 분석 보고서 근거 조각 제거는 J3.7 에서 처리(설계 §26.4 '알려진 한계' 해소, Q167~Q169)
+
+### Phase J 후속 2. 업로드 자료 형식 고정 해제 · 한 장 PDF 내보내기 · 삭제 흔적 정리 (2026-10-14 · 요구사항 §28 DEF-01~05 · EXP-01~03 · DEL-13~16 · 설계 §28 · Q160~Q170)
+> 사용자 요청(2026-10-14): 컬럼 정의가 없는 자료는 안 되는지 / 알아서 정의해 주는지(업로드 자료가 고정되면 안 됨), 내보내기를 PDF 한 장에 잘리지 않고 정리되게, 삭제 후 남은 한계 계속.
+- [x] J3.1 정의 추론 — `nhdip.data.infer`(머리글 줄 · 타입 · 키 · 기준일 · 파서 · 파일 이름 규칙 · 개인정보 마스킹 · 보고서 양식 거절), `datasets.py`(빈 열 거절 · 정의 밖 열 안내 · 정수 형 변환 오류), 관리자 `/admin/datasets/infer` · `infer-diff`, 정의 점검(`validate_definition`)
+- [x] J3.2 새 종류 자료 요청 — `/db/uploads/dataset-infer` · `dataset-proposal`, 승인 때 데이터셋 생성 + 첫 버전(한 savepoint), `upload.user_targets.new_datasets`, 화면 `NewDatasetPanel` · [자료 올리기] · 요청 검토 카드 · 관리자 [새 데이터셋 만들기] · [파일에서 새 열 찾기]
+- [x] J3.3 삭제 파생물 확장 — 표 · 차트 · 계열 '갱신 실패' 표시 · 색인 제외(`mark_binding_stale`), 지표 저장 값 폴백이 삭제된 자료로 계산한 값을 건너뜀
+- [x] J3.4 한 장 PDF — `printFit`(순수) · `printState` · `printPage`, 폭 조건 미디어 쿼리 고정(인쇄가 용지 기본 폭으로 판정해 좁은 배치 · 3쪽이 되던 원인), `html.printing` + `@media print` 규칙, 접힌 이슈 · 해설 펼침, 시뮬레이션 고지 유지
+- [x] J3.5 시험 — pytest `test_infer` 11 · `test_new_dataset` 6 · `test_delete_derived` 4, vitest `printFit` 6, e2e 내보내기 검사. 실제 Chrome 으로 `/hq/overview` A4 4쪽 → 1쪽 등 확인
+- [ ] J3.6 남은작업 — Safari · Firefox 의 `@page size` 처리 확인, 탭 화면은 현재 탭만 나옴, 새 데이터셋을 화면 수치로 잇는 지표 · 워크플로우 연결 도우미(지금은 관리자 수동), 본문 일치로 찾지 못하는 흔적(다른 표현으로 바꿔 쓴 복사본), ~~파이프라인 지도에서 노드를 고르면 나머지가 흐려지는(`opacity-35`) 효과의 글자 대비~~(L.6 에서 처리 — 글자색 유지 · axe 0), 시연 자료에 지점 전용 자료를 더 넣을지(지금은 수원영통지점 1곳)
+- [x] J3.7 삭제 흔적 정리 (요구사항 DEL-13~16 · UPL-SEC · 설계 §28.5 · Q167~Q170) — `nhdip.data.scrub`(조각 뽑기 · `scrub_run_traces` · `scrub_artifact_evidence` · `lineage_keys` · `purge_artifact_history`), `deletion.py`(`DeleteResult.scrubbed` · 문서 청크 삭제 전 본문 확보 · 현재 데이터셋 버전 삭제 시 `pg` 정리 작업 · `run_purge_tasks` pg 분기), `filecheck._antivirus` fail-closed. 화면: 책임자 '우리 부서 자료' 바로가기 · 삭제 확인 문구 · 알림의 정리 건수(`lib/scrubText.ts`) · 반영 상태 '산출물 이력(PostgreSQL)' · 삭제 직후 반영 상태 즉시 갱신. 시험: pytest `test_scrub` 7 · `test_steward_delete`(작업 2건) · `test_filecheck`, vitest `scrubText` 3
+- [x] J3.8 브라우저 · 접근성 확인 — Chrome 151 · Edge 155 에서 새 종류 자료 제안 → 책임자 승인 → 우리 부서 자료 삭제, 관리자 새 데이터셋 · 새 열 찾기, 보고서 stale 표시, 내보내기 한 장 PDF 4종, 보고서 [인쇄] A4 를 각 39/39 확인. axe 새 화면 + 기존 16개 화면 위반 0. 확인 중 고친 것: 위험 단추 흰 글자 대비, 삭제 버전 행 `opacity-60` 대비, `AnalysisAlertStrip` 생성 시각 없음 오류, 관리자 추론 코드 중복 회피(`codeAdjusted`), 비활성 지표 · 노드의 `opacity-60` 대비, [지표] 화면 체크박스 이름, 영업점 계약서 행의 지점 기본값 폴백 제거(BRM-09). 책임자 화면에서 흔적이 있는 문서를 지워 알림에 "AI 호출 기록 1건, 보고서 근거 1건" 이 뜨는 것까지 Chrome · Edge 로 확인
+## Phase L. 에이전트 구조 최종 점검 · 관리자 파이프라인 시각화 · 온톨로지 지도 다듬기 · 내 자료로 시작 (2026-10-14 · 요구사항 §29 · 설계 §29 · Q171~Q178)
+> 사용자 요청(2026-10-14): 남은 것 중 할 수 있는 것 + 푸시, 만들어 둔 자료를 직접 넣어 시험하기 전에 에이전트 구조 로직 · 흐름 최종 분석과 개선, 관리자 데이터 흐름 · 에이전트 결정을 파이프라인 그림으로, 온톨로지 3D 공간감(우주 격자) · 군집 · 노드 종류 표시 정리.
+- [x] L.1 내 자료로 시작(SMP-01 · Q171) — `LOAD_SAMPLE_ON_START` 기본 0(compose · `.env.example`), README '내 자료로 시작하기(기본)'
+- [x] L.2 에이전트 흐름 점검 · 수정(AGH-01~08 · Q172~Q175) — `numguard` · `fence` · 추출 방어 · LLM 클라이언트 · 엔진 일관성 · 디스패치 실패 · 작업 복구 · 워커 상태 저장 · 알림 · 노드별 보정 · `goal_verdict` · 빈 상태, 시험 `test_agent_flow_hardening.py` 32. 검증 중 `recover_stale` 이 `busy_job` 키 없는 심장박동(기동 직후)까지 '다른 일' 로 보던 것을 바로잡음(`test_hardening` 회귀)
+- [x] L.3 데이터 흐름 파이프라인(VIZ-01 · Q176) — `flow_view.run_nodes`, `flowViz`, 이벤트 카드(최근 3건 펼침 · 한 줄 요약 · 15건씩 · 모두 펼치기/접기)
+- [x] L.4 에이전트 결정 파이프라인(VIZ-02) — `GET /admin/agents/pipeline`(`build_agent_pipeline` · `nodeRunId`), 결정 흐름 요약 · 실행별 스텝퍼 · 단계 상세, 결정 표 열 줄바꿈 보정
+- [x] L.5 온톨로지 지도(ONT-V01~03 · Q177) — 우주 격자(`drawSpace`) · 구 그림 · 군집 알약 이름표, 군집 목록(이름 · 비율 · 구성 막대), 범례 '노드 종류 N', Neo4j 노드 종류 칩 · 관계 표
+- [x] L.6 흐림 효과 대비(VIZ-03 · Q178 · J3.6 일부) — `pipeline.tsx` · `CascadeFlow.tsx`
+- [x] L.7 검증 · 문서 — pytest · 계층 계약 · tsc · eslint · vitest · next build · E2E · 접근성, 요구사항 §29 · 설계 §29 · 남은작업 · 세션히스토리
+- [ ] L.8 후속 — Neo4j 가 켜진 스택에서 [그래프 관계(Neo4j)] 화면 확인(로컬은 Neo4j 없음), 실제 자료로 업로드 → 경영목표 판정 · 빈 상태 확인(사용자 시험), 운영(EC2) 반영 시 기존 `.env` 의 `LOAD_SAMPLE_ON_START` 를 0 으로
+
 ## Phase K. 화면 하드코딩 제거 · 업무 영역 다중 선택 · 레드닷 · 애니메이션 · ES 인증 (2026-10-14 착수 · 요구사항 §27 · 설계 §27 · Q148~Q155)
 
 > 사용자 요청(2026-10-14): 프론트 하드코딩 전부 제거(필요한 값은 관리자 화면 설정), 사업부서 · 영업점 여러 곳 선택, 레드닷 클릭 시 사라짐(새것만), 화면 열릴 때 차트 애니메이션, '분석 에이전트 만들기', AI 어시스턴트 관리자 Elasticsearch 401.

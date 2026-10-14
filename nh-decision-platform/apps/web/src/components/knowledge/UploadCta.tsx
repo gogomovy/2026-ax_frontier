@@ -6,7 +6,7 @@ import { useSession } from "@/components/providers/SessionProvider";
 import { api } from "@/lib/api-client";
 
 /**
- * [데이터베이스] 머리말 — '자료 올리기'(화면 권한이 있는 사용자) · '승인할 자료 N'(부서 데이터 책임자) (Phase C · UPL-01 · UPL-04)
+ * [데이터베이스] 머리말 — '자료 올리기'(화면 권한이 있는 사용자) · '승인할 자료 N' · '우리 부서 자료'(부서 데이터 책임자) (Phase C · UPL-01 · UPL-04 · DEL-09)
  */
 export function UploadCta() {
   const { menu } = useSession();
@@ -27,10 +27,16 @@ export function UploadCta() {
   return (
     <>
       {steward ? (
-        <Link href="/knowledge/upload?tab=review" className="inline-flex h-9 items-center gap-1.5 rounded-pill border border-hairline px-4 text-[13px] font-bold text-ink" data-steward-cta>
-          승인할 자료
-          {pending ? <span className="rounded-pill bg-attention-soft px-1.5 text-[11px] text-attention tnum">{pending}</span> : null}
-        </Link>
+        <>
+          <Link href="/knowledge/upload?tab=review" className="inline-flex h-9 items-center gap-1.5 rounded-pill border border-hairline px-4 text-[13px] font-bold text-ink" data-steward-cta>
+            승인할 자료
+            {pending ? <span className="rounded-pill bg-attention-soft px-1.5 text-[11px] text-attention tnum">{pending}</span> : null}
+          </Link>
+          {/* 우리 부서가 올려 반영된 자료를 보고 지우는 곳 (DEL-09) */}
+          <Link href="/knowledge/upload?tab=data" className="inline-flex h-9 items-center rounded-pill border border-hairline px-4 text-[13px] font-bold text-ink" data-steward-data-cta>
+            우리 부서 자료
+          </Link>
+        </>
       ) : null}
       {allowed ? (
         <Link href="/knowledge/upload" className="inline-flex h-9 items-center rounded-pill bg-ink-button px-4 text-[13px] font-bold text-on-ink-button" data-upload-cta>

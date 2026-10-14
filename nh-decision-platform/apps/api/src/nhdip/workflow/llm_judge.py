@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from typing import Any
 
@@ -20,11 +19,13 @@ from nhdip.llm import LlmError, LlmUnavailable, chat, parse_json, resolve
 from nhdip.llm.guard import GUARD, fence
 from nhdip.models import Setting
 
+from . import numguard
+
 _COOL: dict[str, float] = {}
 _RESET: dict[str, Any] = {"at": None}  # reset_cooldown 시각 — 이전 DB 오류 기록은 쉬는 시간 판단에서 뺀다
 DEFAULT_POLICY = {"enabled": True, "cooldown_sec": 300, "max_context_chars": 14000, "timeout_sec": 30, "retries": 1, "format_retries": 1}
 DEFAULT_USER = "과제:\n{task}\n\n입력 자료(JSON):\n{context}\n\n출력은 JSON 객체 하나만."
-LITERAL_NUM = re.compile(r"\d+(?:[.,]\d+)+|\d+\s*(?:%p?|bp|억|조|만|천|원|건|배|점)")
+LITERAL_NUM = numguard.BUILTIN  # 서술 검증(Critic)과 같은 패턴 — 한곳에서 관리 (numguard)
 
 
 def policy(session: Session) -> dict[str, Any]:
@@ -34,8 +35,8 @@ def policy(session: Session) -> dict[str, Any]:
 
 def clean_reason(text: Any, limit: int = 200) -> tuple[str, bool]:
     """판단 사유 문장 — 숫자를 직접 쓰면(LLM 이 만든 수치일 수 있음) 버린다. (문장, 버렸는지)"""
-    s = str(text or "").strip()[:limit]
-    if LITERAL_NUM.search(s):
+    s = text.strip()[:limit] if isinstance(text, str) else ""  # 문자열이 아닌 값(목록 · 객체)은 사유로 쓰지 않는다
+    if numguard.has_literal_number(s):
         return "", True
     return s, False
 

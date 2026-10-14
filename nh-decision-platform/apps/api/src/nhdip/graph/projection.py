@@ -83,8 +83,10 @@ def _datasets_in_args(args: Any) -> set[str]:
     out: set[str] = set()
     if isinstance(args, dict):
         for k, v in args.items():
-            if k == "dataset" and isinstance(v, str):
+            if k in ("dataset", "master") and isinstance(v, str):  # 빌더가 마스터 자료를 `master` 키로 읽는 경우도 계보에 든다
                 out.add(v)
+            elif k == "datasets" and isinstance(v, list):
+                out |= {x for x in v if isinstance(x, str)}
             else:
                 out |= _datasets_in_args(v)
     elif isinstance(args, list):
@@ -191,7 +193,8 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
             ex = d.extraction or {}
             by = ex.get("by", "rule")
             for e in ex.get("entities", []):
-                b.node(e["label"], e["key"], {"name": e.get("name") or e["key"], **(e.get("props") or {})}, origin=origin, src_kind="document", src_ref=f"{origin}.document({d.id}) p.{e.get('page') or '-'}", extracted_by=by)
+                eprops = e.get("props") if isinstance(e.get("props"), dict) else {}  # 예전에 저장된 잘못된 props(목록 · 문자열)도 투영을 멈추지 않게
+                b.node(e["label"], e["key"], {**{k: v for k, v in eprops.items() if k != "name"}, "name": e.get("name") or e["key"]}, origin=origin, src_kind="document", src_ref=f"{origin}.document({d.id}) p.{e.get('page') or '-'}", extracted_by=by)
                 if e.get("evidence_span"):  # 속성(src_ref)처럼 마지막 문서가 남는다 — 출처와 근거가 같은 문서를 가리키게
                     b.meta[(e["label"], str(e["key"]))] = {"evidence": str(e["evidence_span"])[:200], "page": e.get("page"), "document": d.title}
             for r in ex.get("relations", []):

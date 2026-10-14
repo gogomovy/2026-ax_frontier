@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { AdminPage, C, Card, JsonEditor, JsonView, Loading, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { OntologyMap } from "@/components/admin/ontology/OntologyMap";
 import { SchemaMap } from "@/components/admin/ontology/SchemaMap";
-import { colorOf, relKo, type OntologyMapData } from "@/components/admin/ontology/mapMath";
+import { colorOf, relKo, type MapClass, type OntologyMapData } from "@/components/admin/ontology/mapMath";
 import { ValueView } from "@/components/admin/ValueView";
 import { BarList } from "@/components/charts/Bars";
 import { Advanced, EmptyState, Notice } from "@/components/ui/Layout";
@@ -35,6 +35,38 @@ interface Graph {
 
 type MapView = "3d" | "2d" | "schema" | "table";
 
+/** 노드 종류 거르기 칩 — 색 점 · 업무 이름 · 영문 식별자 · 개수 */
+function KindChip({ active, name, code, count, color, onClick }: { active: boolean; name: string; code?: string; count?: number; color?: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1 text-[12px] transition-colors ${active ? "border-ink-deep bg-ink-deep text-white" : "border-hairline-soft bg-white text-charcoal hover:bg-surface-soft"}`}
+    >
+      {color ? <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-circle" style={{ background: color }} /> : null}
+      <b>{name}</b>
+      {code && code !== name ? <span className={`font-mono text-[10px] ${active ? "text-white/75" : "text-stone"}`}>{code}</span> : null}
+      {count !== undefined ? <span className={`tnum text-[11px] ${active ? "text-white/90" : "text-steel"}`}>{count.toLocaleString("ko-KR")}</span> : null}
+    </button>
+  );
+}
+
+/** 관계 표의 노드 칸 — 종류(색 · 업무 이름) 위, 개체 이름 아래 */
+function NodeCell({ cls, name, info }: { cls: string; name?: string; info: Record<string, MapClass> }) {
+  const c = info[cls];
+  return (
+    <span className="block min-w-0">
+      <span className="inline-flex items-center gap-1 text-[11px] text-steel">
+        <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-circle" style={{ background: c ? colorOf(c.color) : "#94a3b8" }} />
+        {c?.ko ?? cls}
+        {c ? <span className="font-mono text-[10px] text-stone">{cls}</span> : null}
+      </span>
+      <span className="block break-words text-[12.5px] font-bold text-ink-deep">{name ?? "-"}</span>
+    </span>
+  );
+}
+
 /** 온톨로지 — 구성 지도(원장 기준 · Phase G) · 그래프 관계(Neo4j) · 스키마 · 추출 검토 · 재투영 (ADM-09, ONT-13~16, OV-01~06) */
 export default function OntologyAdmin() {
   const data = useApiData<Onto>("/admin/ontology");
@@ -52,6 +84,8 @@ export default function OntologyAdmin() {
 
   const openTotal = Object.values(d?.openIssues ?? {}).reduce((n, v) => n + v, 0);
   const nodeName = useMemo(() => Object.fromEntries((graph.data?.nodes ?? []).map((n) => [n.id, `${n.name}`])), [graph.data]);
+  // 노드 종류의 업무 이름 · 색 — 구성 지도와 같은 값(원장 기준 클래스 목록)
+  const classInfo = useMemo<Record<string, MapClass>>(() => Object.fromEntries((m?.classes ?? []).map((c) => [c.label, c])), [m?.classes]);
 
   return (
     <AdminPage
@@ -141,15 +175,25 @@ export default function OntologyAdmin() {
       {tab === "graph" ? (
         <Card title={label ? `${label} 관련 관계` : "Neo4j 관계 (최대 300)"}>
           {d?.graph.ok ? (
-            <div className="mb-md flex flex-wrap items-center gap-1" role="group" aria-label="노드 종류로 거르기">
-              <span className="mr-1 text-[11.5px] font-bold text-steel">노드 종류</span>
-              {(d.graph.labels ?? []).map((l) => (
-                <button key={l.label} type="button" aria-pressed={label === l.label} onClick={() => setLabel(label === l.label ? "" : l.label)}>
-                  <Badge tone={label === l.label ? "dark" : "neutral"}>
-                    {l.label} {l.n}
-                  </Badge>
-                </button>
-              ))}
+            <div className="mb-md" role="group" aria-label="노드 종류로 거르기" data-graph-kinds>
+              <p className="mb-xs flex flex-wrap items-baseline gap-x-2 text-[12.5px]">
+                <b className="text-charcoal">노드 종류 {(d.graph.labels ?? []).length}</b>
+                <span className="text-[11px] text-stone">
+                  노드 {(d.graph.labels ?? []).reduce((s, l) => s + l.n, 0).toLocaleString("ko-KR")}개 · 하나를 누르면 그 종류가 들어간 관계만 봅니다 · 색은 구성 지도와 같습니다
+                </span>
+              </p>
+              <ul className="flex flex-wrap gap-1.5">
+                <li>
+                  <KindChip active={!label} name="전체" onClick={() => setLabel("")} />
+                </li>
+                {[...(d.graph.labels ?? [])]
+                  .sort((a, b) => b.n - a.n)
+                  .map((l) => (
+                    <li key={l.label}>
+                      <KindChip active={label === l.label} name={classInfo[l.label]?.ko ?? l.label} code={l.label} count={l.n} color={classInfo[l.label] ? colorOf(classInfo[l.label].color) : undefined} onClick={() => setLabel(label === l.label ? "" : l.label)} />
+                    </li>
+                  ))}
+              </ul>
             </div>
           ) : (
             <div className="mb-md">
@@ -165,11 +209,14 @@ export default function OntologyAdmin() {
                 {(graph.data?.edges ?? []).map((e, i) => (
                   <tr key={i}>
                     <C>
-                      <Badge>{e.from.split(":")[0]}</Badge> {nodeName[e.from]}
+                      <NodeCell cls={e.from.split(":")[0]} name={nodeName[e.from]} info={classInfo} />
                     </C>
-                    <C mono>{e.type}</C>
                     <C>
-                      <Badge>{e.to.split(":")[0]}</Badge> {nodeName[e.to]}
+                      <span className="block text-[12px] font-bold text-charcoal">→ {relKo(e.type)}</span>
+                      <span className="block font-mono text-[10.5px] text-stone">{e.type}</span>
+                    </C>
+                    <C>
+                      <NodeCell cls={e.to.split(":")[0]} name={nodeName[e.to]} info={classInfo} />
                     </C>
                     <C className="text-[11px] text-stone">{e.by ?? "-"}</C>
                   </tr>

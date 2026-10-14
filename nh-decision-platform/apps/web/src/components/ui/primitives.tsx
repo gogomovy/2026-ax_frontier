@@ -79,7 +79,8 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   ghost: "border border-hairline bg-canvas text-ink-deep hover:bg-surface-soft active:bg-track",
   quiet: "border border-transparent bg-transparent text-charcoal hover:bg-surface-soft active:bg-track",
   // 되돌리기 어려운 작업 확인 (Phase E · INT-01)
-  danger: "border border-transparent bg-critical text-white hover:bg-critical-strong active:bg-critical-strong",
+  // 흰 글자 대비 4.5:1 — 레드닷 색(critical, 3.9:1)이 아니라 danger/700 을 바탕으로 쓴다 (자료 삭제 화면 접근성 점검에서 발견)
+  danger: "border border-transparent bg-critical-strong text-white hover:bg-[#a52b30] active:bg-[#a52b30]",
 };
 // 꺼진 단추 — 변형 색과 섞이지 않게 변형 대신 쓴다(같은 bg-* 두 개면 CSS 순서로 켜진 색이 이겨 켜진 것처럼 보였다 · Phase E F4)
 const BUTTON_DISABLED = "cursor-not-allowed border border-transparent bg-track text-steel opacity-70";

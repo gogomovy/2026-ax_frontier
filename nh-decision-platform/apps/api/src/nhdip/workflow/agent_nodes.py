@@ -37,7 +37,8 @@ LEVELS = ("major", "minor", "ignore")
 
 
 def record(ctx: RunContext, agent: str, decision: str, summary: str, detail: dict[str, Any]) -> None:
-    ctx.session.add(AgentDecision(agent_code=agent, workflow_code=ctx.workflow.code, job_id=ctx.run.job_id, workflow_run_id=ctx.run.id, decision=decision, summary=summary[:500], detail=detail))
+    # nodeRunId — 이 판단을 낸 노드 실행(ops.node_run)과 잇는다. 관리자 화면이 판단을 파이프라인 노드 위에 놓아 설명하는 데 쓴다
+    ctx.session.add(AgentDecision(agent_code=agent, workflow_code=ctx.workflow.code, job_id=ctx.run.job_id, workflow_run_id=ctx.run.id, decision=decision, summary=summary[:500], detail={**detail, "nodeRunId": ctx.node_run_id}))
 
 
 def run_chain(ctx: RunContext) -> list[str]:
@@ -162,7 +163,8 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         if data:
             sent_codes = {i["code"] for i in sent}
             for d in data.get("changes") or []:
-                if isinstance(d, dict) and d.get("code") in sent_codes and d.get("level") in LEVELS:
+                # 모델이 코드 · 수준에 목록 · 객체를 넣어도(집합 검사에서 TypeError) 실행이 멈추지 않게 문자열만 받는다
+                if isinstance(d, dict) and isinstance(d.get("code"), str) and d["code"] in sent_codes and isinstance(d.get("level"), str) and d["level"] in LEVELS:
                     by_code[d["code"]] = d
             judged_by = "llm" if by_code else "rule"
             llm_summary, _ = clean_reason(data.get("summary"))
@@ -173,7 +175,8 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                 if lvl == "ignore" and i["ruleLevel"] == "major" and pol.get("protect_major", True):
                     lvl = "minor"
                 reason, dropped = clean_reason(d.get("reason"))
-                i.update({"level": None if lvl == "ignore" else lvl, "judgedBy": "llm", "reason": reason or None, "group": str(d.get("group") or "")[:40] or None, **({"reasonDropped": True} if dropped else {})})
+                group, _ = clean_reason(d.get("group"), 40)  # 묶음 이름도 사유와 같은 숫자 점검 — 점검 없이 변화 피드(게시)로 가지 않게
+                i.update({"level": None if lvl == "ignore" else lvl, "judgedBy": "llm", "reason": reason or None, "group": group or None, **({"reasonDropped": True} if dropped else {})})
             else:
                 i.update({"level": i["ruleLevel"], "judgedBy": "rule"})
     final = [i for i in items if i.get("level")]
@@ -294,7 +297,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         picks = []
         for d in data.get("narrate") or []:
             tid = d.get("insight") if isinstance(d, dict) else d
-            if tid in targets and tid not in picks:
+            if isinstance(tid, str) and tid in targets and tid not in picks:
                 picks.append(tid)
                 reason, _ = clean_reason(d.get("reason") if isinstance(d, dict) else "")
                 why[tid] = f"LLM: {reason}" if reason else why.get(tid) or "LLM 판단"
@@ -305,7 +308,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ev_query = _clean_query(evd.get("query"))
         allowed = {f["code"] for f in follow_cands}
         for f in data.get("followups") or []:
-            if isinstance(f, dict) and f.get("workflow") in allowed and f["workflow"] not in {x["workflow"] for x in followups}:
+            if isinstance(f, dict) and isinstance(f.get("workflow"), str) and f["workflow"] in allowed and f["workflow"] not in {x["workflow"] for x in followups}:
                 reason, _ = clean_reason(f.get("reason"))
                 followups.append({"workflow": f["workflow"], "reason": reason or "LLM 판단"})
         followups = followups[: int(pol.get("max_followups", 2))]
@@ -330,7 +333,8 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     evidence = bool(chosen) and llm_ok and ev is not None and (run_evidence if run_evidence is not None else True)
     plan = {"by": by, "meta": meta, "narrate": chosen if llm_ok else [], "candidates": chosen, "why": {k: v for k, v in why.items() if k in chosen}, "skip": skip, "evidence": evidence,
             "evidenceQuery": ev_query, "followups": followups, "llm": llm_ok, "llmReason": llm_reason, "causes": sorted(set(types)), "changedFigures": sorted(changed_figs)[:30],
-            "dataChanged": data_changed, "chain": chain, "llmSummary": llm_summary, "ruleSuggestion": {"narrate": rule_choice}}
+            "dataChanged": data_changed, "chain": chain, "llmSummary": llm_summary, "ruleSuggestion": {"narrate": rule_choice},
+            **({"scope": sfx.lstrip("@")} if sfx else {})}  # 범위 실행(다지점)이면 어느 범위의 계획인지 — 같은 실행의 계획 기록을 구분
     ctx.state["plan"] = plan
     ctx.state["followups"] = [{**f, "chain": [*chain, ctx.workflow.code]} for f in followups]
     who = "LLM" if by == "llm" else "규칙"

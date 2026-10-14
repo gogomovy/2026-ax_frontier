@@ -23,6 +23,7 @@ from nhdip.views.store import find_insight, find_paths, get_current, patch_figur
 
 from nhdip.llm.guard import GUARD, fence
 
+from . import numguard
 from .engine import NodeResult, RunContext, node_impl
 
 
@@ -55,12 +56,14 @@ def n_load_inputs(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         codes |= _datasets_in_args(m.args)
     for b in ctx.session.execute(select(ViewBinding).where(ViewBinding.workflow_code == ctx.workflow.code, ViewBinding.enabled)).scalars():
         codes |= _datasets_in_args(b.params)
-    missing = []
+    missing, missing_codes = [], []
     for c in sorted(codes):
         try:
             ctx.eval.dataset(c)
         except ResolveError as exc:
             missing.append(str(exc))
+            missing_codes.append(c)
+    ctx.state["missing_datasets"] = missing_codes  # 실행 요약 · 관리자 화면의 '필요 자료 미업로드' 안내 (engine 이 읽는다)
     out = {"datasets": list(ctx.eval.used_versions.values()), "missing": missing}
     return NodeResult(out, "degraded" if missing else "succeeded")
 
@@ -104,6 +107,12 @@ def _resolve_target(payload: Any, path: str) -> list[tuple[str, str]]:
     from nhdip.views.template import binding_targets
 
     return binding_targets(payload, path)
+
+
+def mark_binding_stale(payload: Any, path: str, targets: list[tuple[str, str]], reason: str | None) -> bool:
+    from nhdip.views.template import mark_binding_stale as _mark
+
+    return _mark(payload, path, targets, reason)
 
 
 def _as_of_stamp(ctx: RunContext, arts: dict[str, Any], computed: set[str]) -> None:
@@ -175,10 +184,15 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             continue
         try:
             value = fn(ctx.eval, b.params or {})
-        except (ResolveError, KeyError, ValueError, TypeError) as exc:
+        except (ResolveError, KeyError, ValueError, TypeError, IndexError, ArithmeticError) as exc:  # 업로드 값이 비었을 때(Decimal 변환 · 0 나눗셈)도 노드가 실패하지 않게
             bind_out.append({"id": b.id, "artifact": b.artifact_key, "error": str(exc)})
+            # 계산 실패 — 표 · 차트의 이전 값은 두되 '갱신 실패' 로 표시한다(수치와 같은 정책, 삭제로 자료가 비었을 때도) (DEL-11)
+            if mark_binding_stale(payload, b.path, _resolve_target(payload, b.path), str(exc) or "계산 실패"):
+                ctx.changed.add(b.artifact_key)
             continue
         targets = _resolve_target(payload, b.path)
+        if mark_binding_stale(payload, b.path, targets, None):  # 다시 계산됐으니 갱신 실패 표시를 뗀다
+            ctx.changed.add(b.artifact_key)
         for parent, fld in targets:
             obj = payload
             for p in [x for x in parent.split(".") if x]:
@@ -195,6 +209,11 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     for key, payload in arts.items():
         if apply_metric_fields(payload, ctx.eval.outcomes):
             ctx.changed.add(key)
+    # 경영목표 판정(정상 · 미달 · 한도 근접 · 초과) — 실적 수치와 목표 값으로 계산한다 (시드의 고정 판정이 실제 자료와 어긋나지 않게)
+    from nhdip.views.goal_verdict import apply_goal_verdicts
+
+    verdict_keys, verdicts = apply_goal_verdicts(ctx.session, arts)
+    ctx.changed |= verdict_keys
     units = _setting(ctx.session, "format.unit_labels", None)
     idx = figure_index(arts)
     rendered = 0
@@ -202,7 +221,7 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         if render_templates(payload, idx, ctx.eval, units if isinstance(units, dict) else None):
             ctx.changed.add(key)
             rendered += 1
-    return NodeResult({"figures_patched": len(changes), "figure_changes": changes[:200], "bindings": bind_out, "templates_rendered": rendered}, "degraded" if any("error" in x for x in bind_out) else "succeeded")
+    return NodeResult({"figures_patched": len(changes), "figure_changes": changes[:200], "bindings": bind_out, "templates_rendered": rendered, "goal_verdicts": verdicts}, "degraded" if any("error" in x for x in bind_out) else "succeeded")
 
 
 # ═════════════════════════ 근거 검색 · LLM ═════════════════════════
@@ -267,7 +286,8 @@ LITERAL_NUM_DEFAULT = r"\d+(?:[.,]\d+)+\s*(?:%p?|bp|배)?|\d+\s*(?:%p?|bp|억|�
 
 
 def _strip_markers(text: str) -> str:
-    return re.sub(r"\[\[fig:[^\]]+\]\]|\{\{term:[^}]+\}\}", " ", text)
+    """수치 마커는 빼고 용어 마커는 라벨 글자를 남긴다 — 라벨은 화면에 그대로 보이므로 숫자 점검 대상 (numguard)."""
+    return numguard.strip_markers(text)
 
 
 @node_impl("narrate", "LLM 서술 — 확정 수치는 [[fig:ID]] 마커로만 참조 (실패 시 기존 서술 유지 = 템플릿 폴백)")
@@ -292,13 +312,19 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     except LlmUnavailable as exc:
         return NodeResult({"fallback": "template", "reason": str(exc), "targets": [t["insight_id"] for t in targets], "results": results}, "degraded")
     degraded = False
+    broken: str | None = None  # 첫 LLM 호출 실패 뒤에는 나머지 대상에서 같은 대기 · 재시도를 되풀이하지 않는다(게이트웨이 장애 때 실행이 수십 분 묶이는 것을 막음)
     for target in targets:
+        if broken:
+            degraded = True
+            results.append({"insight": target["insight_id"], "fallback": "template", "error": f"앞선 LLM 호출 실패로 건너뜀: {broken}"[:300]})
+            continue
         ins = find_insight(arts, target["insight_id"])
         if not ins:
             results.append({"insight": target["insight_id"], "error": "인사이트 없음"})
             continue
         figures = ins.get("figures") or {}
-        fig_lines = [f"- [[fig:{fid}]] {f.get('label')} = {f.get('value')} {f.get('unit')}" for fid, f in figures.items()]
+        # 갱신 실패(stale) 수치는 서술 재료에서 뺀다 — 원자료 삭제 등으로 다시 계산하지 못한 옛 값을 최신 값처럼 서술하지 않도록 (DEL-11)
+        fig_lines = [f"- [[fig:{fid}]] {f.get('label')} = {f.get('value')} {f.get('unit')}" for fid, f in figures.items() if not f.get("stale")]
         verdicts = {k: v for k, v in (ctx.state.get("verdicts") or {}).items()}
         ev = ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]
         ev_lines = [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ev]
@@ -334,13 +360,15 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         except (LlmError, ValueError, AttributeError) as exc:
             degraded = True
             results.append({"insight": target["insight_id"], "fallback": "template", "error": str(exc)[:300]})
+            if isinstance(exc, LlmError):  # 모델 · 연결 문제(출력 형식 오류 ValueError 와 구분) — 이번 실행의 나머지 서술은 시도하지 않는다
+                broken = str(exc)[:200]
     return NodeResult({"model": llm.model, "results": results}, "degraded" if degraded else "succeeded")
 
 
 @node_impl("critic", "검증 — 리터럴 숫자 · 미등록 수치 마커 · 인과 단정 표현 차단 (통과분만 반영)")
 def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     rules = _rule_body(ctx.session, (node.config or {}).get("rule", "CRITIC_RULES"))
-    num_re = re.compile(rules.get("literal_number_regex") or LITERAL_NUM_DEFAULT)
+    extra_num = rules.get("literal_number_regex") or LITERAL_NUM_DEFAULT  # 규칙(DB)의 패턴은 내장 패턴(numguard)과 함께 적용
     causal = rules.get("causal_phrases") or []
     arts = ctx.load_artifacts()
     out = []
@@ -348,7 +376,7 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     for insight_id, nar in (ctx.state.get("narratives") or {}).items():
         st = nar["statement"]
         checks = []
-        lits = num_re.findall(_strip_markers(st))
+        lits = numguard.literal_numbers(st, extra_num)
         checks.append({"checkCode": "numeric_provenance", "passed": not lits, "detail": "모든 수치가 계산 결과를 참조" if not lits else f"리터럴 숫자: {lits[:5]}"})
         used = set(re.findall(r"\[\[fig:([^\]]+)\]\]", st))
         unknown = used - set(nar["figures"])
@@ -356,17 +384,20 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         hit = [p for p in causal if p in st]
         checks.append({"checkCode": "causality_language", "passed": not hit, "detail": "인과 단정 표현 미검출" if not hit else f"검출: {hit}"})
         passed = all(c["passed"] for c in checks)
+        from .agent_nodes import record
+
+        # 범위 실행(다지점 · B.47)은 서술 이력을 범위별로 — 다른 지점 서술 이력 때문에 '최초 1회' 서술을 건너뛰지 않게
+        scoped_id = f"{insight_id}{ctx.eval.scope_suffix}"
         if passed:
             for key, payload in arts.items():
                 if patch_insight(payload, insight_id, {"statement": st}):
                     ctx.changed.add(key)
-            from .agent_nodes import record
-
-            # 범위 실행(다지점 · B.47)은 서술 이력을 범위별로 — 다른 지점 서술 이력 때문에 '최초 1회' 서술을 건너뛰지 않게
-            scoped_id = f"{insight_id}{ctx.eval.scope_suffix}"
-            record(ctx, nar.get("agent") or "narrator", "narrated", f"{scoped_id} 서술 갱신(검증 통과)", {"insight": scoped_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why")})
+            record(ctx, nar.get("agent") or "narrator", "narrated", f"{scoped_id} 서술 갱신(검증 통과)", {"insight": scoped_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why"), "statement": st[:600]})
         else:
             degraded = True
+            # 반려도 기록한다 — 어떤 문장이 어떤 점검에서 막혔는지 관리자가 [에이전트 결정]에서 볼 수 있게(예전에는 노드 출력에만 남았다)
+            failed_codes = [c["checkCode"] for c in checks if not c["passed"]]
+            record(ctx, nar.get("agent") or "narrator", "rejected", f"{scoped_id} 서술 반려({', '.join(failed_codes)}) — 기존 문장 유지", {"insight": scoped_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why"), "statement": st[:600], "checks": checks})
         out.append({"insight": insight_id, "passed": passed, "checks": checks})
     return NodeResult({"reviewed": out}, "degraded" if degraded else "succeeded")
 
@@ -444,7 +475,8 @@ def n_embed(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     try:
         emb = resolve(ctx.session, node.agent_code or _setting(ctx.session, "embedding.agent", "embedder"))
     except LlmUnavailable as exc:
-        return NodeResult({"skipped": str(exc)}, "succeeded")
+        # 임베딩 모델이 없으면 일을 하지 않았다 — '성공'(초록)이 아니라 '건너뜀'으로 보여 준다
+        return NodeResult({"skipped": str(exc)}, "skipped")
     limit = int((node.config or {}).get("limit", 200))
     batch = int((node.config or {}).get("batch", 16))
     done = 0
@@ -476,17 +508,37 @@ def n_extract(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             t = source(origin)
             for d in ctx.session.execute(select(t.document.id).where(t.document.is_current, t.document.status == "ingested")).scalars():
                 targets.append((origin, d))
+    import time as _time
+
+    cfg = node.config or {}
+    # 한 번에 처리할 문서 수 · 시간 상한 — 문서가 많이 올라와도 한 실행이 몇 시간씩 묶여 감시 스레드에 끊기고 처음부터 반복되는 것을 막는다(남은 문서는 이어서)
+    max_docs, budget = int(cfg.get("max_documents", 20) or 0), float(cfg.get("budget_sec", 600) or 0)
+    t0 = _time.monotonic()
     seen = set()
     results = []
+    todo = []
     for origin, did in targets:
-        if (origin, did) in seen:
-            continue
-        seen.add((origin, did))
+        if (origin, did) not in seen:
+            seen.add((origin, did))
+            todo.append((origin, did))
+    done = 0
+    for origin, did in todo:
+        if (max_docs and done >= max_docs) or (budget and _time.monotonic() - t0 > budget):
+            break
         doc = ctx.session.get(source(origin).document, did)
+        done += 1
         if not doc or not doc.is_current:
             continue
-        results.append(extract_document(ctx.session, origin, doc, agent_code=node.agent_code or "ontology_extractor", max_chunks=int((node.config or {}).get("max_chunks", 12)), workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id))
-    return NodeResult({"documents": results}, "degraded" if any(r.get("issues") for r in results) else "succeeded")
+        results.append(extract_document(ctx.session, origin, doc, agent_code=node.agent_code or "ontology_extractor", max_chunks=int(cfg.get("max_chunks", 12)), workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id))
+        ctx.session.commit()  # 문서마다 확정 — 뒤쪽 문서가 실패해도 앞에서 끝낸 구조화는 남는다
+    remaining = len(todo) - done
+    out: dict[str, Any] = {"documents": results}
+    if remaining > 0:
+        out["remaining"] = remaining
+        # 이번에 실제로 구조화가 진행됐을 때만 이어서 실행한다(진행이 없는데 되풀이하는 무한 반복 방지)
+        if any(r.get("by") for r in results):
+            ctx.emit_after_success("manual", {"workflow": ctx.workflow.code, "reason": f"남은 문서 {remaining}건 이어서 구조화"}, "system")
+    return NodeResult(out, "degraded" if any(r.get("issues") for r in results) or remaining > 0 else "succeeded")
 
 
 @node_impl("project_graph", "PostgreSQL → Neo4j 멱등 투영 (세대 기반 정리)")
@@ -496,6 +548,11 @@ def n_project(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         return NodeResult(project_all(ctx.session))
     except GraphUnavailable as exc:
         return NodeResult({"error": f"그래프 장애 — 다음 이벤트에서 재투영: {exc}"[:500]}, "degraded")
+    except (ValueError, TypeError, KeyError) as exc:  # 그래프 드라이버 설정 오류(주소 형식 등) · 잘못된 저장 값 — 실행 전체를 실패시켜 3번 되풀이하지 않고 축소로 알린다
+        import logging
+
+        logging.getLogger("nhdip.workflow").warning("그래프 투영 오류", exc_info=True)
+        return NodeResult({"error": f"그래프 투영 오류 — {type(exc).__name__}: {str(exc)[:300]}"}, "degraded")
 
 
 # ═════════════════════════ 컬럼 정의서 ═════════════════════════
@@ -503,7 +560,12 @@ def n_project(ctx: RunContext, node: WorkflowNode) -> NodeResult:
 def n_contracts(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     from nhdip.contracts.materialize import materialize
 
-    reports = materialize(ctx.session, ctx.eval, ctx.load_artifacts(), (node.config or {}).get("tables"), ctx.run.id)
+    try:
+        reports = materialize(ctx.session, ctx.eval, ctx.load_artifacts(), (node.config or {}).get("tables"), ctx.run.id)
+    except ResolveError as exc:
+        # 기준 자료(예: 월별 여신현황)가 아직 올라오지 않았다 — 오류가 아니라 '건너뜀'. 자료가 올라오면 다음 실행에서 적재된다
+        ctx.session.rollback()
+        return NodeResult({"reason": "필요 자료 미업로드", "detail": str(exc)[:300]}, "skipped")
     for code, rep in reports.items():
         key = f"contract.{code}"
         ctx.artifacts[key] = rep

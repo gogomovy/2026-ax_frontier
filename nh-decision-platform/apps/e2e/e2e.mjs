@@ -154,6 +154,43 @@ try {
   ok("질의 패널: 수치 출처 확인 배지", ans.includes("수치 출처 확인"));
   await shot(u, "04-assist");
 
+  // 5-1) 내보내기(한 장 PDF, EXP-01~03) — 인쇄 창 대신 window.print 를 가로채, 단추가 만든 @page 크기 그대로 PDF 를 뽑아 쪽 수를 센다.
+  //      용지 기본 폭에 끌려 좁은 배치로 여러 쪽이 되거나(예전 동작), 가로가 잘리지 않아야 한다. 좁은 창(1100)에서도 같다.
+  await u.keyboard.press("Escape");
+  for (const width of [1440, 1100]) {
+    await u.setViewport({ width, height: 900 });
+    await u.goto(`${BASE}/hq/overview`, { waitUntil: "networkidle0" });
+    await u.evaluate(() => {
+      window.__printed = false;
+      window.print = () => {
+        window.__printed = true;
+      };
+    });
+    const hasBtn = await u.evaluate(() => {
+      const b = [...document.querySelectorAll("button")].find((x) => x.textContent?.trim() === "내보내기");
+      b?.click();
+      return Boolean(b);
+    });
+    ok(`내보내기 단추(${width}px)`, hasBtn);
+    if (!hasBtn) continue;
+    await u.waitForFunction(() => window.__printed === true, { timeout: 20000 });
+    const st = await u.evaluate(() => ({
+      rule: document.getElementById("print-page-style")?.textContent ?? "",
+      printing: document.documentElement.classList.contains("printing"),
+      toolsHidden: [...document.querySelectorAll(".no-print")].every((el) => getComputedStyle(el).display === "none"),
+      contentW: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+    }));
+    const m = /size:\s*(\d+)px\s+(\d+)px/.exec(st.rule);
+    const pdf = await u.pdf({ preferCSSPageSize: true, printBackground: true });
+    const pageCount = (Buffer.from(pdf).toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+    ok(`내보내기 → 한 쪽 PDF(${width}px 창)`, pageCount === 1 && st.printing && st.toolsHidden && Boolean(m) && Number(m[1]) >= 1280, `쪽 ${pageCount} · ${st.rule}`);
+    ok(`내보내기: 가로로 잘리는 내용 없음(${width}px 창)`, Boolean(m) && st.contentW <= Number(m[1]), `내용 폭 ${st.contentW}px · 쪽 폭 ${m?.[1]}px`);
+    await u.evaluate(() => window.dispatchEvent(new Event("afterprint"))); // 인쇄가 끝난 것처럼 — 원래 화면으로 돌아와야 한다
+    const restored = await u.evaluate(() => !document.documentElement.classList.contains("printing") && !document.getElementById("print-page-style"));
+    ok(`내보내기 후 원래 화면 복원(${width}px 창)`, restored);
+  }
+  await u.setViewport({ width: 1440, height: 900 });
+
   // 6) 영업점 사용자 (지역본부 > 영업점)
   const b = await newPage(await browser.createBrowserContext());
   await signup(b, BR_EMP, "E2E지점", ["D300", "BR301"]);

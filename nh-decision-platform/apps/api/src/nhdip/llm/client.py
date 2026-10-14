@@ -113,16 +113,21 @@ def resolve(session: Session, agent_code: str | None) -> ResolvedLlm:
         q = select(Prompt).where(Prompt.agent_code == agent.code)
         q = q.where(Prompt.version == agent.prompt_version) if agent.prompt_version else q.order_by(Prompt.version.desc())
         prompt = session.execute(q.limit(1)).scalar()
+    try:
+        api_key = decrypt_secret(conn.api_key_enc)
+        timeout_sec, retry_n = float(pick("timeout_sec", 60.0)), int(pick("retries", 2))
+    except Exception as exc:  # noqa: BLE001 — 암호 해독 실패(키 교체) · 잘못된 설정값은 '쓸 수 없음'으로 알려 호출자가 규칙으로 대체하게
+        raise LlmUnavailable(f"LLM 설정을 읽을 수 없습니다 — {type(exc).__name__}: {str(exc)[:120]}") from exc
     return ResolvedLlm(
         agent_code=agent.code if agent else None,
         connection_id=conn.id,
         connection_name=conn.name,
         base_url=conn.base_url.rstrip("/"),
-        api_key=decrypt_secret(conn.api_key_enc),
+        api_key=api_key,
         model=model,
         params=params,
-        timeout=float(pick("timeout_sec", 60.0)),
-        retries=int(pick("retries", 2)),
+        timeout=timeout_sec,
+        retries=retry_n,
         tools_enabled=bool(pick("tools_enabled", False)),
         system_prompt=prompt.system if prompt else "",
         user_template=prompt.user_template if prompt else "",
@@ -270,8 +275,8 @@ def chat(
                 expanded.append(body["max_tokens"])
                 logging.getLogger("nhdip.llm").warning("model %s 출력이 max_tokens %s 에서 잘려 %s 로 다시 호출", cfg.model, cur, body["max_tokens"])
                 continue
-            call.response = data
-            call.output_text = msg.get("content") or ""
+            call.response = _log_messages(session, data)  # 응답 · 출력도 입력(messages)과 같은 개인정보 가림 정책으로 기록
+            call.output_text = _log_messages(session, msg.get("content") or "")
             call.prompt_tokens = usage.get("prompt_tokens")
             call.completion_tokens = usage.get("completion_tokens")
             call.latency_ms = int((time.monotonic() - t0) * 1000)
@@ -281,7 +286,8 @@ def chat(
             out = ChatResult(call.output_text, msg.get("tool_calls") or [], data, call.id, msg)
             _save_call(call)
             return out
-        except (httpx.HTTPError, ValueError) as exc:
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
+            # 게이트웨이가 약속과 다른 모양(choices 없음 등)으로 답해도 오류 기록(ops.llm_call)을 남기고 LlmError 로 알린다
             last_err = f"{type(exc).__name__}: {exc}"
             time.sleep(min(2**attempt, 8))
     call.status = "error"
@@ -438,11 +444,14 @@ def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_
         resp.raise_for_status()
         data = resp.json()
         vecs = [d["embedding"] for d in sorted(data["data"], key=lambda d: d.get("index", 0))]
+        if len(vecs) != len(texts):
+            # 게이트웨이가 일부만 돌려주면 zip 이 조용히 잘라 일부 청크가 임베딩 없이 '완료'로 보인다 — 오류로 알린다
+            raise ValueError(f"임베딩 {len(texts)}건을 요청했으나 {len(vecs)}건만 받음")
         call.status = "ok"
         call.prompt_tokens = (data.get("usage") or {}).get("prompt_tokens")
         call.output_text = f"{len(vecs)} vectors × {len(vecs[0]) if vecs else 0} dim"
         return vecs
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
+    except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError, AttributeError) as exc:
         call.status = "error"
         call.error = str(exc)[:1000]
         raise LlmError(str(exc)) from exc

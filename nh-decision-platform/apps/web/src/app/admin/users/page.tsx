@@ -133,7 +133,7 @@ export default function UsersAdmin() {
                   checked={Boolean(u.dataSteward)}
                   onChange={(v) => run(() => apiPatch(`/admin/users/${u.empNo}`, { data_steward: v }), v ? "부서 데이터 책임자로 지정했습니다" : "데이터 책임자 지정을 해제했습니다", users.reload)}
                 />
-                {u.dataSteward && u.stewardScope ? <p className="mt-0.5 text-[10.5px] text-stone">{u.stewardScope.name} 자료 승인</p> : null}
+                {u.dataSteward && u.stewardScope ? <p className="mt-0.5 text-[10.5px] text-stone">{u.stewardScope.name} 자료 승인 · 삭제</p> : null}
               </C>
               <C className="min-w-[120px]">
                 {u.role === "admin" ? (

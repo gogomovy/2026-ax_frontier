@@ -325,9 +325,13 @@ def materialize(session: Session, ctx: EvalContext, artifacts: dict[str, Any], t
                     "calcRunId": r.get("calc_run_id"),
                 }
             )
-        if version_col:
-            row[version_col] = _next_version(session, table, version_col, row)
-        _upsert(session, table, cols, row, run_id)
+        if any(c.column_name.lower() == "base_ym" for c in cols) and not row.get("base_ym"):
+            # 기준년월을 알 수 없다(적재된 자료가 없다) — 기본키에 BASE_YM 이 들어가므로 빈 키로 넣지 않는다
+            notes.append("기준년월을 알 수 없어 적재하지 않았습니다 (입력 자료 없음)")
+        else:
+            if version_col:
+                row[version_col] = _next_version(session, table, version_col, row)
+            _upsert(session, table, cols, row, run_id)
         summary: dict[str, int] = {}
         for ch in checks:
             summary[ch["verdict"]] = summary.get(ch["verdict"], 0) + 1

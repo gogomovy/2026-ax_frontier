@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { NewDatasetPanel, definitionPayload, type PanelSubmit } from "@/components/knowledge/NewDatasetPanel";
 import { useUi } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
 import { Advanced, EmptyState, KeyValueList, Notice } from "@/components/ui/Layout";
@@ -36,6 +37,8 @@ interface DatasetOpt {
 export interface Uploadable {
   datasets: DatasetOpt[];
   docClasses: { key: string; label: string; origin: string }[];
+  /** 맞는 자료가 없을 때 파일에서 추론한 정의로 새 종류 자료를 제안할 수 있는가 (설정 upload.user_targets.new_datasets) */
+  canPropose?: boolean;
   accept: { dataset: string; document: string };
   /** 업로드 용량 한도(설정 upload.policy.max_mb) — 파일 놓기 영역이 먼저 알려 준다 */
   maxMb?: number;
@@ -53,7 +56,7 @@ export interface UploadReq {
   targetLabel: string;
   origin: string;
   fileName: string;
-  meta: Record<string, string | null>;
+  meta: Record<string, string | null> & { proposal?: { code: string; name: string; columns: { name: string; label: string; type: string; required?: boolean }[]; key_columns: string[]; as_of_column: string | null } };
   preview: { rows?: number; quality?: { status?: string; checks?: Check[] }; chars?: number; pages?: number; excerpt?: string; headers?: string[]; columns?: string[]; sample?: Record<string, unknown>[] };
   status: "pending" | "approved" | "rejected" | "failed";
   statusLabel: string;
@@ -63,7 +66,7 @@ export interface UploadReq {
   reviewedByName?: string | null;
   reviewedAt: string | null;
   reviewNote: string | null;
-  result: { version?: number; rows?: number; docCode?: string; error?: string; isCurrent?: boolean; via?: "admin" | "steward" };
+  result: { version?: number; rows?: number; docCode?: string; error?: string; isCurrent?: boolean; via?: "admin" | "steward"; createdDataset?: string };
   /** 부서 데이터 책임자 검토 목록 — 이 사람이 처리할 수 있는지(본인 요청 제외) */
   canReview?: boolean;
   createdAt: string;
@@ -253,6 +256,8 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<UploadReq | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // 맞는 자료가 없는 새 종류 파일 — 파일에서 추론한 정의를 확인하고 새 자료로 등록 요청 (DEF-03)
+  const [proposing, setProposing] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
   const loadMine = useCallback(async () => {
@@ -358,6 +363,27 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
               ? "3단계에서 문서 본문을 붙여 넣으세요."
               : null;
   const ready = blocker === null;
+
+  const propose = async ({ definition, dataOrigin, note }: PanelSubmit) => {
+    if (!file) return;
+    setFailure(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("definition", JSON.stringify(definitionPayload(definition)));
+      fd.append("data_origin", dataOrigin);
+      if (form.as_of) fd.append("as_of", form.as_of);
+      if (note) fd.append("note", note);
+      const r = await api<UploadReq>("/db/uploads/dataset-proposal", { method: "POST", body: fd });
+      setLast(r);
+      showToast(`새 종류 자료 등록을 요청했습니다 — ${APPROVER_TEXT}가 승인하면 데이터셋이 만들어지고 이 파일이 첫 버전이 됩니다`, "success");
+      setProposing(false);
+      setFile(null);
+      await loadMine();
+    } catch (e) {
+      setFailure((e as Error).message);
+    }
+  };
 
   const submit = async () => {
     setBusy(true);
@@ -467,8 +493,20 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                       ))}
                     </div>
                   ) : (
-                    <EmptyState compact title="맞는 자료가 없습니다" description="찾는 말을 바꾸거나, 새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요." />
+                    <EmptyState compact title="맞는 자료가 없습니다" description={opts.canPropose ? "찾는 말을 바꾸거나, 새 종류의 자료라면 아래에서 이 파일로 새 자료 등록을 요청하세요." : "찾는 말을 바꾸거나, 새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요."} />
                   )}
+                  {opts.canPropose && file ? (
+                    proposing ? (
+                      <NewDatasetPanel file={file} inferPath="/db/uploads/dataset-infer" submitLabel="검사하고 새 자료 등록 요청" onSubmit={propose} onClose={() => setProposing(false)} />
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-hairline px-md py-3">
+                        <p className="text-[12.5px] text-steel">목록에 맞는 자료가 없나요? 새 종류의 자료라면 파일의 머리글 · 값으로 열 정의를 만들어 등록을 요청할 수 있습니다. 정해진 목록에 없어도 올릴 수 있습니다.</p>
+                        <Button size="sm" variant="quiet" className="mt-xs" onClick={() => setProposing(true)} data-upload-propose>
+                          이 파일로 새 종류 자료 등록 요청
+                        </Button>
+                      </div>
+                    )
+                  ) : null}
                   {!q.trim() && ordered.length > LIST_HEAD ? (
                     <div>
                       <Button size="sm" variant="ghost" onClick={() => setShowAll((v) => !v)} aria-pressed={showAll} data-upload-show-all>

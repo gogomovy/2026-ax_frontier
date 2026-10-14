@@ -1,5 +1,6 @@
 """업로드 보안 검사 (작업 8.4.4) — 악성 · 위장 · 압축 폭탄 · 매크로 · DRM · 경로 조작. DB 불필요."""
 import io
+import shutil
 import zipfile
 
 import pytest
@@ -72,9 +73,20 @@ def test_path_components_are_stripped():
     assert safe_name("C:\\temp\\x.csv") == "x.csv"
 
 
+@pytest.mark.skipif(shutil.which("false") is None or shutil.which("true") is None, reason="POSIX 명령 false · true 가 없는 환경(Windows)")
 def test_antivirus_hook(monkeypatch):
     monkeypatch.setenv("UPLOAD_AV_COMMAND", "false")
     with pytest.raises(UploadRejected, match="백신"):
         check_upload("a.csv", b"a\n1\n", "dataset")
     monkeypatch.setenv("UPLOAD_AV_COMMAND", "true {path}")
     assert check_upload("a.csv", b"a\n1\n", "dataset") == "a.csv"
+
+
+def test_antivirus_command_that_cannot_run_rejects_instead_of_crashing(monkeypatch):
+    """백신 명령이 없거나 실행할 수 없으면 검사 없이 통과시키지도, 서버 오류(500)를 내지도 않고 거절한다 — 어느 OS 에서나."""
+    monkeypatch.setenv("UPLOAD_AV_COMMAND", "nhdip-no-such-antivirus-binary {path}")
+    with pytest.raises(UploadRejected, match="백신 검사 명령을 실행할 수 없"):
+        check_upload("a.csv", b"a\n1\n", "dataset")
+    monkeypatch.setenv("UPLOAD_AV_COMMAND", 'unterminated "quote {path}')  # 따옴표 오류(shlex ValueError)
+    with pytest.raises(UploadRejected, match="백신"):
+        check_upload("a.csv", b"a\n1\n", "dataset")

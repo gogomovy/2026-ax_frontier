@@ -118,7 +118,11 @@ def is_figure(d: Any) -> bool:
 
 
 def fig_text(f: dict[str, Any]) -> str:
-    """수치 하나를 `값단위` 로 — 소수 자릿수 · 단위 문자 적용. 값이 없으면 '미산출' (없는 값을 지어내지 않는다)."""
+    """수치 하나를 `값단위` 로 — 소수 자릿수 · 단위 문자 적용. 값이 없으면 '미산출' (없는 값을 지어내지 않는다).
+    갱신 실패(stale)한 수치는 화면에는 이전 값이 '갱신 실패' 표시와 함께 남지만, 검색 · 질문하기 색인에는 값을 싣지 않는다 —
+    원자료를 삭제해 다시 계산할 수 없게 된 수치가 최신 값처럼 검색 결과 · 답변에 나가지 않도록 (Phase J 후속 · DEL-11)."""
+    if f.get("stale"):
+        return "미산출(갱신 실패)"
     if f.get("value") is None:
         return "미산출"
     unit = UNIT_LABELS.get(str(f.get("unit")), "" if f.get("unit") in (None, "") else str(f.get("unit")))
@@ -228,6 +232,11 @@ class _Renderer:
         if is_figure(node):
             self.emit(path, [fig_line(node)], meta)
             return
+        if node.get("stale") is True and any(k in node for k in ("rows", "series", "points")):
+            # 다시 계산하지 못한 표 · 차트 · 계열 — 이전 값이 화면에는 '갱신 실패' 로 남아도 색인에는 값을 싣지 않는다 (DEL-11)
+            name = next((self.text(node[k]) for k in ("caption", "title", "name", "key") if isinstance(node.get(k), str) and node[k].strip()), "")
+            self.emit(path, [f"{name or '표 · 그래프'}: 미산출(갱신 실패)"], meta)
+            return
         meta = dict(meta)
         if isinstance(node.get("persona"), str):
             meta["persona"] = node["persona"]
@@ -323,15 +332,17 @@ class _Renderer:
             elif t == "chart" and isinstance(b.get("chart"), dict):
                 ch = b["chart"]
                 if ch.get("title"):
-                    lines.append(f"그래프: {self.text(str(ch['title']))}")
-                for s in ch.get("series") or []:
-                    if isinstance(s, dict) and is_series(s.get("points")):
+                    lines.append(f"그래프: {self.text(str(ch['title']))}" + (" — 미산출(갱신 실패)" if ch.get("stale") is True else ""))
+                for s in [] if ch.get("stale") is True else ch.get("series") or []:
+                    if isinstance(s, dict) and is_series(s.get("points")) and s.get("stale") is not True:
                         lines.append(f"- {s.get('name', '계열')}: {series_text(s['points'])}")
             self.emit(path, lines, meta)
 
     def table(self, tb: dict[str, Any]) -> list[str]:
         cols = [c for c in tb.get("columns") or [] if isinstance(c, dict) and c.get("key")]
         out = [f"표: {self.text(str(tb.get('caption', '')))}"] if tb.get("caption") else []
+        if tb.get("stale") is True:  # 다시 계산하지 못한 표 — 값 · 비고를 색인하지 않는다 (DEL-11)
+            return [*out[:1], "미산출(갱신 실패)"]
         for row in (tb.get("rows") or [])[: self.table_rows]:
             if isinstance(row, dict):
                 out.append("- " + "; ".join(f"{c.get('label') or c['key']}={self.text(str(row.get(c['key'], '')))}" for c in cols if row.get(c["key"]) not in (None, "")))

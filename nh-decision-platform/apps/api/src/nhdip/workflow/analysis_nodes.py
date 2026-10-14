@@ -86,7 +86,7 @@ def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     allowed = list(figs)
     results = []
     for f in data.get("findings") or []:
-        if not isinstance(f, dict) or f.get("insight") not in keys:
+        if not isinstance(f, dict) or not isinstance(f.get("insight"), str) or f["insight"] not in keys:
             continue
         key = f["insight"]
         sev = f.get("severity") if f.get("severity") in SEVERITIES else None

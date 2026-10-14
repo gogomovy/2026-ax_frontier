@@ -11,8 +11,14 @@ from nhdip.views.store import get_current
 from .state_service import NS_PROPOSAL_ACTION, get_ns, merged_plans
 
 
+def _reviewable(p: dict[str, Any]) -> bool:
+    """검토할 수 있는 제안 — 추천값이 계산된 것(방향만 제시하는 제안 포함). 자료가 올라오기 전의 빈 제안은 '검토 필요' 건수에 세지 않는다."""
+    rec = p.get("recommendation") or {}
+    return rec.get("mode") == "direction_only" or any(rec.get(k) is not None for k in ("low", "high", "value"))
+
+
 def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
-    proposals = get_current(session, "proposals") or []
+    proposals = [p for p in (get_current(session, "proposals") or []) if isinstance(p, dict) and _reviewable(p)]
     acted = get_ns(session, NS_PROPOSAL_ACTION)
     from nhdip.analysis_registry import dynamic_tabs
 

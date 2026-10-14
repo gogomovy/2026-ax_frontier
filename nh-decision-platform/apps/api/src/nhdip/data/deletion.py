@@ -1,6 +1,6 @@
-"""업로드 자료 삭제 (Phase J · DEL-01~08 · 설계 §26 · Q143~Q147).
+"""업로드 자료 삭제 (Phase J · DEL-01~08 · 설계 §26 · Q143~Q147 / Phase J 후속 · DEL-09~12 · Q157~Q159).
 
-데이터 관리자가 업로드한 데이터셋 버전 · 문서를 지운다.
+데이터 관리자가 업로드한 데이터셋 버전 · 문서를 지운다. 부서 데이터 책임자는 자기 부서가 올려 반영된 자료만 지운다(§ 부서 데이터 책임자).
 - PostgreSQL(원장): 같은 트랜잭션에서 행(row_store) · 본문 · 청크(pgvector 임베딩 · 전문 검색) · 추출 결과 · 추출 이슈를 지우고,
   버전/문서 행은 삭제 표시(status=deleted · deleted_at/by · delete_reason)로 남긴다 — 버전 번호 재사용 방지 · 감사 추적 (Q145).
 - 현재 버전을 지우면 같은 기준일 구획(문서는 같은 문서 코드)의 직전 버전을 현재로 올린다 — 업로드 전 상태로 돌아간다 (Q144).
@@ -19,16 +19,22 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from nhdip.config import get_settings
+from nhdip.data import scrub
 from nhdip.events import audit, emit
 from nhdip.models import Dataset, ExtractionIssue, PurgeTask, UploadRequest, source, utcnow
 
 log = logging.getLogger(__name__)
 DELETED = "deleted"
 REASON_MIN, REASON_MAX = 2, 500
+CONTENT_PREVIEW_KEYS = ("sample", "excerpt")  # 자료 요청 미리보기 중 내용이 든 항목(db_uploads: 표 sample · 문서 excerpt)
 
 
 class DeleteError(ValueError):
     """삭제할 수 없는 대상 · 요청 (HTTP 409/422)."""
+
+
+class NotOwned(DeleteError):
+    """부서 데이터 책임자가 자기 부서 것이 아닌 자료를 지우려 함 (HTTP 403)."""
 
 
 @dataclass
@@ -41,9 +47,10 @@ class DeleteResult:
     files: list[str] = field(default_factory=list)
     purge_ids: list[int] = field(default_factory=list)
     event_id: int | None = None
+    scrubbed: dict[str, Any] = field(default_factory=dict)  # 내용이 복사돼 남은 곳의 정리 결과 (호출 기록 · 노드 입출력 · 산출물 근거 · 옛 세대)
 
     def as_dict(self) -> dict[str, Any]:
-        return {"kind": self.kind, "ref": self.ref, "wasCurrent": self.was_current, "promoted": self.promoted, "removed": self.removed, "purgeTasks": self.purge_ids, "event": self.event_id}
+        return {"kind": self.kind, "ref": self.ref, "wasCurrent": self.was_current, "promoted": self.promoted, "removed": self.removed, "purgeTasks": self.purge_ids, "event": self.event_id, "scrubbed": self.scrubbed}
 
 
 def clean_reason(reason: str | None) -> str:
@@ -54,12 +61,14 @@ def clean_reason(reason: str | None) -> str:
 
 
 def _request_files(session: Session, kind: str, origin: str, match: dict[str, Any], marker: dict[str, Any]) -> list[str]:
-    """승인된 자료 요청(UPL) 중 이 자료를 만든 요청 — 결과에 삭제 표시, 요청 원본 파일 경로를 돌려준다."""
+    """승인된 자료 요청(UPL) 중 이 자료를 만든 요청 — 결과에 삭제 표시, 요청 원본 파일 경로를 돌려준다.
+    요청에 남은 내용 미리보기(표 앞부분 행 · 문서 앞 400자)도 지운다 — 지운 자료의 내용이 요청 기록에 남지 않게."""
     out: list[str] = []
     for r in session.execute(select(UploadRequest).where(UploadRequest.kind == kind, UploadRequest.origin == origin, UploadRequest.status == "approved")).scalars():
         res = r.result or {}
         if all(res.get(k) == v for k, v in match.items()):
             r.result = {**res, "deleted": marker}
+            r.preview = {k: v for k, v in (r.preview or {}).items() if k not in CONTENT_PREVIEW_KEYS}
             if r.file_path:
                 out.append(r.file_path)
     return out
@@ -108,7 +117,7 @@ def preview_dataset_version(session: Session, ds: Dataset, version_id: int) -> d
     }
 
 
-def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor: str, reason: str | None, ip: str | None = None) -> DeleteResult:
+def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor: str, reason: str | None, ip: str | None = None, *, via: str = "admin") -> DeleteResult:
     from nhdip.locks import lock
 
     why = clean_reason(reason)
@@ -137,10 +146,12 @@ def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor
     if was_current:
         # 그래프의 버전 노드 — 재투영(이벤트)으로도 정리되지만, 저장소가 살아 있으면 바로 지운다
         task = _task(session, "neo4j", "dataset_version", ref, {"label": "DatasetVersion", "key": f"{ds.code}:v{v.version}", "dataset": ds.code, "version": v.version}, actor)
+        # 이 자료로 만든 지난 산출물 세대 — 관련 워크플로우가 삭제 뒤 한 번 다시 끝난 뒤에 지운다(그 전에는 낡은 현재 세대가 지난 세대로 다시 남는다). 대상이 달라 참조를 구분
+        hist = _task(session, "pg", "artifact_history", f"{ref}#history", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "after": now.isoformat()}, actor)
         ev = emit(session, "dataset.deleted", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "promoted_version": promoted["version"] if promoted else None, "rows": int(n_rows)}, actor)
         session.flush()
-        res.purge_ids, res.event_id = [task.id], ev.id
-    audit(session, actor, "admin.dataset.version_delete", "dataset", ds.code, {"version": v.version, "as_of": v.as_of.isoformat() if v.as_of else None, "was_current": was_current, "promoted": promoted, "rows": int(n_rows), "file": v.file_name, "reason": why}, ip)
+        res.purge_ids, res.event_id = [task.id, hist.id], ev.id
+    audit(session, actor, "admin.dataset.version_delete", "dataset", ds.code, {"version": v.version, "as_of": v.as_of.isoformat() if v.as_of else None, "was_current": was_current, "promoted": promoted, "rows": int(n_rows), "file": v.file_name, "reason": why, "via": via}, ip)
     return res
 
 
@@ -181,7 +192,7 @@ def _doc_promote_candidate(session: Session, origin: str, doc_code: str, exclude
     )
 
 
-def delete_document(session: Session, origin: str, document_id: int, actor: str, reason: str | None, ip: str | None = None, *, all_versions: bool = False) -> DeleteResult:
+def delete_document(session: Session, origin: str, document_id: int, actor: str, reason: str | None, ip: str | None = None, *, all_versions: bool = False, via: str = "admin") -> DeleteResult:
     from nhdip.knowledge import elastic
     from nhdip.locks import lock
 
@@ -201,6 +212,9 @@ def delete_document(session: Session, origin: str, document_id: int, actor: str,
     was_current = any(x.is_current for x in targets)
     current_ids = [x.id for x in targets if x.is_current]
     chunk_ids = list(session.execute(select(t.chunk.id).where(t.chunk.document_id.in_(current_ids))).scalars()) if current_ids else []
+    # 지우기 전에 본문을 확보한다 — 다른 곳(호출 기록 · 산출물 근거)에 복사돼 남은 조각을 찾는 데 쓰고, 저장하지 않는다
+    texts = [c for c in session.execute(select(t.chunk.text).where(t.chunk.document_id.in_(ids))).scalars() if c] or [x.text for x in targets if x.text]
+    since = min((x.created_at for x in targets if x.created_at), default=None)
     n_chunks = session.execute(delete(t.chunk).where(t.chunk.document_id.in_(ids))).rowcount or 0
     n_issues = session.execute(delete(ExtractionIssue).where(ExtractionIssue.origin == origin, ExtractionIssue.document_id.in_(ids))).rowcount or 0
     now = utcnow()
@@ -223,6 +237,9 @@ def delete_document(session: Session, origin: str, document_id: int, actor: str,
             promoted = {"id": nxt.id, "version": nxt.version}
     ref = f"{origin}:{d.doc_code}"
     res = DeleteResult("document", ref, was_current, promoted, {"versions": len(ids), "chunks": int(n_chunks), "issues": int(n_issues)}, files)
+    # 본문이 복사돼 남은 곳 — 호출 기록 · 노드 입출력의 내용, 산출물의 근거 조각(새 세대로 게시 · 색인 갱신), 그 조각이 든 옛 세대 (같은 트랜잭션)
+    snips = scrub.snippets_of(texts)
+    res.scrubbed = {**scrub.scrub_run_traces(session, snips, since), **scrub.scrub_artifact_evidence(session, texts, snips, since, actor)}
     if was_current:
         tasks: list[PurgeTask] = []
         if chunk_ids:
@@ -234,7 +251,7 @@ def delete_document(session: Session, origin: str, document_id: int, actor: str,
         ev = emit(session, "document.deleted", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "versions": [x.version for x in targets], "promoted_id": promoted["id"] if promoted else None}, actor)
         session.flush()
         res.purge_ids, res.event_id = [x.id for x in tasks], ev.id
-    audit(session, actor, "admin.document.delete", "document", f"{origin}:{d.doc_code}", {"versions": [x.version for x in targets], "was_current": was_current, "promoted": promoted, "chunks": int(n_chunks), "reason": why}, ip)
+    audit(session, actor, "admin.document.delete", "document", f"{origin}:{d.doc_code}", {"versions": [x.version for x in targets], "was_current": was_current, "promoted": promoted, "chunks": int(n_chunks), "reason": why, "via": via, "scrubbed": res.scrubbed}, ip)
     return res
 
 
@@ -308,6 +325,11 @@ def _purge_neo4j(session: Session, task: PurgeTask) -> dict[str, Any]:
     return out
 
 
+def _purge_pg(session: Session, task: PurgeTask) -> dict[str, Any]:
+    """PostgreSQL 안의 파생 이력 정리 — 지난 산출물 세대 (삭제 뒤 재계산이 끝나기를 기다린다)."""
+    return scrub.purge_artifact_history(session, dict(task.payload or {}))
+
+
 def run_purge_tasks(session: Session, limit: int = 100, ids: list[int] | None = None) -> dict[str, int]:
     """대기 중인 외부 저장소 삭제 작업 — 성공하면 done, 미구성이면 skipped, 저장소 장애면 pending 유지(다음 주기)."""
     from nhdip.graph.neo4j_client import GraphUnavailable
@@ -328,7 +350,7 @@ def run_purge_tasks(session: Session, limit: int = 100, ids: list[int] | None = 
         tried.add(task.id)
         task.attempts = (task.attempts or 0) + 1
         try:
-            res = _purge_es(task) if task.store == "es" else _purge_neo4j(session, task)
+            res = _purge_es(task) if task.store == "es" else _purge_pg(session, task) if task.store == "pg" else _purge_neo4j(session, task)
         except (EsUnavailable, GraphUnavailable, OSError, ValueError) as exc:
             task.last_error = f"{type(exc).__name__}: {str(exc)[:400]}"
             stats["pending"] += 1
@@ -359,9 +381,13 @@ def after_commit(session_factory: Any, files: list[str], purge_ids: list[int]) -
     return out
 
 
-def purge_status(session: Session, limit: int = 50) -> dict[str, Any]:
-    rows = session.execute(select(PurgeTask).order_by(PurgeTask.id.desc()).limit(min(limit, 200))).scalars().all()
-    counts = dict(session.execute(select(PurgeTask.status, func.count()).group_by(PurgeTask.status)).all())
+def purge_status(session: Session, limit: int = 50, created_by: str | None = None) -> dict[str, Any]:
+    """삭제 반영 상태 — created_by 가 있으면 그 사람이 낸 삭제 작업만(부서 데이터 책임자 화면)."""
+    q, cq = select(PurgeTask), select(PurgeTask.status, func.count()).group_by(PurgeTask.status)
+    if created_by is not None:
+        q, cq = q.where(PurgeTask.created_by == created_by), cq.where(PurgeTask.created_by == created_by)
+    rows = session.execute(q.order_by(PurgeTask.id.desc()).limit(min(limit, 200))).scalars().all()
+    counts = dict(session.execute(cq).all())
     return {
         "counts": {k: int(v) for k, v in counts.items()},
         "tasks": [
@@ -369,3 +395,124 @@ def purge_status(session: Session, limit: int = 50) -> dict[str, Any]:
             for r in rows
         ],
     }
+
+
+# ═════════════════════════ 부서 데이터 책임자 (Phase J 후속 · DEL-09~12 · Q157~Q159) ═════════════════════════
+# 책임자는 '자기 부서(소속 경로에서 가장 가까운 부 · 지역본부와 그 아래 조직)가 자료 요청으로 올려 반영된 자료'만 지운다.
+# 소유는 자료를 만든 승인된 요청(UploadRequest.requested_org)으로 판정한다 — 버전 · 문서의 uploaded_by 는 승인한 사람이라 올린 부서가 아니다.
+# 관리자가 직접 올렸거나 시연 패키지로 들어온 자료는 요청이 없어 책임자가 지울 수 없다(데이터 관리자만).
+# 연쇄 삭제(pgvector · Elasticsearch · Neo4j · 원본 파일 · 이벤트)는 관리자 삭제와 같은 함수를 그대로 쓴다.
+_SUBJECT_KEY = {"dataset": "versionId", "document": "documentId"}
+
+
+def subject_id(req: UploadRequest) -> int | None:
+    """요청이 만든 자료의 id — 데이터셋 버전 id 또는 문서 id (승인 때 request.result 에 기록된다)."""
+    v = (req.result or {}).get(_SUBJECT_KEY.get(req.kind, ""))
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+def _requests_of(session: Session, kind: str, origin: str, target: str, sid: int) -> list[UploadRequest]:
+    """같은 자료를 만든 승인된 요청 전부 — 같은 내용을 두 번 올려 한 자료를 가리키는 요청이 둘 이상일 수 있다."""
+    q = select(UploadRequest).where(
+        UploadRequest.kind == kind, UploadRequest.origin == origin, UploadRequest.status == "approved", UploadRequest.result[_SUBJECT_KEY[kind]].astext == str(sid)
+    )
+    if kind == "dataset":
+        q = q.where(UploadRequest.target == target)
+    return list(session.execute(q).scalars())
+
+
+def owned_by(session: Session, req: UploadRequest, org_codes: set[str]) -> bool:
+    """이 자료를 만든 요청이 모두 책임자 부서 조직(org_codes) 것인가. 하나라도 다른 부서 것이면 아니다."""
+    sid = subject_id(req)
+    if sid is None or req.kind not in _SUBJECT_KEY:
+        return False
+    peers = _requests_of(session, req.kind, req.origin, req.target, sid)
+    return bool(peers) and all(p.requested_org in org_codes for p in peers)
+
+
+def assert_owned_document_versions(session: Session, origin: str, document_id: int, org_codes: set[str]) -> None:
+    """같은 문서 코드의 모든 버전 삭제 — 모든 버전이 책임자 부서가 올린 것이어야 한다(다른 부서 · 관리자 버전이 섞이면 거절)."""
+    d = session.get(source(origin).document, document_id)
+    if d is None:
+        raise DeleteError("문서 없음")
+    for x in _doc_targets(session, origin, d, True):
+        peers = _requests_of(session, "document", origin, "", x.id)
+        if not peers or any(p.requested_org not in org_codes for p in peers):
+            raise NotOwned(f"같은 문서 코드의 v{x.version} 은 다른 부서나 관리자가 올린 자료라 전체 버전 삭제는 데이터 관리자만 할 수 있습니다 — 이 버전만 지우세요")
+
+
+def steward_items(session: Session, org_codes: set[str], *, deleted: bool = False, limit: int = 200) -> list[dict[str, Any]]:
+    """책임자 부서가 올려 반영된 자료 목록 — 기본은 지울 수 있는(아직 안 지운) 것, deleted=True 면 지운 기록."""
+    flag = UploadRequest.result["deleted"].astext
+    q = (
+        select(UploadRequest)
+        .where(
+            UploadRequest.status == "approved", UploadRequest.kind.in_(tuple(_SUBJECT_KEY)), UploadRequest.requested_org.in_(org_codes or {"-"}),
+            flag.is_not(None) if deleted else flag.is_(None),
+        )
+        .order_by(UploadRequest.id.desc())
+        .limit(min(max(limit, 1), 500))
+    )
+    out: list[dict[str, Any]] = []
+    for r in session.execute(q).scalars():
+        sid = subject_id(r)
+        if sid is None:
+            continue
+        t = source(r.origin)
+        item: dict[str, Any] = {
+            "requestId": r.id, "kind": r.kind, "origin": r.origin, "target": r.target, "targetLabel": (r.meta or {}).get("targetLabel") or r.target,
+            "requestedBy": r.requested_by, "requestedOrg": r.requested_org, "approvedBy": r.reviewed_by, "approvedAt": r.reviewed_at.isoformat() if r.reviewed_at else None,
+            "fileName": r.file_name, "subjectId": sid,
+        }
+        if r.kind == "dataset":
+            v = session.get(t.version, sid)
+            if v is None or (v.status == DELETED and not deleted):
+                continue
+            item |= {"label": item["targetLabel"], "version": v.version, "status": v.status, "isCurrent": bool(v.is_current), "asOf": v.as_of.isoformat() if v.as_of else None, "rows": v.row_count}
+        else:
+            d = session.get(t.document, sid)
+            if d is None or (d.status == DELETED and not deleted):
+                continue
+            item |= {"label": d.title, "docCode": d.doc_code, "version": d.version, "status": d.status, "isCurrent": bool(d.is_current), "docClass": d.doc_class}
+        if deleted:
+            item["deleted"] = (r.result or {}).get("deleted")
+        out.append(item)
+    return out
+
+
+def preview_by_request(session: Session, req: UploadRequest, all_versions: bool = False) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    """삭제 전 확인 — (미리보기, 이벤트 종류, 이벤트 내용). 이벤트는 현재 자료를 지울 때만 실제로 나간다."""
+    sid = subject_id(req)
+    if sid is None:
+        raise DeleteError("반영된 자료가 없는 요청입니다")
+    if (req.result or {}).get("deleted"):
+        raise DeleteError("이미 삭제된 자료입니다")
+    if req.kind == "dataset":
+        ds = session.get(Dataset, req.target)
+        if ds is None:
+            raise DeleteError("데이터셋 없음")
+        return preview_dataset_version(session, ds, sid), "dataset.deleted", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind}
+    out = preview_document(session, req.origin, sid, all_versions)
+    d = session.get(source(req.origin).document, sid)
+    if d is None:
+        raise DeleteError("문서 없음")
+    return out, "document.deleted", {"origin": req.origin, "doc_code": d.doc_code, "doc_class": d.doc_class}
+
+
+def delete_by_request(session: Session, req: UploadRequest, actor: str, reason: str | None, ip: str | None = None, *, all_versions: bool = False) -> DeleteResult:
+    """요청이 만든 자료를 지운다 — 관리자 삭제와 같은 연쇄(행 · 청크 · 색인 · 그래프 · 원본 · 이벤트), 감사 기록에 via=steward."""
+    sid = subject_id(req)
+    if sid is None:
+        raise DeleteError("반영된 자료가 없는 요청입니다")
+    if (req.result or {}).get("deleted"):
+        raise DeleteError("이미 삭제된 자료입니다")
+    if req.kind == "dataset":
+        ds = session.get(Dataset, req.target)
+        if ds is None:
+            raise DeleteError("데이터셋 없음")
+        return delete_dataset_version(session, ds, sid, actor, reason, ip, via="steward")
+    return delete_document(session, req.origin, sid, actor, reason, ip, all_versions=all_versions, via="steward")
+
+
+def pending_purge_ids(session: Session, actor: str) -> list[int]:
+    return list(session.execute(select(PurgeTask.id).where(PurgeTask.created_by == actor, PurgeTask.status == "pending").order_by(PurgeTask.id)).scalars())

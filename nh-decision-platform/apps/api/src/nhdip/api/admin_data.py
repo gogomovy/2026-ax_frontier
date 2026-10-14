@@ -314,10 +314,15 @@ def datasets(session: Session = Depends(get_session)):
 
 @router.post("/datasets", status_code=201)
 def dataset_create(body: DatasetIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    from nhdip.data.infer import validate_definition
+
     if body.origin not in ("bank", "ext"):
         raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
     if session.get(Dataset, body.code):
         raise HTTPException(409, "이미 있는 데이터셋 코드")
+    problems = validate_definition(body.model_dump())
+    if problems:
+        raise HTTPException(422, " · ".join(problems[:6]))
     d = Dataset(**body.model_dump())
     session.add(d)
     _config_changed(session, "dataset", body.code, admin.emp_no)
@@ -331,6 +336,14 @@ def dataset_patch(code: str, body: dict[str, Any], request: Request, session: Se
     d = _ds(session, code)
     allowed = set(DatasetIn.model_fields) - {"code", "origin"}
     patch = {k: v for k, v in body.items() if k in allowed}
+    if {"columns", "key_columns", "as_of_column"} & set(patch):
+        # 열 · 키 · 기준일 열을 바꾸면 결과 정의 전체를 점검한다 — 키가 없는 열을 가리키거나 열이 비는 것을 막는다
+        from nhdip.data.infer import validate_definition
+
+        merged = {"code": d.code, "name": patch.get("name", d.name), "origin": d.origin, "columns": patch.get("columns", d.columns), "key_columns": patch.get("key_columns", d.key_columns), "as_of_column": patch.get("as_of_column", d.as_of_column)}
+        problems = validate_definition(merged)
+        if problems:
+            raise HTTPException(422, " · ".join(problems[:6]))
     for k, v in patch.items():
         setattr(d, k, v)
     _config_changed(session, "dataset", code, admin.emp_no)
@@ -363,6 +376,47 @@ async def dataset_preview(code: str, request: Request, file: UploadFile = File(.
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     try:
         return preview_file(d, name, content)
+    except (IngestError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/datasets/infer")
+async def dataset_infer(
+    request: Request,
+    file: UploadFile = File(...),
+    code: str | None = Form(None),
+    name: str | None = Form(None),
+    origin: str = Form("bank"),
+    session: Session = Depends(get_session),
+    admin: AppUser = Depends(require_admin),
+):
+    """새 종류 파일 → 데이터셋 정의 초안(열 · 타입 · 키 · 기준일 열) — 저장하지 않는다. 확인 · 수정한 정의를 `POST /admin/datasets` 로 저장하고 올린다."""
+    from nhdip.data.infer import infer_definition
+
+    fname, content = await _read(file, "dataset", session, request, admin.emp_no)
+    try:
+        out = infer_definition(content, fname, code=code, name=name, origin=origin)
+    except (IngestError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    base = out["code"]
+    if not code:  # 파일 이름에서 정한 코드는 이미 있는 코드와 겹치지 않게 번호를 붙인다(업무 화면의 제안과 같은 규칙). 직접 입력한 코드는 그대로 두고 exists 로 알린다
+        n = 2
+        while session.get(Dataset, out["code"]) is not None:
+            out["code"], n = f"{base}_{n}"[:60], n + 1
+    out["codeAdjusted"] = out["code"] != base
+    out["exists"] = session.get(Dataset, out["code"]) is not None
+    return out
+
+
+@router.post("/datasets/{code}/infer-diff")
+async def dataset_infer_diff(code: str, request: Request, file: UploadFile = File(...), session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """기존 데이터셋 + 새 파일 → 정의에 없어 저장되지 않던 열을 새 열 후보로. 적용은 `PATCH /admin/datasets/{code}` 의 columns."""
+    from nhdip.data.infer import infer_new_columns
+
+    d = _ds(session, code)
+    fname, content = await _read(file, "dataset", session, request, admin.emp_no)
+    try:
+        return infer_new_columns(d, content, fname)
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -818,10 +872,19 @@ def monitor_flow(limit: int = 60, session: Session = Depends(get_session)):
     events = session.execute(select(OutboxEvent).order_by(OutboxEvent.id.desc()).limit(min(limit, 300))).scalars().all()
     runs = session.execute(select(WorkflowRun).order_by(WorkflowRun.started_at.desc()).limit(200)).scalars().all()
     by_event: dict[int, list[dict[str, Any]]] = {}
+    from .flow_view import node_names, run_nodes
+
+    names = node_names(session, {r.workflow_code for r in runs})
     for r in runs:
         for c in r.causes or []:
             if c.get("event_id"):
-                by_event.setdefault(c["event_id"], []).append({"run": r.id, "workflow": r.workflow_code, "status": r.status, "startedAt": _iso(r.started_at), "finishedAt": _iso(r.finished_at), "published": (r.summary or {}).get("published", [])})
+                s = r.summary or {}
+                by_event.setdefault(c["event_id"], []).append({
+                    "run": r.id, "workflow": r.workflow_code, "status": r.status, "startedAt": _iso(r.started_at), "finishedAt": _iso(r.finished_at),
+                    "published": s.get("published", []), "unpublished": s.get("unpublished", []),
+                    # 파이프라인 그림용 — 노드별 상태 · 소요, 자료 부족 같은 한 줄 사유
+                    "nodes": run_nodes(s, names.get(r.workflow_code, {})), "note": s.get("note") if isinstance(s.get("note"), str) else None, "error": (r.error or "")[:200] or None,
+                })
     jobs = session.execute(select(Job).where(Job.status.in_(["queued", "running", "approval"]))).scalars().all()
     pending: dict[int, list[dict[str, Any]]] = {}
     for j in jobs:
@@ -1198,6 +1261,14 @@ def agent_decisions(agent: str | None = None, workflow: str | None = None, run: 
         "counts": counts,
         "items": [{"id": d.id, "at": _iso(d.at), "agent": d.agent_code, "workflow": d.workflow_code, "jobId": d.job_id, "runId": d.workflow_run_id, "decision": d.decision, "summary": d.summary, "detail": d.detail, "traceId": d.trace_id} for d in session.execute(q).scalars()],
     }
+
+
+@router.get("/agents/pipeline")
+def agent_pipeline(workflow: str | None = None, limit: int = 8, session: Session = Depends(get_session)):
+    """에이전트 결정 파이프라인 — 최근 실행마다 노드 순서 위에 에이전트 결정(변화 판정 · 실행 계획 · 서술 · 반려)과 오케스트레이터 결정(경로 · 대기 · 허용)을 놓는다."""
+    from .flow_view import build_agent_pipeline
+
+    return build_agent_pipeline(session, workflow=workflow, limit=limit)
 
 
 @router.get("/pipeline")

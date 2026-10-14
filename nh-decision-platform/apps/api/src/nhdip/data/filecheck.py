@@ -94,6 +94,9 @@ def _antivirus(content: bytes, cfg: dict[str, Any]) -> None:
             raise UploadRejected("백신 검사에서 차단되었습니다")
     except subprocess.TimeoutExpired as exc:
         raise UploadRejected("백신 검사 시간이 초과되었습니다") from exc
+    except (OSError, ValueError) as exc:
+        # 명령이 없거나 실행할 수 없음(오타 · 미설치 · 따옴표 오류) — 검사 없이 통과시키지 않고(fail-closed) 서버 오류(500) 대신 거절로 알린다
+        raise UploadRejected("백신 검사 명령을 실행할 수 없어 업로드를 받지 못했습니다 — 관리자에게 알려 주세요(UPLOAD_AV_COMMAND)") from exc
     finally:
         os.unlink(path)
 

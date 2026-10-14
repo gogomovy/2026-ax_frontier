@@ -94,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 function DataBasis({ model }: { model: NavModel }) {
   const { asOf, generatedAt, dataOrigin } = model;
   return (
-    <footer className="shell pb-28 pt-10 no-print">
+    <footer className="shell data-basis pb-28 pt-10">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-hairline-soft pt-5 text-[12px] text-steel">
         <span>
           데이터 기준 <b className="font-bold text-ink-deep tnum">{formatDate(asOf) || "–"}</b>

@@ -82,9 +82,12 @@ def _debounce(session: Session, wf: str, ev: OutboxEvent) -> int:
         return 0
     trig = [t.debounce_sec for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf, WorkflowTrigger.enabled)).scalars() if t.debounce_sec is not None]
     if trig:
-        return min(trig)
+        return max(0, min(trig))
     s = session.get(Setting, "workflow.debounce_default_sec")
-    return int(s.value) if s is not None else 60
+    try:
+        return max(0, int(s.value)) if s is not None else 60
+    except (TypeError, ValueError):  # 관리자가 숫자가 아닌 값을 넣어도 모든 이벤트의 디스패치가 멈추지 않게
+        return 60
 
 
 def needs_approval(session: Session, wf: str, cause: dict[str, Any]) -> bool:
@@ -110,6 +113,8 @@ def enqueue(session: Session, wf: str, cause: dict[str, Any], delay_sec: int) ->
         return job
     if job:
         job.causes = [*job.causes, cause][-200:]
+        if job.attempts:
+            return job  # 실패 뒤 재시도 대기 중인 작업 — 원인만 더하고 실행 시각(백오프)은 앞당기지 않는다
         # 디바운스 연장(최초 대기 생성 후 최대 5배까지만)
         cap = job.created_at + timedelta(seconds=max(delay_sec, 1) * 5)
         job.run_after = min(max(job.run_after, now + timedelta(seconds=delay_sec)), cap) if delay_sec else now
@@ -136,6 +141,7 @@ def _chain_block(session: Session, ev: OutboxEvent, wf: str) -> str | None:
 
 
 ROUTE_CLAIM_MIN = 5
+ROUTE_BATCH = 5  # 한 번의 디스패치 순회에서 LLM 경로 판단을 하는 이벤트 수
 
 
 def _needs_route(session: Session, ev: OutboxEvent) -> bool:
@@ -160,6 +166,7 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
     plain, routed = [], []
     for ev in events:
         (routed if _needs_route(session, ev) else plain).append(ev.id)
+    routed = routed[:ROUTE_BATCH]  # LLM 경로 판단은 직렬이라 한 번에 몇 건만 — 나머지는 다음 순회에서(작업 집기 · 정기 작업이 오래 막히지 않게)
     if routed:
         # 경로 판단 선점 (B.33) — 잠금을 쥔 동안 routing_at 을 찍은 이벤트만 이 워커가 판단한다.
         # 다른 워커가 판단 중(5분 이내 선점)이면 건너뛰고, 그 워커가 디스패치한다. 선점 후 워커가 죽으면 5분 뒤 다시 선점 가능.
@@ -209,10 +216,41 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
             ev.dispatched_at = utcnow()
             session.commit()
             n += 1
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             session.rollback()
             log.exception("dispatch failed (event %s)", eid)
+            _note_dispatch_failure(session, eid, exc)
     return n
+
+
+DISPATCH_MAX_ATTEMPTS = 5
+
+
+def _note_dispatch_failure(session: Session, eid: int, exc: Exception) -> None:
+    """디스패치가 실패한 이벤트 — 시도 횟수를 이벤트에 남기고, 몇 번 되풀이해도 안 되면 포기(처리됨 표시 + 운영 알림).
+    예전에는 오류를 로그에만 남기고 이벤트를 그대로 둬서 매 순회 영원히 다시 시도했고, 50건이 막히면 뒤 이벤트가 영영 처리되지 않았다."""
+    import logging
+
+    try:
+        ev = session.execute(select(OutboxEvent).where(OutboxEvent.id == eid, OutboxEvent.dispatched_at.is_(None)).with_for_update(skip_locked=True)).scalar()
+        if ev is None:
+            session.rollback()
+            return
+        prev = next((m.get("dispatchAttempts", 0) for m in (ev.matched or []) if isinstance(m, dict) and "dispatchAttempts" in m), 0)
+        n = int(prev) + 1
+        err = f"{type(exc).__name__}: {str(exc)[:200]}"
+        if n >= DISPATCH_MAX_ATTEMPTS:
+            ev.matched = [{"workflow": "(디스패치 실패)", "reasons": [], "blocked": f"{n}회 시도 후 포기 — {err}", "dispatchAttempts": n}]
+            ev.dispatched_at = utcnow()
+            from nhdip.alerts import raise_alert
+
+            raise_alert(session, "dispatch_failed", "critical", f"이벤트 #{eid}({ev.type}) 디스패치 {n}회 실패 — 포기", {"event": eid, "type": ev.type, "error": err}, f"dispatch_failed:{eid}")
+        else:
+            ev.matched = [{"workflow": f"(재시도 {n}/{DISPATCH_MAX_ATTEMPTS})", "reasons": [], "blocked": err, "dispatchAttempts": n}]
+        session.commit()
+    except Exception:  # noqa: BLE001 — 실패 기록이 실패해도 디스패치 순회를 멈추지 않는다
+        session.rollback()
+        logging.getLogger("nhdip.dispatcher").exception("dispatch failure note failed (event %s)", eid)
 
 
 def claim_job(session: Session, worker_id: str) -> Job | None:
@@ -240,7 +278,15 @@ def claim_job(session: Session, worker_id: str) -> Job | None:
         if cand.workflow_code and session.execute(select(Job.id).where(Job.workflow_code == cand.workflow_code, Job.status == "running").limit(1)).first():
             continue
         # 오케스트레이터 — 상위 워크플로우 작업이 남아 있으면 미루고 다음 후보 (B.30)
-        if gate(session, cand):
+        try:
+            with session.begin_nested():  # 관리자가 고친 오케스트레이터 정책값이 잘못돼도(숫자 아님 등) 모든 작업이 영영 집히지 않는 일이 없게
+                allowed = gate(session, cand)
+        except Exception:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("nhdip.dispatcher").exception("orchestrator gate failed — 정책 없이 실행 허용 (job %s)", cand.id)
+            allowed = True
+        if allowed:
             job = cand
             break
     if not job:
@@ -252,6 +298,9 @@ def claim_job(session: Session, worker_id: str) -> Job | None:
     job.attempts += 1
     session.commit()
     return job
+
+
+RECOVER_GIVE_UP = "워커가 중단돼 복구했으나 최대 시도 횟수를 넘어 더 이상 다시 실행하지 않습니다(같은 작업이 계속 워커를 멈추게 할 수 있음) — 관리자 [파이프라인]에서 수동 실행하세요"
 
 
 def _close_runs(session: Session, ids: list[int], why: str) -> None:
@@ -267,10 +316,12 @@ def recover_own_orphans(session: Session, hostname: str, worker_id: str) -> int:
     컨테이너 재시작은 hostname 이 같으므로, 이 호스트에서 잡혔는데 지금 워커가 아닌 작업은 모두 고아다."""
     res = session.execute(
         text(
-            "UPDATE ops.job SET status='queued', locked_by=NULL, run_after=now() "
+            "UPDATE ops.job SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END, locked_by=NULL, run_after=now(), "
+            "finished_at = CASE WHEN attempts >= max_attempts THEN now() ELSE finished_at END, "
+            "error = CASE WHEN attempts >= max_attempts THEN :why ELSE error END "
             "WHERE status='running' AND locked_by LIKE :h AND locked_by <> :me RETURNING id"
         ),
-        {"h": f"{hostname}:%", "me": worker_id},
+        {"h": f"{hostname}:%", "me": worker_id, "why": RECOVER_GIVE_UP},
     )
     ids = [r[0] for r in res]
     _close_runs(session, ids, "워커 재시작 — 작업을 다시 대기열로 돌림")
@@ -278,20 +329,28 @@ def recover_own_orphans(session: Session, hostname: str, worker_id: str) -> int:
     return len(ids)
 
 
-def recover_stale(session: Session, older_than_min: int = 30, heartbeat_stale_sec: int = 120) -> int:
-    """멈춘 작업 복구 (B.32) — 잡은 워커의 심장박동이 끊긴 실행 중 작업만 다시 대기로.
-
-    오래 걸리는 정상 실행(워커 살아 있음)은 건드리지 않는다(실행 시간 상한은 워커 감시 스레드가 지킨다).
-    고아가 된 실행(running 인 workflow_run)은 실패로 닫는다.
+def recover_stale(session: Session, older_than_min: int = 5, heartbeat_stale_sec: int = 120, idle_busy_min: int = 3) -> int:
+    """멈춘 작업 복구 (B.32) — 다시 대기로 돌릴 실행 중 작업:
+    ① 잡은 워커의 심장박동이 끊긴 것(컨테이너를 새로 만든 뒤 호스트 이름이 달라진 경우도 여기서 잡힌다),
+    ② 워커는 살아 있는데 그 워커가 지금 이 작업을 하고 있지 않다고 알리는 것(작업을 끝내고 상태를 저장하다 실패해 'running' 으로 남은 경우).
+    오래 걸리는 정상 실행(워커가 그 작업을 하고 있다고 알림)은 건드리지 않는다(실행 시간 상한은 워커 감시 스레드가 지킨다).
+    고아가 된 실행(running 인 workflow_run)은 실패로 닫고, 이미 최대 시도 횟수만큼 집힌 작업은 다시 돌리지 않고 실패로 끝낸다(무한 반복 방지).
     """
     res = session.execute(
         text(
-            "UPDATE ops.job j SET status='queued', locked_by=NULL, run_after=now() "
-            "WHERE j.status='running' AND j.locked_at < now() - make_interval(mins => :m) "
-            "AND NOT EXISTS (SELECT 1 FROM ops.worker_heartbeat h WHERE h.worker_id = j.locked_by AND h.seen_at > now() - make_interval(secs => :hb)) "
+            "UPDATE ops.job j SET status = CASE WHEN j.attempts >= j.max_attempts THEN 'failed' ELSE 'queued' END, locked_by=NULL, run_after=now(), "
+            "finished_at = CASE WHEN j.attempts >= j.max_attempts THEN now() ELSE j.finished_at END, "
+            "error = CASE WHEN j.attempts >= j.max_attempts THEN :why ELSE j.error END "
+            "WHERE j.status='running' AND ("
+            " (j.locked_at < now() - make_interval(mins => :m) "
+            "  AND NOT EXISTS (SELECT 1 FROM ops.worker_heartbeat h WHERE h.worker_id = j.locked_by AND h.seen_at > now() - make_interval(secs => :hb))) "
+            " OR (j.locked_at < now() - make_interval(mins => :idle) "
+            "  AND EXISTS (SELECT 1 FROM ops.worker_heartbeat h WHERE h.worker_id = j.locked_by AND h.seen_at > now() - make_interval(secs => :hb) "
+            # busy_job 키가 없는 심장박동(기동 직후 · 이전 판 워커)은 '모름' — 건드리지 않는다. 키가 있고 다른 값(또는 null)일 때만
+            "             AND (h.info -> 'busy_job') IS NOT NULL AND (h.info->>'busy_job') IS DISTINCT FROM CAST(j.id AS text)))) "
             "RETURNING j.id"
         ),
-        {"m": older_than_min, "hb": heartbeat_stale_sec},
+        {"m": older_than_min, "hb": heartbeat_stale_sec, "idle": idle_busy_min, "why": RECOVER_GIVE_UP},
     )
     ids = [r[0] for r in res]
     _close_runs(session, ids, "워커 중단 — 작업을 다시 대기열로 돌림")

@@ -167,7 +167,7 @@ def route(session: Session, ev: Any, matched: dict[str, list[str]]) -> dict[str,
     if data:
         by = "llm"
         for a in data.get("add") or []:
-            if isinstance(a, dict) and a.get("workflow") in allowed and a["workflow"] not in {x["workflow"] for x in adds}:
+            if isinstance(a, dict) and isinstance(a.get("workflow"), str) and a["workflow"] in allowed and a["workflow"] not in {x["workflow"] for x in adds}:
                 reason, _ = clean_reason(a.get("reason"))
                 adds.append({"workflow": a["workflow"], "reason": reason or "LLM 판단"})
     else:

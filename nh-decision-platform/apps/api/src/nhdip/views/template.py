@@ -75,6 +75,52 @@ def get_parent(payload: Any, parent: str) -> Any:
     return obj
 
 
+# 대상 자체가 표 · 차트 · 계열 객체인 경로 — 점 표기 경로(예: 'corporate.yearly')는 부모가 여러 수치를 품은 큰 객체라 표시를 달지 않는다
+STALE_MARK_PREFIXES = ("table:", "table_note:", "chart:", "series:")
+
+
+def _has_content(obj: dict[str, Any]) -> bool:
+    """표(rows) · 차트(series → points) · 계열(points)에 이전 값이 있는가. 해당 키가 없는 객체는 있는 것으로 본다(보수적)."""
+    keys = [k for k in ("rows", "points", "series") if k in obj]
+    if not keys:
+        return True
+    for k in keys:
+        v = obj[k]
+        if k == "series" and isinstance(v, list):
+            if any(isinstance(s, dict) and s.get("points") for s in v):
+                return True
+        elif v:
+            return True
+    return False
+
+
+def mark_binding_stale(payload: Any, path: str, targets: list[tuple[str, str]], reason: str | None) -> bool:
+    """바인딩이 채우는 표 · 차트 · 계열에 '갱신 실패' 표시(`stale` · `staleReason`)를 달거나(reason) 뗀다(reason=None).
+    계산이 실패해도 이전 값은 두되, 화면에는 갱신 실패로 보이고 검색 · 질문하기 색인에는 값이 실리지 않는다 (DEL-11). 바뀌었으면 True."""
+    if not path.startswith(STALE_MARK_PREFIXES):
+        return False
+    changed = False
+    why = (reason or "")[:200]
+    for parent, _fld in targets:
+        try:
+            obj = get_parent(payload, parent)
+        except (KeyError, IndexError, ValueError, TypeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if reason is not None and not _has_content(obj):
+            continue  # 비어 있는 표 · 차트에는 '이전 값'이 없다 — 갱신 실패 표시를 달지 않는다 (빈 상태에서 실행마다 새 세대가 생기지 않게)
+        if reason is None:
+            for k in ("stale", "staleReason"):
+                if k in obj:
+                    del obj[k]
+                    changed = True
+        elif obj.get("stale") is not True or obj.get("staleReason") != why:
+            obj["stale"], obj["staleReason"] = True, why
+            changed = True
+    return changed
+
+
 # ═════════════════════════ 화면 틀 ═════════════════════════
 def strip_figure(d: dict[str, Any]) -> None:
     d["value"] = None
@@ -99,6 +145,16 @@ def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ())
                     d[k] = None
         for k in [k for k in d if k.endswith("Metric") and len(k) > 6 and isinstance(d[k], str)]:
             d[k[:-6]] = None  # 지표 표시값으로 채우는 숫자 필드
+        if "gapVerdict" in d:
+            d["gapVerdict"] = None  # 목표 판정은 실적 수치로 서버가 계산한다 (views.goal_verdict) — 틀에는 두지 않는다
+        if d.get("mode") in ("range", "point") and "unit" in d and any(k in d for k in ("low", "high", "value")):
+            # 경영목표 추천값(제안의 recommendation) — 계산 커널이 채운다(recommend_goals). 자료가 없을 때 시드의 고정 숫자가 '추천'처럼 보이지 않게
+            for k in ("low", "high", "value", "currentValue"):
+                if k in d:
+                    d[k] = None
+            d["text"] = ""
+            d.pop("calcId", None)
+            d.pop("engine", None)
 
     _walk(p, fix)
     if isinstance(p, dict):

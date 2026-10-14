@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from nhdip.data.datasets import current_rows
-from nhdip.models import Dataset, Metric, MetricValue, Rule, RuleVersion, Setting
+from nhdip.models import CalcRun, Dataset, Metric, MetricValue, Rule, RuleVersion, Setting, WorkflowRun, source
 
 from . import formulas
 from .kernel import run_and_record
@@ -70,6 +70,8 @@ class ResolveError(ValueError):
 class EvalContext:
     session: Session
     workflow_run_id: str | None = None
+    # 데이터셋별 가장 최근 버전 삭제 시각(지연 로딩) — 삭제된 자료로 계산한 지표 이력을 쓰지 않기 위해 (DEL-11)
+    deleted_at: dict[str, datetime] | None = None
     rows: dict[str, tuple[Any, list[dict[str, Any]], Dataset]] = field(default_factory=dict)
     outcomes: dict[str, MetricOutcome] = field(default_factory=dict)
     used_versions: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -202,6 +204,35 @@ def _get_path(obj: Any, path: str | None) -> Any:
     return obj
 
 
+HISTORY_SCAN = 8  # 저장된 지표 값을 거슬러 볼 최대 건수 — 삭제된 자료로 계산한 값을 건너뛰고 쓸 만한 값을 찾는 범위
+
+
+def _deleted_at(ctx: EvalContext) -> dict[str, datetime]:
+    """데이터셋 코드 → 가장 최근에 버전을 삭제한 시각. 실행당 한 번만 읽는다."""
+    if ctx.deleted_at is None:
+        out: dict[str, datetime] = {}
+        for origin in ("bank", "ext"):
+            t = source(origin)
+            q = select(t.version.dataset_code, func.max(t.version.deleted_at)).where(t.version.status == "deleted").group_by(t.version.dataset_code)
+            for code, at in ctx.session.execute(q):
+                if at is not None and (code not in out or at > out[code]):
+                    out[code] = at
+        ctx.deleted_at = out
+    return ctx.deleted_at
+
+
+def _from_deleted_data(ctx: EvalContext, mv: MetricValue) -> bool:
+    """이 지표 값이, 이후에 버전이 삭제된 데이터셋으로 계산됐는가(계산 기록의 입력 출처 기준).
+    삭제 시각 이전에 계산한 값은 어느 버전이 삭제됐든 쓰지 않는다 — 어떤 버전이 입력이었는지 기록하지 않은 경우까지 안전하게."""
+    gone = _deleted_at(ctx)
+    if not gone or not mv.calc_run_id:
+        return False
+    run = ctx.session.get(CalcRun, mv.calc_run_id)
+    if run is None:
+        return False
+    return any(isinstance(s, dict) and s.get("dataset") in gone and mv.created_at < gone[s["dataset"]] for s in run.sources or [])
+
+
 def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
     """(값, 출처 문자열, 출처 상세)"""
     if "const" in ref:
@@ -251,14 +282,20 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
                 raise ResolveError(f"선행 지표 오류: {code}")
             val = oc.value if field_ == "value" else (oc.display if field_ == "display" else oc.extra.get(field_))
             return val, oc.calc_run_id, {"metric": code}
-        # 이 실행에서 계산하지 않은 지표 — 저장된 최근 값(범위 실행이면 그 범위 값 먼저)
-        last = None
+        # 이 실행에서 계산하지 않은 지표 — 저장된 최근 값(범위 실행이면 그 범위 값 먼저).
+        # 이미 삭제된 자료로 계산한 값은 건너뛴다 — 삭제한 자료의 수치가 다른 지표의 입력으로 되살아나지 않게 (DEL-11)
+        last, skipped = None, 0
         for c in dict.fromkeys([ctx.scoped(code), code]):
-            last = ctx.session.execute(select(MetricValue).where(MetricValue.metric_code == c).order_by(MetricValue.created_at.desc()).limit(1)).scalar()
+            for mv in ctx.session.execute(select(MetricValue).where(MetricValue.metric_code == c).order_by(MetricValue.created_at.desc()).limit(HISTORY_SCAN)).scalars():
+                if _from_deleted_data(ctx, mv):
+                    skipped += 1
+                    continue
+                last = mv
+                break
             if last is not None:
                 break
         if last is None or field_ != "value":
-            raise ResolveError(f"지표 값 없음: {code}")
+            raise ResolveError(f"지표 값 없음: {code}" + (" (삭제된 자료로 계산한 값은 쓰지 않습니다 — 다시 계산되면 채워집니다)" if skipped and last is None else ""))
         return last.value, f"calc.metric_value({last.metric_code})", {"metric": code}
     if "rule" in ref:
         rule = ctx.session.get(Rule, ref["rule"])
@@ -401,7 +438,7 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
                 inputs[name] = value
                 sources.append({"param": name, "source": src, **(detail or {})})
                 trace_inputs.append({"key": name, "label": ref.get("label", name), "value": _display_input(value), "unit": ref.get("unit", ""), "source": src})
-        except (ResolveError, formulas.FormulaError, KeyError, IndexError, TypeError) as exc:
+        except (ResolveError, formulas.FormulaError, KeyError, IndexError, TypeError, ArithmeticError) as exc:
             error = str(exc)
         warnings: list[str] = []
         # 단위 검사 (B.32) — 합 · 차 · 평균 등은 입력 단위가 같아야 한다 (설정 calc.unit_check)
@@ -437,8 +474,15 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
             error = run.error
         spec = formulas.REGISTRY.get(m.formula)
         # 직전 값 — 같은 범위끼리만 비교(다지점이면 지점마다 따로 · B.47)
+        # 실패한 실행이 남긴 값은 기준으로 삼지 않는다 — 다시 시도(재실행)가 '변화 없음'으로 보고 변화 감지를 놓치지 않게
         prev = ctx.session.execute(
-            select(MetricValue.display_value).where(MetricValue.metric_code == ctx.scoped(m.code)).order_by(MetricValue.created_at.desc()).limit(1)
+            select(MetricValue.display_value)
+            .where(
+                MetricValue.metric_code == ctx.scoped(m.code),
+                ~exists().where(WorkflowRun.id == MetricValue.workflow_run_id, WorkflowRun.status == "failed"),
+            )
+            .order_by(MetricValue.created_at.desc())
+            .limit(1)
         ).scalar()
         data_origin = _origin_of(ctx, sources)
         oc = MetricOutcome(

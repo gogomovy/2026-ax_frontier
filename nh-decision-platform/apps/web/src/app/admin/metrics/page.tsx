@@ -93,7 +93,7 @@ export default function MetricsAdmin() {
           {data.data && !list.length ? <EmptyState compact title="맞는 지표가 없습니다" description="찾는 말이나 워크플로를 바꿔 보세요." /> : null}
           <Table head={["지표", "수식", "표시", "최근 값", "사용", "정의"]}>
             {list.map((m) => (
-              <tr key={m.code} className={m.enabled ? "" : "opacity-60"}>
+              <tr key={m.code} className={m.enabled ? "" : "bg-surface-soft"}>
                 <C className="min-w-[200px]">
                   <span className="font-bold text-ink-deep">{m.label}</span>
                   <p className="font-mono text-[10.5px] text-stone">
@@ -114,7 +114,7 @@ export default function MetricsAdmin() {
                   <p className="text-[10px] text-stone">{fmtTime(m.latest.at)}</p>
                 </C>
                 <C>
-                  <Check label="" checked={m.enabled} onChange={(v) => run(() => apiPatch(`/admin/metrics/${m.code}`, { enabled: v }), "저장했습니다", data.reload)} />
+                  <Check label="" ariaLabel={`${m.label} 사용`} checked={m.enabled} onChange={(v) => run(() => apiPatch(`/admin/metrics/${m.code}`, { enabled: v }), "저장했습니다", data.reload)} />
                 </C>
                 <C className="min-w-[360px]">
                   <Collapse label="입력 · 정의 편집 · 미리 계산">
@@ -181,7 +181,7 @@ export default function MetricsAdmin() {
                   <p className="text-[10.5px] text-stone">{data.data?.builders.find((x) => x.key === b.builder)?.description}</p>
                 </C>
                 <C>
-                  <Check label="" checked={b.enabled} onChange={(v) => run(() => apiPatch(`/admin/bindings/${b.id}`, { enabled: v }), "저장했습니다", data.reload)} />
+                  <Check label="" ariaLabel={`${b.artifactKey} ${b.path} 사용`} checked={b.enabled} onChange={(v) => run(() => apiPatch(`/admin/bindings/${b.id}`, { enabled: v }), "저장했습니다", data.reload)} />
                 </C>
                 <C className="min-w-[320px]">
                   <Collapse label="파라미터">

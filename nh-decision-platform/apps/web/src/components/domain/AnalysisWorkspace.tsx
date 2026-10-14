@@ -24,6 +24,7 @@ import { IconWarn, NextStep, SeverityBadge, StatusDot, TextLink, tabClass } from
 import { formatFigure } from "@/lib/format";
 import { lastStep, pointCount, prevStepPhrase, revenueRowsOf, trendPhrase } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { usePrinting } from "@/lib/printState";
 import { signatureOf, tabSeenKey, tabSignature } from "@/lib/seen";
 import type { AnalysisTab, ComparisonView, DomainCardInfo, Goal, Insight, LoanOverview, Severity } from "@/lib/types";
 import { goalByRole, threshold } from "@/lib/uiConfig";
@@ -246,7 +247,9 @@ export function AnalysisWorkspace({
 /** 여신 종합수익 — Agent 해설 + 전년 동기 대비 + 비중. 행은 라벨로 찾고, 없는 값은 그리지 않는다 */
 function RevenueTab({ overview, headline }: { overview: LoanOverview; headline: Insight | null }) {
   const { revenue } = overview;
-  const [full, setFull] = useState(false);
+  const [fullOpen, setFull] = useState(false);
+  const printing = usePrinting();
+  const full = fullOpen || printing; // 인쇄 · PDF 에는 접어 둔 해설 전문도 (EXP-02)
   const p = periodOf(overview.asOf);
   const rows = revenueRowsOf(revenue.rows);
   const { total, nim } = rows;

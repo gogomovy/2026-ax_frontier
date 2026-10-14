@@ -138,8 +138,8 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
         if _is_figure(obj) and obj["id"] in figs:
             f = figs[obj["id"]]
             if f.get("stale"):
-                # 계산 실패 — 값은 그대로 두고 갱신 실패 표시만 (B.32)
-                if not obj.get("stale") or obj.get("staleReason") != f.get("staleReason"):
+                # 계산 실패 — 값은 그대로 두고 갱신 실패 표시만 (B.32). 이전 값이 없으면(빈 상태) 표시할 '이전 값'이 없으므로 달지 않는다
+                if obj.get("value") is not None and (not obj.get("stale") or obj.get("staleReason") != f.get("staleReason")):
                     obj["stale"], obj["staleReason"] = True, f.get("staleReason")
                     changes.append({"artifact": key, "figure": obj["id"], "stale": True, "reason": f.get("staleReason")})
                 for v in obj.values():

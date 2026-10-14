@@ -5,7 +5,11 @@ import type { Goal, Proposal } from "./types";
 export function proposalRange(p: Proposal): string {
   const unit = UNIT_LABEL[p.recommendation.unit];
   const dec = p.recommendation.decimals ?? 1;
-  const n = (v?: number) => (v === undefined || v === null ? "-" : v.toFixed(dec));
+  const n = (v?: number | null) => (v === undefined || v === null ? "-" : v.toFixed(dec));
+  const none = (v?: number | null) => v === undefined || v === null;
+  // 자료가 올라와 계산되기 전에는 추천값이 없다 — '- ~ -' 대신 문구로
+  if (p.recommendation.mode === "range" && none(p.recommendation.low) && none(p.recommendation.high)) return "산출 전";
+  if (p.recommendation.mode === "point" && none(p.recommendation.value)) return "산출 전";
   if (p.recommendation.mode === "range") return `${n(p.recommendation.low)}${unit} ~ ${n(p.recommendation.high)}${unit}`;
   if (p.recommendation.mode === "point") return `${n(p.recommendation.value)}${unit}`;
   return "방향성만 제시";

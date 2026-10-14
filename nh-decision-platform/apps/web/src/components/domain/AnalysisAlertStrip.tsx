@@ -13,7 +13,7 @@ export function AnalysisAlertStrip({
 }: {
   opinions: Insight[];
   tabs: AnalysisTab[];
-  generatedAt: string;
+  generatedAt?: string | null;
 }) {
   if (opinions.length === 0) return null;
 
@@ -27,7 +27,10 @@ export function AnalysisAlertStrip({
     >
       <div className="flex flex-wrap items-baseline gap-x-md gap-y-1 px-lg pt-base">
         <p className="text-[14px] font-bold text-ink-deep">새 분석 결과 {opinions.length}건</p>
-        <p className="text-[12px] text-steel">오늘 {generatedAt.slice(11, 16)} 일배치 · 선택하면 해당 분석으로 이동합니다</p>
+        {/* 분석이 한 번도 돌지 않은 환경에서는 생성 시각이 없다 */}
+        <p className="text-[12px] text-steel">
+          {generatedAt ? `오늘 ${generatedAt.slice(11, 16)} 일배치 · ` : ""}선택하면 해당 분석으로 이동합니다
+        </p>
       </div>
       <ul className="mt-2 divide-y divide-info-line-soft border-t border-info-line-soft">
         {opinions.map((insight) => {

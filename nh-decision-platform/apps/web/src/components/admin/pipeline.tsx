@@ -201,7 +201,9 @@ export function PipelineMap({ data, onOpenWorkflow }: { data: PipelineData; onOp
     };
   }, [measure, data]);
 
-  const dim = (id: string) => (rel && !rel.has(id) ? "opacity-35" : "");
+  // 고른 노드와 관계없는 노드 — 예전에는 opacity-35 로 글자까지 흐려 대비가 4.5:1 아래로 떨어졌다(J3.6).
+  // 글자는 보조색(steel · 바탕 위 4.5:1 이상)으로 두고 바탕 · 테두리 · 장식만 낮춘다
+  const dim = (id: string) => (rel && !rel.has(id) ? "!border-hairline-soft !bg-surface-soft [&_*]:!text-steel [&_[aria-hidden=true]]:opacity-40" : "");
   const pick = (id: string) => setSel((s) => (s === id ? null : id));
   const label = (id: string): string => {
     if (id.startsWith("wf:")) return data.workflows.find((w) => `wf:${w.code}` === id)?.name ?? id;
@@ -403,7 +405,7 @@ interface Decision {
   detail: { by?: string } | null;
   runId: string | null;
 }
-const DECISION_KO: Record<string, string> = { hold: "실행 대기", release: "실행 허용", detect: "변화 판정", plan: "실행 계획", narrated: "서술 갱신", route: "경로 지정" };
+const DECISION_KO: Record<string, string> = { hold: "실행 대기", release: "실행 허용", detect: "변화 판정", plan: "실행 계획", narrated: "서술 갱신", rejected: "서술 반려", route: "경로 지정" };
 
 export function WorkflowPipeline({ data, code, onRun, busy }: { data: PipelineData; code: string; onRun: (code: string) => void; busy: boolean }) {
   const w = data.workflows.find((x) => x.code === code) ?? data.workflows[0];
@@ -552,7 +554,7 @@ function NodeCard({ n, current, live, selected, onClick }: { n: PipeNode; curren
       onClick={onClick}
       aria-pressed={selected}
       data-node={n.key}
-      className={`block w-full overflow-hidden rounded-lg border bg-white text-left ${selected ? "border-primary ring-2 ring-info-line" : "border-hairline hover:border-steel"} ${!n.enabled ? "opacity-60" : ""}`}
+      className={`block w-full overflow-hidden rounded-lg border bg-white text-left ${n.enabled ? "" : "border-dashed"} ${selected ? "border-primary ring-2 ring-info-line" : "border-hairline hover:border-steel"}`}
     >
       <span aria-hidden="true" className={`block h-1 w-full ${STATUS_BAR[st ?? ""] ?? "bg-hairline"} ${st === "running" ? "motion-safe:animate-pulse" : ""}`} />
       <span className="block p-1.5">

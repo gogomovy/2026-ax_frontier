@@ -222,6 +222,6 @@ def monitor_overview(hours: int = Query(24, ge=1, le=24 * 31), session: Session 
         "slowNodes": [{"impl": impl, "count": int(n), "avgMs": int(avg or 0), "failed": int(f or 0)} for impl, n, avg, f in slow],
         "agents": sorted(({"agent": k, **v} for k, v in by_agent.items()), key=lambda x: -x["tokens"])[:8],
         "budget": budget,
-        "failures": [{"id": r.id, "workflow": r.workflow_code, "status": r.status, "startedAt": _iso(r.started_at), "error": (r.error or "")[:200]} for r in failures],
+        "failures": [{"id": r.id, "workflow": r.workflow_code, "status": r.status, "startedAt": _iso(r.started_at), "error": (r.error or (r.summary or {}).get("note") or "")[:200]} for r in failures],
         "recentAlerts": [{"id": a.id, "at": _iso(a.at), "kind": a.kind, "severity": a.severity, "title": a.title, "status": a.status} for a in alerts],
     }

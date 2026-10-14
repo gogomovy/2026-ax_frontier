@@ -6,6 +6,7 @@ import { PurgeStatus, useDataDelete, useIsDataAdmin } from "@/components/admin/D
 import { ValueView } from "@/components/admin/ValueView";
 import { useConfirm } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
+import { NewDatasetPanel, definitionPayload, type InferredColumn, type PanelSubmit } from "@/components/knowledge/NewDatasetPanel";
 import { Advanced, EmptyState, KeyValueList } from "@/components/ui/Layout";
 import { Badge, Button, PillTabs } from "@/components/ui/primitives";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
@@ -178,6 +179,9 @@ function Datasets() {
   const [drop, setDrop] = useState<File | null>(null);
   const [openFile, setOpenFile] = useState<File | null>(null);
   const [stamp, setStamp] = useState(0);
+  // 맞는 데이터셋이 없는 새 종류 파일 — 파일에서 추론한 정의를 확인해 데이터셋을 만들고 첫 버전으로 올린다 (DEF-02)
+  const [creating, setCreating] = useState(false);
+  const { run: runCreate } = useAction();
   const detailRef = useRef<HTMLDivElement>(null);
   const all = data.data ?? [];
   const cur = all.find((d) => d.code === sel) ?? null;
@@ -197,8 +201,30 @@ function Datasets() {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
     el.focus({ preventScroll: true });
   }, [stamp, sel]);
+  const createFromFile = async ({ definition, dataOrigin, note }: PanelSubmit) => {
+    if (!drop) return;
+    const r = await runCreate(
+      async () => {
+        await apiPost("/admin/datasets", definitionPayload(definition));
+        const fd = new FormData();
+        fd.append("file", drop);
+        fd.append("origin", definition.origin);
+        fd.append("data_origin", dataOrigin);
+        if (note) fd.append("note", note);
+        return api<UploadResult>(`/admin/datasets/${definition.code}/upload`, { method: "POST", body: fd });
+      },
+      (res) => (res.status === "rejected" ? "데이터셋은 만들었지만 품질 검사에 실패해 확정되지 않았습니다 — 상세에서 확인하세요" : "데이터셋을 만들고 첫 버전을 올렸습니다"),
+      data.reload,
+    );
+    if (r) {
+      setCreating(false);
+      setDrop(null);
+      open(definition.code, null);
+    }
+  };
   const takeDrop = (f: File | null) => {
     setDrop(f);
+    setCreating(false);
     if (!f) return;
     const top = confidentSuggestion(suggestDatasets(f.name, all.map((d) => ({ code: d.code, name: d.name, filePattern: d.file_pattern }))));
     if (top) open(top.code, f);
@@ -252,11 +278,28 @@ function Datasets() {
               </div>
             ) : (
               <p className="font-bold text-attention" data-drop-no-match>
-                맞는 데이터셋이 없습니다 — 아래 표에서 고르면 이 파일을 채워 엽니다.
+                맞는 데이터셋이 없습니다 — 아래 표에서 고르거나, 새 종류의 자료라면 이 파일로 데이터셋을 만드세요.
               </p>
             )}
+            {drop && !creating ? (
+              <Button size="sm" variant="quiet" className="mt-xs" onClick={() => setCreating(true)} data-dataset-create-from-file>
+                이 파일로 새 데이터셋 만들기
+              </Button>
+            ) : null}
           </div>
         </div>
+        {drop && creating ? (
+          <div className="mt-md">
+            <NewDatasetPanel
+              file={drop}
+              inferPath="/admin/datasets/infer"
+              submitLabel="데이터셋 만들고 첫 버전 올리기"
+              introText="파일의 머리글 · 값으로 정의를 만들었습니다. 저장하면 데이터셋이 만들어지고 이 파일이 바로 현재 버전이 됩니다. 지표 · 워크플로우 연결은 만든 뒤 따로 합니다."
+              onSubmit={createFromFile}
+              onClose={() => setCreating(false)}
+            />
+          </div>
+        ) : null}
       </Card>
       <Loading error={data.error} loading={!data.data && data.loading} />
       <Card
@@ -308,6 +351,61 @@ function Datasets() {
         </div>
       ) : null}
     </>
+  );
+}
+
+interface NewColumns {
+  newColumns: InferredColumn[];
+  columns: InferredColumn[];
+  samples: Record<string, string[]>;
+}
+
+/** 파일에는 있지만 정의에 없어 저장되지 않는 열을 찾아 정의에 더한다 — 업로드 형식이 처음 정의에 묶여 있지 않게 (DEF-04). 새 열은 선택(필수 아님)으로만 더해 기존 업로드가 막히지 않는다 */
+function NewColumnsFinder({ ds, file, reload }: { ds: Ds; file: File; reload: () => Promise<void> }) {
+  const { run, busy } = useAction();
+  const [found, setFound] = useState<NewColumns | null>(null);
+  const find = async () => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await run(() => api<NewColumns>(`/admin/datasets/${ds.code}/infer-diff`, { method: "POST", body: fd }), undefined);
+    if (r) setFound(r);
+  };
+  return (
+    <div className="mt-md" data-new-columns>
+      <Button size="sm" variant="quiet" disabled={busy} onClick={find}>
+        파일에서 새 열 찾기
+      </Button>
+      <span className="ml-xs text-[12px] text-steel">정의에 없어 저장되지 않는 열이 있는지 확인합니다.</span>
+      {found ? (
+        found.newColumns.length ? (
+          <div className="mt-xs rounded-xl border border-hairline-soft p-md">
+            <p className="text-[12.5px] font-bold text-ink-deep">정의에 없는 열 {found.newColumns.length}개</p>
+            <ul className="mt-xs flex flex-col gap-0.5 text-[12px]">
+              {found.newColumns.map((c) => (
+                <li key={c.name}>
+                  <code className="font-mono text-charcoal">{c.name}</code> <span className="text-stone">{c.label}</span> · {c.type}
+                  {found.samples[c.name]?.length ? <span className="ml-1 font-mono text-[11px] text-stone">예: {found.samples[c.name].join(" · ")}</span> : null}
+                </li>
+              ))}
+            </ul>
+            <Button
+              size="sm"
+              variant="confirm"
+              className="mt-xs"
+              disabled={busy}
+              onClick={async () => {
+                const ok = await run(() => apiPatch(`/admin/datasets/${ds.code}`, { columns: found.columns }), `열 ${found.newColumns.length}개를 정의에 더했습니다 — 다음 업로드부터 저장됩니다`, reload);
+                if (ok) setFound(null);
+              }}
+            >
+              정의에 더하기(선택 열)
+            </Button>
+          </div>
+        ) : (
+          <p className="mt-xs text-[12px] text-success">모든 열이 이미 정의에 있습니다.</p>
+        )
+      ) : null}
+    </div>
   );
 }
 
@@ -394,12 +492,13 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
           </div>
         </div>
         {preview ? <UploadResultView r={preview} /> : null}
+        {file ? <NewColumnsFinder ds={ds} file={file} reload={reload} /> : null}
       </Card>
 
       <Card title="버전">
         <Table head={["버전", "기준일", "상태", "성격", "파일", "행", "품질", "업로드", ""]}>
           {ds.versions.map((v) => (
-            <tr key={v.id} className={v.isCurrent ? "bg-success-faint" : v.status === "deleted" ? "opacity-60" : ""} data-version-status={v.status}>
+            <tr key={v.id} className={v.isCurrent ? "bg-success-faint" : v.status === "deleted" ? "bg-surface-soft" : ""} data-version-status={v.status}>
               <C>
                 v{v.version} {v.isCurrent ? <Badge tone="success">현재</Badge> : null}
               </C>

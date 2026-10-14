@@ -3270,8 +3270,26 @@ Windows 압축본 Elasticsearch 9.5.4 + analysis-nori(단일 노드 · 보안 �
 - `require_data_admin` = `role == admin and data_admin`. `/me` · 사용자 목록에 `dataAdmin`. 지정 · 해제(`PATCH /admin/users/{emp}` `data_admin`)는 데이터 관리자만, 관리자에게만, 마지막 한 명은 해제 불가(409). 관리자 권한 회수 시 함께 해제.
 - [관리자 > 데이터셋] 버전 표에 [삭제](데이터 관리자만 보임), 삭제된 버전은 '삭제됨'(사유 · 삭제자). [문서] 표에 [삭제], '삭제된 문서 보기' 선택. '삭제 반영 상태'(색인 · 그래프 작업) 표와 [지금 다시 실행].
 - API: `GET/POST /admin/datasets/{code}/versions/{vid}/delete-preview|delete`, `GET/POST /admin/documents/{origin}/{did}/delete-preview|delete`(`all_versions`), `GET /admin/purge-tasks`, `POST /admin/purge-tasks/run`.
-### 26.4 시험
+
+### 26.4 부서 데이터 책임자 삭제 (DEL-09~12 · Q157~Q159)
+```
+[자료 올리기 > 우리 부서 자료]  GET /db/steward/items            → 우리 부서가 올려 반영된 자료(요청 번호 기준)
+  [삭제…] → GET  /db/steward/items/{요청}/delete-preview       → 현재 여부 · 승격 대상 · 지워지는 양 · 다시 도는 워크플로우
+          → POST /db/steward/items/{요청}/delete {reason}       → deletion.delete_by_request(via=steward)
+                                                                   └ 관리자 삭제와 같은 delete_dataset_version / delete_document
+  GET /db/steward/purge-status · POST /db/steward/purge-run      → 내가 낸 삭제 작업 반영 상태 · 다시 실행
+```
+- **소유 판정**(`deletion.owned_by`): 요청 `status=approved` · `kind ∈ {dataset, document}` · `requested_org ∈ 책임자 범위 조직`이고, 같은 자료(`result.versionId` / `result.documentId`)를 만든 승인된 요청이 모두 범위 안일 것. 범위 = `orgs.steward_scope`(가장 가까운 부 · 지역본부)와 그 아래 조직(`db_uploads._scope_orgs`, 승인과 같은 범위). 버전 · 문서의 `uploaded_by` 는 승인한 사람이라 쓰지 않는다.
+- **응답 코드**: 책임자 아님 403 · 범위 밖 · 미반영 요청 404(없는 것처럼) · 다른 부서와 공유된 자료 403 · 문서 `all_versions` 에 범위 밖 판이 섞이면 403 · 사유 없음 422 · 이미 삭제 409. 요청 행은 `with_for_update` 로 잠가 같은 요청의 동시 삭제를 직렬화.
+- **감사**: 기존 `admin.dataset.version_delete` · `admin.document.delete` 에 `detail.via = steward`(관리자 삭제는 `admin`), 행위자는 책임자.
+- **요청 기록 정리**(DEL-12): `_request_files` 가 삭제 표시와 함께 `preview.sample` · `preview.excerpt` 를 지운다(`CONTENT_PREVIEW_KEYS`).
+- **파생물**(DEL-11 · Q159): `knowledge.render.fig_text` 가 `stale` 수치를 `미산출(갱신 실패)` 로 렌더 → `app.kb_chunk` · Elasticsearch 에 옛 값이 실리지 않는다. `n_narrate` 는 stale 수치를 서술 재료에서 뺀다. `elastic.sync` · `sync_docs` 는 삭제 실패 건을 `pending` 에 더해 다음 주기에 재시도.
+- **전파 점검 결과**(코드 확인): ① PostgreSQL 행 · 청크(pgvector)는 같은 트랜잭션, ② 문서 청크 Elasticsearch 는 purge_task + `sync_docs` 대조, ③ Neo4j 는 현재 버전만 투영하므로 비현재 버전 삭제는 노드 작업이 없고 현재 버전은 purge_task + `wf_graph_projection`(`any dataset`) 세대 정리, ④ 검색은 Elasticsearch 가 돌려준 id 를 PostgreSQL 에서 접근 규칙 · 현재 여부로 다시 걸러 읽어(`_hydrate` · `_hydrate_docs`) 색인에 낡은 항목이 남아도 응답에는 나오지 않는다.
+- **알려진 한계 → 처리됨**: 처음에는 옛 산출물 세대 · `ops.llm_call` · `ops.node_run` 의 청크 본문 · 분석 보고서 근거 문구(문서 id 를 저장하지 않음)를 남겨 두었다. 표 · 차트 stale 표시와 지표 이력 건너뜀은 §28.3, 나머지 셋은 본문 조각 일치와 재계산 뒤 세대 정리로 §28.5 에서 처리했다(남은 한계는 §28.5 끝).
+
+### 26.5 시험
 - 권한(관리자 · 데이터 관리자 아님 → 403), 사유 누락 422, 두 번 삭제 409, 현재 버전 삭제 → 직전 버전 현재 · 화면 값 되돌아감 · 버전 번호 재사용 없음, 문서 삭제 → 청크 · 이슈 0 · 기본 목록 제외 · purge_task 생성, Elasticsearch 가짜 전송으로 `_bulk delete` 확인, Neo4j 대체 함수로 Cypher 확인 · 재업로드 시 건너뜀, 파일 정리(공유 파일은 남김).
+- 책임자(`tests/test_steward_delete.py`): 책임자 아님 403 · 다른 부서 404(자료 그대로) · 승인 전 404 · 관리자 직접 업로드 자료는 목록에 없음 / 현재 버전 삭제 → 승격 · 이벤트 · purge_task(`created_by`) · 감사 `via=steward` · 요청 미리보기 정리 · 삭제 기록 목록 · 이미 삭제 409 · 다른 책임자는 내 삭제 작업을 못 봄 / 문서 전체 버전 삭제 403 · 자기 부서 판 삭제 시 pgvector 청크 삭제 · 관리자 판은 그대로 / 지정 해제 즉시 403 / stale 수치 색인 제외.
 ## 27. 화면 하드코딩 제거 · 업무 영역 · 레드닷 · 애니메이션 · ES 인증 (Phase K · 요구사항 §27 · Q148~Q155)
 
 ### 27.1 화면 설정 (`nhdip.ui_config`)
@@ -3340,3 +3358,88 @@ ScopeSwitcher: 단위가 둘 이상인 칸은 ▾ 메뉴(현재 표시 · 준비
 - 목표 변경 표시: 서버 `build_tree` · 화면 `useCascadeModel` 이 바뀐 목표에 `changed: true` → `CascadeFlow` '최신' · 보라 테두리(종기부는 기존 목표 처리 상태 판정도 유지).
 - `CascadeTree`(들여쓰기 트리) 삭제 — 전파 경로는 두 화면 모두 `CascadeFlow`.
 - 시험: pytest `test_phase_l.py`(부서 사용자 트리 · 목표 200, 제안 · 목표 상태 · 처리 403, 업그레이드 1회 · 회수 보존, `changed`), E2E 신용리스크관리부 사용자 [수행방안 · 전파 경로] 흐름도 노드 ⊇ 종기부 노드.
+
+## 28. 업로드 자료 형식을 고정하지 않기 · 한 장 PDF 내보내기 · 삭제 흔적 정리 (Phase J 후속 · 요구사항 §28 · Q160~Q170)
+
+### 28.1 정의 추론 · 새 종류 자료 (DEF-01~05)
+```
+[파일] ─ infer_definition ─▶ 정의 초안(열 · 타입 · 키 · 기준일 · parser · file_pattern) ─ 사람이 확인 · 수정 ─┬▶ 관리자: POST /admin/datasets + 업로드(첫 버전)
+                                                                                                         └▶ 업무: POST /db/uploads/dataset-proposal → (책임자 · 관리자 승인) → Dataset 생성 + ingest_file
+```
+- **`nhdip/data/infer.py`**: `infer_definition(content, filename, code, name, origin)` · `infer_new_columns(ds, content, filename)` · `merge_columns` · `validate_definition` · `suggest_code`. 머리글 줄은 앞 30줄에서 "글자 칸이 여럿이고 다음 줄에 값이 있는 첫 줄"(`_header_row`)이며 첫 줄이 아니면 `parser` 에 `header_row`(엑셀) · `skip_rows`(CSV)를 담는다. 값 분류 `_tag` → 열 타입 `_column_type`(연월 = 문자 + 기준일 후보, 0으로 시작 · 15자리 넘는 숫자 = 문자, 일부라도 다르면 문자). 키 = 결측 없는 열 중 문자 · 날짜 · (머리글이 코드 · 번호를 말하는) 정수의 가장 작은 조합(최대 3열 · 후보 8열, 기준일 열이 든 조합 우선). 예시값은 `mask_text` 로 개인정보 형식을 가린다. 원본 보고서 양식은 `adapters.detect` 로 알아보고 `InferError`.
+- **`datasets.py`**: `header_map`(map_rows 와 `unmapped_headers` 가 공유) · `map_rows` 가 열이 비면 `NO_COLUMNS_MSG` · `_coerce(int)` 가 `ValueError` · `quality_check(unmapped=)` 가 info 항목 `unmapped_headers`(`passed=True` 라 상태 불변).
+- **API**: `POST /admin/datasets/infer` · `POST /admin/datasets/{code}/infer-diff`(관리자), `POST /db/uploads/dataset-infer` · `POST /db/uploads/dataset-proposal`(`db_upload`), `GET /db/uploadable` 에 `canPropose`. `POST/PATCH /admin/datasets` 는 `validate_definition` 으로 점검(PATCH 는 열 · 키 · 기준일 열이 바뀔 때 결과 정의 전체).
+- **제안 저장**: `ops.upload_request`(`kind=dataset`, `target`=제안 코드, `meta.proposal`=`PROPOSAL_FIELDS` 만, `mapping` 은 받지 않음). 요청 단계에서 임시 `Dataset`(저장 안 함)으로 `check_file` — 개인정보 · 품질 실패는 422. 같은 코드의 `pending` 제안 · 기존 데이터셋은 409.
+- **승인**(`db_uploads.do_approve`): `meta.proposal` 이 있고 데이터셋이 없으면 `Dataset` 생성 → `config.changed` 이벤트 → 감사 `db.dataset.create_by_request` → `ingest_file`. 모두 `begin_nested()` 안이라 파일이 실패하면 데이터셋 생성도 되돌려지고 요청은 `failed`. 데이터셋이 이미 있는데 제안이면 거절(동시 생성 방지). 결과에 `createdDataset`.
+- **화면**: `NewDatasetPanel`(업무 · 관리자 공용 — 열 표에서 이름 · 타입 · 키 · 기준일 · 필수 편집, 제출 전 `definitionProblems`), `UploadWorkspace`(맞는 자료 없을 때 [이 파일로 새 종류 자료 등록 요청]), `RequestReviewCard`(제안 정의 · 생성된 데이터셋 표시), 관리자 `admin/datasets`([이 파일로 새 데이터셋 만들기] · `NewColumnsFinder` [파일에서 새 열 찾기]).
+
+### 28.2 한 장 PDF (EXP-01~03)
+```
+[내보내기] ─ printFitOnePage ─▶ ① 폭 W = clamp(창 폭, 1280, 1600) ② 스타일시트의 폭 조건 미디어 쿼리를 W 기준으로 고정(all / not all)
+                                 ③ html.printing(+ usePrinting=true 로 접힌 곳 펼침) ④ 글꼴 · 2프레임 · 150ms 대기 ⑤ 높이 측정(가로 넘침이면 W 확대 후 다시)
+                                 ⑥ <style>@page{size:Wpx Hpx;margin:0}</style> ⑦ window.print() ⑧ afterprint 에서 모두 되돌림
+```
+- **핵심 원인(검증으로 확인)**: 인쇄에서는 `@media (min-width: …)` 가 `@page` 로 정한 폭이 아니라 용지 기본 폭으로 판정돼 좁은 1열 배치가 된다. `@page` 크기만 정하면 3쪽, 같은 크기를 `page.pdf({width, height})` 로 직접 주면 1쪽이었다. 그래서 `evalWidthQuery`(순수 함수, `printFit.ts`)로 폭 조건만으로 된 쿼리를 판정해 `CSSMediaRule.media.mediaText` 를 `all` / `not all` 로 바꾼다(`print` · `screen` · `prefers-*` · 쉼표 목록 등 다른 쿼리는 건드리지 않음). 같은 규칙으로 미리 재므로 측정 배치 = 인쇄 배치.
+- **`printFit.ts`**(순수): `printWidth` · `fitPage`(폭 = max(기준 폭, 내용 폭), 높이 = 내용 + 24px 여유, 최소 480 · 최대 14400px — 넘으면 `continues`) · `pageRule` · `evalWidthQuery`. **`printState.ts`**: `usePrinting`(내보내기 준비 중 또는 `beforeprint`~`afterprint`). **`printPage.ts`**: 브라우저 쪽 흐름. 정리는 `afterprint` + 120초 안전장치, 실패하면 기본 `window.print()`.
+- **CSS**(`globals.css`): `html.printing`(화면에서 인쇄 배치를 먼저 만듦)과 `@media print`(Ctrl+P · 보고서 [인쇄])에 **같은 규칙** — `.no-print` 숨김, `.min-h-screen` · `main` 최소 높이 해제(인쇄에서 `vh` 는 쪽 높이라 쪽이 늘어남), 스크롤 영역 `overflow: visible`, `th` 줄바꿈, 애니메이션 끔(끝 상태), `print-color-adjust: exact`. `html.printing body` 는 폭 `--print-w` · 안쪽 여백 20/24px.
+- **펼침**: `OverviewWorkspace`(주요 이슈 2건 → 전체) · `AnalysisWorkspace RevenueTab`(해설 전문)이 `usePrinting()` 을 읽는다. 하단 `DataBasis` 의 `no-print` 를 없애 시뮬레이션 고지가 남는다(`data-basis` 로 여백만 줄임).
+- **검증**: 실제 Chrome(puppeteer)으로 같은 흐름 재현 — `/hq/overview` A4 4쪽 → 1쪽(1440×1872), `/hq/analysis` 창 1440 · 1100 각 1쪽, `/hq/overview` 창 1100(화면 3831px) → 1쪽(1280×2014). 한계: 탭 화면은 현재 탭만 나온다 / 한 쪽 크기가 A4 가 아니다 / Safari · Firefox 의 `@page size` 처리는 검증하지 않았다.
+
+### 28.3 삭제 파생물 확장 (DEL-11 확장 · Q166)
+- `views/template.mark_binding_stale(payload, path, targets, reason)`: `table:` · `table_note:` · `chart:` · `series:` 경로의 부모(표 · 차트 · 계열)에만 `stale` · `staleReason` 을 달고 뗀다. `workflow/nodes.n_build_views` 가 바인딩 실패 때 달고 성공 때 떼며 산출물을 다시 게시한다. `knowledge/render` 는 stale 표 · 차트 · 계열의 값 · 비고를 `미산출(갱신 실패)` 로만 색인. 화면은 `ReportView` 의 `StaleNotice`.
+- `calc/metrics.resolve_ref` 의 `{"metric": …}` 저장 값 폴백이 `_from_deleted_data`(계산 기록의 입력 데이터셋 중 나중에 버전이 삭제된 것이 있고 값이 그 삭제 시각 이전에 계산됨)인 값을 건너뛴다(최근 8건까지 거슬러 봄). 전부 해당하면 "삭제된 자료로 계산한 값은 쓰지 않습니다" 오류. `previous` 는 그대로.
+
+### 28.4 시험
+- pytest: `test_infer.py`(11 — 타입 · 키 · 기준일 · 제목 줄 · 0 코드 · 섞인 숫자 · 보고서 양식 거절 · 엑셀 머리글 위치 · 개인정보 마스킹 · 정의 점검 · 새 열 찾기), `test_new_dataset.py`(6 — 업무 제안 → 책임자 승인 → 데이터셋 + 첫 버전 + 감사 + 다음 달 파일 + 책임자 삭제 가능 / 개인정보 · 정의 불일치 · 잘못된 정의 · 제안 차단 / 관리자 추론 → 생성 → 정의 밖 열 안내 → 새 열 찾기 → 저장 / 정의 가드 · 빈 열 데이터셋 실패 / 정수 열 글자 값 / 관리자 추론 코드가 이미 있으면 번호를 붙여 제안), `test_delete_derived.py`(4 — stale 표 · 차트 · 계열 색인 제외, 표시 달기 · 떼기 · 큰 객체 제외, 지표 이력 건너뜀).
+- pytest(삭제 흔적): `test_scrub.py`(7 — 조각이 이스케이프 글자 · 짧은 조각을 피함 / 근거 제거는 일치하는 문서 조각만 / 실행 기록은 내용만 지우고 메타 · 무관한 행 유지 / 문서 삭제 → 실행 기록 · 근거(새 세대 게시) · 조각이 든 옛 세대까지 정리하고 다른 산출물은 그대로 / 옛 세대는 재계산이 끝난 뒤에만 지난 세대만 삭제 / 하루가 지나면 포기 · 계보가 없으면 건너뜀 / 데이터셋 현재 버전 삭제 시 그래프와 다른 참조 이름의 이력 정리 작업이 큐에 들어감), `test_steward_delete.py` 의 정리 작업(neo4j + pg 2건), `test_filecheck.py`(백신 명령 실행 불가 → 거절, 이식 가능한 시험 + POSIX 명령 시험은 `false`/`true` 가 없으면 건너뜀).
+- vitest: `printFit.test.ts`(6 — 폭 보정 · 높이 여유 · 가로 확장 · 상한 · `evalWidthQuery` · `@page` 규칙), `scrubText.test.ts`(3 — 삭제 알림에 붙는 정리 건수 문장).
+- E2E(`e2e.mjs`): 내보내기 → `window.print` 가로채기 → `page.pdf({preferCSSPageSize})` 쪽 수 1 · 도구 숨김 · 쪽 폭 ≥ 내용 폭 · `afterprint` 후 복원, 창 1440 · 1100 둘 다.
+- 브라우저 확인(Chrome 151 · Edge 155, 임시 스크립트): 업무 사용자 새 종류 자료 제안(추론 패널 열 4) → 책임자 [승인할 자료] 승인 → 데이터셋 생성 → [우리 부서 자료] 삭제(확인 문구 · 알림 · 반영 상태에 '산출물 이력(PostgreSQL)') / 관리자 [이 파일로 새 데이터셋 만들기] → [파일에서 새 열 찾기] → 정의에 더하기 / 보고서 표 · 그래프 '갱신 실패 — 이전 값' 2곳 / 내보내기 PDF `/hq/overview` · `/hq/analysis` × 창 1440 · 1100 모두 1쪽 / 보고서 [인쇄] A4 가로 넘침 0. 각 브라우저 39/39. axe(WCAG 2.1 A · AA) 새 화면 + 기존 `a11y.mjs` 16개 화면 위반 0. 확인 중 고친 것: 위험 단추 흰 글자 대비 3.9:1 → danger/700 바탕, 삭제 버전 행의 `opacity-60`(대비 3.3:1) → 배경색, 생성 시각이 없을 때 `/risk` 알림 띠 오류, 비활성 지표 행 · 비활성 노드의 `opacity-60`(배경색 · 점선으로), [지표] 화면의 이름 없는 체크박스(`ariaLabel`), 영업점 계약서 행의 지점 기본값 폴백(`001068`) 제거.
+
+### 28.5 삭제 흔적 정리 (DEL-13~16 · Q167~Q170)
+
+자료 삭제(`data/deletion.py`)는 원장 행 · 청크 · 색인 · 그래프를 지운다. 그 자료의 **내용이 복사돼 남은 곳**은 `data/scrub.py` 가 정리한다.
+
+```
+delete_document ─ 청크 삭제 전 본문 확보 ─ snippets_of(40자 조각) ─┬▶ scrub_run_traces      ops.llm_call · ops.node_run 내용 지움(메타 유지)
+                                                                    └▶ scrub_artifact_evidence  현재 산출물 evidence[].snippet 제거 → publish(produced_by="deletion")
+                                                                                              → 문서 이후 옛 세대 중 조각이 든 것 삭제 → index_artifacts
+delete_dataset_version(현재 버전) ─ PurgeTask(store="pg", subject_ref="{ref}#history") ─ 워커 run_purge_tasks ─▶ purge_artifact_history
+```
+- **조각 뽑기**: 청크 앞 240자에서 JSON 이스케이프 글자(따옴표 · 역슬래시 · 줄바꿈 · 탭)로 끊은 부분 중 14자 이상인 것의 첫 조각과 가장 긴 조각을 40자까지 쓴다(청크당 최대 2개, 삭제 한 건당 최대 600개). 호출 기록 · 산출물은 JSON 이라 이스케이프된 글자가 있는 조각은 일치하지 않기 때문이다. `LIKE ANY(...)` 는 40개씩 묶어 질의하고 `%` · `_` 를 이스케이프한다.
+- **범위**: 문서의 `created_at` 이후 기록만(그 전에는 내용이 있을 수 없음). `ops.llm_call` 은 `messages`(시스템 표시 한 줄로) · `response`(`usage` 만 남김) · `output_text`, `ops.node_run` 은 `input` · `output` 을 `{"scrubbed": true, …}` 로 바꾼다. 토큰 · 비용 · 시각 · 상태는 그대로.
+- **근거 제거**: 일치하는 `evidence[]` 항목을 빼고 새 세대로 게시한다(`produced_by="deletion"`, 변경 내역에 제거 건수). 화면 산출물이 바뀌므로 `index_artifacts` 로 검색 색인을 갱신하고, 실패해도 삭제는 성공시키되 결과에 `indexError` 를 남긴다(워커 대조가 복구).
+- **옛 세대(`pg` 작업)**: `lineage_keys` = 이 데이터셋을 쓰는 지표(참조 지표 `{"metric": …}` 닫힘) → 그 수치 id 를 가진 산출물 + 바인딩 파라미터에 데이터셋 · 지표가 나오는 산출물. `purge_artifact_history` 는 `match_event` 로 깨어나는 워크플로우 중 **`outputs` 가 있는 것**이 삭제 시각 뒤에 `succeeded`/`degraded` 로 끝났는지 본다. 아니면 `NotReady` → 작업이 `pending` 으로 남아 워커가 다시 시도하고, 24시간(`WAIT_MAX`)이 지나면 `skipped`. 끝났으면 `~is_current` 이고 `created_at ≤ 삭제 시각` 인 세대(`key@…` 포함)를 지운다.
+- **지우지 않는 것**: `calc.calc_run` · `calc.metric_value`(CALC-02 불변 기록 — 대신 `calc/metrics._from_deleted_data` 가 다른 지표의 사용을 막음), `audit_log`(삭제 증적), `agent_decision`(계산값 이력).
+- **결과 노출**: `DeleteResult.scrubbed` = `{llmCalls, nodeRuns, evidenceRemoved, republished[], generationsRemoved}` → 삭제 응답 · 감사 `detail.scrubbed`. 화면은 `lib/scrubText.ts` 가 알림에 "복사돼 남은 내용 정리: …" 로 붙인다. 정리 작업 표의 저장소 라벨 `pg` = '산출물 이력(PostgreSQL)'.
+- **업로드 백신(UPL-SEC)**: `data/filecheck._antivirus` 가 `OSError` · `ValueError`(명령을 찾지 못함 · 실행 불가)를 `UploadRejected("백신 검사 명령을 실행할 수 없어 업로드를 받지 못했습니다 …")` 로 바꾼다(fail-closed).
+- **한계**: 14자 미만으로만 이뤄진 아주 짧은 청크, LLM 이 바꿔 쓰거나 요약해 복사된 문장은 본문 일치로 찾지 못한다. 문서가 만들어진 뒤 다른 문서에 같은 문장이 있어 그 기록과 일치하면 함께 지워질 수 있다(지우는 쪽으로 오차).
+
+## 29. 에이전트 구조 최종 점검 · 파이프라인 시각화 · 온톨로지 지도 다듬기 (Phase L · 요구사항 §29 · Q171~Q178)
+
+### 29.1 에이전트 흐름 (AGH-01~08)
+| 위치 | 바뀐 것 |
+|---|---|
+| `workflow/numguard.py`(새) | `normalize`(NFKC) · `strip_markers`(fig 제거 · term 라벨 남김) · `literal_numbers(text, extra)` · `has_literal_number`. `nodes.n_critic` · `llm_judge.clean_reason`(문자열만) · `agent_nodes.n_detect_changes`(묶음 이름)가 사용 |
+| `llm/guard.fence` | 구분자 위조를 최대 50회 반복 제거, 남으면 `< <` · `> >` |
+| `graph/extraction.py` | `GUARD` + `fence(title/text)`, 틀 오류 시 `DEFAULT_USER_TEMPLATE`, `clean_props`(스칼라 · 상한 20키 · 300자), `validate` 의 문자열 검사 · props 비정상 = {} |
+| `llm/client.py` | `resolve` 의 해독 · 숫자 오류 → `LlmUnavailable`, `chat` 응답 모양 오류 → 재시도 후 `LlmError`, `embed` 건수 불일치 오류 |
+| `workflow/engine.py` | `_run_nodes` 노드 전 스냅샷 · 선택 노드 실패 시 복원 · 결과 저장 실패 시 rollback 후 실패 NodeRun, `run_workflow` 준비 단계 try 안, 실패면 `published=[]` · `unpublished`, `summary.missing_datasets` · `note` |
+| `workflow/dispatcher.py` | `_debounce` 방어, `enqueue` 재시도 대기 작업은 원인만, `_note_dispatch_failure`(5회 · 알림 `dispatch_failed:{id}`), `ROUTE_BATCH=5`, `claim_job` 의 `gate()` savepoint, 복구 2종 최대 시도 · `RECOVER_GIVE_UP`, `recover_stale` 기본 5분 + `busy_job` 신호(키가 있을 때만) 3분 |
+| `worker.py` · `alerts.py` | `_finalize_job`(새 세션 3회 · 실패 시 프로세스 종료 → 기동 복구), housekeeping 단계별 예외 격리 / `workflow_failed` 끝난 시각 기준, `queue_backlog.oldest_min`, `dispatch_stalled` |
+| `workflow/nodes.py` | narrate 첫 LLM 오류 뒤 템플릿, critic 반려 결정 기록, embed 모델 없음 = skipped, extract 상한(20문서 · 600초 · 이어서 실행), project 형식 오류 = degraded, contracts 기준 자료 없음 = skipped, build_views `apply_goal_verdicts` |
+| `views/goal_verdict.py`(새) | `_policy`(설정 · 기본값 · 잘못된 값 무시) · `target_of`(규칙 연결 값 → targetFigure → targetValue) · `verdict_of` · `apply_goal_verdicts`(목표 → 같은 goalId 객체, 바뀐 키만) |
+| 빈 상태 | `views/store.patch_figures` · `views/template._has_content` · `api/menu_counts._reviewable` · `contracts/materialize`(기준월 없음 = note) |
+| `calc/metrics.evaluate` | 직전 값에서 실패 실행이 남긴 값 제외 |
+| 결정 기록 | `agent_nodes.record` 의 `detail.nodeRunId` — §29.2 의 노드 ↔ 결정 연결 |
+
+### 29.2 관리자 파이프라인 (VIZ-01~03)
+- `api/flow_view.py`(새): `run_nodes`(실행 요약의 노드 → `{key, name, status, ms}`, 범위 실행 `키@범위`), `build_agent_pipeline`(최근 실행 · 노드 실행 · 결정을 한 번에 읽어 `stages[].decisions`, 오케스트레이터 결정은 `before`, 옛 기록은 같은 에이전트 노드 · 없으면 `unplaced`, 진행 중 실행의 남은 노드는 `queued`, 근거 JSON 30,000자 상한).
+- `GET /admin/monitor/flow` 실행에 `nodes` · `unpublished` · `note` · `error`, 새 `GET /admin/agents/pipeline?workflow=&limit=`(1~30).
+- 화면: `components/admin/flowViz.tsx`(`Funnel` · `Step` · `Connector` · `NodeStrip` · `stepOf`), `monitor/flow`(이벤트 카드 접기 · 더 보기), `monitor/agents`(결정 흐름 요약 · 실행별 스텝퍼 · 단계 상세 · 배치 · 의존 관계 · 결정 표).
+- 흐림 효과: `pipeline.tsx` · `CascadeFlow.tsx` 의 `dim()` = `!bg-surface-soft !border-hairline-soft [&_*]:!text-steel` + 장식 40%.
+
+### 29.3 온톨로지 지도 (ONT-V01~03)
+- `OntologyMap.tsx` `drawSpace` — 원형 그라데이션 바탕, 별 420개(고정 시드 `starfield`, 시점 회전의 0.6배만 따름 · 확대 · 이동은 무시), 3D: 바닥 격자 7×7 · 정육면체 모서리 12 · 교차점 7³(반폭 1.15, 선은 6토막으로 나눠 토막마다 원근 밝기, 카메라 뒤 · 너무 가까운 점은 잇지 않음), 2D: 모눈. 점은 클래스 색 구 그림(64px, 빛무리 반지름 = 점 × 2.3)을 `drawImage` 로 — 아주 작은 점(1.8px 미만)은 원. 군집 이름표 = 알약(주 클래스 색 테두리 · 점, `clusterTitle` 로 앞의 클래스 이름 제거, 28자).
+- 순수 함수(`mapMath.ts`): `rgba` · `mixHex` · `starfield` · `clusterTitle`.
+- 군집 목록 · 범례 · Neo4j 노드 종류 칩(`KindChip`) · 관계 표 칸(`NodeCell`) — 색은 원장 클래스 목록(`/admin/ontology/map` 의 `classes[].color`)으로 지도와 같게.

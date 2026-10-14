@@ -211,12 +211,15 @@ def risk_product_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any
 
 # ═════════════════════════ 영업점 ═════════════════════════
 def _office(ctx: EvalContext, p: dict[str, Any]) -> str:
-    return str(p.get("office_cd") or _rule(ctx, "BRANCH_SCOPE").get("office_code") or "001068")
+    """대상 지점 — 호출 인자 → 규칙 BRANCH_SCOPE.office_code. 정해지지 않았으면 빈 문자열(특정 지점으로 대신 계산하지 않고 행을 만들지 않는다)."""
+    return str(p.get("office_cd") or _rule(ctx, "BRANCH_SCOPE").get("office_code") or "")
 
 
 @row_builder("branch_status_rows", "영업점 T01 — 업적평가 항목(KPI) 행 + 사업부문(BIZ) 행")
 def branch_status_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
     office = _office(ctx, p)
+    if not office:
+        return []
     scope = _rule(ctx, "BRANCH_SCOPE")
     period = scope.get("period", "2026H2")
     scheme = {r["item_cd"]: r for r in _rows(ctx, "BRANCH_KPI_SCHEME") if r.get("period") == period}
@@ -242,6 +245,8 @@ def branch_status_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, An
 @row_builder("branch_corp_rows", "영업점 T02 — 기업여신 규모 · 등급 · 규모×등급 · 전체 집계(지점 vs 전행), 평균 등급서열")
 def branch_corp_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
     office = _office(ctx, p)
+    if not office:
+        return []
     labels = _rule(ctx, "CORP_GRADE_SCALE").get("labels") or []
     all_rows = _rows(ctx, "OBLG_GRD_DEF")
     ym = max((str(r.get("std_ym")) for r in all_rows), default=None)  # 최근 기준월만 (월별 구획이 쌓여도 중복 집계하지 않음)
@@ -283,6 +288,8 @@ def branch_corp_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]
 @row_builder("branch_retail_rows", "영업점 T03 — 소매여신 상품 Pool 별 지점 · 전행 익스포저 · 서민금융 비중 · 연체율 · 금액가중 PD")
 def branch_retail_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
     office = _office(ctx, p)
+    if not office:
+        return []
     pools = {r["pool_id"]: r for r in _rows(ctx, "RETAIL_POOL_MASTER")}
     all_rows = _rows(ctx, "RETAIL_EXPOSURE")
     ym = max((str(r.get("std_ym")) for r in all_rows), default=None)

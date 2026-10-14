@@ -13,6 +13,7 @@ import { useSector } from "@/components/domain/SectorTitle";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { useUiConfig } from "@/components/providers/SessionProvider";
 import { useSeen } from "@/components/ui/useSeen";
+import { usePrinting } from "@/lib/printState";
 import { IconInfoCircle, IconSparkle } from "@/components/ui/icons";
 import { EmptyCard } from "@/components/ui/StateViews";
 import { Badge, IconChevron, IconWarn, NextStep } from "@/components/ui/primitives";
@@ -121,11 +122,20 @@ export function OverviewWorkspace({
   const onPlan = revenueProgress !== null && elapsed !== null && tolerance !== null ? revenueProgress >= elapsed - tolerance : null;
 
   /* ── 선택 부문: 요약 · 이슈 ──────────────────────── */
-  const counts = domainGoals.reduce<Record<Verdict, number>>((acc, g) => ({ ...acc, [g.gapVerdict ?? "on_track"]: acc[g.gapVerdict ?? "on_track"] + 1 }), { on_track: 0, near_limit: 0, below: 0, breach: 0 });
+  // 판정은 서버가 실적 수치로 계산한다 — 계산할 수 없는 목표(자료 없음 · 누계 금액 목표)는 '정상'으로 세지 않고 따로 센다
+  const counts = domainGoals.reduce<Record<Verdict | "unknown", number>>(
+    (acc, g) => {
+      const k = g.gapVerdict ?? "unknown";
+      return { ...acc, [k]: acc[k] + 1 };
+    },
+    { on_track: 0, near_limit: 0, below: 0, breach: 0, unknown: 0 },
+  );
   // 이슈로 볼 판정과 순서 — [화면 설정 › 주요 이슈 순서]
   const rank = (v: string | null | undefined) => (v ? cfg.issueOrder.indexOf(v) : -1);
   const issues = domainGoals.filter((g) => rank(g.gapVerdict) >= 0).sort((a, b) => rank(a.gapVerdict) - rank(b.gapVerdict));
-  const shownIssues = showAllIssues ? issues : issues.slice(0, 2);
+  // 인쇄 · PDF 에는 접어 둔 이슈도 모두 (EXP-02)
+  const printing = usePrinting();
+  const shownIssues = showAllIssues || printing ? issues : issues.slice(0, 2);
   const proposalOf = (goalId: string) => proposals.find((p) => p.targetGoalId === goalId);
   const reviewProposal = proposals.find((p) => p.id === reviewId);
   // 레드닷 = 그 부문의 확인하지 않은 새 이슈 (Phase K · DOT-01) — 탭을 열면 사라지고, 이슈가 바뀌면 다시
@@ -252,6 +262,12 @@ export function OverviewWorkspace({
                   <span className="text-[12px] text-steel">
                     정상 <b className="tnum text-ink-deep">{counts.on_track}</b> · 한도 근접 <b className="tnum text-ink-deep">{counts.near_limit}</b> · 목표 미달{" "}
                     <b className="tnum text-ink-deep">{counts.below}</b> · 한도 초과 <b className="tnum text-ink-deep">{counts.breach}</b>
+                    {counts.unknown > 0 ? (
+                      <>
+                        {" "}
+                        · 판정 없음 <b className="tnum text-ink-deep">{counts.unknown}</b>
+                      </>
+                    ) : null}
                   </span>
                 </p>
 

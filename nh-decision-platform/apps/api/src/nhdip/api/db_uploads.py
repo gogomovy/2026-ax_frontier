@@ -15,7 +15,7 @@ import os
 import re
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,7 +24,8 @@ from nhdip.config import get_settings
 from nhdip.data.datasets import IngestError, check_file, current_versions, ingest_file
 from nhdip.data.documents import DocumentError, extract_text, ingest_document
 from nhdip.db import get_session
-from nhdip.events import audit
+from nhdip.data.infer import infer_definition, validate_definition
+from nhdip.events import audit, emit
 from nhdip.models import AppUser, Dataset, OrgUnit, Setting, UploadRequest, utcnow
 
 from .admin_data import _read as read_upload
@@ -33,7 +34,10 @@ from .deps import client_ip, current_user, require_admin, require_resource
 router = APIRouter(tags=["db"])
 admin_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
-_DEFAULT_TARGETS: dict[str, Any] = {"datasets": "*", "doc_classes": "*"}
+# new_datasets: 기존에 없는 새 종류 자료를 올릴 때 파일에서 추론한 정의를 제안해 승인받을 수 있는가 (DEF-03)
+_DEFAULT_TARGETS: dict[str, Any] = {"datasets": "*", "doc_classes": "*", "new_datasets": True}
+# 제안 정의에서 저장하는 필드 — 매핑(온톨로지 투영)은 관리자가 따로 정하므로 제안에서는 받지 않는다
+PROPOSAL_FIELDS = ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "columns", "key_columns", "as_of_column", "quality_rules", "parser")
 STATUS_LABEL = {"pending": "승인 대기", "approved": "승인 · 반영", "rejected": "반려", "failed": "반영 실패"}
 
 
@@ -138,6 +142,7 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
     return {
         "datasets": out,
         "docClasses": _doc_classes(session),
+        "canPropose": bool(_targets(session).get("new_datasets", True)),
         "accept": {"dataset": ".csv,.tsv,.xlsx,.json", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"},
         # 파일 놓기 영역이 먼저 알려 주는 용량 한도(Phase E · UXF-01) — 실제 차단은 서버 보안 검사
         "maxMb": int(max_mb) if isinstance(max_mb, (int, float)) else 50,
@@ -181,6 +186,107 @@ async def request_dataset(
     session.add(r)
     session.flush()
     audit(session, user.emp_no, "db.upload.request", "upload_request", str(r.id), {"kind": "dataset", "target": d.code, "file": name, "rows": pv["rows"], "quality": q.get("status")}, client_ip(request))
+    session.commit()
+    return _req_json(r, full=True)
+
+
+def _can_propose(session: Session) -> None:
+    if not _targets(session).get("new_datasets", True):
+        raise HTTPException(403, "새 종류 자료 제안은 막혀 있습니다 — 관리자에게 데이터셋 등록을 요청하세요")
+
+
+@router.post("/db/uploads/dataset-infer")
+async def infer_dataset(
+    request: Request,
+    file: UploadFile = File(...),
+    name: str | None = Form(None),
+    origin: str = Form("bank"),
+    user: AppUser = Depends(require_resource("db_upload")),
+    session: Session = Depends(get_session),
+):
+    """맞는 데이터셋이 없는 새 파일 → 파일에서 추론한 정의 초안(열 · 타입 · 키 · 기준일 열). 저장하지 않는다 — 확인 · 수정해 `dataset-proposal` 로 제안."""
+    _can_propose(session)
+    fname, content = await read_upload(file, "dataset", session, request, user.emp_no)
+    try:
+        out = infer_definition(content, fname, name=name, origin=origin)
+    except (IngestError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    base, n = out["code"], 2
+    while session.get(Dataset, out["code"]) is not None or _pending_proposal(session, out["code"]):
+        out["code"], n = f"{base}_{n}"[:60], n + 1  # 이미 있거나 제안 중인 코드와 겹치지 않게
+    out["codeAdjusted"] = out["code"] != base
+    return out
+
+
+def _pending_proposal(session: Session, code: str) -> bool:
+    q = select(UploadRequest.id).where(UploadRequest.kind == "dataset", UploadRequest.target == code, UploadRequest.status == "pending", UploadRequest.meta["proposal"].astext.is_not(None)).limit(1)
+    return session.execute(q).first() is not None
+
+
+@router.post("/db/uploads/dataset-proposal", status_code=201)
+async def propose_dataset(
+    request: Request,
+    file: UploadFile = File(...),
+    definition: str = Form(...),
+    data_origin: str = Form("actual"),
+    as_of: str | None = Form(None),
+    note: str | None = Form(None),
+    user: AppUser = Depends(require_resource("db_upload")),
+    session: Session = Depends(get_session),
+):
+    """새 종류 자료 등록 요청 — 확인 · 수정한 정의와 파일을 함께 보낸다. 같은 검사(보안 · 형식 · 품질 · 개인정보)를 하고, 승인되면 데이터셋이 만들어지며 이 파일이 첫 버전이 된다."""
+    import json
+
+    _can_propose(session)
+    try:
+        raw_def = json.loads(definition)
+        if not isinstance(raw_def, dict):
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(422, "definition 은 JSON 객체여야 합니다") from exc
+    d = {k: raw_def[k] for k in PROPOSAL_FIELDS if k in raw_def}
+    d.setdefault("kind", "fact")
+    for k, dflt in (("description", ""), ("columns", []), ("key_columns", []), ("quality_rules", []), ("parser", {})):
+        d.setdefault(k, dflt)
+    problems = validate_definition(d)
+    if d.get("kind") not in ("fact", "master"):
+        problems.append("자료 종류는 fact | master 입니다")
+    if d.get("file_pattern"):
+        try:
+            re.compile(str(d["file_pattern"]))
+        except re.error:
+            problems.append("파일 이름 규칙(정규식)이 올바르지 않습니다")
+    if problems:
+        raise HTTPException(422, " · ".join(problems[:6]))
+    if data_origin not in ("actual", "simulated"):
+        raise HTTPException(422, "data_origin 은 actual | simulated")
+    if as_of and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of):
+        raise HTTPException(422, "기준일은 YYYY-MM-DD 형식입니다")
+    code = str(d["code"])
+    if session.get(Dataset, code) is not None or _pending_proposal(session, code):
+        raise HTTPException(409, "이미 있거나 제안 중인 데이터셋 코드입니다 — 코드를 바꾸거나 목록에서 그 자료를 고르세요")
+    fname, content = await read_upload(file, "dataset", session, request, user.emp_no)
+    ds = Dataset(**d, mapping={}, active=True)  # 저장하지 않는 임시 정의 — 같은 검사를 통과하는지 본다
+    try:
+        pv = check_file(session, ds, fname, content)
+    except (IngestError, ValueError) as exc:
+        raise HTTPException(422, f"파일을 이 정의로 읽을 수 없습니다 — {exc}") from exc
+    q = pv["quality"]
+    if q.get("status") == "failed":
+        bad = [f"{c['rule']}: {c['detail']}" for c in q.get("checks", []) if not c.get("passed") and c.get("severity") == "error"][:5]
+        audit(session, user.emp_no, "db.upload.rejected_quality", "dataset", code, {"file": fname, "checks": bad, "proposal": True}, client_ip(request))
+        session.commit()
+        raise HTTPException(422, "품질 검사를 통과하지 못해 요청하지 않았습니다 — " + " · ".join(bad))
+    sha, path = _store(user.emp_no, fname, content)
+    r = UploadRequest(
+        kind="dataset", target=code, origin=str(d["origin"]), file_name=fname, file_path=path, file_sha256=sha,
+        meta={"targetLabel": str(d["name"]), "asOf": as_of or None, "dataOrigin": data_origin, "note": (note or "")[:500], "proposal": d},
+        preview={"rows": pv["rows"], "quality": {"status": q.get("status"), "checks": q.get("checks", []), "source": q.get("source")}, "headers": pv["headers"][:60], "columns": pv["columns"][:60], "sample": pv["sample"]},
+        status="pending", requested_by=user.emp_no, requested_org=user.org_code,
+    )
+    session.add(r)
+    session.flush()
+    audit(session, user.emp_no, "db.upload.request", "upload_request", str(r.id), {"kind": "dataset", "target": code, "file": fname, "rows": pv["rows"], "quality": q.get("status"), "proposal": True, "columns": len(d["columns"])}, client_ip(request))
     session.commit()
     return _req_json(r, full=True)
 
@@ -287,10 +393,25 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
     try:
         if r.kind == "dataset":
             d = session.get(Dataset, r.target)
+            proposal = meta.get("proposal") if isinstance(meta.get("proposal"), dict) else None
+            created = False
+            if proposal is not None and d is not None:
+                raise IngestError("같은 코드의 데이터셋이 이미 만들어졌습니다 — 반려하고 그 자료로 다시 올려 달라고 하세요")
             if d is None:
-                raise IngestError("데이터셋이 없어졌습니다")
+                if proposal is None:
+                    raise IngestError("데이터셋이 없어졌습니다")
+                problems = validate_definition(proposal)
+                if problems:
+                    raise IngestError("제안한 정의에 문제가 있습니다 — " + " · ".join(problems[:4]))
+                # 새 종류 자료 — 제안한 정의로 데이터셋을 만든 뒤 이 파일을 첫 버전으로 올린다(아래 어느 단계가 실패해도 savepoint 로 함께 되돌린다)
+                d = Dataset(**{k: proposal[k] for k in PROPOSAL_FIELDS if k in proposal}, mapping={}, active=True)
+                session.add(d)
+                session.flush()
+                emit(session, "config.changed", {"kind": "dataset", "code": d.code}, actor.emp_no)
+                audit(session, actor.emp_no, "db.dataset.create_by_request", "dataset", d.code, {"request": r.id, "columns": len(d.columns), "keys": d.key_columns, "via": via}, ip)
+                created = True
             v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=actor.emp_no, note=note, force=bool(body.force))
-            result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current}
+            result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current, **({"createdDataset": d.code} if created else {})}
             if v.status != "committed":
                 raise IngestError(f"품질 검사 실패로 확정되지 않았습니다(v{v.version}) — 필요하면 '품질 실패여도 확정' 으로 승인")
         else:
@@ -418,3 +539,105 @@ def steward_pending_count(session: Session, user: AppUser) -> int:
     from sqlalchemy import func
 
     return int(session.execute(select(func.count()).select_from(UploadRequest).where(UploadRequest.status == "pending", UploadRequest.requested_org.in_(orgs), UploadRequest.requested_by != user.emp_no)).scalar() or 0)
+
+
+# ── 부서 데이터 책임자 — 자기 부서가 올린 자료 삭제 (Phase J 후속 · DEL-09~12 · Q157~Q159) ──
+# 소유는 자료를 만든 승인된 요청(requested_org)으로 판정한다. 다른 부서 자료는 없는 것처럼 404, 관리자 직접 업로드 자료는 요청이 없어 목록에 없다.
+class StewardDeleteIn(BaseModel):
+    reason: str
+    all_versions: bool = False
+
+
+def _owned_request(session: Session, rid: int, user: AppUser, *, lock: bool = False) -> UploadRequest:
+    from nhdip.data.deletion import owned_by
+
+    _, orgs = _scope_orgs(session, user)
+    r = session.get(UploadRequest, rid, with_for_update=True if lock else None)
+    if r is None or r.status != "approved" or r.kind not in ("dataset", "document") or r.requested_org not in orgs:
+        raise HTTPException(404, "자료 없음")  # 다른 부서 · 반영 안 된 요청은 없는 것처럼
+    if not owned_by(session, r, orgs):
+        raise HTTPException(403, "같은 자료를 다른 부서도 올려 이 부서만으로는 지울 수 없습니다 — 데이터 관리자에게 요청하세요")
+    return r
+
+
+def _delete_http(exc: Exception) -> HTTPException:
+    from nhdip.data.deletion import NotOwned
+
+    msg = str(exc)
+    if isinstance(exc, NotOwned):
+        return HTTPException(403, msg)
+    return HTTPException(404 if "없음" in msg else 409 if ("이미" in msg or "없습니다" in msg) else 422, msg)
+
+
+@router.get("/db/steward/items")
+def steward_items(deleted: bool = False, session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    """우리 부서가 올려 반영된 자료 — 지울 수 있는 것(기본) 또는 지운 기록(deleted=true)."""
+    from nhdip.data.deletion import steward_items as items_of
+
+    scope, orgs = _scope_orgs(session, user)
+    items = items_of(session, orgs, deleted=deleted)
+    names = _names(session, {i["requestedBy"] for i in items} | {i["approvedBy"] for i in items if i.get("approvedBy")} | {(i.get("deleted") or {}).get("by") for i in items if i.get("deleted")} - {None})
+    for i in items:
+        i["requestedByName"] = names.get(i["requestedBy"])
+        i["approvedByName"] = names.get(i.get("approvedBy") or "")
+        if i.get("deleted"):
+            i["deleted"] = {**i["deleted"], "byName": names.get((i["deleted"] or {}).get("by") or "")}
+    return {"scope": {"code": scope.code, "name": scope.name} if scope else None, "items": items}
+
+
+@router.get("/db/steward/items/{rid}/delete-preview")
+def steward_delete_preview(rid: int, all_versions: bool = False, session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    """삭제 전 확인 — 현재 자료인지, 무엇이 현재가 되는지, 지워지는 양, 다시 도는 워크플로우."""
+    from nhdip.data.deletion import DeleteError, assert_owned_document_versions, preview_by_request, subject_id
+
+    from .admin_data import _matched
+
+    r = _owned_request(session, rid, user)
+    try:
+        if all_versions and r.kind == "document":
+            _, orgs = _scope_orgs(session, user)
+            assert_owned_document_versions(session, r.origin, subject_id(r) or 0, orgs)
+        out, event, payload = preview_by_request(session, r, all_versions)
+    except DeleteError as exc:  # NotOwned 도 DeleteError 의 하위
+        raise _delete_http(exc) from exc
+    out["workflows"] = _matched(session, event, payload) if out.get("isCurrent") else []
+    out["requestId"] = r.id
+    return out
+
+
+@router.post("/db/steward/items/{rid}/delete")
+def steward_delete(rid: int, body: StewardDeleteIn, request: Request, background: BackgroundTasks, session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    """우리 부서 자료 삭제 — 관리자 삭제와 같은 연쇄(행 · 청크 · 색인 · 그래프 · 원본 · 재계산). 사유 필수."""
+    from nhdip.data.deletion import DeleteError, assert_owned_document_versions, delete_by_request, subject_id
+
+    from .admin_data import _after_delete
+
+    r = _owned_request(session, rid, user, lock=True)
+    try:
+        if body.all_versions and r.kind == "document":
+            _, orgs = _scope_orgs(session, user)
+            assert_owned_document_versions(session, r.origin, subject_id(r) or 0, orgs)
+        res = delete_by_request(session, r, user.emp_no, body.reason, client_ip(request), all_versions=body.all_versions)
+    except DeleteError as exc:
+        session.rollback()
+        raise _delete_http(exc) from exc
+    session.commit()
+    _after_delete(background, res)
+    return res.as_dict()
+
+
+@router.get("/db/steward/purge-status")
+def steward_purge_status(limit: int = 30, session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    """내가 지운 자료의 외부 저장소(Elasticsearch · Neo4j) 반영 상태."""
+    from nhdip.data.deletion import purge_status
+
+    return purge_status(session, limit, created_by=user.emp_no)
+
+
+@router.post("/db/steward/purge-run")
+def steward_purge_run(session: Session = Depends(get_session), user: AppUser = Depends(_steward)):
+    """내가 낸 삭제 작업 중 대기 중인 것을 바로 다시 실행한다."""
+    from nhdip.data.deletion import pending_purge_ids, run_purge_tasks
+
+    ids = pending_purge_ids(session, user.emp_no)
+    return run_purge_tasks(session, ids=ids) if ids else {"done": 0, "skipped": 0, "pending": 0}

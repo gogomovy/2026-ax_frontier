@@ -5,6 +5,7 @@ import { useConfirm } from "@/components/providers/UiProvider";
 import { useSession } from "@/components/providers/SessionProvider";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiGetC, apiPost } from "@/lib/api-client";
+import { scrubText, type Scrubbed } from "@/lib/scrubText";
 
 /**
  * 업로드 자료 삭제 (Phase J · DEL-01~08 · Q143~Q147) — 데이터 관리자만.
@@ -81,7 +82,7 @@ export function useDataDelete() {
             <p>현재 버전이 아니라 화면 수치는 바뀌지 않습니다.</p>
           )}
           {p.isCurrent ? <WorkflowList items={p.workflows} /> : null}
-          <p className="text-steel">행 · 원본 파일을 지우고 그래프(Neo4j)에서도 지웁니다. 되돌릴 수 없습니다 — 버전 기록은 &apos;삭제됨&apos;으로 남습니다.</p>
+          <p className="text-steel">행 · 원본 파일을 지우고 그래프(Neo4j)에서도 지웁니다. 이 자료로 만든 지난 산출물 세대는 관련 계산이 다시 끝난 뒤 정리합니다. 되돌릴 수 없습니다 — 버전 기록은 &apos;삭제됨&apos;으로 남습니다.</p>
         </div>
       ),
       input: { label: "삭제 사유", placeholder: "예: 잘못된 기준월 파일 업로드", validate: reasonRule },
@@ -112,13 +113,13 @@ export function useDataDelete() {
             <p>현재 버전이 아닌 이전 판입니다.</p>
           )}
           {p.isCurrent ? <WorkflowList items={p.workflows} /> : null}
-          <p className="text-steel">본문 · 청크(임베딩) · 구조화 결과 · 원본 파일을 지우고 검색 색인(Elasticsearch) · 그래프(Neo4j)에서도 지웁니다. 되돌릴 수 없습니다.</p>
+          <p className="text-steel">본문 · 청크(임베딩) · 구조화 결과 · 원본 파일을 지우고 검색 색인(Elasticsearch) · 그래프(Neo4j)에서도 지웁니다. AI 호출 기록 · 실행 기록 · 보고서 근거에 복사된 본문 조각과 그 조각이 든 옛 산출물 세대도 지웁니다. 되돌릴 수 없습니다.</p>
         </div>
       ),
       input: { label: "삭제 사유", placeholder: "예: 폐기된 지침", validate: reasonRule },
     });
     if (typeof reason !== "string" || !reason) return;
-    await run(() => apiPost(`/admin/documents/${d.origin}/${d.id}/delete`, { reason }), "문서를 삭제했습니다 — 색인 · 그래프 반영이 이어서 실행됩니다", reload);
+    await run(() => apiPost<{ scrubbed?: Scrubbed }>(`/admin/documents/${d.origin}/${d.id}/delete`, { reason }), (r) => `문서를 삭제했습니다 — 색인 · 그래프 반영이 이어서 실행됩니다${scrubText(r.scrubbed)}`, reload);
   };
 
   return { deleteVersion, deleteDocument, busy };
@@ -126,7 +127,7 @@ export function useDataDelete() {
 
 interface PurgeTaskRow {
   id: number;
-  store: "es" | "neo4j";
+  store: "es" | "neo4j" | "pg";
   subjectKind: string;
   subjectRef: string;
   status: string;
@@ -137,7 +138,7 @@ interface PurgeTaskRow {
   doneAt: string | null;
 }
 
-const STORE_LABEL: Record<string, string> = { es: "검색 색인(Elasticsearch)", neo4j: "그래프(Neo4j)" };
+export const STORE_LABEL: Record<string, string> = { es: "검색 색인(Elasticsearch)", neo4j: "그래프(Neo4j)", pg: "산출물 이력(PostgreSQL)" };
 
 /** 삭제 반영 상태 (DEL-07) — 외부 저장소 삭제 작업. 저장소가 멈췄으면 워커가 30초마다 다시 시도한다 */
 export function PurgeStatus() {

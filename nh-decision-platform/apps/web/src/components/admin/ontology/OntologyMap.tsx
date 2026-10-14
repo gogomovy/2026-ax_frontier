@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { KeyValueList } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
-import { byLabel, colorOf, DEFAULT_VIEW, kindLabel, neighbors as buildNeighbors, pick, project, radiusOf, relKo, search, type OntologyMapData, type View } from "./mapMath";
+import { byLabel, CAMERA, clusterTitle, colorOf, DEFAULT_VIEW, kindLabel, mixHex, neighbors as buildNeighbors, pick, project, radiusOf, relKo, rgba, rotate, search, starfield, type OntologyMapData, type View } from "./mapMath";
 
 /*
  * 온톨로지 3D 군집 지도 (Phase G · 요구사항 §23 OV-02 · OV-03 · 설계 §23.5)
@@ -15,9 +15,141 @@ import { byLabel, colorOf, DEFAULT_VIEW, kindLabel, neighbors as buildNeighbors,
 type Mode = "3d" | "2d";
 
 const BG = "#0b1220";
+const BG_CENTER = "#16213d"; // 가운데가 조금 밝은 원형 그라데이션 — 깊이감
+const BG_EDGE = "#04070e";
 const LINK = "rgba(148, 163, 184, 0.13)";
 const LINK_HL = "rgba(226, 232, 240, 0.62)";
 const MAX_NEIGHBOR_LABELS = 24;
+const FONT = "Pretendard, 'Noto Sans KR', system-ui, sans-serif";
+
+/* 우주 격자 — 개체가 놓인 공간(좌표 ±1)을 감싸는 정육면체 격자 · 바닥 격자 · 교차점, 가까울수록 밝게(원근 안개) */
+const GRID = 1.15; // 격자 반폭(좌표 단위) — 개체가 놓인 ±1 을 조금 넉넉히 감싼다
+const GRID_STEPS = 6; // 한 변의 칸 수
+const GRID_RGB = "125, 170, 255";
+const STARS = starfield(420);
+
+/* 점 그림 — 클래스 색마다 한 번 만든 구(하이라이트 · 그늘) + 은은한 빛무리 그림을 크기만 바꿔 찍는다(프레임마다 그라데이션을 만들지 않음) */
+const SPRITE = 64;
+const GLOW = 2.3; // 그림 반지름 ÷ 점 반지름
+
+function makeSprite(color: string): HTMLCanvasElement | null {
+  if (typeof document === "undefined") return null;
+  const c = document.createElement("canvas");
+  c.width = SPRITE;
+  c.height = SPRITE;
+  const g = c.getContext("2d");
+  if (!g) return null;
+  const R = SPRITE / 2;
+  const core = R / GLOW;
+  const halo = g.createRadialGradient(R, R, core * 0.7, R, R, R);
+  halo.addColorStop(0, rgba(color, 0.32));
+  halo.addColorStop(1, rgba(color, 0));
+  g.fillStyle = halo;
+  g.fillRect(0, 0, SPRITE, SPRITE);
+  const body = g.createRadialGradient(R - core * 0.35, R - core * 0.4, core * 0.08, R, R, core);
+  body.addColorStop(0, mixHex(color, "#ffffff", 0.6));
+  body.addColorStop(0.5, color);
+  body.addColorStop(1, mixHex(color, "#000000", 0.38));
+  g.fillStyle = body;
+  g.beginPath();
+  g.arc(R, R, core, 0, Math.PI * 2);
+  g.fill();
+  return c;
+}
+
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  const k = Math.min(r, h / 2, w / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + k, y);
+  ctx.arcTo(x + w, y, x + w, y + h, k);
+  ctx.arcTo(x + w, y + h, x, y + h, k);
+  ctx.arcTo(x, y + h, x, y, k);
+  ctx.arcTo(x, y, x + w, y, k);
+  ctx.closePath();
+}
+
+/** 배경 · 별 · 격자 — 점 · 선보다 먼저 그린다 */
+function drawSpace(ctx: CanvasRenderingContext2D, view: View, w: number, h: number, flat: boolean) {
+  const bg = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h / 2, Math.hypot(w, h) * 0.62);
+  bg.addColorStop(0, BG_CENTER);
+  bg.addColorStop(1, BG_EDGE);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  // 별 — 아주 먼 하늘(회전만 따르고 확대 · 이동은 따르지 않는다)
+  const F = Math.min(w, h) * 0.85;
+  for (const s of STARS) {
+    let sx: number;
+    let sy: number;
+    if (flat) {
+      sx = w / 2 + s.d[0] * w * 0.55;
+      sy = h / 2 + s.d[1] * h * 0.55;
+    } else {
+      const r = rotate(s.d, view.yaw * 0.6, view.pitch * 0.6);
+      if (r[2] < 0.2) continue;
+      sx = w / 2 + (r[0] / r[2]) * F;
+      sy = h / 2 - (r[1] / r[2]) * F;
+    }
+    if (sx < 0 || sy < 0 || sx > w || sy > h) continue;
+    ctx.fillStyle = `rgba(226, 232, 255, ${(s.b * 0.55).toFixed(3)})`;
+    ctx.fillRect(sx, sy, s.s, s.s);
+  }
+
+  const near = (f: number) => Math.min(1, Math.max(0, (f - 0.62) / 0.75)); // 0 = 멀리 · 1 = 가까이
+  const P = (p: [number, number, number]) => project(p, view, w, h, flat);
+  const behind = (z: number) => CAMERA + z < 0.6; // 카메라 뒤 · 너무 가까운 점은 잇지 않는다
+  const seg = (a: [number, number, number], b: [number, number, number], base: number, gain: number, parts = 6) => {
+    // 긴 선은 몇 토막으로 나눠 토막마다 깊이에 맞는 밝기
+    let prev = P(a);
+    for (let k = 1; k <= parts; k++) {
+      const t = k / parts;
+      const cur = P([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+      if (!behind(prev.z) && !behind(cur.z)) {
+        ctx.strokeStyle = `rgba(${GRID_RGB}, ${(base + gain * near((prev.f + cur.f) / 2)).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(cur.x, cur.y);
+        ctx.stroke();
+      }
+      prev = cur;
+    }
+  };
+  const g = GRID;
+  const step = (2 * g) / GRID_STEPS;
+  ctx.lineWidth = 1;
+  if (flat) {
+    // 2D — 모눈종이처럼 고른 격자, 두 칸마다 조금 진하게
+    for (let k = 0; k <= GRID_STEPS * 2; k++) {
+      const t = -g + (step / 2) * k;
+      const major = k % 4 === 0;
+      seg([t, -g, 0], [t, g, 0], major ? 0.09 : 0.045, 0, 1);
+      seg([-g, t, 0], [g, t, 0], major ? 0.09 : 0.045, 0, 1);
+    }
+    return;
+  }
+  // 바닥 격자 — 공간 아래에 깔린 판
+  for (let k = 0; k <= GRID_STEPS; k++) {
+    const t = -g + step * k;
+    seg([t, -g, -g], [t, -g, g], 0.05, 0.24);
+    seg([-g, -g, t], [g, -g, t], 0.05, 0.24);
+  }
+  // 정육면체 모서리 12개 — 공간의 테두리
+  const c = [-g, g];
+  for (const y of c) for (const z of c) seg([-g, y, z], [g, y, z], 0.07, 0.3);
+  for (const x of c) for (const z of c) seg([x, -g, z], [x, g, z], 0.07, 0.3);
+  for (const x of c) for (const y of c) seg([x, y, -g], [x, y, g], 0.07, 0.3);
+  // 격자 교차점 — 공간 안의 격자감(아주 옅게)
+  for (let i = 0; i <= GRID_STEPS; i++)
+    for (let j = 0; j <= GRID_STEPS; j++)
+      for (let k = 0; k <= GRID_STEPS; k++) {
+        const p = P([-g + step * i, -g + step * j, -g + step * k]);
+        if (behind(p.z) || p.x < 0 || p.y < 0 || p.x > w || p.y > h) continue;
+        const a = 0.08 + 0.4 * near(p.f);
+        ctx.fillStyle = `rgba(${GRID_RGB}, ${a.toFixed(3)})`;
+        const sz = 0.8 + 1.1 * near(p.f);
+        ctx.fillRect(p.x - sz / 2, p.y - sz / 2, sz, sz);
+      }
+}
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -37,6 +169,7 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
   const pointerRef = useRef<{ x: number; y: number; down: boolean; moved: number; px: number; py: number }>({ x: 0, y: 0, down: false, moved: 0, px: 0, py: 0 });
   const n = data.nodes.length;
   const scr = useRef({ xs: new Float32Array(n), ys: new Float32Array(n), rs: new Float32Array(n), vis: new Uint8Array(n) });
+  const sprites = useRef(new Map<string, HTMLCanvasElement | null>());
 
   const [selected, setSelected] = useState(-1);
   const [focusCluster, setFocusCluster] = useState<number | null>(null);
@@ -48,6 +181,7 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
 
   const classColor = useMemo(() => Object.fromEntries(data.classes.map((c) => [c.label, colorOf(c.color)])), [data.classes]);
   const classKo = useMemo(() => Object.fromEntries(data.classes.map((c) => [c.label, c.ko || c.label])), [data.classes]);
+  const legend = useMemo(() => data.classes.filter((c) => c.count > 0).sort((a, b) => b.count - a.count), [data.classes]);
   const nb = useMemo(() => buildNeighbors(n, data.links, data.relTypes), [n, data.links, data.relTypes]);
   const clusterOf = useMemo(() => Object.fromEntries(data.clusters.map((c) => [c.id, c])), [data.clusters]);
   const hits = useMemo(() => search(data.nodes, q), [data.nodes, q]);
@@ -75,8 +209,7 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
     const flat = st.mode === "2d";
     const view = viewRef.current;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, w, h);
+    drawSpace(ctx, view, w, h, flat);
     const { xs, ys, rs, vis } = scr.current;
     const zs = new Float32Array(n);
     const fs = new Float32Array(n);
@@ -147,10 +280,22 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
       const dim = anyHl && !hl[i];
       const depth = flat ? 1 : Math.min(1, Math.max(0.35, (fs[i] - 0.55) * 1.6));
       ctx.globalAlpha = dim ? 0.14 : 0.5 + 0.5 * depth;
-      ctx.fillStyle = classColor[nd.cls] ?? "#94a3b8";
-      ctx.beginPath();
-      ctx.arc(xs[i], ys[i], Math.max(1.2, rs[i]), 0, Math.PI * 2);
-      ctx.fill();
+      const color = classColor[nd.cls] ?? "#94a3b8";
+      const r = Math.max(1.2, rs[i]);
+      let spr = sprites.current.get(color);
+      if (spr === undefined) {
+        spr = makeSprite(color);
+        sprites.current.set(color, spr);
+      }
+      if (spr && r >= 1.8) {
+        const R = r * GLOW;
+        ctx.drawImage(spr, xs[i] - R, ys[i] - R, R * 2, R * 2);
+      } else {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(xs[i], ys[i], r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
     const ring = (i: number, color: string, width: number) => {
@@ -201,10 +346,31 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
           k++;
         }
         if (!k) continue;
-        const text = c.label.length > 34 ? `${c.label.slice(0, 33)}…` : c.label;
-        ctx.font = "700 13px Pretendard, 'Noto Sans KR', system-ui, sans-serif";
+        // 군집 이름표 — 주 클래스 색 점 + 대표 개체 이름(주 클래스 이름은 색으로)
+        const title = clusterTitle(c.label, classKo[c.main]);
+        const text = title.length > 28 ? `${title.slice(0, 27)}…` : title;
+        const color = classColor[c.main] ?? "#94a3b8";
+        ctx.font = `700 12px ${FONT}`;
         const tw = ctx.measureText(text).width;
-        label(text, sx / k - tw / 2, Math.max(14, Math.min(top - 14, sy / k - 40)), false, "#fde68a", true);
+        const bw = tw + 30;
+        const bh = 22;
+        const cx = Math.min(w - bw / 2 - 6, Math.max(bw / 2 + 6, sx / k));
+        const cy = Math.max(16, Math.min(top - 18, sy / k - 40));
+        const box: [number, number, number, number] = [cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2];
+        if (placed.some((b) => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3]))) continue;
+        placed.push(box);
+        roundRect(ctx, box[0], box[1], bw, bh, bh / 2);
+        ctx.fillStyle = "rgba(8, 13, 28, 0.8)";
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = rgba(color, 0.75);
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(box[0] + 12, cy, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#f1f5f9";
+        ctx.fillText(text, box[0] + 21, cy + 0.5);
       }
     }
     if (st.showLabels && !anyHl) {
@@ -469,35 +635,53 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
         <p className="sr-only" aria-live="polite">
           {announce}
         </p>
-        {/* 범례 — 색과 이름을 함께, 누르면 그 클래스를 숨김/보임 */}
-        <div className="mt-sm flex flex-wrap gap-1.5" role="group" aria-label="클래스 거르기" data-map-legend>
-          {data.classes
-            .filter((c) => c.count > 0)
-            .map((c) => {
+        {/* 범례 — 노드 종류(클래스)를 개체 수 순으로 고른 칸에. 색과 이름을 함께, 누르면 그 종류를 숨김/보임 */}
+        <div className="mt-sm rounded-2xl border border-hairline-soft p-sm" role="group" aria-label="노드 종류(클래스) 거르기" data-map-legend>
+          <div className="mb-xs flex flex-wrap items-center gap-x-2 gap-y-1">
+            <b className="text-[12.5px] text-charcoal">노드 종류 {legend.length}</b>
+            <span className="text-[11px] text-stone">
+              {hidden.size ? `${legend.length - legend.filter((c) => hidden.has(c.label)).length}종 표시 · ${legend.filter((c) => hidden.has(c.label)).length}종 숨김` : "모두 표시"} · 누르면 숨김/보임
+            </span>
+            <span className="ml-auto flex gap-1">
+              <Button size="sm" variant="quiet" disabled={!hidden.size} onClick={() => setHidden(new Set())}>
+                모두 보기
+              </Button>
+              <Button size="sm" variant="quiet" disabled={hidden.size === legend.length} onClick={() => setHidden(new Set(legend.map((c) => c.label)))}>
+                모두 숨기기
+              </Button>
+            </span>
+          </div>
+          <ul className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+            {legend.map((c) => {
               const off = hidden.has(c.label);
               return (
-                <button
-                  key={c.label}
-                  type="button"
-                  aria-pressed={!off}
-                  onClick={() =>
-                    setHidden((s) => {
-                      const next = new Set(s);
-                      if (next.has(c.label)) next.delete(c.label);
-                      else next.add(c.label);
-                      return next;
-                    })
-                  }
-                  className={clsx("inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1 text-[11.5px] font-bold", off ? "border-hairline text-stone line-through" : "border-hairline-soft text-charcoal")}
-                  title={c.description || c.label}
-                >
-                  <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-circle" style={{ background: colorOf(c.color), opacity: off ? 0.3 : 1 }} />
-                  {c.ko}
-                  <span className="font-mono text-[10px] font-medium text-stone">{c.label}</span>
-                  <span className="tnum text-stone">{c.count}</span>
-                </button>
+                <li key={c.label}>
+                  <button
+                    type="button"
+                    aria-pressed={!off}
+                    onClick={() =>
+                      setHidden((s) => {
+                        const next = new Set(s);
+                        if (next.has(c.label)) next.delete(c.label);
+                        else next.add(c.label);
+                        return next;
+                      })
+                    }
+                    // 숨긴 종류 — 글자는 흐리지 않고(대비 유지) 줄긋기 · 빈 점 · 회색 바탕으로 구분
+                    className={clsx("flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-surface-soft", off && "bg-surface-soft")}
+                    title={c.description || c.label}
+                  >
+                    <span aria-hidden="true" className="inline-block h-3 w-3 shrink-0 rounded-circle ring-2 ring-white" style={{ background: off ? "transparent" : colorOf(c.color), boxShadow: `0 0 0 1px ${colorOf(c.color)}` }} />
+                    <span className="min-w-0 flex-1 leading-tight">
+                      <span className={clsx("block truncate text-[12px] font-bold", off ? "text-stone line-through" : "text-charcoal")}>{c.ko}</span>
+                      <span className="block truncate font-mono text-[10px] text-stone">{c.label}</span>
+                    </span>
+                    <span className="tnum shrink-0 text-[12px] font-bold text-steel">{c.count.toLocaleString("ko-KR")}</span>
+                  </button>
+                </li>
               );
             })}
+          </ul>
         </div>
       </div>
 
@@ -588,11 +772,18 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
         )}
 
         <section aria-label="군집" data-map-clusters>
-          <h3 className="mb-1 text-[12px] font-bold text-charcoal">군집 {data.clusters.length}개 — 서로 많이 엮인 개체 묶음</h3>
-          <ul className="flex flex-col gap-1">
+          <div className="mb-1.5 flex items-baseline justify-between gap-xs">
+            <h3 className="text-[12.5px] font-bold text-charcoal">군집 {data.clusters.filter((c) => !c.small).length}개</h3>
+            <span className="text-[11px] text-stone">서로 많이 엮인 개체 묶음 · 누르면 그 군집으로 이동</span>
+          </div>
+          <ul className="flex flex-col gap-1.5">
             {data.clusters.map((c) => {
               const on = focusCluster === c.id;
-              const main = data.classes.find((x) => x.label === c.main);
+              const comp = Object.entries(c.classes ?? {})
+                .filter(([, v]) => v > 0)
+                .sort((a, b) => b[1] - a[1]);
+              const share = n ? Math.round((c.size / n) * 100) : 0;
+              const title = c.small ? c.label : clusterTitle(c.label, classKo[c.main]);
               return (
                 <li key={c.id}>
                   <button
@@ -611,11 +802,38 @@ export function OntologyMap({ data, mode }: { data: OntologyMapData; mode: Mode 
                         setAnnounce(`군집 초점: ${c.label} — 개체 ${c.size}개`);
                       }
                     }}
-                    className={clsx("flex w-full items-center gap-xs rounded-xl border px-md py-1.5 text-left text-[12px]", on ? "border-primary bg-info-faint" : "border-hairline-soft hover:bg-surface-soft")}
+                    className={clsx(
+                      "flex w-full flex-col gap-1 rounded-xl border px-md py-2 text-left transition-colors",
+                      on ? "border-primary bg-info-faint" : c.small ? "border-dashed border-hairline bg-surface-soft/60 hover:bg-surface-soft" : "border-hairline-soft hover:bg-surface-soft",
+                    )}
                   >
-                    <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-circle" style={{ background: main ? colorOf(main.color) : "#94a3b8" }} />
-                    <span className="min-w-0 flex-1 truncate font-bold text-ink-deep">{c.label}</span>
-                    <span className="tnum shrink-0 text-stone">{c.size}</span>
+                    <span className="flex w-full items-start gap-xs">
+                      <span aria-hidden="true" className="mt-[3px] inline-block h-2.5 w-2.5 shrink-0 rounded-circle" style={{ background: c.small ? "#94a3b8" : classColor[c.main] ?? "#94a3b8" }} />
+                      <span className={clsx("min-w-0 flex-1 text-[12.5px] font-bold leading-snug [overflow-wrap:anywhere]", c.small ? "text-steel" : "text-ink-deep")}>
+                        {title}
+                      </span>
+                      <span className="shrink-0 text-right leading-tight">
+                        <span className="tnum block text-[12.5px] font-bold text-charcoal">{c.size.toLocaleString("ko-KR")}</span>
+                        <span className="tnum block text-[10.5px] text-stone">{share}%</span>
+                      </span>
+                    </span>
+                    {comp.length ? (
+                      <>
+                        {/* 구성 막대 — 클래스 색 비율(같은 내용은 아래 글로) */}
+                        <span aria-hidden="true" className="flex h-1.5 w-full overflow-hidden rounded-pill bg-hairline-soft">
+                          {comp.map(([cls, v]) => (
+                            <span key={cls} style={{ width: `${(v / Math.max(1, c.size)) * 100}%`, background: classColor[cls] ?? "#94a3b8" }} />
+                          ))}
+                        </span>
+                        <span className="text-[11px] leading-snug text-steel">
+                          {comp
+                            .slice(0, 3)
+                            .map(([cls, v]) => `${classKo[cls] ?? cls} ${v}`)
+                            .join(" · ")}
+                          {comp.length > 3 ? ` 외 ${comp.length - 3}종` : ""}
+                        </span>
+                      </>
+                    ) : null}
                   </button>
                 </li>
               );

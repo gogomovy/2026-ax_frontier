@@ -40,6 +40,15 @@ export function RequestReviewCard({ r, reload, base, canReview = true, blockedRe
             { label: "요청 시각", value: fmtTime(r.createdAt) },
             { label: "파일", value: <span className="break-all">{r.fileName}</span> },
             { label: "대상", value: <span className="font-mono text-[11.5px]">{r.target}</span> },
+            // 새 종류 자료 제안 — 승인하면 이 정의로 데이터셋이 만들어지고 이 파일이 첫 버전이 된다 (DEF-03)
+            ...(r.meta.proposal
+              ? [
+                  { label: "새 종류 자료", value: <Badge tone="attention">승인하면 데이터셋 생성</Badge> },
+                  { label: "열 정의", value: <span className="break-words text-[11.5px]">{r.meta.proposal.columns.map((c) => `${c.label}${c.name !== c.label ? ` → ${c.name}` : ""}(${c.type}${c.required ? ",필수" : ""})`).join(", ")}</span> },
+                  { label: "키 · 기준일", value: `키 ${r.meta.proposal.key_columns.length ? r.meta.proposal.key_columns.join(", ") : "없음"} · 기준일 ${r.meta.proposal.as_of_column ?? "없음"}` },
+                ]
+              : []),
+            ...(r.result.createdDataset ? [{ label: "생성된 데이터셋", value: <span className="font-mono text-[11.5px]">{r.result.createdDataset}</span> }] : []),
             ...(r.meta.note ? [{ label: "요청 메모", value: r.meta.note }] : []),
             ...(r.reviewedAt ? [{ label: "처리", value: `${r.reviewedByName ?? "-"} · ${fmtTime(r.reviewedAt)}${r.result.via === "steward" ? " · 부서 데이터 책임자" : ""}` }] : []),
             ...(r.reviewNote ? [{ label: "처리 메모", value: r.reviewNote }] : []),

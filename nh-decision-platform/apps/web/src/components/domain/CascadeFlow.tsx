@@ -159,7 +159,8 @@ export function CascadeFlow({
   }, [focus, links]);
 
   const byId = new Map(flow.map((n) => [n.id, n]));
-  const dim = (id: string) => (related && !related.has(id) ? "opacity-35" : "");
+  // 초점 노드와 관계없는 노드 — 글자까지 흐리던 opacity-35 대신 글자는 보조색(4.5:1 이상), 바탕 · 테두리 · 아이콘만 낮춘다(J3.6)
+  const dim = (id: string) => (related && !related.has(id) ? "!border-hairline-soft !bg-surface-soft !shadow-none [&_*]:!text-steel [&_svg]:opacity-40" : "");
 
   const ribbons = (fromCol: 0 | 1) =>
     links

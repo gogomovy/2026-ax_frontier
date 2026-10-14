@@ -16,7 +16,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nhdip.llm import LlmError, LlmUnavailable, chat, parse_json, resolve
+from nhdip.llm.guard import GUARD, fence
 from nhdip.models import ExtractionIssue, OntologySchema, source
+
+DEFAULT_USER_TEMPLATE = "{schema}\n\n문서 분류: {doc_class}\n제목: {title}\n\n본문:\n{text}\n\n출력 JSON: {{\"entities\":[{{\"label\",\"key\",\"name\",\"props\",\"evidence_span\"}}],\"relations\":[{{\"type\",\"from\",\"to\",\"props\",\"evidence_span\"}}]}}"
+PROP_KEYS_MAX, PROP_VALUE_MAX = 20, 300
+
+
+def clean_props(v: Any) -> dict[str, Any]:
+    """모델이 돌려준 props — 객체만, 키는 짧은 문자열, 값은 글자 · 숫자 · 참거짓만 남긴다.
+    (목록이나 문자열이 오면 그래프 투영이 `**props` 에서 실패해 모든 문서의 투영이 멈춘다 · 속성 이름 `name` 은 덮어쓰지 못하게 뺀다)"""
+    if not isinstance(v, dict):
+        return {}
+    out: dict[str, Any] = {}
+    for k, x in v.items():
+        if len(out) >= PROP_KEYS_MAX:
+            break
+        key = str(k)[:40]
+        if not key or key == "name":
+            continue
+        if isinstance(x, float) and (x != x or x in (float("inf"), float("-inf"))):
+            continue  # NaN · 무한대는 JSON 으로 저장할 수 없다
+        if isinstance(x, bool) or isinstance(x, (int, float)):
+            out[key] = x
+        elif isinstance(x, str):
+            out[key] = x[:PROP_VALUE_MAX]
+    return out
 
 WS = re.compile(r"\s+")
 # 근거 문장 대조용 정규화 — PDF 추출의 띄어쓰기 · 따옴표 · 가운뎃점 표기 차이는 같은 글자로 본다 (B.42)
@@ -136,8 +161,8 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
             issues.append({"kind": "schema_violation", "reason": "엔티티가 객체가 아님", "raw": e})
             continue
         label, span = e.get("label"), e.get("evidence_span") or ""
-        raw_key, raw_name = str(e.get("key") or e.get("name") or ""), str(e.get("name") or "")
-        if label not in resolver.classes or not resolver.classes[label].get("extractable", True):
+        raw_key, raw_name = str(e.get("key") or e.get("name") or "")[:120], str(e.get("name") or "")[:200]
+        if not isinstance(label, str) or label not in resolver.classes or not resolver.classes[label].get("extractable", True):
             issues.append({"kind": "schema_violation", "reason": f"허용되지 않은 클래스: {label}", "raw": e})
             continue
         src = span_source(span, chunk_text, title)
@@ -151,12 +176,13 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
             issues.append({"kind": "unresolved_entity", "reason": f"마스터에 없는 {label}: {raw_key}", "raw": e})
             ents_ok.append({"label": "Candidate", "key": f"{label}:{raw_key}", "name": raw_key, "props": {"raw_label": label, "reason": "unresolved"}, "evidence_span": span, **extra})
             continue
+        props = clean_props(e.get("props"))
         for req in resolver.classes[label].get("required", []):
-            if req not in (e.get("props") or {}) and req not in ("key", "name"):
+            if req not in props and req not in ("key", "name"):
                 issues.append({"kind": "schema_violation", "reason": f"{label} 필수 속성 누락: {req}", "raw": e})
                 break
         else:
-            ents_ok.append({"label": label, "key": key, "name": e.get("name") or key, "props": e.get("props") or {}, "evidence_span": span, **extra})
+            ents_ok.append({"label": label, "key": key, "name": str(e.get("name") or key)[:200], "props": props, "evidence_span": span, **extra})
             keymap[raw_key] = (label, key)
             keymap[key] = (label, key)
             if raw_name:
@@ -166,7 +192,7 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
             issues.append({"kind": "schema_violation", "reason": "관계가 객체가 아님", "raw": r})
             continue
         rtype = r.get("type")
-        spec = resolver.rels.get(rtype)
+        spec = resolver.rels.get(rtype) if isinstance(rtype, str) else None
         if not spec or not spec.get("extractable", True):
             issues.append({"kind": "schema_violation", "reason": f"허용되지 않은 관계: {rtype}", "raw": r})
             continue
@@ -179,7 +205,7 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
             # 양끝은 키 문자열 또는 {key, label}(모델에 따라 객체로 답함 — B.40) — 엔티티 목록에 없으면 별칭 사전으로 해석.
             # 라벨이 없으면 관계 정의의 허용 라벨(예: STATES_STANCE → PolicyTheme)로 해석한다(B.42).
             if isinstance(v, dict):
-                raw, lab = str(v.get("key") or v.get("name") or ""), v.get("label")
+                raw, lab = str(v.get("key") or v.get("name") or ""), v.get("label") if isinstance(v.get("label"), str) else None
             else:
                 raw, lab = str(v or ""), None
             if raw in keymap:
@@ -201,7 +227,8 @@ def validate(schema: OntologySchema, resolver: Resolver, chunk_text: str, data: 
         if spec["from"] not in (from_label, "*") or spec["to"] not in (to[0], "*"):
             issues.append({"kind": "schema_violation", "reason": f"{rtype} 방향 위반: {from_label}→{to[0]} (허용 {spec['from']}→{spec['to']})", "raw": r})
             continue
-        props = {k: _norm_prop(spec, k, v) for k, v in (r.get("props") or {}).items() if k in (spec.get("props") or [])}
+        rprops = r.get("props") if isinstance(r.get("props"), dict) else {}  # 목록 · 문자열이 오면 .items() 에서 죽지 않게
+        props = {k: _norm_prop(spec, k, v) for k, v in rprops.items() if k in (spec.get("props") or [])}
         allowed_values = spec.get("allowed") or {}
         if any(k in allowed_values and v not in allowed_values[k] for k, v in props.items()):
             issues.append({"kind": "schema_violation", "reason": f"{rtype} 속성값 허용 외: {props}", "raw": r})
@@ -279,11 +306,14 @@ def extract_document(session: Session, origin: str, doc, *, agent_code: str = "o
         fallback_reason = str(exc)
     if mode == "llm":
         by = f"llm:{cfg.model}"
-        sys_prompt = cfg.system_prompt or "You extract ontology entities and relations from Korean banking documents. Output JSON only."
+        # 문서 본문 · 제목은 신뢰할 수 없는 입력 — 구분자로 감싸 '자료'로만 읽히게 하고 보안 규칙을 붙인다(문서 속 지시를 따르지 않음)
+        sys_prompt = (cfg.system_prompt or "You extract ontology entities and relations from Korean banking documents. Output JSON only.") + "\n\n" + GUARD
         for ch in chunks:
-            user = (cfg.user_template or "{schema}\n\n문서 분류: {doc_class}\n제목: {title}\n\n본문:\n{text}\n\n출력 JSON: {{\"entities\":[{{\"label\",\"key\",\"name\",\"props\",\"evidence_span\"}}],\"relations\":[{{\"type\",\"from\",\"to\",\"props\",\"evidence_span\"}}]}}").format(
-                schema=schema_prompt(schema), doc_class=doc.doc_class, title=doc.title, text=ch.text
-            )
+            fields = dict(schema=schema_prompt(schema), doc_class=doc.doc_class, title=fence(doc.title or ""), text=fence(ch.text))
+            try:
+                user = (cfg.user_template or DEFAULT_USER_TEMPLATE).format(**fields)
+            except (KeyError, IndexError, ValueError):
+                user = DEFAULT_USER_TEMPLATE.format(**fields)  # 관리자가 편집한 프롬프트의 자리표시자 오류 — 기본 형식으로
             try:
                 res = chat(session, cfg, [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}], json_mode=True, workflow_run_id=workflow_run_id, node_run_id=node_run_id, purpose="extraction")
                 data = parse_json(res.text)

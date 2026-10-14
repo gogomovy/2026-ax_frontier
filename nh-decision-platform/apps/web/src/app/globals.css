@@ -227,9 +227,92 @@
   }
 }
 
+/*
+ * 인쇄 · PDF 내보내기 (EXP-01~03)
+ * `html.printing` — 내보내기 단추가 인쇄 직전에 붙인다. 화면에서 인쇄 배치를 먼저 만들어 실제 높이를 잰 뒤 그 크기로 @page 를 정한다(한 장).
+ * `@media print` — 같은 규칙을 브라우저 인쇄(Ctrl+P · 보고서 [인쇄])에도 적용한다. 두 묶음은 같은 내용이어야 잰 높이와 인쇄 결과가 같다.
+ */
+html.printing,
+html.printing body {
+  background: #fff;
+}
+html.printing body {
+  width: var(--print-w, 1280px);
+  min-width: var(--print-w, 1280px);
+  min-height: 0;
+  padding: 20px 24px;
+  box-sizing: border-box;
+}
+html.printing .no-print {
+  display: none !important;
+}
+/* 뷰포트 높이에 기대어 늘어나는 레이아웃을 풀어 쪽 높이가 내용만큼만 되게 */
+html.printing .min-h-screen,
+html.printing main {
+  min-height: 0 !important;
+}
+html.printing .shell {
+  max-width: none;
+}
+/* 가로로 스크롤되던 표 · 영역은 다 펼친다 — 인쇄에는 스크롤바가 없다 */
+html.printing .overflow-x-auto,
+html.printing .overflow-y-auto,
+html.printing .overflow-auto,
+html.printing [role="region"][tabindex] {
+  overflow: visible !important;
+  max-height: none !important;
+}
+html.printing th {
+  white-space: normal;
+}
+/* 애니메이션은 끝 상태로 — 막대 · 선이 덜 그려진 채 찍히지 않게 */
+html.printing *,
+html.printing *::before,
+html.printing *::after {
+  animation: none !important;
+  transition: none !important;
+}
+/* 하단 데이터 기준 고지(기준일 · 시뮬레이션 여부)는 PDF 에도 남긴다 — 여백만 줄인다 */
+html.printing .data-basis {
+  padding-top: 12px;
+  padding-bottom: 4px;
+}
+
 @media print {
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  html,
+  body {
+    background: #fff;
+  }
   .no-print {
     display: none !important;
+  }
+  .min-h-screen,
+  main {
+    min-height: 0 !important;
+  }
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-auto,
+  [role="region"][tabindex] {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  th {
+    white-space: normal;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .data-basis {
+    padding-top: 12px;
+    padding-bottom: 4px;
   }
   .report-body h2 {
     break-after: avoid;

@@ -5,7 +5,7 @@
   ALERT_SMTP_HOST · ALERT_SMTP_PORT · ALERT_SMTP_USER · ALERT_SMTP_PASSWORD · ALERT_SMTP_FROM · ALERT_SMTP_TO(쉼표) · ALERT_SMTP_STARTTLS
 조건(설정 alerts.policy.rules — 관리자 편집)
   workflow_failed · quality_failed · auth_failures(창 안 실패 횟수) · llm_budget(경고 %) · golden_failed
-  worker_stale(워커 심장박동 끊김) · queue_backlog(대기열 적체) · stuck_runs(오래 실행 중) — B.32
+  worker_stale(워커 심장박동 끊김) · queue_backlog(대기열 적체 · 가장 오래 기다린 작업) · stuck_runs(오래 실행 중) · dispatch_stalled(이벤트 분배 멈춤) — B.32
   knowledge_stale(질문하기 색인 대조 멈춤 · 산출물 반영 지연) — 설계 §21.16
 같은 알림은 dedupe 키로 한 번만 보낸다.
 """
@@ -41,7 +41,8 @@ DEFAULT_POLICY: dict[str, Any] = {
         "golden_failed": {"enabled": True, "severity": "warning"},
         # 운영 상태 (B.32) — 워커 심장박동 끊김 · 대기열 적체 · 오래 실행 중인 실행
         "worker_stale": {"enabled": True, "severity": "critical", "stale_sec": 120},
-        "queue_backlog": {"enabled": True, "severity": "warning", "threshold": 50, "overdue_min": 10},
+        "queue_backlog": {"enabled": True, "severity": "warning", "threshold": 50, "overdue_min": 10, "oldest_min": 30},
+        "dispatch_stalled": {"enabled": True, "severity": "warning", "stalled_min": 10},
         "stuck_runs": {"enabled": True, "severity": "warning", "running_min": 60},
         # 질문하기 색인 (설계 §21.16) — 워커 대조가 멈췄거나, 대조가 도는데도 뒤처진 산출물이 계속 남을 때
         "knowledge_stale": {"enabled": True, "severity": "warning", "reconcile_stale_min": 15, "stale_min": 10},
@@ -156,7 +157,8 @@ def scan(session: Session) -> int:
             n += 1
 
     if rules["workflow_failed"].get("enabled"):
-        for r in session.execute(select(WorkflowRun).where(WorkflowRun.status == "failed", WorkflowRun.started_at >= since)).scalars():
+        # 끝난 시각 기준 — 오래 걸리다 지금 실패한 실행도 놓치지 않는다 (시작 시각 기준이면 조회 창 밖)
+        for r in session.execute(select(WorkflowRun).where(WorkflowRun.status == "failed", func.coalesce(WorkflowRun.finished_at, WorkflowRun.started_at) >= since)).scalars():
             add("workflow_failed", rules["workflow_failed"]["severity"], f"워크플로우 실패 — {r.workflow_code}", {"run": r.id, "error": (r.error or "")[:500], "traceId": r.trace_id}, f"workflow_failed:{r.id}")
     if rules["quality_failed"].get("enabled"):
         for origin in ("bank", "ext"):
@@ -196,8 +198,20 @@ def scan(session: Session) -> int:
     qr = rules["queue_backlog"]
     if qr.get("enabled"):
         overdue = session.execute(select(func.count()).select_from(Job).where(Job.status == "queued", Job.run_after < utcnow() - timedelta(minutes=int(qr.get("overdue_min", 10))))).scalar() or 0
+        # 건수가 적어도 가장 오래 기다린 작업이 오래됐으면(워커가 그 작업만 못 잡는 경우 등) 알린다
+        oldest_min = int(qr.get("oldest_min", 30))
+        oldest = session.execute(select(func.min(Job.run_after)).where(Job.status == "queued", Job.run_after < utcnow() - timedelta(minutes=oldest_min))).scalar() if oldest_min > 0 else None
         if overdue >= int(qr.get("threshold", 50)):
             add("queue_backlog", qr["severity"], f"작업 대기열 적체 — 실행 시각이 지난 작업 {overdue}건", {"overdue": overdue}, f"queue_backlog:{utcnow().strftime('%Y%m%d%H')}")
+        elif oldest is not None:
+            add("queue_backlog", qr["severity"], f"작업 대기열 지연 — 가장 오래 기다린 작업이 {oldest_min}분 넘게 대기 중 (실행 시각이 지난 작업 {overdue}건)", {"overdue": overdue, "oldestRunAfter": oldest.isoformat()}, f"queue_backlog:age:{utcnow().strftime('%Y%m%d%H')}")
+    dr = rules["dispatch_stalled"]
+    if dr.get("enabled"):
+        from nhdip.models import OutboxEvent
+
+        stalled = session.execute(select(OutboxEvent.id, OutboxEvent.type, OutboxEvent.created_at).where(OutboxEvent.dispatched_at.is_(None), OutboxEvent.created_at < utcnow() - timedelta(minutes=int(dr.get("stalled_min", 10)))).order_by(OutboxEvent.id).limit(1)).first()
+        if stalled is not None:
+            add("dispatch_stalled", dr["severity"], f"이벤트 분배 지연 — {stalled.type} 이벤트가 {int(dr.get('stalled_min', 10))}분 넘게 처리되지 않았습니다", {"eventId": stalled.id, "type": stalled.type, "createdAt": stalled.created_at.isoformat()}, f"dispatch_stalled:{stalled.id}")
     sr = rules["stuck_runs"]
     if sr.get("enabled"):
         for r in session.execute(select(WorkflowRun).where(WorkflowRun.status == "running", WorkflowRun.started_at < utcnow() - timedelta(minutes=int(sr.get("running_min", 60))))).scalars():

@@ -63,6 +63,50 @@ export const CLASS_COLORS = [
 ];
 export const colorOf = (i: number) => CLASS_COLORS[((i % CLASS_COLORS.length) + CLASS_COLORS.length) % CLASS_COLORS.length];
 
+function hexRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+/** '#rrggbb' → 'rgba(r, g, b, a)' (형식이 다르면 그대로) */
+export function rgba(hex: string, a: number): string {
+  const c = hexRgb(hex);
+  return c ? `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${a})` : hex;
+}
+
+/** 두 색을 t(0~1) 만큼 섞은 '#rrggbb' */
+export function mixHex(a: string, b: string, t: number): string {
+  const x = hexRgb(a);
+  const y = hexRgb(b);
+  if (!x || !y) return a;
+  const k = Math.min(1, Math.max(0, t));
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** 배경 별 — 단위 구 위의 방향 · 밝기 · 크기 (고정 시드라 매번 같은 하늘) */
+export function starfield(count: number, seed = 7): { d: [number, number, number]; b: number; s: number }[] {
+  let x = seed >>> 0 || 1;
+  const rnd = () => {
+    x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+    return x / 4294967296;
+  };
+  return Array.from({ length: count }, () => {
+    const z = rnd() * 2 - 1;
+    const t = rnd() * Math.PI * 2;
+    const r = Math.sqrt(1 - z * z);
+    const b = rnd();
+    return { d: [r * Math.cos(t), r * Math.sin(t), z] as [number, number, number], b: 0.25 + 0.75 * b * b, s: b > 0.92 ? 1.6 : 1 };
+  });
+}
+
+/** 군집 이름에서 앞의 주 클래스 이름('지표 · ')을 뗀 대표 개체 부분 — 클래스는 색 · 구성 막대로 따로 보여 준다 */
+export function clusterTitle(label: string, mainKo?: string): string {
+  const pre = mainKo ? `${mainKo} · ` : "";
+  return pre && label.startsWith(pre) && label.length > pre.length ? label.slice(pre.length) : label;
+}
+
 /** 관계 유형 업무 이름 — 스키마 유형은 영문 식별자라 보조로 */
 export const REL_KO: Record<string, string> = {
   HAS_VERSION: "버전", FEEDS: "지표 입력", DERIVED_FROM: "지표 파생", USES: "사용", PRODUCES: "산출",

@@ -8,6 +8,7 @@ import { IconCalendar, IconRefresh } from "@/components/ui/icons";
 import { IconDownload } from "@/components/ui/primitives";
 import { formatKstShort, formatYearMonth } from "@/lib/format";
 import { NO_VALUE } from "@/lib/period";
+import { printFitOnePage } from "@/lib/printPage";
 
 /**
  * 화면 머리말 오른쪽 도구 — 기준월 · 최종 분석 시각(새로고침) · 화면별 버튼(내보내기 · 변경 이력).
@@ -60,18 +61,21 @@ export function ToolButton({ onClick, icon, children, ...rest }: { onClick?: () 
   );
 }
 
-/** 내보내기 — 지금 화면을 인쇄 · PDF 로 저장한다 */
+/**
+ * 내보내기 — 지금 화면을 한 장 PDF 로. 인쇄 배치를 먼저 만들어 내용 크기를 재고, 그 크기의 한 쪽으로 인쇄한다(잘리지 않고 쪽이 나뉘지 않음).
+ * 인쇄 창에서 대상을 "PDF 로 저장"으로 고르면 된다 (EXP-01).
+ */
 export function ExportButton() {
   const [busy, setBusy] = useState(false);
   return (
     <ToolButton
       icon={<IconDownload />}
       onClick={() => {
+        if (busy) return;
         setBusy(true);
-        window.setTimeout(() => {
-          window.print();
-          setBusy(false);
-        }, 50);
+        printFitOnePage()
+          .catch(() => window.print()) // 준비에 실패하면 브라우저 기본 인쇄로
+          .finally(() => setBusy(false));
       }}
     >
       {busy ? "준비 중…" : "내보내기"}

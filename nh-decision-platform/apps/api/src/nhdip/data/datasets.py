@@ -103,7 +103,10 @@ def _coerce(value: Any, typ: str) -> Any:
     if value is None or (isinstance(value, str) and value.strip() in ("", "-")):
         return None
     if typ in ("int", "integer"):
-        return int(Decimal(str(value).replace(",", "")))
+        try:
+            return int(Decimal(str(value).replace(",", "")))
+        except (InvalidOperation, ValueError) as exc:  # 'abc' 같은 값이 500 이 아니라 형 변환 오류로 모이도록
+            raise ValueError(f"정수 아님: {value!r}") from exc
     if typ in ("num", "number", "decimal", "float"):
         try:
             return float(Decimal(str(value).replace(",", "")))
@@ -127,11 +130,12 @@ def _coerce(value: Any, typ: str) -> Any:
     return s
 
 
-def map_rows(ds: Dataset, raw_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
-    """원본 헤더 → 정의 컬럼 매핑 + 형 변환. (행, 오류 목록)"""
-    if not raw_rows:
-        return [], ["행이 없습니다"]
-    headers = list(raw_rows[0].keys())
+NO_COLUMNS_MSG = "컬럼 정의가 없습니다 — 관리자 [데이터셋]에서 컬럼을 정의하거나, 파일에서 컬럼을 추론해 정의하세요(정의 없이는 읽을 열을 알 수 없습니다)"
+_AUTO_HEADER = re.compile(r"^col\d+$")  # 엑셀 머리글 칸이 비어 있을 때 읽기 단계에서 붙인 이름
+
+
+def header_map(ds: Dataset, headers: list[str]) -> tuple[dict[str, str], list[str]]:
+    """정의 컬럼 → 원본 헤더 매핑(이름 · 라벨 · 별칭을 정규화해 비교)과 필수인데 못 찾은 열의 오류 메시지."""
     hmap: dict[str, str] = {}
     errors: list[str] = []
     for col in ds.columns:
@@ -141,6 +145,26 @@ def map_rows(ds: Dataset, raw_rows: list[dict[str, Any]]) -> tuple[list[dict[str
             hmap[col["name"]] = found
         elif col.get("required"):
             errors.append(f"필수 컬럼 없음: {col['name']} (허용 헤더: {', '.join(c for c in cands if c)})")
+    return hmap, errors
+
+
+def unmapped_headers(ds: Dataset, raw_rows: list[dict[str, Any]]) -> list[str]:
+    """파일에는 있지만 정의에 없어 저장하지 않는 열 머리글 — 조용히 버려지지 않도록 검사 결과에 알린다."""
+    if not raw_rows or not ds.columns:
+        return []
+    headers = [str(h) for h in raw_rows[0].keys()]
+    used = set(header_map(ds, headers)[0].values())
+    return [h for h in headers if h not in used and h.strip() and not _AUTO_HEADER.match(h)]
+
+
+def map_rows(ds: Dataset, raw_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """원본 헤더 → 정의 컬럼 매핑 + 형 변환. (행, 오류 목록)"""
+    if not ds.columns:
+        return [], [NO_COLUMNS_MSG]  # 정의가 비면 모든 행이 빈 값으로 '통과' 저장되던 것을 막는다
+    if not raw_rows:
+        return [], ["행이 없습니다"]
+    headers = list(raw_rows[0].keys())
+    hmap, errors = header_map(ds, headers)
     rows: list[dict[str, Any]] = []
     for i, raw in enumerate(raw_rows, start=1):
         row: dict[str, Any] = {}
@@ -165,13 +189,17 @@ def _ym_index(v: Any) -> int | None:
     return y * 12 + (m - 1) if 1 <= m <= 12 else None
 
 
-def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[str], previous: list[dict[str, Any]] | None = None, privacy: dict[str, Any] | None = None) -> dict[str, Any]:
+def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[str], previous: list[dict[str, Any]] | None = None, privacy: dict[str, Any] | None = None, unmapped: list[str] | None = None) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
 
     def add(rule: str, passed: bool, detail: str, severity: str = "error"):
         checks.append({"rule": rule, "passed": passed, "detail": detail, "severity": severity})
 
     add("parse", not parse_errors, "; ".join(parse_errors[:10]) or "헤더·형 변환 정상")
+    if unmapped:
+        # 통과·실패에 영향 없는 안내 — 정의에 없는 열은 저장하지 않는다는 것을 알려, 필요하면 정의에 열을 더하게 한다
+        shown = ", ".join(unmapped[:8]) + (f" 외 {len(unmapped) - 8}개" if len(unmapped) > 8 else "")
+        add("unmapped_headers", True, f"정의에 없는 열 {len(unmapped)}개는 저장하지 않았습니다: {shown} — 관리자 [데이터셋]의 '파일에서 새 열 찾기'로 정의에 더할 수 있습니다", "info")
     for col in ds.columns:
         if col.get("required"):
             missing = sum(1 for r in rows if r.get(col["name"]) is None)
@@ -384,7 +412,7 @@ def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **
     from nhdip.privacy import policy as privacy_policy
 
     _, prev = current_rows(session, ds)
-    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session))
+    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(ds, raw))
     if source:
         quality["source"] = source  # 원본 양식 · 머리글 메타(조회일자 · 조회사무소 · 기준일 · 단위) · 변환 메모
     sha, path = _store_file(ds.origin, ds.code, filename, content)
@@ -394,7 +422,7 @@ def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **
 def preview_file(ds: Dataset, filename: str, content: bytes) -> dict[str, Any]:
     raw, source = _read_any(content, filename, ds)
     rows, errors = map_rows(ds, raw)
-    return {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "quality": quality_check(ds, rows, errors), "source": source}
+    return {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "quality": quality_check(ds, rows, errors, unmapped=unmapped_headers(ds, raw)), "source": source}
 
 
 def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10) -> dict[str, Any]:
@@ -404,7 +432,7 @@ def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sam
     raw, source = _read_any(content, filename, ds)
     rows, errors = map_rows(ds, raw)
     _, prev = current_rows(session, ds)
-    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session))
+    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(ds, raw))
     if source:
         quality["source"] = source
     return {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in ds.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality}

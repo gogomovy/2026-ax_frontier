@@ -84,3 +84,18 @@ def test_rows_version_multi_row_proposal():
     changed = [same[0], {**same[1], "brc_borrower_cnt": 4}]
     assert rows_version(a, changed, cols, "proposal_ver_no") == 3
     assert rows_version(a, [*same, {**same[0], "grade_cd": "4A"}], cols, "proposal_ver_no") == 3  # 행 추가
+
+
+def test_branch_row_builders_do_not_fall_back_to_a_specific_office(monkeypatch):
+    """대상 지점이 정해지지 않았으면 특정 지점(수원영통 등)으로 대신 계산하지 않고 행을 만들지 않는다. 지점을 넘기면 그 지점을 쓴다."""
+    from nhdip.contracts import rows
+
+    monkeypatch.setattr(rows, "_rule", lambda ctx, code: {})  # BRANCH_SCOPE.office_code 가 비어 있는 상태
+
+    def never_read(ctx, code):
+        raise AssertionError(f"지점이 없는데 {code} 를 읽으면 안 된다")
+
+    monkeypatch.setattr(rows, "_rows", never_read)
+    for name in ("branch_status_rows", "branch_corp_rows", "branch_retail_rows"):
+        assert rows.ROW_BUILDERS[name](None, {}) == [], name
+    assert rows._office(None, {"office_cd": "BR999"}) == "BR999"

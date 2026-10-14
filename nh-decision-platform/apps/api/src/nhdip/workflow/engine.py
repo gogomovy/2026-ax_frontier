@@ -104,6 +104,9 @@ def _run_nodes(ctx: RunContext, nodes: list[WorkflowNode], summary: dict[str, An
         nr = NodeRun(id=new_id(), workflow_run_id=ctx.run.id, seq=node.seq, node_key=f"{node.key}{key_suffix}"[:60], impl=node.impl, agent_code=node.agent_code, status="running", input=_summ({"config": node.config}))
         ctx.node_run_id = nr.id
         t0 = time.monotonic()
+        optional = bool((node.config or {}).get("optional"))
+        # 선택 노드가 중간에 실패해도 그 노드가 메모리에 남긴 변경(게시 대상 · 후속 이벤트 · 상태)이 게시되지 않게 되돌린다 — DB 는 rollback 으로 이미 되돌아간다
+        snap = (set(ctx.changed), list(ctx.changes), dict(ctx.state), len(ctx.deferred)) if optional else None
         if not node.enabled:
             nr.status = "skipped"
             nr.output = {"reason": "노드 비활성"}
@@ -119,18 +122,31 @@ def _run_nodes(ctx: RunContext, nodes: list[WorkflowNode], summary: dict[str, An
                 session.rollback()
                 nr.status = "failed"
                 nr.error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc()[-3000:]}"
+                if snap is not None:
+                    ctx.changed, ctx.changes = snap[0], snap[1]
+                    ctx.state.clear()
+                    ctx.state.update(snap[2])
+                    del ctx.deferred[snap[3] :]
         nr.finished_at = utcnow()
         nr.duration_ms = int((time.monotonic() - t0) * 1000)
         session.add(nr)
         summary["nodes"].append({"key": f"{node.key}{key_suffix}", "status": nr.status, "ms": nr.duration_ms})
-        if nr.status == "failed" and not (node.config or {}).get("optional"):
+        failed_required = nr.status == "failed" and not optional
+        try:
             session.commit()
+        except Exception as exc:  # noqa: BLE001 — 노드 기록 저장 실패(JSON 직렬화 · 열 크기 · 벡터 차원 등): 어느 노드가 왜 실패했는지 남기고 실패로 처리
+            session.rollback()
+            nr = NodeRun(id=new_id(), workflow_run_id=ctx.run.id, seq=node.seq, node_key=f"{node.key}{key_suffix}"[:60], impl=node.impl, agent_code=node.agent_code, status="failed",
+                         input=_summ({"config": node.config}), error=f"결과 저장 실패: {type(exc).__name__}: {str(exc)[:500]}", finished_at=utcnow(), duration_ms=int((time.monotonic() - t0) * 1000))
+            session.add(nr)
+            session.commit()
+            summary["nodes"][-1]["status"] = "failed"
+            failed_required = not optional
+        if failed_required:
             raise RuntimeError(f"노드 실패: {node.key}{key_suffix} — {(nr.error or '').splitlines()[0] if nr.error else ''}")
         if nr.status in ("degraded", "failed"):
             degraded = True
-        session.commit()
     return degraded
-
 
 # ═════════════════════════ 범위 실행 (B.47 · 다지점) ═════════════════════════
 # 설정 workflow.scopes = {워크플로우: {rule, list, key, requires[], max, shared_keys[], placeholder}}.
@@ -228,14 +244,15 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
     session.add(run)
     session.commit()
     ctx = RunContext(session=session, run=run, workflow=wf, causes=causes, eval=EvalContext(session=session, workflow_run_id=run.id))
-    nodes = session.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf.code).order_by(WorkflowNode.seq)).scalars().all()
     summary: dict[str, Any] = {"nodes": []}
-    spec = scope_spec(session, wf.code)
-    listed = scope_values(session, spec, limit=False)[1] if spec else []
-    cap = scope_cap(spec) if spec else 0
-    extras, dropped = listed[:cap], listed[cap:]
-    pub = next((i for i, n in enumerate(nodes) if n.impl == "publish"), len(nodes)) if extras else len(nodes)
     try:
+        # 준비 단계도 이 try 안에 둔다 — 여기서 예외가 나면 이미 저장한 'running' 실행이 영원히 열려 있게 된다
+        nodes = session.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf.code).order_by(WorkflowNode.seq)).scalars().all()
+        spec = scope_spec(session, wf.code)
+        listed = scope_values(session, spec, limit=False)[1] if spec else []
+        cap = scope_cap(spec) if spec else 0
+        extras, dropped = listed[:cap], listed[cap:]
+        pub = next((i for i, n in enumerate(nodes) if n.impl == "publish"), len(nodes)) if extras else len(nodes)
         degraded = _run_nodes(ctx, nodes[:pub], summary)
         if dropped:
             # 상한(BRM-07) 밖 범위는 계산하지 않고 실행 요약 · 운영 알림에 남긴다
@@ -264,8 +281,18 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
         run = session.get(WorkflowRun, run.id)
         run.status = "failed"
         run.error = str(exc)[:4000]
-    summary["published"] = sorted(ctx.changed)
+    if run.status == "failed":
+        # 실패한 실행은 아무것도 게시하지 않았다 — 메모리에만 있던 변경은 '게시됨'이 아니라 '반영 안 됨'으로 남긴다(관리자 화면이 실패를 성공으로 오해하지 않게)
+        summary["published"] = []
+        summary["unpublished"] = sorted(ctx.changed)
+    else:
+        summary["published"] = sorted(ctx.changed)
     summary["figure_changes"] = len(ctx.changes)
+    missing = [str(c) for c in (ctx.state.get("missing_datasets") or [])]
+    if missing:
+        # 정상 상태인 '자료가 아직 없음'을 오류처럼 보이지 않게 — 어떤 자료를 기다리는지 한 줄로 (관리자 화면이 그대로 보여 준다)
+        summary["missing_datasets"] = missing
+        summary["note"] = "필요 자료 미업로드: " + ", ".join(missing[:8]) + (f" 외 {len(missing) - 8}건" if len(missing) > 8 else "")
     run.summary = summary
     run.finished_at = utcnow()
     session.commit()

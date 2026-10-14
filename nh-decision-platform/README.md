@@ -14,7 +14,7 @@
 ## 1. 실행 (Docker, 5개 서비스)
 
 ```bash
-make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 마이그레이션 · 정의 시드 → 시연 자료 패키지 업로드(LOAD_SAMPLE_ON_START=1, 같은 파일은 건너뜀) → 계산
+make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 마이그레이션 · 정의 시드(정의만 · 업무 자료 없음). 시연 자료는 LOAD_SAMPLE_ON_START=1 일 때만 올린다(기본 0)
 make sample      # 시연 자료 패키지(엑셀 · CSV · PDF 43개)를 실제 업로드 API 로 올리기 · make sample-verify 엑셀 독립 계산 ↔ 화면 대조
 make admin-pass  # 최초 관리자 사번·비밀번호
 make ps | logs | down | reset(볼륨 삭제) | test(백엔드 테스트) | e2e(브라우저 E2E, 기동 중인 스택 대상)
@@ -24,6 +24,8 @@ make restore FROM=backups/<시각> CONFIRM=yes   # 복구 (현재 데이터 덮�
 make preflight   # 운영 준비 점검 · make host-check 서버 점검 · make a11y 자동 접근성 점검 · make set k=키 v=값 (.env 지정) · make es-password (Elasticsearch 401)
 make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트 3100)에 2026.09 시험 엑셀 · PDF 를 올려 워크플로우 · 에이전트 · mart 갱신 확인 후 내림 (LLM: E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL 환경변수, 없으면 규칙 경로 판정 · E2E_EXPECT_LLM=0/1)
 ```
+
+**내 자료로 시작하기(기본)** — `make up` 은 정의(데이터셋 · 지표 · 규칙 · 워크플로우)만 시드하고 업무 자료는 넣지 않습니다. 화면은 자료가 올라오기 전까지 "미제공"으로 보이고, 관리자 `/admin/datasets`(또는 업무 `/knowledge/upload`)에서 직접 올리면 관련 워크플로우만 계산합니다. 시연 자료가 필요하면 `make sample`(43개 파일 업로드) 또는 `.env` 에 `LOAD_SAMPLE_ON_START=1`(`make set k=LOAD_SAMPLE_ON_START v=1`). **이미 시연 자료가 올라간 DB 를 비우려면** `make reset`(볼륨까지 삭제 — 되돌릴 수 없음) 후 `make up`. 기존 `.env` 에 `LOAD_SAMPLE_ON_START=1` 이 있으면 먼저 `make set k=LOAD_SAMPLE_ON_START v=0`.
 
 | 서비스 | 주소 | 역할 |
 |---|---|---|
@@ -42,7 +44,7 @@ make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트
 2. 사용자는 `/signup` 에서 사번 8자리 + 소속(본부 > 부 > 국 > 팀 또는 지역본부 > 영업점)으로 가입 → 관리자가 `/admin/users` 에서 승인.
 3. 화면 권한은 `/admin/screens` 에서 조직 단위로 부여합니다(하위 조직이 상속). 기본: 종합기획부 · 신용리스크관리부 · 수도권1지역본부 · 중부지역본부(영업점 포함).
 4. 실데이터는 `/admin/datasets` 에서 업로드(당행/외부 구분 확인) → 품질 검증 → 확정 시 관련 워크플로우만 재계산. 시연 자료 원본은 `sample-data/202608/`(직접 열어 보고 화면에서 올려도 같은 결과).
-5. 잘못 올린 자료는 **데이터 관리자**(관리자 중 `/admin/users` 에서 지정 — 부트스트랩 관리자는 처음부터)가 `/admin/datasets` 의 버전 · 문서 표에서 [삭제]합니다. 삭제 사유를 받고, 현재 버전이면 직전 버전이 현재가 되며, 행 · 청크(임베딩) · 원본 파일과 검색 색인(Elasticsearch) · 그래프(Neo4j)에서도 지웁니다(저장소가 멈춰 있으면 워커가 끝날 때까지 재시도 — '삭제 반영 상태').
+5. 잘못 올린 자료는 **데이터 관리자**(관리자 중 `/admin/users` 에서 지정 — 부트스트랩 관리자는 처음부터)가 `/admin/datasets` 의 버전 · 문서 표에서 [삭제]합니다. 삭제 사유를 받고, 현재 버전이면 직전 버전이 현재가 되며, 행 · 청크(임베딩) · 원본 파일과 검색 색인(Elasticsearch) · 그래프(Neo4j)에서도 지웁니다(저장소가 멈춰 있으면 워커가 끝날 때까지 재시도 — '삭제 반영 상태'). 부서 데이터 책임자는 [자료 올리기 > 우리 부서 자료]에서 **자기 부서가 올려 승인된 자료만** 같은 방식으로 지웁니다. 문서를 지우면 AI 호출 기록 · 실행 기록 · 보고서 근거에 복사된 본문 조각도 정리하고(토큰 · 비용 같은 기록은 유지), 데이터셋을 지우면 다시 계산이 끝난 뒤 옛 산출물 세대를 정리합니다(계산 기록 · 감사 로그는 지우지 않음).
 
 시연용 사용자(선택): `.env` 에 `DEMO_USER_PASSWORD` 를 넣고 최초 기동하면 20250001(종합기획부) · 20250002(신용리스크관리부) · 20250003(영업점 · 수원영통지점 001068)이 생성됩니다.
 
@@ -112,6 +114,7 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 - 모니터링: `/admin/monitor/flow`(이벤트 → 매칭 사유 → 실행 → 게시) · `/admin/monitor/runs`(노드 입출력 · LLM 원문 · 계산) · `/admin/monitor/calc`(지표 값 · 추이 · 산출물 세대) · `/admin/monitor/agents`(에이전트 결정) · `/admin/monitor/trace`(요청 추적) · `/admin/monitor/evals`(골든셋) · `/admin/monitor/alerts`(운영 알림 · LLM 비용).
 - 관리자 화면 묶음(Phase C): 관리자 홈(`/admin` — 처리할 일 · 시스템 상태 · 24시간 실행) · 사용자와 권한 · 데이터와 지식(자료 승인 `/admin/uploads` 포함) · AI · 에이전트(분석 에이전트 `/admin/analysis-agents` 포함) · 계산과 규칙(운영 설정 `/admin/settings`) · 운영 모니터링(운영 개요 `/admin/monitor` — 시간대별 실행 · LLM · 이벤트 그래프, 그래프마다 '표로 보기'). 화면마다 위치 표시 · 요약 수치, 원본 JSON 은 '고급' 접기 안.
 - 업무 자료 올리기: 화면 권한 `자료 올리기`(기본 종합기획부 · 신용리스크관리부)를 받은 사용자는 `/knowledge/upload` 에서 정형 자료(기존 데이터셋의 새 버전)나 문서를 올립니다. 올리는 즉시 보안 · 형식 · 품질 검사를 하고(품질 실패는 요청 거절) '승인 대기' 로 남으며, 관리자(`/admin/uploads`)나 **부서 데이터 책임자**(관리자가 [사용자]에서 지정 — 자기 부서 사용자의 요청을 [자료 올리기 > 승인할 자료]에서 처리, 본인 요청은 불가)가 승인하면 관리자 직접 업로드와 같은 경로로 확정 · 재계산합니다. 올릴 수 있는 대상은 설정 `upload.user_targets`. 첫 단계는 파일 놓기 영역이고, 파일 이름(이름 규칙 · 보고서 번호 · 코드 · 낱말)으로 맞는 자료를 골라 두면 사용자가 확인합니다(Phase E · Q121). [데이터베이스] 표의 '새 버전 올리기' 는 `/knowledge/upload?target=<데이터셋 코드>` 로 그 자료를 고른 채 엽니다. 관리자 `/admin/datasets` 는 맨 위 '파일로 업로드' 에 놓으면 맞는 데이터셋 상세가 파일이 채워진 채 열립니다(즉시 확정은 확인 대화상자).
+- 새 종류 자료 · 한 장 PDF(Phase J 후속 · 설계 §28): 맞는 데이터셋이 없는 파일은 거절하지 않고 머리글 · 값으로 **정의 초안**(열 이름 · 타입 · 키 · 기준일)을 만들어 보여 줍니다. 업무 사용자는 [자료 올리기]에서 확인 · 수정해 등록을 요청하고(설정 `upload.user_targets.new_datasets`), 책임자 또는 관리자가 승인하면 데이터셋이 만들어지고 그 파일이 첫 버전이 됩니다. 관리자는 `/admin/datasets` 에서 [이 파일로 새 데이터셋 만들기], 정의에 없어 저장되지 않는 열은 [파일에서 새 열 찾기]로 선택 열에 더합니다. 머리말 [내보내기]는 화면 내용 크기의 **PDF 한 장**(스크롤 표 · 접은 이슈 펼침 · 시뮬레이션 고지 유지)을 만듭니다 — 인쇄 창에서 "PDF로 저장". `UPLOAD_AV_COMMAND` 를 설정했는데 실행할 수 없으면 검사 없이 받지 않고 업로드를 거절합니다.
 - 3-way 검색(Phase H · 설계 §24): PostgreSQL = 원장 · 권한 판정 · 임베딩 값, Elasticsearch = AI 어시스턴트 · 워크플로 근거 검색의 키워드(BM25 + nori + 온톨로지 별칭 사용자 사전) · 의미(kNN) — 분석 결과 · 문서(현재 판) 색인 두 개, Neo4j = 개념 그래프. ES 후보는 PostgreSQL 에서 접근 규칙으로 다시 걸러 읽고(권한 누수 0), 워커가 1분마다 동기화(아직 못 올린 새 청크는 PostgreSQL 이 보충), ES 가 없거나 안 되면 같은 채널을 PostgreSQL 로. 검색 설정 `knowledge.search.backend` 기본 `auto` · 점검 `python -m nhdip.cli kb-es --check` · 관리자 [AI 어시스턴트 색인]의 3-way 구성 카드. 이전 `.env` 의 `ES_URL=` 이 비어 있으면 `bash infra/scripts/set-env.sh ES_URL http://elasticsearch:9200`.
 - 온톨로지 구성 지도(Phase G): 관리자 `/admin/ontology` 첫 탭 — PostgreSQL 원장에서 Neo4j 투영과 같은 코드(`graph/projection.collect_graph`)로 개체 · 관계를 모아 3D 군집 지도(Louvain 군집 · 서버 결정적 배치 · 회전 · 확대 · 2D) · 구조도(클래스 ↔ 관계 유형) · 표로 보여 줍니다. Neo4j 가 없어도 동작(`GET /admin/ontology/map?limit=&classes=&refresh=`).
 - 관리자 내비게이션(Phase E · Q122): 관리자의 첫 화면은 `/admin`, 사이드바는 관리 묶음 먼저(가입 · 자료 · 분석 승인 대기 건수 — `/me/menu` 의 `adminUsers` · `adminUploads` · `adminAnalyses` · `adminTodo`) · 업무 화면은 접힘 묶음. 되돌리기 어려운 작업은 앱 확인 대화상자(`useConfirm`, 초점 = 취소 · Esc). 권한 없음 화면은 요청한 화면 이름 · 메뉴 위치 · 요청 방법을 보입니다(`GET /me/screen?path=`).
