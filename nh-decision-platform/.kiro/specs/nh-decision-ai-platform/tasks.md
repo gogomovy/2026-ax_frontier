@@ -444,6 +444,7 @@
 - [x] K.9 시험 — pytest · vitest(하드코딩 감시 포함) · E2E · 접근성
 - [x] K.10 마무리 — 전체 검증, 남은작업 · 작업정리 · 세션히스토리 · README, 커밋 · 푸시 · CI
 - 결과(2026-10-14): pytest 303(291 passed · 11 건너뜀(실제 ES) · 실패 1 = `test_antivirus_hook` Windows 전용) — 신규 `test_phase_k.py` 9(화면 설정 기본값 · 형식 검사 422 · 반영 · 깨진 값은 기본값, 업무 영역 단위 · 메뉴 묶음 영역, 이름 바꾸기 업그레이드, 규칙 판 표기, ES 401 → 인증 실패 · 안내 · 차단기, 연결 설정 저장 · 가림 · 환경변수 복귀, `es-password` CLI), 계층 계약 4/4, tsc · eslint · vitest 162(신규 `phaseK.test.ts` · 하드코딩 감시 `hardcode.test.ts` 9) · next build 통과, 로컬 스택(정의 시드 → 패키지 업로드 43 → 엑셀 대조 0건) 브라우저 E2E 142/142(Phase K +9 · 리디자인으로 깨진 목표 정합성 흐름 · 다지점 헤더 링크 · 분석 탭 표식 보정) · 접근성 48쪽 위반 0(토큰 대비 · 로고 링크 이름 · tablist · 버튼 이름 보정, 검사는 동작 줄이기) · 키보드 25/25 · 골든셋 7범주 100%
+- CI(janlight `feat/backend-phase-b` `3c84d89` — 리디자인 반영 `a7ac631` 포함 · gogomovy `5cb9f2d`) — run `38502309967` 3개 잡 성공: backend(pytest · 커버리지 게이트 · 사본 일치 · 교란 검사) · frontend(typecheck · lint · build) · e2e(compose · Elasticsearch 포함 3-way · HTTP 업로드 → 엑셀 대조 → E2E · 접근성 · 골든셋)
 ### Phase 0~8 대비 Phase B 구현 현황 (2026-10-10 갱신)
 
 > Phase 0~8 항목은 착수 시점 설계(§1.4 · Redis · MinIO · Milvus · LangGraph)를 기준으로 쓰였고, 설계 §19 가 이를 대체했다. 아래는 Phase B 로 **대체 구현된 범위**다. 원 항목의 체크박스는 원 DoD(원 기술 선택 포함)를 모두 충족할 때만 체크하므로, 대체 완료 항목의 상태는 이 표로 본다.
