@@ -130,6 +130,16 @@ def run_maintenance(session: Session) -> dict[str, Any]:
     stats = reconcile(session)
     out["index"] = stats.as_dict()
     session.commit()
+    # 데이터셋 설명 카드(Phase M · DOB-07 · Q195) — 바뀐 카드만 다시 쓴다. 카드 문제가 산출물 색인 · 임베딩을 막지 않는다
+    try:
+        from nhdip.data.catalog import index_dataset_cards
+
+        out["datasetCards"] = index_dataset_cards(session)
+        session.commit()
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        log.warning("데이터셋 설명 카드 색인 중 오류: %s", exc)
+        out["datasetCards"] = {"skipped": f"{type(exc).__name__}: {str(exc)[:120]}"}
     out["embed"] = embed_pending(session)
     if elastic.configured():
         # 검색 엔진(ES) 동기화 — 분석 결과 · 문서 색인 둘 다(3-way, 설계 §24). 검색 설정이 pg 여도 미리 올려 둬 전환 시 바로 쓰게 한다. ES 문제가 색인 작업을 막지 않는다

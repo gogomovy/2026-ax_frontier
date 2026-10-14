@@ -15,6 +15,7 @@ from nhdip.graph.neo4j_client import health as graph_health
 from nhdip.llm import LlmError, LlmUnavailable, resolve, test_connection
 from nhdip.models import (
     Agent,
+    AgentGroup,
     AppUser,
     AuditLog,
     Job,
@@ -704,6 +705,7 @@ class AgentPatch(BaseModel):
     override: dict[str, Any] | None = None
     enabled: bool | None = None
     prompt_version: int | None = None
+    group_code: str | None = None  # 기능 묶음(Phase M · AGG-01) — 빈 문자열이면 그룹 해제
 
 
 class PromptIn(BaseModel):
@@ -733,6 +735,7 @@ def _agent_json(session: Session, a: Agent) -> dict[str, Any]:
         "name": a.name,
         "role": a.role,
         "kind": a.kind,
+        "groupCode": a.group_code,
         "profileId": a.profile_id,
         "override": a.override,
         "enabled": a.enabled,
@@ -759,12 +762,124 @@ def agent_patch(code: str, body: AgentPatch, request: Request, session: Session 
         if "connection_id" in ov and not session.get(LlmConnection, int(ov["connection_id"])):
             raise HTTPException(422, "연결 없음")
         patch["override"] = ov
+    if "group_code" in patch:
+        patch["group_code"] = patch["group_code"] or None
+        if patch["group_code"] and session.get(AgentGroup, patch["group_code"]) is None:
+            raise HTTPException(422, "그룹 없음")
     for k, v in patch.items():
         setattr(a, k, v)
     emit(session, "config.changed", {"kind": "agent", "code": code}, admin.emp_no)
     audit(session, admin.emp_no, "admin.agent.update", "agent", code, patch, client_ip(request))
     session.commit()
     return _agent_json(session, a)
+
+
+# ── 에이전트 그룹 (Phase M · AGG-01 · AGG-02 · Q188) ──
+GROUP_APPLY_KEYS = ("connection_id", "model", "temperature", "top_p", "max_tokens", "timeout_sec", "retries", "tools_enabled")
+
+
+class GroupPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    sort: int | None = None
+
+
+class GroupApplyIn(BaseModel):
+    override: dict[str, Any]  # GROUP_APPLY_KEYS 만 — 값이 null/빈 문자열이면 그 키를 에이전트 override 에서 뺀다(프로필 값으로 돌아감)
+    agents: list[str] | None = None  # 고른 에이전트만(없으면 그룹의 LLM 에이전트 전체)
+
+
+def agent_stats_24h(session: Session) -> dict[str, dict[str, Any]]:
+    """에이전트별 최근 24시간 호출 · 오류 · 평균 지연 · 토큰(ops.llm_call)."""
+    from datetime import timedelta
+
+    from nhdip.models import LlmCall, utcnow
+
+    since = utcnow() - timedelta(hours=24)
+    rows = session.execute(
+        select(LlmCall.agent_code, func.count(), func.count().filter(LlmCall.status == "error"), func.count().filter(LlmCall.status == "skipped"), func.avg(LlmCall.latency_ms),
+               func.coalesce(func.sum(LlmCall.prompt_tokens), 0) + func.coalesce(func.sum(LlmCall.completion_tokens), 0))
+        .where(LlmCall.created_at >= since).group_by(LlmCall.agent_code)
+    ).all()
+    return {code: {"calls": n, "errors": e, "skipped": sk, "avgLatencyMs": int(lat) if lat else None, "tokens": int(tok or 0)} for code, n, e, sk, lat, tok in rows if code}
+
+
+def _group_summary(agents_: list[Agent], stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    calls = sum(stats.get(a.code, {}).get("calls", 0) for a in agents_)
+    errors = sum(stats.get(a.code, {}).get("errors", 0) for a in agents_)
+    lat = [stats[a.code]["avgLatencyMs"] for a in agents_ if stats.get(a.code, {}).get("avgLatencyMs")]
+    return {"agents": len(agents_), "llm": sum(1 for a in agents_ if a.kind == "llm"), "rule": sum(1 for a in agents_ if a.kind != "llm"), "enabled": sum(1 for a in agents_ if a.enabled),
+            "calls24h": calls, "errors24h": errors, "errorRate": round(errors / calls * 100, 1) if calls else None, "avgLatencyMs": int(sum(lat) / len(lat)) if lat else None,
+            "tokens24h": sum(stats.get(a.code, {}).get("tokens", 0) for a in agents_)}
+
+
+@router.get("/agent-groups")
+def agent_groups(session: Session = Depends(get_session)):
+    """그룹 탭 — 그룹마다 요약(에이전트 수 · LLM/규칙 · 24시간 호출 · 오류율 · 평균 지연)과 소속 에이전트 코드. 그룹 없는 에이전트는 'ungrouped'."""
+    stats = agent_stats_24h(session)
+    all_agents = session.execute(select(Agent).order_by(Agent.code)).scalars().all()
+    groups = session.execute(select(AgentGroup).order_by(AgentGroup.sort, AgentGroup.code)).scalars().all()
+    known = {g.code for g in groups}
+    out = []
+    for g in groups:
+        mem = [a for a in all_agents if a.group_code == g.code]
+        out.append({"code": g.code, "name": g.name, "description": g.description, "sort": g.sort, "agents": [a.code for a in mem], "summary": _group_summary(mem, stats)})
+    loose = [a for a in all_agents if a.group_code not in known]
+    return {"groups": out, "ungrouped": {"agents": [a.code for a in loose], "summary": _group_summary(loose, stats)}, "stats": stats, "applyKeys": list(GROUP_APPLY_KEYS)}
+
+
+@router.patch("/agent-groups/{code}")
+def agent_group_patch(code: str, body: GroupPatch, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    g = session.get(AgentGroup, code)
+    if g is None:
+        raise HTTPException(404, "그룹 없음")
+    patch = body.model_dump(exclude_unset=True)
+    if "name" in patch and not (patch["name"] or "").strip():
+        raise HTTPException(422, "그룹 이름을 입력하세요")
+    for k, v in patch.items():
+        setattr(g, k, v.strip() if isinstance(v, str) else v)
+    audit(session, admin.emp_no, "admin.agent_group.update", "agent_group", code, patch, client_ip(request))
+    session.commit()
+    return {"code": g.code, "name": g.name, "description": g.description, "sort": g.sort}
+
+
+@router.post("/agent-groups/{code}/apply")
+def agent_group_apply(code: str, body: GroupApplyIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """그룹 일괄 적용(AGG-02) — 그룹의 LLM 에이전트 override 에 같은 연결 · 모델 · 파라미터를 넣는다(다른 키는 그대로). 규칙형 에이전트는 건너뛴다."""
+    if session.get(AgentGroup, code) is None:
+        raise HTTPException(404, "그룹 없음")
+    bad = [k for k in body.override if k not in GROUP_APPLY_KEYS]
+    if bad:
+        raise HTTPException(422, f"일괄 적용할 수 없는 항목: {', '.join(bad)}")
+    if not body.override:
+        raise HTTPException(422, "적용할 항목이 없습니다")
+    ov_in = dict(body.override)
+    if ov_in.get("connection_id") not in (None, "") and not session.get(LlmConnection, int(ov_in["connection_id"])):
+        raise HTTPException(422, "연결 없음")
+    for k in ("temperature", "top_p"):
+        if ov_in.get(k) not in (None, "") and not 0 <= float(ov_in[k]) <= 2:
+            raise HTTPException(422, f"{k} 는 0~2")
+    for k in ("max_tokens", "retries"):
+        if ov_in.get(k) not in (None, "") and int(ov_in[k]) < 0:
+            raise HTTPException(422, f"{k} 는 0 이상")
+    q = select(Agent).where(Agent.group_code == code, Agent.kind == "llm")
+    if body.agents:
+        q = q.where(Agent.code.in_(body.agents))
+    changed = []
+    for a in session.execute(q.order_by(Agent.code)).scalars():
+        ov = dict(a.override or {})
+        for k, v in ov_in.items():
+            if v in (None, ""):
+                ov.pop(k, None)
+            else:
+                ov[k] = v
+        if ov != (a.override or {}):
+            a.override = ov
+            changed.append(a.code)
+            emit(session, "config.changed", {"kind": "agent", "code": a.code}, admin.emp_no)
+    audit(session, admin.emp_no, "admin.agent_group.apply", "agent_group", code, {"override": ov_in, "agents": changed}, client_ip(request))
+    session.commit()
+    return {"group": code, "changed": changed, "agents": [_agent_json(session, a) for a in session.execute(select(Agent).where(Agent.code.in_(changed))).scalars()] if changed else []}
 
 
 @router.post("/agents/{code}/prompts", status_code=201)

@@ -264,7 +264,8 @@ try {
     if (ev && ev.runs.length >= 2 && ev.runs.every((r) => r.status !== "running")) break;
   }
   const matched = (ev?.matched ?? []).map((m) => m.workflow).sort();
-  ok("관련 워크플로우만 매칭", JSON.stringify(matched) === JSON.stringify(["wf_graph_projection", "wf_inclusive_risk"]), matched.join(", "));
+  // 업무 워크플로는 계보가 맞는 것만 + 기반 워크플로(그래프 투영 · 온톨로지 구축 — Phase M · Q200)
+  ok("관련 워크플로우만 매칭", JSON.stringify(matched) === JSON.stringify(["wf_graph_projection", "wf_inclusive_risk", "wf_ontology_build"]), matched.join(", "));
   ok("매칭 워크플로우 실행 완료", ev && ev.runs.length >= 2 && ev.runs.every((r) => ["succeeded", "degraded"].includes(r.status)), (ev?.runs ?? []).map((r) => `${r.workflow}:${r.status}`).join(", "));
   await a.goto(`${BASE}/admin/monitor/flow`, { waitUntil: "networkidle0" });
   await shot(a, "05-admin-flow");
@@ -552,7 +553,7 @@ try {
   }
 
   // 9) 관리자 화면
-  for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/knowledge", "/admin/rules", "/admin/settings", "/admin/audit", "/admin/monitor", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts", "/admin/uploads", "/admin/analysis-agents"]) {
+  for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/knowledge", "/admin/rules", "/admin/settings", "/admin/audit", "/admin/monitor", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts", "/admin/uploads", "/admin/analysis-agents", "/admin/agentic"]) {
     await a.goto(BASE + p, { waitUntil: "networkidle0" });
     await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
     const t = await text(a);
@@ -564,6 +565,59 @@ try {
       ok("컬럼 정의서: T01~T03 대조 결과", t.includes("T01 현황") && t.includes("T03 목표설정") && t.includes("mart.hq_t01") && t.includes("일치"));
       await shot(a, "07-admin-contracts");
     }
+  }
+
+  // 9-M) Phase M — 에이전틱 파이프라인(그룹 → 워크플로 단계) · 그룹별 에이전트 · 온톨로지 구축/제안 탭 · 자료 등록(에이전트 분석 → 버림)
+  {
+    const tabClick = (page, label) =>
+      page.evaluate((l) => {
+        const el = [...document.querySelectorAll('[role="tab"]')].find((e) => (e.textContent || "").trim().startsWith(l));
+        if (el) el.click();
+        return Boolean(el);
+      }, label);
+    await a.goto(`${BASE}/admin/agentic`, { waitUntil: "networkidle0" });
+    await a.waitForSelector("[data-group]", { timeout: 15000 }).catch(() => undefined);
+    const groups = await a.$$eval("[data-group]", (els) => els.map((e) => e.getAttribute("data-group")));
+    ok("에이전틱 파이프라인: 기능 그룹 카드", groups.includes("ontology") && groups.includes("assistant") && groups.length >= 6, groups.join(","));
+    await tabClick(a, "온톨로지 구축");
+    await a.waitForSelector('[data-group-detail="ontology"] [data-step="profile_datasets"]', { timeout: 10000 }).catch(() => undefined);
+    const det = await a.evaluate(() => document.querySelector('[data-group-detail="ontology"]')?.innerText ?? "");
+    ok("에이전틱 파이프라인: 온톨로지 구축 단계 · 구조 파악 범위", det.includes("구조 파악") && det.includes("대기 제안") && (await a.$('[data-group-detail="ontology"] [data-step="profile_datasets"]')) !== null, det.slice(0, 160).replace(/\n/g, " | "));
+    await shot(a, "M1-admin-agentic");
+    await a.goto(`${BASE}/admin/agents`, { waitUntil: "networkidle0" });
+    const agTabs = await a.$$eval('[role="tab"]', (els) => els.map((e) => (e.textContent || "").trim()));
+    const agText = await text(a);
+    ok("에이전트·프롬프트: 그룹 탭 · 그룹 요약", agTabs.length >= 6 && agText.includes("24시간 호출") && agText.includes("오류율"), agTabs.join(" / "));
+    await tabClick(a, "자료 등록");
+    await a.waitForFunction(() => document.body.innerText.includes("그룹 일괄 적용"), { timeout: 8000 }).catch(() => undefined);
+    ok("에이전트·프롬프트: 그룹 일괄 적용 양식", (await text(a)).includes("그룹 일괄 적용"));
+    await a.goto(`${BASE}/admin/ontology`, { waitUntil: "networkidle0" });
+    await tabClick(a, "구축 파이프라인");
+    await a.waitForFunction(() => document.body.innerText.includes("구축 에이전트 단계"), { timeout: 10000 }).catch(() => undefined);
+    ok("온톨로지: [구축 파이프라인] 탭", (await text(a)).includes("구축 에이전트 단계") && (await text(a)).includes("구조 파악"));
+    await tabClick(a, "변경 제안");
+    await a.waitForFunction(() => document.body.innerText.includes("승인 대기"), { timeout: 10000 }).catch(() => undefined);
+    ok("온톨로지: [변경 제안] 탭", (await text(a)).includes("승인 대기"));
+    // 관리자 [데이터셋·문서 › 자료 등록] — 새 정형 파일 분석 → 정의 초안 → 버리기(반영 없음)
+    const intakeCsv = path.join(OUT, `e2e_intake_${Date.now() % 100000}.csv`);
+    fs.writeFileSync(intakeCsv, ["기준월,지점코드,지점명,상담건수", "202608,B01,가지점,12", "202608,B02,나지점,7", "202608,B03,다지점,9"].join("\n"));
+    await a.goto(`${BASE}/admin/datasets`, { waitUntil: "networkidle0" });
+    await tabClick(a, "자료 등록");
+    await a.waitForSelector('[data-intake-wizard="admin"] input[type="file"]', { timeout: 10000 });
+    await (await a.$('[data-intake-wizard="admin"] input[type="file"]')).uploadFile(intakeCsv);
+    await a.click("[data-intake-analyze]");
+    await a.waitForSelector("[data-intake-detail]", { timeout: 30000 }).catch(() => undefined);
+    const mode = await a.$eval("[data-intake-detail]", (e) => e.getAttribute("data-intake-detail")).catch(() => "");
+    const itText = await text(a);
+    ok("자료 등록: 에이전트 분석 → 새 자료 정의 초안", mode === "new" && itText.includes("상담건수") && itText.includes("확인 · 반영"), mode);
+    await shot(a, "M2-admin-intake");
+    const discarded = await a.evaluate(() => {
+      const b = [...document.querySelectorAll("[data-intake-detail] button")].find((x) => (x.textContent || "").trim() === "버리기");
+      if (b) b.click();
+      return Boolean(b);
+    });
+    await a.waitForFunction(() => document.body.innerText.includes("버림"), { timeout: 10000 }).catch(() => undefined);
+    ok("자료 등록: 버리기(반영 없음)", discarded && (await text(a)).includes("버림"));
   }
 
   // 9-00) 3-way 검색 구성 (Phase H · TW-01~10) — PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프.

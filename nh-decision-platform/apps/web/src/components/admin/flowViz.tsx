@@ -22,7 +22,7 @@ export const STATUS_STEP: Record<string, { state: StepState; label: string }> = 
 };
 
 export function stepOf(status?: string | null): { state: StepState; label: string } {
-  return (status && STATUS_STEP[status]) || { state: "idle", label: status ?? "기록 없음" };
+  return (status && STATUS_STEP[status]) || { state: "idle", label: status || "기록 없음" };
 }
 
 const DOT: Record<StepState, string> = {

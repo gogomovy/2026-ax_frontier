@@ -138,8 +138,13 @@ class Resolver:
 
 
 def schema_prompt(schema: OntologySchema, top_aliases: int = 30) -> str:
-    classes = [f"- {c['label']}: {c.get('description', '')} (key={c.get('key_hint', 'name')})" for c in schema.classes if c.get("extractable", True)]
-    rels = [f"- {r['type']}: {r['from']} → {r['to']}" + (f" props={r.get('props')}" if r.get("props") else "") for r in schema.relations if r.get("extractable", True)]
+    # 업무 이름(ko) · 속성(이름)을 함께 싣는다 — 모델이 영문 라벨만 보고 엉뚱한 클래스로 넣지 않게 (Phase M · ONB-11)
+    def props_of(c: dict[str, Any]) -> str:
+        names = [p.get("name") for p in c.get("properties") or [] if isinstance(p, dict) and p.get("name") not in ("name", None)]
+        return f", 속성: {', '.join(names[:8])}" if names else ""
+
+    classes = [f"- {c['label']}({c.get('ko') or c['label']}): {c.get('description', '')} (key={c.get('key_hint', 'name')}{props_of(c)})" for c in schema.classes if c.get("extractable", True)]
+    rels = [f"- {r['type']}({r.get('ko') or r['type']}): {r['from']} → {r['to']}" + (f" props={r.get('props')}" if r.get("props") else "") for r in schema.relations if r.get("extractable", True)]
     aliases = {label: list(entries.keys())[:top_aliases] for label, entries in (schema.aliases or {}).items()}
     return "허용 클래스:\n" + "\n".join(classes) + "\n\n허용 관계 (from 이 '$doc' 이면 이 문서 자신):\n" + "\n".join(rels) + "\n\n마스터 키(가능하면 이 키로 지정):\n" + json.dumps(aliases, ensure_ascii=False)
 
@@ -315,8 +320,15 @@ def extract_document(session: Session, origin: str, doc, *, agent_code: str = "o
             except (KeyError, IndexError, ValueError):
                 user = DEFAULT_USER_TEMPLATE.format(**fields)  # 관리자가 편집한 프롬프트의 자리표시자 오류 — 기본 형식으로
             try:
-                res = chat(session, cfg, [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}], json_mode=True, workflow_run_id=workflow_run_id, node_run_id=node_run_id, purpose="extraction")
-                data = parse_json(res.text)
+                msgs = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user}]
+                res = chat(session, cfg, msgs, json_mode=True, workflow_run_id=workflow_run_id, node_run_id=node_run_id, purpose="extraction")
+                try:
+                    data = parse_json(res.text)
+                except ValueError as fmt:
+                    # 출력 형식 오류는 한 번 다시 요청한다(Phase M · LLM-P02) — 모델 장애가 아니라 형식 문제
+                    fix = msgs + [{"role": "assistant", "content": res.text[:6000]}, {"role": "user", "content": f"앞 응답은 JSON 형식 오류({str(fmt)[:100]})다. 같은 추출을 올바른 JSON 객체 하나로만 다시 출력하라."}]
+                    res = chat(session, cfg, fix, json_mode=True, workflow_run_id=workflow_run_id, node_run_id=node_run_id, purpose="extraction")
+                    data = parse_json(res.text)
             except (LlmError, ValueError) as exc:
                 session.add(ExtractionIssue(origin=origin, document_id=doc.id, chunk_id=ch.id, kind="llm_error", reason=str(exc)[:500]))
                 issues_n += 1

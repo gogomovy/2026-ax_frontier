@@ -22,12 +22,7 @@ SMALL_CLUSTER = 3  # 이보다 작은 군집은 '작은 묶음' 하나로
 CACHE_SEC = 300
 META_KEYS = {"name", "origin", "src_kind", "src_ref", "extracted_by", "schema_version"}
 # 클래스 업무 이름(화면 표기 · 군집 이름) — 스키마 라벨은 영문 식별자라 보조로만 (Q125)
-CLASS_KO = {
-    "Dataset": "데이터셋", "DatasetVersion": "데이터셋 버전", "Metric": "지표", "Workflow": "워크플로", "Artifact": "화면 산출물",
-    "Document": "문서", "DocClass": "문서 분류", "Issuer": "발행 기관", "PolicyTheme": "정책 주제", "ProductGroup": "상품군",
-    "Product": "상품", "Segment": "고객군", "RatingModel": "평가 모형", "BusinessDomain": "사업 부문", "CapitalConstraint": "자본 제약",
-    "Candidate": "미확정 후보",
-}
+from .schema import CLASS_KO  # noqa: E402 — 기본 업무 이름(스키마 ko 가 없을 때)
 
 
 # ── 군집: Louvain (모듈성) ───────────────────────────────────
@@ -341,13 +336,15 @@ def build_map(batch: Any, schema: Any, *, limit: int = DEFAULT_LIMIT, classes: l
     for i, c in enumerate(cluster):
         cl_members[c].append(i)
     desc = {c.get("label"): c.get("description", "") for c in (schema.classes or [])}
+    # 업무 이름 = 스키마의 ko(Phase M · ONB-01), 없으면 이전 기본 이름
+    ko_of = {c.get("label"): c.get("ko") or CLASS_KO.get(c.get("label"), c.get("label")) for c in (schema.classes or [])}
     clusters_out = []
     for c in sorted(cl_members):
         mem = cl_members[c]
         comp = Counter(node_info[keep_sorted[i]]["cls"] for i in mem)
         main = comp.most_common(1)[0][0]
         tops = [name_of(i) for i in sorted(mem, key=lambda i: (-ldeg[i], keep_sorted[i]))[:2]]
-        label = "작은 묶음(연결이 적은 개체)" if c == small_id and small else " · ".join([CLASS_KO.get(main, main), *tops])
+        label = "작은 묶음(연결이 적은 개체)" if c == small_id and small else " · ".join([ko_of.get(main) or CLASS_KO.get(main, main), *tops])
         clusters_out.append({"id": c, "label": label[:120], "size": len(mem), "classes": dict(comp.most_common()), "main": main, "center3": c3.get(c), "center2": c2.get(c), "small": c == small_id and bool(small)})
     cls_count = Counter(node_info[x]["cls"] for x in keep_sorted)
     all_cls_count = Counter(node_info[x]["cls"] for x in all_ids)
@@ -355,7 +352,7 @@ def build_map(batch: Any, schema: Any, *, limit: int = DEFAULT_LIMIT, classes: l
     for c in sorted(all_cls_count):
         if c not in class_order:
             class_order.append(c)
-    classes_out = [{"label": c, "ko": CLASS_KO.get(c, c), "count": int(cls_count.get(c, 0)), "total": int(all_cls_count.get(c, 0)), "description": desc.get(c, ""), "color": i} for i, c in enumerate(class_order)]
+    classes_out = [{"label": c, "ko": ko_of.get(c) or CLASS_KO.get(c, c), "count": int(cls_count.get(c, 0)), "total": int(all_cls_count.get(c, 0)), "description": desc.get(c, ""), "color": i} for i, c in enumerate(class_order)]
     rel_count = Counter(r for _, r, _ in rel_rows)
     triples = Counter((node_info[a]["cls"], r, node_info[b]["cls"]) for a, r, b in rel_rows)
     return {

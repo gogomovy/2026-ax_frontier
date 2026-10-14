@@ -155,7 +155,10 @@ def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: 
     # 그 분석 전용 에이전트 + 프롬프트(버전마다 새 프롬프트 버전)
     ag = session.get(Agent, a.code)
     if ag is None:
-        ag = Agent(code=a.code, name=f"분석 · {spec['title']}"[:100], role=f"동적 수행 — {spec.get('purpose') or spec['title']}"[:300], kind="llm", profile_id=_default_profile(session), override={}, enabled=True)
+        from nhdip.models import AgentGroup
+
+        ag = Agent(code=a.code, name=f"분석 · {spec['title']}"[:100], role=f"동적 수행 — {spec.get('purpose') or spec['title']}"[:300], kind="llm", profile_id=_default_profile(session), override={}, enabled=True,
+                   group_code="analysis" if session.get(AgentGroup, "analysis") is not None else None)  # 에이전트 그룹 '분석 에이전트' (Phase M · AGG-01)
         session.add(ag)
         session.flush()
     else:

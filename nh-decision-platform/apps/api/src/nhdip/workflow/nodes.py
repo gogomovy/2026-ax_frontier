@@ -290,6 +290,40 @@ def _strip_markers(text: str) -> str:
     return numguard.strip_markers(text)
 
 
+def _statement_of(text: str) -> str:
+    """서술 출력 모양 검증(LLM-P02) — JSON 객체 · statement 문자열 · 비어 있지 않음 · 2000자 이내."""
+    data = parse_json(text)
+    if not isinstance(data, dict):
+        raise ValueError("JSON 객체가 아님")
+    st = data.get("statement")
+    if not isinstance(st, str) or not st.strip():
+        raise ValueError("statement 비어 있음")
+    if len(st) > 2000:
+        raise ValueError("statement 가 너무 김(2000자 초과)")
+    return st.strip()
+
+
+def _narrate_call(ctx: RunContext, llm: Any, messages: list[dict[str, Any]]) -> tuple[str, Any]:
+    """서술 호출 + 형식 오류면 오류를 알려 주고 같은 내용을 다시 받는다(설정 agents.llm_judge.format_retries, 기본 1 — LLM-P02).
+    재요청 뒤에도 형식이 틀리면 ValueError(그 인사이트만 기존 문장 유지 — 연결 장애가 아니므로 나머지 서술은 계속)."""
+    from .llm_judge import policy as judge_policy
+
+    res = chat(ctx.session, llm, messages, json_mode=True, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id)
+    try:
+        return _statement_of(res.text), res
+    except ValueError as exc:
+        err = exc
+    for _ in range(max(0, int(judge_policy(ctx.session).get("format_retries", 1)))):
+        fix = messages + [{"role": "assistant", "content": (res.text or "")[:4000]},
+                          {"role": "user", "content": f"앞 응답은 형식 오류({str(err)[:120]})로 읽을 수 없다. 같은 내용을 {{\"statement\": \"...\"}} JSON 객체 하나로만 다시 출력하라. 수치는 [[fig:ID]] 마커로만, 설명 · 코드펜스 금지."}]
+        res = chat(ctx.session, llm, fix, json_mode=True, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, purpose="chat:format-retry")
+        try:
+            return _statement_of(res.text), res
+        except ValueError as exc:
+            err = exc
+    raise ValueError(f"서술 출력 형식 오류(재요청 후에도): {err}")
+
+
 @node_impl("narrate", "LLM 서술 — 확정 수치는 [[fig:ID]] 마커로만 참조 (실패 시 기존 서술 유지 = 템플릿 폴백)")
 def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     cfg = node.config or {}
@@ -349,11 +383,7 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             continue
         messages = [{"role": "system", "content": (llm.system_prompt or "너는 은행 경영 분석 보고서를 쓰는 분석가다. JSON 으로만 답한다.") + "\n\n" + GUARD}, {"role": "user", "content": user}]
         try:
-            res = chat(ctx.session, llm, messages, json_mode=True, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id)
-            data = parse_json(res.text)
-            statement = str(data.get("statement", "")).strip()
-            if not statement:
-                raise ValueError("statement 비어 있음")
+            statement, res = _narrate_call(ctx, llm, messages)
             ctx.state.setdefault("narratives", {})[target["insight_id"]] = {"statement": statement, "llm_call_id": res.call_id, "figures": list(figures.keys())}
             results.append({"insight": target["insight_id"], "llm_call_id": res.call_id, "statement": statement})
             ctx.state["narratives"][target["insight_id"]] |= {"agent": node.agent_code, "why": ((plan or {}).get("why") or {}).get(target["insight_id"])}
@@ -365,6 +395,43 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     return NodeResult({"model": llm.model, "results": results}, "degraded" if degraded else "succeeded")
 
 
+GROUNDING_DEFAULT = {"enabled": True, "block": False, "max_per_run": 6}
+GROUNDING_TASK = (
+    "문장(statement)의 주장이 판정(verdicts) · 근거 구간(evidence)과 맞는지 판정한다. [[fig:ID]] 마커는 계산 커널의 확정 값이라 맞다고 본다(figures 는 마커의 이름). "
+    "verdict: supported(근거 있음) | unsupported(근거와 어긋나거나 근거 없음) | unknown(근거가 비어 판단 불가). reason 은 숫자 없이 한 문장. "
+    "claims 는 근거 없는 주장 구절(문장에서 그대로, 최대 3개). "
+    'JSON: {"verdict":"supported|unsupported|unknown","reason":"…","claims":["…"]}'
+)
+
+
+def _grounding_policy(session: Session) -> dict[str, Any]:
+    s = session.get(Setting, "agents.grounding")
+    raw = s.value if s is not None and isinstance(s.value, dict) else {}
+    out = {**GROUNDING_DEFAULT, **raw}
+    out["enabled"], out["block"] = bool(out.get("enabled")), bool(out.get("block"))
+    try:
+        out["max_per_run"] = max(0, int(out.get("max_per_run", 6)))
+    except (TypeError, ValueError):
+        out["max_per_run"] = 6
+    return out
+
+
+def _grounded_check(ctx: RunContext, insight_id: str, statement: str, arts: dict[str, Any]) -> dict[str, Any] | None:
+    """critic_grounded 한 번 — (verdict · reason · claims · llm_call_id) 또는 None(LLM 없음 · 형식 오류 → 점검 생략, 규칙 점검 결과 그대로)."""
+    from .llm_judge import ask_json, clean_reason
+
+    ins = find_insight(arts, insight_id) or {}
+    figs = {fid: f.get("label") for fid, f in (ins.get("figures") or {}).items()}
+    ev = [{"origin": e.get("origin"), "title": e.get("title"), "text": (e.get("text") or "")[:400]} for e in (ctx.state.get("evidence") or [])[:4]]
+    context = {"title": ins.get("title"), "statement": statement, "figures": figs, "verdicts": ctx.state.get("verdicts") or {}, "evidence": ev}
+    data, meta = ask_json(ctx.session, "critic_grounded", GROUNDING_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, shrink=("evidence",))
+    if not data or data.get("verdict") not in ("supported", "unsupported", "unknown"):
+        return None
+    reason, _ = clean_reason(data.get("reason"), 200)
+    claims = [str(c)[:120] for c in (data.get("claims") or []) if isinstance(c, str) and c.strip() and c.strip() in statement][:3]  # 문장에 실제로 있는 구절만
+    return {"verdict": data["verdict"], "reason": reason, "claims": claims, "llm_call_id": meta.get("llm_call_id")}
+
+
 @node_impl("critic", "검증 — 리터럴 숫자 · 미등록 수치 마커 · 인과 단정 표현 차단 (통과분만 반영)")
 def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     rules = _rule_body(ctx.session, (node.config or {}).get("rule", "CRITIC_RULES"))
@@ -373,6 +440,8 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     arts = ctx.load_artifacts()
     out = []
     degraded = False
+    gpol = _grounding_policy(ctx.session)
+    grounded_n = 0
     for insight_id, nar in (ctx.state.get("narratives") or {}).items():
         st = nar["statement"]
         checks = []
@@ -383,8 +452,19 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         checks.append({"checkCode": "figure_reference", "passed": not unknown, "detail": "마커 전부 확정 수치" if not unknown else f"없는 수치 마커: {sorted(unknown)}"})
         hit = [p for p in causal if p in st]
         checks.append({"checkCode": "causality_language", "passed": not hit, "detail": "인과 단정 표현 미검출" if not hit else f"검출: {hit}"})
-        passed = all(c["passed"] for c in checks)
         from .agent_nodes import record
+
+        # 근거 일치 점검(critic_grounded · LLM-P05 · Q185) — 규칙 점검을 통과한 문장만, 실행당 상한까지. 기본 권고(막지 않음), block 이면 근거 없음 판정을 반려
+        if all(c["passed"] for c in checks) and gpol["enabled"] and grounded_n < gpol["max_per_run"] and not ctx.llm_off:
+            g = _grounded_check(ctx, insight_id, st, arts)
+            if g is not None:
+                grounded_n += 1
+                bad = g["verdict"] == "unsupported"
+                checks.append({"checkCode": "grounding", "passed": not (bad and gpol["block"]), "advisory": not gpol["block"], "verdict": g["verdict"],
+                               "detail": ({"supported": "근거와 맞음", "unsupported": "근거와 어긋나거나 근거 없음", "unknown": "판단 불가"}[g["verdict"]] + (f" — {g['reason']}" if g.get("reason") else ""))[:300]})
+                record(ctx, "critic_grounded", "grounding", f"{insight_id} 근거 일치 {g['verdict']}" + (" (권고)" if bad and not gpol["block"] else ""),
+                       {"insight": insight_id, "verdict": g["verdict"], "reason": g.get("reason"), "claims": g.get("claims") or [], "block": gpol["block"], "llm_call_id": g.get("llm_call_id")})
+        passed = all(c["passed"] for c in checks)
 
         # 범위 실행(다지점 · B.47)은 서술 이력을 범위별로 — 다른 지점 서술 이력 때문에 '최초 1회' 서술을 건너뛰지 않게
         scoped_id = f"{insight_id}{ctx.eval.scope_suffix}"
@@ -508,6 +588,22 @@ def n_extract(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             t = source(origin)
             for d in ctx.session.execute(select(t.document.id).where(t.document.is_current, t.document.status == "ingested")).scalars():
                 targets.append((origin, d))
+    # 스키마 판이 바뀌면 이전 판으로 추출한 문서를 실행당 몇 건씩 다시 추출한다(Phase M · ONB-11) — 새 클래스 · 관계 · 별칭이 문서 근거에도 반영되게
+    from nhdip.graph.projection import active_schema
+    from nhdip.graph.proposals import build_policy
+
+    sc = active_schema(ctx.session)
+    n_re = int(build_policy(ctx.session).get("reextract_per_run", 5) or 0) if sc is not None else 0
+    reextract = 0
+    if n_re > 0:
+        for origin in ("bank", "ext"):
+            t = source(origin)
+            for d in ctx.session.execute(select(t.document).where(t.document.is_current, t.document.status.in_(["extracted", "partial"])).order_by(t.document.id)).scalars():
+                if reextract >= n_re:
+                    break
+                if int(((d.extraction or {}).get("schema_version")) or 0) < sc.version:
+                    targets.append((origin, d.id))
+                    reextract += 1
     import time as _time
 
     cfg = node.config or {}
@@ -532,7 +628,7 @@ def n_extract(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         results.append(extract_document(ctx.session, origin, doc, agent_code=node.agent_code or "ontology_extractor", max_chunks=int(cfg.get("max_chunks", 12)), workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id))
         ctx.session.commit()  # 문서마다 확정 — 뒤쪽 문서가 실패해도 앞에서 끝낸 구조화는 남는다
     remaining = len(todo) - done
-    out: dict[str, Any] = {"documents": results}
+    out: dict[str, Any] = {"documents": results, **({"reextracted": reextract} if reextract else {})}
     if remaining > 0:
         out["remaining"] = remaining
         # 이번에 실제로 구조화가 진행됐을 때만 이어서 실행한다(진행이 없는데 되풀이하는 무한 반복 방지)
@@ -633,7 +729,71 @@ def n_rank_attentions(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                     ctx.changed.add(key)
                     hits += 1
         out.append({"id": att_id, "score": score, "basis": basis, "calc_run_id": run.id, "patched": hits})
+        # 해설 에이전트(curate_attentions)가 쓸 점수 구성 — 항목 이름과 점수만(숫자는 해설에 쓰지 않는다)
+        ctx.state.setdefault("attention_parts", {})[att_id] = [{"label": p["label"], "points": p.get("points", 0)} for p in res.extra["parts"]]
     return NodeResult({"rule": rule_code, "attentions": out}, "degraded" if any("error" in x or "skipped" in x for x in out) else "succeeded")
+
+
+CURATE_TASK = (
+    "주목 사항(items)마다 왜 지금 주목해야 하는지 한두 문장(reason, 80자 이내)으로 쓴다. 숫자를 쓰지 않는다(점수 · 비율은 화면이 따로 보여 준다). 순위는 바꾸지 않는다. "
+    "점수 구성 항목(parts — 점수가 큰 순)과 판정 · 관련 의견을 근거로, 인과를 단정하지 않는다. id 는 입력 그대로. "
+    'JSON: {"items":[{"id":"…","reason":"…"}]}'
+)
+
+
+def _rule_rank_reason(parts: list[dict[str, Any]]) -> str:
+    """LLM 이 없거나 실패했을 때 — 점수가 큰 구성 항목 이름으로 만든 문장(숫자 없음)."""
+    top = [p["label"] for p in sorted(parts, key=lambda p: -float(p.get("points") or 0)) if float(p.get("points") or 0) > 0][:2]
+    if not top:
+        return "점수 구성 항목이 고르게 반영되어 순위가 정해졌습니다."
+    return f"{' · '.join(top)} 항목이 점수를 가장 많이 올려 상위에 올랐습니다." if len(top) > 1 else f"{top[0]} 항목이 점수를 가장 많이 올려 상위에 올랐습니다."
+
+
+@node_impl("curate_attentions", "AI 주목 사항 해설(attention_curator) — 순위는 규칙 그대로, 항목마다 숫자 없는 해설 rankReason (LLM 없음 · 실패면 점수 구성 문장)")
+def n_curate_attentions(ctx: RunContext, node: WorkflowNode) -> NodeResult:
+    from .llm_judge import ask_json, clean_reason
+
+    parts_of: dict[str, list[dict[str, Any]]] = ctx.state.get("attention_parts") or {}
+    if not parts_of:
+        return NodeResult({"skipped": "점수 매긴 주목 사항 없음(앞 단계 rank_attentions)"})
+    arts = ctx.load_artifacts()
+    found: dict[str, dict[str, Any]] = {}
+    for payload in arts.values():
+        for d in _walk_dicts(payload):
+            if d.get("id") in parts_of and "rankScore" in d and d["id"] not in found:
+                found[d["id"]] = d
+    items = [{"id": aid, "title": d.get("title") or d.get("label"), "severity": d.get("severity") or d.get("level"), "status": d.get("status"),
+              "parts": [p["label"] for p in sorted(parts_of[aid], key=lambda p: -float(p.get("points") or 0))],
+              "note": re.sub(r"\d[\d,.]*", "", str(d.get("statement") or d.get("summary") or d.get("description") or ""))[:200]}
+             for aid, d in found.items()]
+    reasons: dict[str, tuple[str, str]] = {aid: (_rule_rank_reason(parts_of[aid]), "rule") for aid in found}
+    meta: dict[str, Any] = {"by": "rule"}
+    dropped = 0
+    if items and not ctx.llm_off:
+        data, meta = ask_json(ctx.session, node.agent_code or "attention_curator", CURATE_TASK, {"items": items}, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("items",), shrink=("items",))
+        for it in (data or {}).get("items") or []:
+            if not isinstance(it, dict) or it.get("id") not in reasons:
+                continue
+            text, bad = clean_reason(it.get("reason"), 160)
+            if text and not bad and not re.search(r"\d", text):  # 숫자 점검을 통과한 문장만
+                reasons[it["id"]] = (text, "llm")
+            else:
+                dropped += 1
+    changed = 0
+    for aid, d in found.items():
+        text, by = reasons[aid]
+        for payload_key, payload in arts.items():
+            for x in _walk_dicts(payload):
+                if x.get("id") == aid and "rankScore" in x and (x.get("rankReason") != text or x.get("rankReasonBy") != by):
+                    x["rankReason"], x["rankReasonBy"] = text, by
+                    ctx.changed.add(payload_key)
+                    changed += 1
+    from .agent_nodes import record
+
+    llm_n = sum(1 for _, by in reasons.values() if by == "llm")
+    record(ctx, node.agent_code or "attention_curator", "curated", f"주목 사항 {len(reasons)}건 해설(LLM {llm_n} · 규칙 {len(reasons) - llm_n})",
+           {"items": {k: {"reason": v[0], "by": v[1]} for k, v in reasons.items()}, "llm": {k: meta.get(k) for k in ("by", "reason", "model", "llm_call_id")}, "dropped": dropped})
+    return NodeResult({"items": len(reasons), "llm": llm_n, "dropped": dropped, "patched": changed, "by": meta.get("by"), "reason": meta.get("reason")})
 
 
 @node_impl("recommend_goals", "경영목표 추천 범위(GOAL_RANGE_REC 등 지표) → 제안의 추천범위 · 문구 · 산출 근거 갱신 (숫자는 커널 값만)")
@@ -841,3 +1001,6 @@ def n_select_guides(ctx: RunContext, node: WorkflowNode) -> NodeResult:
 from . import agent_nodes as _agent_nodes  # noqa: E402,F401
 # 분석 에이전트 노드(동적 수행 · 범용 렌더링) 등록 — Phase C
 from . import analysis_nodes as _analysis_nodes  # noqa: E402,F401
+
+# 온톨로지 구축 에이전트 노드(구조 파악 · 객체 유형 · 링크 · 해소 · 품질 · 제안) 등록 — Phase M
+from . import onto_nodes as _onto_nodes  # noqa: E402,F401

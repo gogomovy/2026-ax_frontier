@@ -167,6 +167,42 @@ def _log_messages(session: Session, messages: Any) -> Any:
         return mask_obj(messages)
 
 
+def _outgoing(session: Session, messages: Any) -> Any:
+    """게이트웨이로 보낼 메시지 — 설정 privacy.policy.mask_llm_input(기본 켬)이면 개인정보 형식 값을 가린다 (Phase M · LLM-P04 · Q186).
+    설정을 못 읽으면 가리는 쪽으로. 호출자가 가진 원본 목록은 바꾸지 않는다(복사본을 보낸다)."""
+    from nhdip.privacy import mask_obj, policy
+
+    try:
+        on = bool(policy(session).get("mask_llm_input", True))
+    except Exception:  # noqa: BLE001
+        on = True
+    return mask_obj(messages) if on else messages
+
+
+def _breaker_open(session: Session, cfg: "ResolvedLlm", purpose: str, workflow_run_id: str | None, node_run_id: str | None = None) -> None:
+    """차단기가 열려 있으면 보내지 않고 기록(skipped)만 남긴 뒤 LlmError(BreakerOpen) — 호출자는 규칙 대체로 (LLM-P03)."""
+    from .breaker import BreakerOpen, before_call
+
+    try:
+        before_call(session, cfg)
+    except BreakerOpen as exc:
+        call = LlmCall(node_run_id=node_run_id, workflow_run_id=workflow_run_id, agent_code=cfg.agent_code, purpose=purpose, connection_name=cfg.connection_name,
+                       base_url=cfg.base_url, model=cfg.model, params={**cfg.snapshot(), "breaker": "open"}, messages=None)
+        call.id = new_id()
+        call.status, call.error, call.latency_ms = "skipped", str(exc)[:1000], 0
+        _save_call(call)
+        raise
+
+
+def _breaker_result(session: Session, cfg: "ResolvedLlm", ok: bool, error: str = "") -> None:
+    from .breaker import record_failure, record_success
+
+    try:
+        record_success(cfg) if ok else record_failure(session, cfg, error)
+    except Exception:  # noqa: BLE001 — 차단기 기록 실패가 호출을 막지 않는다
+        logging.getLogger("nhdip.llm").warning("차단기 기록 실패", exc_info=True)
+
+
 def _save_call(call: LlmCall) -> None:
     """호출 기록은 업무 트랜잭션과 따로 저장한다 — 노드가 실패해 롤백돼도 비용 · 오류 기록이 남는다 (B.32)."""
     from nhdip.db import SessionLocal
@@ -213,7 +249,8 @@ def chat(
     from .budget import check as check_budget
 
     check_budget(session, cfg.agent_code)  # 월 예산 초과 + 차단 설정이면 LlmBudgetExceeded (4.7)
-    body: dict[str, Any] = {"model": cfg.model, "messages": messages, **cfg.params, **cfg.extra}
+    _breaker_open(session, cfg, purpose, workflow_run_id, node_run_id)  # 연결이 연속 실패 중이면 곧바로 LlmError (LLM-P03)
+    body: dict[str, Any] = {"model": cfg.model, "messages": _outgoing(session, messages), **cfg.params, **cfg.extra}
     if tools and cfg.tools_enabled:
         body["tools"] = tools
         body["tool_choice"] = "auto"
@@ -239,6 +276,7 @@ def chat(
     dropped: list[str] = []
     expanded: list[int] = []
     cap = _max_tokens_cap(session)
+    transient = False  # 연결 문제(네트워크 · 시간 초과 · 5xx · 429)로 끝났는지 — 차단기는 이것만 센다(400 같은 요청 문제는 연결 탓이 아님)
     for attempt in range(cfg.retries + 1 + len(_DROPPABLE) + 2):
         if attempts - len(dropped) - len(expanded) > cfg.retries:
             break
@@ -259,10 +297,12 @@ def chat(
                 continue
             if resp.status_code >= 500 or resp.status_code == 429:
                 last_err = f"HTTP {resp.status_code}: {resp.text[:300]}"
+                transient = True
                 time.sleep(min(2**attempt, 8))
                 continue
             if resp.status_code >= 400:
                 last_err = f"HTTP {resp.status_code}: {resp.text[:500]}"
+                transient = resp.status_code in (401, 408)  # 키가 틀렸거나(401) 게이트웨이 시간 초과 — 그 연결 전체의 문제. 모델별 거절(403 · 404)은 세지 않는다
                 break
             data = resp.json()
             choice = (data.get("choices") or [{}])[0]
@@ -285,16 +325,20 @@ def chat(
                            **({"truncated": True} if choice.get("finish_reason") == "length" else {})}
             out = ChatResult(call.output_text, msg.get("tool_calls") or [], data, call.id, msg)
             _save_call(call)
+            _breaker_result(session, cfg, True)
             return out
         except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError, AttributeError) as exc:
             # 게이트웨이가 약속과 다른 모양(choices 없음 등)으로 답해도 오류 기록(ops.llm_call)을 남기고 LlmError 로 알린다
             last_err = f"{type(exc).__name__}: {exc}"
+            transient = isinstance(exc, httpx.HTTPError)
             time.sleep(min(2**attempt, 8))
     call.status = "error"
     call.error = last_err
     call.latency_ms = int((time.monotonic() - t0) * 1000)
     call.params = {**call.params, "attempts": attempts}
     _save_call(call)
+    if transient:
+        _breaker_result(session, cfg, False, last_err)
     raise LlmError(last_err)
 
 
@@ -316,7 +360,8 @@ def chat_stream(
     from .budget import check as check_budget
 
     check_budget(session, cfg.agent_code)
-    body: dict[str, Any] = {"model": cfg.model, "messages": messages, **cfg.params, **cfg.extra, "stream": True, "stream_options": {"include_usage": True}}
+    _breaker_open(session, cfg, purpose, workflow_run_id)
+    body: dict[str, Any] = {"model": cfg.model, "messages": _outgoing(session, messages), **cfg.params, **cfg.extra, "stream": True, "stream_options": {"include_usage": True}}
     if tools and cfg.tools_enabled:
         body["tools"] = tools
         body["tool_choice"] = "auto"
@@ -333,6 +378,7 @@ def chat_stream(
     dropped: list[str] = []
     emitted = False
     finished = False
+    transient = False
     parts: list[str] = []
     timeout = httpx.Timeout(connect=15.0, read=_timeout_for(cfg.timeout, body.get("max_tokens")), write=15.0, pool=15.0)  # read = 조각 사이 최대 대기
     try:
@@ -355,6 +401,7 @@ def chat_stream(
                             dropped.append("stream_options")
                             continue
                         last_err = f"HTTP {resp.status_code}: {err_text[:300]}"
+                        transient = resp.status_code >= 500 or resp.status_code in (401, 408, 429)
                         if resp.status_code >= 500 or resp.status_code == 429:
                             time.sleep(min(2**attempt, 8))
                             continue
@@ -400,10 +447,12 @@ def chat_stream(
                     call.params = {**call.params, "attempts": attempts, **({"dropped": dropped} if dropped else {}), **({"truncated": True} if finish == "length" else {})}
                     finished = True
                     _save_call(call)
+                    _breaker_result(session, cfg, True)
                     yield "result", ChatResult(text, tool_calls, raw, call.id, message)
                     return
             except (httpx.HTTPError, ValueError) as exc:
                 last_err = f"{type(exc).__name__}: {exc}"
+                transient = isinstance(exc, httpx.HTTPError)
                 if emitted:
                     break  # 이미 글자를 내보냈다 — 같은 요청을 다시 보내면 글이 겹친다
                 time.sleep(min(2**attempt, 8))
@@ -413,6 +462,8 @@ def chat_stream(
         call.params = {**call.params, "attempts": attempts}
         finished = True
         _save_call(call)
+        if transient:
+            _breaker_result(session, cfg, False, last_err)
         raise LlmError(last_err)
     finally:
         if not finished:  # 호출자가 중간에 그만둠(GeneratorExit) — 비용 · 지연 기록은 남긴다
@@ -426,6 +477,8 @@ def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_
     from .budget import check as check_budget
 
     check_budget(session, cfg.agent_code)
+    _breaker_open(session, cfg, "embedding", workflow_run_id, node_run_id)
+    texts = _outgoing(session, list(texts))  # 임베딩 입력도 게이트웨이로 나간다 — 같은 가림 정책 (LLM-P04)
     call = LlmCall(
         node_run_id=node_run_id,
         workflow_run_id=workflow_run_id,
@@ -450,10 +503,14 @@ def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_
         call.status = "ok"
         call.prompt_tokens = (data.get("usage") or {}).get("prompt_tokens")
         call.output_text = f"{len(vecs)} vectors × {len(vecs[0]) if vecs else 0} dim"
+        _breaker_result(session, cfg, True)
         return vecs
     except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError, AttributeError) as exc:
         call.status = "error"
         call.error = str(exc)[:1000]
+        bad = isinstance(exc, httpx.HTTPStatusError) and exc.response is not None and exc.response.status_code < 500 and exc.response.status_code not in (401, 408, 429)
+        if isinstance(exc, httpx.HTTPError) and not bad:
+            _breaker_result(session, cfg, False, str(exc))
         raise LlmError(str(exc)) from exc
     finally:
         call.latency_ms = int((time.monotonic() - t0) * 1000)

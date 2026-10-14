@@ -105,6 +105,10 @@ export interface Insight {
   rankBasis?: string;
   /** 우선순위 산출 규칙 · 적용 판 (예: ATTENTION_SCORE v2 — 서버가 채움, Phase K) */
   rankRule?: string | null;
+  /** 왜 주목해야 하는지 — AI 주목 사항 해설 에이전트(attention_curator)의 숫자 없는 한두 문장 (Phase M · LLM-P08). 순위는 규칙 그대로 */
+  rankReason?: string | null;
+  /** 해설을 쓴 쪽: llm(에이전트) | rule(점수 구성 문장) */
+  rankReasonBy?: "llm" | "rule" | null;
   relatedGoalId?: string;
   reportKind?: ReportKind;
   reportAnchor?: string;

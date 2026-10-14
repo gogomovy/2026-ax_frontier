@@ -224,6 +224,10 @@ def f_chi_test(stat, critical):
 
 def _graded(defaults, obs):
     dft, n = arr(defaults), arr(obs)
+    if len(dft) == 0 or len(n) == 0:
+        raise FormulaError("등급 자료가 없습니다 — 이 구분(모형)의 행이 올라오지 않았습니다")
+    if len(dft) != len(n):
+        raise FormulaError("부도건수 · 관측건수 등급 수가 다릅니다")
     good = n - dft
     if (good < 0).any():
         raise FormulaError("부도건수가 관측건수보다 큽니다")

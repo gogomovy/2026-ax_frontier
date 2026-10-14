@@ -449,6 +449,28 @@
 - [ ] J3.6 남은작업 — Safari · Firefox 의 `@page size` 처리 확인, 탭 화면은 현재 탭만 나옴, 새 데이터셋을 화면 수치로 잇는 지표 · 워크플로우 연결 도우미(지금은 관리자 수동), 본문 일치로 찾지 못하는 흔적(다른 표현으로 바꿔 쓴 복사본), ~~파이프라인 지도에서 노드를 고르면 나머지가 흐려지는(`opacity-35`) 효과의 글자 대비~~(L.6 에서 처리 — 글자색 유지 · axe 0), 시연 자료에 지점 전용 자료를 더 넣을지(지금은 수원영통지점 1곳)
 - [x] J3.7 삭제 흔적 정리 (요구사항 DEL-13~16 · UPL-SEC · 설계 §28.5 · Q167~Q170) — `nhdip.data.scrub`(조각 뽑기 · `scrub_run_traces` · `scrub_artifact_evidence` · `lineage_keys` · `purge_artifact_history`), `deletion.py`(`DeleteResult.scrubbed` · 문서 청크 삭제 전 본문 확보 · 현재 데이터셋 버전 삭제 시 `pg` 정리 작업 · `run_purge_tasks` pg 분기), `filecheck._antivirus` fail-closed. 화면: 책임자 '우리 부서 자료' 바로가기 · 삭제 확인 문구 · 알림의 정리 건수(`lib/scrubText.ts`) · 반영 상태 '산출물 이력(PostgreSQL)' · 삭제 직후 반영 상태 즉시 갱신. 시험: pytest `test_scrub` 7 · `test_steward_delete`(작업 2건) · `test_filecheck`, vitest `scrubText` 3
 - [x] J3.8 브라우저 · 접근성 확인 — Chrome 151 · Edge 155 에서 새 종류 자료 제안 → 책임자 승인 → 우리 부서 자료 삭제, 관리자 새 데이터셋 · 새 열 찾기, 보고서 stale 표시, 내보내기 한 장 PDF 4종, 보고서 [인쇄] A4 를 각 39/39 확인. axe 새 화면 + 기존 16개 화면 위반 0. 확인 중 고친 것: 위험 단추 흰 글자 대비, 삭제 버전 행 `opacity-60` 대비, `AnalysisAlertStrip` 생성 시각 없음 오류, 관리자 추론 코드 중복 회피(`codeAdjusted`), 비활성 지표 · 노드의 `opacity-60` 대비, [지표] 화면 체크박스 이름, 영업점 계약서 행의 지점 기본값 폴백 제거(BRM-09). 책임자 화면에서 흔적이 있는 문서를 지워 알림에 "AI 호출 기록 1건, 보고서 근거 1건" 이 뜨는 것까지 Chrome · Edge 로 확인
+## Phase M. 에이전틱 온톨로지 구축 · LLM 에이전트 프로덕션 보강 · 에이전트 그룹 (2026-10-14 · 요구사항 §30 · 설계 §30 · Q179~Q190)
+> 사용자 요청(2026-10-14): 뒷단 에이전틱 흐름 고도화 · 에이전트 추가 분석, 온톨로지 구축 에이전트를 여러 개로(구조 파악 등 · 팔란티어 방식), AI 어시스턴트 · AI 주목 사항 등 LLM 에이전트 · 시스템 프롬프트 · 동적 데이터 흐름 프로덕션 점검과 구축, 관리자 화면 에이전틱 파이프라인 시각화 · 기능별 그룹.
+- [x] M.1 문서 — 요구사항 §30(분석 결과 · ONB · DYN · LLM-P · AGG · Q179~Q190) · 설계 §30 · 이 목록
+- [x] M.2 데이터 모델 — 마이그레이션 0017(`cfg.agent_group` · `cfg.agent.group_code` · `cfg.ontology_proposal` · `ops.data_profile`), ORM
+- [x] M.3 온톨로지 모델 v3(ONB-01~03) — `graph/schema.py`(정규화 · 검증 · 연산 적용 · 차이), 투영의 `backing`(객체 · 링크), 스키마 PUT 검증 · 이전 판 되돌리기, 시드 v3(업무 이름 · 종류 · 속성 · 원천) + 기존 DB 1회
+- [x] M.4 구축 에이전트(ONB-04~08) — `graph/profile.py` · `graph/links.py` · `graph/resolve.py` · `graph/quality.py` · `graph/proposals.py`, 노드 `workflow/onto_nodes.py`(구조 파악 · 객체 유형 설계 · 링크 발견 · 개체 해소 · 품질 검증 · 변경 제안), 에이전트 5종 + 프롬프트
+- [x] M.5 구축 워크플로 · 트리거(ONB-10 · DYN-01) — `wf_ontology_build`, 트리거 종류 `config` · 데이터셋 `*`, 오케스트레이터 경로 · 후속 제외, 설정 `ontology.build`
+- [x] M.6 문서 추출 보강(ONB-11) · 검토 수락 → 별칭 제안(ONB-07)
+- [x] M.7 LLM 플랫폼(LLM-P02 · P03 · P04 · P09) — 출력 모양 검증 · 서술 형식 재요청, 연결 차단기, 보내기 전 개인정보 가림, 예산 집계 보관
+- [x] M.8 프롬프트 표준 · 새 에이전트(LLM-P01 · P05 · P06 · P07 · P08) — 프롬프트 새 판(시드 그대로일 때만), 근거 일치 점검, AI 어시스턴트(도구 안내 · 인용 점검 · 온톨로지 도구), 검색어 재작성 · 재정렬 에이전트, AI 주목 사항 해설
+- [x] M.9 에이전트 그룹(AGG-01 · AGG-02) — 그룹 시드 · 배정 · API(목록 · 수정 · 일괄 적용), [에이전트·프롬프트] 그룹 탭
+- [x] M.10 에이전틱 파이프라인 화면(AGG-03) — `GET /admin/agentic/overview`, `/admin/agentic` 화면(관리자 메뉴 'AI · 에이전트')
+- [x] M.11 온톨로지 화면(AGG-04) — [구축 파이프라인] · [변경 제안] 탭 · 판 되돌리기, 제안 API
+- [x] M.12 시험 · 검증 · 문서 — pytest `test_phase_m.py` · vitest · E2E · 접근성, 전체 검증, 남은작업 · 세션히스토리 · 작업정리, 커밋 · 푸시
+- [x] M.13 자료 등록 백엔드(요구사항 §31 DOB-01~04 · Q191~Q193 · Q197) — `data/onboarding.py`(정형/비정형 판별 · 기존 정의 맞추기 · 정형 분석 · 비정형 분석 · 반영 상태), 에이전트 `data_intake` · `doc_intake`, API `/db/intake`(등록 · 수정 · 반영/요청 · 버림 · 내 등록 · 상태), 요청 상태 `draft` · `discarded`, 설정 `intake.steward_self_apply`
+- [x] M.14 데이터셋 정의 관리(DOB-09 · Q194) — `DELETE /admin/datasets/{code}`(참조 가드) · 사용/중지 · 시드 억제 목록 · `SEED_DATASET_DEFS`
+- [x] M.15 자료 등록 화면(DOB-01 · DOB-04 · DOB-06) — 공용 `IntakeWizard`(파일 → 분석 → 확인 · 고침 → 반영/요청 → 반영 상태) · 업무 [자료 올리기 › 자료 등록] · 관리자 [데이터셋 · 문서 › 자료 등록] · 정의 삭제/중지
+- [x] M.16 활용(DOB-05 · DOB-07 · DOB-08 · DOB-10) — 데이터셋 설명 카드 색인, AI 어시스턴트 데이터 조회 도구, 반영 → 구축 · 투영 · 업무 워크플로 연동
+- [x] M.17 시험 — 정형 새 자료(분석 → 책임자 반영 → 버전 · 이벤트 → 구조 파악 · 객체 유형 제안) · 기존 자료 새 버전 · 비정형(분석 → 반영 → 청크) · 일반 사용자 요청 · 정의 삭제 가드 · 시드 억제
+- 결과(2026-10-15): pytest 398(386 passed · 12 건너뜀) · E2E 160/160 · 접근성 72쪽(새 화면 · 탭 포함) 위반 0. 확인 중 고친 것: 계산 커널이 라이브러리 입력 오류(빈 등급 배열 → scikit-learn ValueError)를 지표 실패로 기록하지 않아 워크플로 전체가 멈추던 것(팀 자료가 일부 모형에만 있을 때 — `calc/kernel.run_and_record` · `formulas._graded`), 일괄 적용 기본 선택이 비던 것, 노드 막대의 '기록 없음' 표시, 자료 등록 출처 라벨 줄바꿈 · 원문 오류 노출. `test_phase_m.py` 27(스키마 · 연산 · 구조 파악/링크 · 해소 · v3 시드 · 구축 → 제안 → 승인 → 되돌리기 · PUT 거절 · config 트리거 · 자료 등록 4 · 정의 삭제/시드 억제 · 설명 카드 · 차단기 · 보내기 전 가림 · 예산 보관 · 서술 형식 재요청 · 근거 일치 권고/차단 · 어시스턴트 도구 · 인용 점검 · 주목 사항 규칙 문장 · 그룹 API · 에이전틱 개요), 기존 시험 갱신(반영 이벤트에 `wf_ontology_build` 포함 · 남은 작업 비우고 시작 · 근거 일치 가짜 응답), vitest `opText` 3. 화면: `/admin/agentic` · `/admin/agents` 그룹 탭 · `/admin/ontology` [구축 파이프라인] · [변경 제안] · 판 되돌리기 · `IntakeWizard`(업무 · 관리자) · 정의 관리 · 주목 사항 해설
+- 후속: Neo4j 가 켜진 스택에서 구축 → 승인 → 투영 확인(로컬 Neo4j 없음), LLM 연결 상태에서 data_intake · doc_intake · critic_grounded · attention_curator 출력 품질 표본 점검, 차단기 상태를 프로세스 간 공유(지금은 프로세스 메모리)
+
 ## Phase L. 에이전트 구조 최종 점검 · 관리자 파이프라인 시각화 · 온톨로지 지도 다듬기 · 내 자료로 시작 (2026-10-14 · 요구사항 §29 · 설계 §29 · Q171~Q178)
 > 사용자 요청(2026-10-14): 남은 것 중 할 수 있는 것 + 푸시, 만들어 둔 자료를 직접 넣어 시험하기 전에 에이전트 구조 로직 · 흐름 최종 분석과 개선, 관리자 데이터 흐름 · 에이전트 결정을 파이프라인 그림으로, 온톨로지 3D 공간감(우주 격자) · 군집 · 노드 종류 표시 정리.
 - [x] L.1 내 자료로 시작(SMP-01 · Q171) — `LOAD_SAMPLE_ON_START` 기본 0(compose · `.env.example`), README '내 자료로 시작하기(기본)'

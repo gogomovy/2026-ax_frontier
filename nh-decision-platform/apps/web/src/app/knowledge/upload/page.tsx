@@ -23,7 +23,7 @@ export default async function KnowledgeUploadPage(props: { searchParams: Promise
         description="업무 자료(정형 자료의 새 버전 · 문서)를 올려 데이터베이스 반영을 요청합니다. 올리는 즉시 검사 결과를 보여 주고, 부서 데이터 책임자나 관리자가 승인하면 관련 화면 수치와 분석이 다시 계산됩니다."
       />
       <div className="shell pb-section">
-        <UploadPageTabs options={options} review={review} initialTab={sp.tab === "review" ? "review" : sp.tab === "data" ? "data" : "upload"} initialTarget={typeof sp.target === "string" ? sp.target : undefined} />
+        <UploadPageTabs options={options} review={review} initialTab={sp.tab === "review" ? "review" : sp.tab === "data" ? "data" : sp.tab === "intake" ? "intake" : "upload"} initialTarget={typeof sp.target === "string" ? sp.target : undefined} />
       </div>
     </>
   );

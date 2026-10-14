@@ -16,6 +16,7 @@ from nhdip.data.documents import ingest_document
 from nhdip.events import audit, emit
 from nhdip.models import (
     Agent,
+    AgentGroup,
     AppUser,
     Dataset,
     KbCollection,
@@ -106,6 +107,22 @@ def seed_iam(s: Session, out: dict[str, Any]) -> None:
     out["iam"] = n
 
 
+def seed_dataset_defs(s: Session) -> list[str]:
+    """업무 화면 연결 정의(Phase M · DOB-09 · Q194) — 없는 정의만 넣는다. SEED_DATASET_DEFS=0 이면 넣지 않고(빈 카탈로그로 시작),
+    관리자가 지운 정의(설정 seed.suppressed_datasets)는 되살리지 않는다. 넣은 코드를 돌려준다."""
+    if os.environ.get("SEED_DATASET_DEFS", "1").strip().lower() in ("0", "false", "no"):
+        return []
+    sup = s.get(Setting, "seed.suppressed_datasets")
+    suppressed = set(sup.value) if sup is not None and isinstance(sup.value, list) else set()
+    added = []
+    for d in [*D.DATASETS, DC.DATASET, *B.DATASETS]:
+        if d["code"] not in suppressed and not s.get(Dataset, d["code"]):
+            s.add(Dataset(**copy.deepcopy(d)))
+            added.append(d["code"])
+    s.flush()
+    return added
+
+
 def seed_cfg(s: Session, out: dict[str, Any]) -> None:
     for key, (value, desc) in C.SETTINGS.items():
         if not s.get(Setting, key):
@@ -116,7 +133,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
             s.flush()
             s.add(RuleVersion(rule_code=code, version=1, body=body, note="초기값", created_by="seed"))
     if not s.execute(select(OntologySchema)).first():
-        s.add(OntologySchema(version=2, classes=C.ONTOLOGY_CLASSES, relations=C.ONTOLOGY_RELATIONS, aliases=C.ONTOLOGY_ALIASES, active=True, note="NH-DIO v2 (설계 §19.3)"))
+        s.add(OntologySchema(version=2, classes=C.ONTOLOGY_CLASSES, relations=C.ONTOLOGY_RELATIONS, aliases=C.ONTOLOGY_ALIASES, interfaces=C.ONTOLOGY_INTERFACES, active=True, note="NH-DIO v3 — 객체 유형 · 속성 · 링크 유형 · 인터페이스 (설계 §19.3 · §30)"))
     # LLM 연결 · 프로필
     st = get_settings()
     conn = s.execute(select(LlmConnection).where(LlmConnection.name == "litellm")).scalar()
@@ -135,18 +152,20 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
             s.add(p)
             s.flush()
         profiles[name] = p.id
+    # 에이전트 그룹(Phase M · AGG-01) — 없는 코드만(관리자가 바꾼 이름 · 설명 · 순서 보존)
+    for gcode, gname, gdesc, gsort in C.AGENT_GROUPS:
+        if not s.get(AgentGroup, gcode):
+            s.add(AgentGroup(code=gcode, name=gname, description=gdesc, sort=gsort))
+    s.flush()
     for code, name, role, kind, profile, system in C.AGENTS:
         if not s.get(Agent, code):
-            s.add(Agent(code=code, name=name, role=role, kind=kind, profile_id=profiles.get(profile) if profile else None, override={}, enabled=True))
+            s.add(Agent(code=code, name=name, role=role, kind=kind, group_code=C.AGENT_GROUP_OF.get(code), profile_id=profiles.get(profile) if profile else None, override={}, enabled=True))
             s.flush()
             if kind == "llm" and system:
                 s.add(Prompt(agent_code=code, version=1, system=system, user_template="", note="초기 프롬프트 (빈 user_template = 노드 기본 템플릿 사용)", created_by="seed"))
     s.flush()
     # 데이터셋 정의
-    for d in [*D.DATASETS, DC.DATASET, *B.DATASETS]:
-        if not s.get(Dataset, d["code"]):
-            s.add(Dataset(**d))
-    s.flush()
+    seed_dataset_defs(s)
     # 품질 규칙 보강 (1.4) — 업그레이드 이름별 1회
     done_s = s.get(Setting, "seed.applied_upgrades")
     done = list(done_s.value) if done_s else []
@@ -168,7 +187,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
         s.add(Setting(key="seed.applied_upgrades", value=done, description="한 번만 적용하는 시드 보강 이름 (관리자가 이후 바꾼 값은 다시 덮지 않음)"))
     s.flush()
     # 워크플로우 · 노드 · 트리거
-    for w in [*D.WORKFLOWS, *B.WORKFLOWS]:
+    for w in [*D.WORKFLOWS, *B.WORKFLOWS, *C.WORKFLOWS_M]:
         if s.get(Workflow, w["code"]):
             _upgrade_workflow(s, w)
             continue
@@ -773,7 +792,7 @@ def ontology_extraction_upgrade(s: Session, out: dict[str, Any]) -> None:
         if n:
             last_v = s.execute(select(func.max(OntologySchema.version))).scalar() or sc.version
             sc.active = False
-            s.add(OntologySchema(version=last_v + 1, classes=sc.classes, relations=sc.relations, aliases=merged, active=True, note=f"B.42 별칭 보강 +{n} (v{sc.version} 기준, 관리자 편집 보존)"))
+            s.add(OntologySchema(version=last_v + 1, classes=sc.classes, relations=sc.relations, aliases=merged, interfaces=sc.interfaces or [], active=True, note=f"B.42 별칭 보강 +{n} (v{sc.version} 기준, 관리자 편집 보존)"))
             done["aliases_added"] = n
     if done:
         out["ontology_extraction_upgrade"] = done
@@ -782,6 +801,103 @@ def ontology_extraction_upgrade(s: Session, out: dict[str, Any]) -> None:
 # 이전 관리자 메뉴 기본값(묶음 · 이름) — 관리자가 바꾸지 않은 화면만 새 묶음으로 옮긴다 (Phase C · Q104)
 _OLD_ADMIN_SECTIONS = {"관리자", "관리자 · 모니터링"}
 _OLD_ADMIN_LABELS = {"ADMIN_HOME": "시스템 상태", "ADMIN_AGENTS": "에이전트", "ADMIN_WORKFLOWS": "워크플로우"}
+
+
+def phase_m_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """Phase M(요구사항 §30 · §31) — 1회. ① 그룹이 비어 있는 에이전트에 기본 그룹(동적 분석 에이전트 = 분석 에이전트)
+    ② 프롬프트 표준 새 판 — 최신 판이 이전 시드 문구 그대로인 에이전트만(Q184, 관리자 편집 보존) ③ 오케스트레이터 경로 지정 제외에 구축 워크플로."""
+    if _applied(s, "phase-m-v1"):
+        return
+    from nhdip.models import AnalysisAgent
+
+    dyn = {a.code for a in s.execute(select(AnalysisAgent)).scalars()} if AnalysisAgent is not None else set()
+    n_group = 0
+    for a in s.execute(select(Agent).where(Agent.group_code.is_(None))).scalars():
+        g = C.AGENT_GROUP_OF.get(a.code) or ("analysis" if a.code in dyn or a.code.startswith("an_") else None)
+        if g and s.get(AgentGroup, g):
+            a.group_code = g
+            n_group += 1
+    new_sys = {code: system for code, _n, _r, kind, _p, system in C.AGENTS if kind == "llm" and system}
+    n_prompt = 0
+    for code, old in C.PROMPT_SEED_V1.items():
+        a = s.get(Agent, code)
+        if a is None or code not in new_sys:
+            continue
+        latest = s.execute(select(Prompt).where(Prompt.agent_code == code).order_by(Prompt.version.desc()).limit(1)).scalar()
+        if latest is None or (latest.system or "").strip() != old.strip():
+            continue
+        s.add(Prompt(agent_code=code, version=latest.version + 1, system=new_sys[code], user_template=latest.user_template or "", note="Phase M 프롬프트 표준(역할 · 입력 · 규칙 · 출력 · 금지 · 예시) — 이전 판으로 되돌리려면 버전 이력 '적용'", created_by="seed"))
+        if a.prompt_version in (None, latest.version):
+            a.prompt_version = latest.version + 1
+        n_prompt += 1
+    st = s.get(Setting, "orchestrator.policy")
+    if st is not None and isinstance(st.value, dict):
+        ex = list(st.value.get("route_exclude") or ["wf_graph_projection"])
+        if "wf_ontology_build" not in ex:
+            st.value = {**st.value, "route_exclude": [*ex, "wf_ontology_build"]}
+    s.flush()
+    out["phase_m"] = {"groups_assigned": n_group, "prompts_upgraded": n_prompt}
+
+
+def phase_m_stages_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """Phase M — 1회. 관리자 [파이프라인] 단계 설정(pipeline.stages)에 새 구현(온톨로지 구축 6단계 · 주목 사항 해설)을 더한다.
+    어느 단계에도 없는 구현만 · 기본 단계 정의의 자리에(없는 단계는 정의 순서대로 새로 둔다). 관리자가 고친 이름 · 순서는 그대로."""
+    if _applied(s, "phase-m-stages-v1"):
+        return
+    st = s.get(Setting, "pipeline.stages")
+    if st is None or not isinstance(st.value, list):
+        return
+    stages = copy.deepcopy(st.value)
+    have = {i for g in stages if isinstance(g, dict) for i in g.get("impls") or []}
+    added = []
+    for pos, d in enumerate(C.PIPELINE_STAGES):
+        missing = [i for i in d["impls"] if i not in have]
+        if not missing:
+            continue
+        cur = next((g for g in stages if isinstance(g, dict) and g.get("key") == d["key"]), None)
+        if cur is None:
+            stages.insert(min(pos, len(stages)), {**copy.deepcopy(d), "impls": missing})
+        else:
+            cur["impls"] = [*(cur.get("impls") or []), *missing]
+        added += missing
+    if added:
+        st.value = stages
+        s.flush()
+        out["pipeline_stages_added"] = added
+
+
+def ontology_v3_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """온톨로지 v3(Phase M · ONB-01 · ONB-02 · Q179) — 1회. 활성 스키마의 클래스 · 관계에 없는 필드(업무 이름 · 종류 · 기본 키 · 제목 · 속성 · 다중도)만
+    채우고 인터페이스가 비었으면 기본 인터페이스를 둔다. 바뀐 것이 있으면 새 판(관리자가 정한 값은 덮지 않음). 되돌리기: [온톨로지] 판 되돌리기."""
+    if _applied(s, "ontology-v3"):
+        return
+    sc = s.execute(select(OntologySchema).where(OntologySchema.active).order_by(OntologySchema.version.desc())).scalars().first()
+    if sc is None:
+        return
+    import copy as _copy
+
+    classes, relations, changed = _copy.deepcopy(sc.classes or []), _copy.deepcopy(sc.relations or []), 0
+    for c in classes:
+        for k, v in C.ONTOLOGY_V3_CLASS.get(c.get("label"), {}).items():
+            if k not in c:
+                c[k] = _copy.deepcopy(v)
+                changed += 1
+    for r in relations:
+        for k, v in C.ONTOLOGY_V3_REL.get(r.get("type"), {}).items():
+            if k not in r:
+                r[k] = v
+                changed += 1
+    interfaces = sc.interfaces or []
+    if not interfaces:
+        interfaces = _copy.deepcopy(C.ONTOLOGY_INTERFACES)
+        changed += 1
+    if changed:
+        last_v = s.execute(select(func.max(OntologySchema.version))).scalar() or sc.version
+        sc.active = False
+        s.add(OntologySchema(version=last_v + 1, classes=classes, relations=relations, aliases=sc.aliases, interfaces=interfaces, active=True,
+                             note=f"Phase M 온톨로지 v3 — 객체 유형 · 속성 · 링크 유형 · 인터페이스 필드 {changed}개 보강 (v{sc.version} 기준, 관리자 편집 보존)"))
+        s.flush()
+        out["ontology_v3"] = changed
 
 
 def admin_ia_upgrade(s: Session, out: dict[str, Any]) -> None:
@@ -1036,6 +1152,9 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     dept_contracts_upgrade(s, out, first)
     score_snapshot_upgrade(s, out)
     ontology_extraction_upgrade(s, out)
+    ontology_v3_upgrade(s, out)
+    phase_m_upgrade(s, out)
+    phase_m_stages_upgrade(s, out)
     admin_ia_upgrade(s, out)
     assist_rename_upgrade(s, out)
     builder_rename_upgrade(s, out)

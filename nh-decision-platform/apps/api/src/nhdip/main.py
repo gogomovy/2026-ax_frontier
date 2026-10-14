@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from nhdip.api import admin_core, admin_data, admin_home, admin_knowledge, analysis, analysis_agents, analysis_spaces, assist, auth, cascade, db_uploads, documents, oidc, reports, screens, state
+from nhdip.api import admin_agentic, admin_core, admin_data, admin_home, admin_knowledge, analysis, analysis_agents, analysis_spaces, assist, auth, cascade, db_uploads, documents, oidc, reports, screens, state
 from nhdip import obs
 from nhdip.config import check_runtime, docs_enabled, get_settings
 from nhdip.db import SessionLocal, engine
@@ -43,6 +43,7 @@ app.include_router(analysis_agents.router)
 app.include_router(analysis_agents.admin_router)
 app.include_router(assist.router)
 app.include_router(admin_core.router)
+app.include_router(admin_agentic.router)
 app.include_router(admin_data.router)
 app.include_router(admin_home.router)
 app.include_router(admin_knowledge.router)

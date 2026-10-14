@@ -91,7 +91,10 @@ def test_precompute_runs_and_screen_values(db):
 
 
 def test_change_triggers_only_related_workflow(db):
-    _drain(db)
+    # 앞 시험이 남긴 작업(문서 경로 지정 · 기반 워크플로 — 그래프 투영 · 온톨로지 구축)을 모두 끝낸 뒤 시작한다 — 남은 작업이 '새로 돈 워크플로'에 섞이지 않게
+    for _ in range(6):
+        if not _drain(db, 50):
+            break
     from nhdip.models import Job, OutboxEvent, WorkflowRun
 
     admin = _client()
@@ -120,8 +123,9 @@ def test_change_triggers_only_related_workflow(db):
         new = [r for r in s.execute(select(WorkflowRun)).scalars() if r.id not in before]
         ev = s.execute(select(OutboxEvent).where(OutboxEvent.type == "dataset.committed").order_by(OutboxEvent.id.desc())).scalars().first()
     ran = sorted({r.workflow_code for r in new})
-    assert ran == ["wf_graph_projection", "wf_inclusive_risk"], ran
-    assert {m["workflow"] for m in ev.matched} == {"wf_graph_projection", "wf_inclusive_risk"}
+    # 업무 워크플로는 계보가 맞는 것만. 그래프 투영 · 온톨로지 구축(Phase M · DOB-10 — 모든 데이터셋 반영에 구조 파악)은 기반 워크플로
+    assert ran == ["wf_graph_projection", "wf_inclusive_risk", "wf_ontology_build"], ran
+    assert {m["workflow"] for m in ev.matched} == {"wf_graph_projection", "wf_inclusive_risk", "wf_ontology_build"}
     inc = admin.get("/screens/inclusive").json()
     # (312,470 + 10,000) / 3,412,180 × 100 = 9.4505 → 9.45
     assert inc["shareNow"]["value"] == 9.45
@@ -1428,7 +1432,9 @@ def test_db_upload_request_and_approval(db):
     """Phase C · UPL-01~03 — 업무 사용자 자료 요청(사전 품질 검사 · 대기, 반영 없음) → 관리자 승인(확정 · 이벤트 · 관련 워크플로) / 반려(사유 필수), 권한 · 감사."""
     from nhdip.models import AuditLog, OutboxEvent, WorkflowRun
 
-    _drain(db)
+    for _ in range(6):  # 앞 시험이 남긴 작업(경로 지정 · 기반 워크플로)을 다 끝내고 시작 — '새로 돈 워크플로'에 섞이지 않게
+        if not _drain(db, 50):
+            break
     admin = _client()
     _login(admin, "00000001", "Admin1234!")
 
@@ -1488,7 +1494,8 @@ def test_db_upload_request_and_approval(db):
     with db() as s:
         ran = sorted({w.workflow_code for w in s.execute(select(WorkflowRun)).scalars() if w.id not in before})
         acts = [a.action for a in s.execute(select(AuditLog).where(AuditLog.target_kind == "upload_request", AuditLog.target_id == str(req["id"])).order_by(AuditLog.id)).scalars()]
-    assert ran == ["wf_graph_projection", "wf_inclusive_risk"], ran
+    # 계보가 맞는 업무 워크플로 + 기반 워크플로(그래프 투영 · 온톨로지 구축 — Phase M · DOB-10)
+    assert ran == ["wf_graph_projection", "wf_inclusive_risk", "wf_ontology_build"], ran
     assert acts == ["db.upload.request", "db.upload.approve", "db.upload.applied"], acts
     assert admin.get("/screens/inclusive").json()["shareNow"]["value"] == 9.45
     mine = u.get("/db/uploads/mine").json()
@@ -1664,6 +1671,8 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     calls = []
 
     def fake_task(session, agent_code, task, context, **kw):
+        if agent_code == "critic_grounded":  # 근거 일치 점검(Phase M · LLM-P05)은 이 시험의 대상이 아니다 — 점검 생략(LLM 없음과 같음)
+            return None, {"by": "rule", "reason": "시험"}
         calls.append(agent_code)
         st = f"상품별 충당금 합계는 [[fig:{fid}]] 수준이며 상위 상품 쏠림을 점검할 필요가 있습니다." if len(calls) == 1 else "충당금이 123억 늘었다."
         return ({"findings": [{"insight": "main", "severity": "caution", "statement": st}], "summary": "s"}, {"by": "llm", "llm_call_id": None, "model": "fake"})

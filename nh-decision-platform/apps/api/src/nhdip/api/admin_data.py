@@ -105,7 +105,7 @@ def _next_fire(session: Session, t: WorkflowTrigger) -> str | None:
 def _check_trigger(kind: str, target: str) -> None:
     from nhdip.workflow.scheduler import is_valid
 
-    if kind not in ("dataset", "master", "doc_class", "rule", "setting", "event", "any", "cron"):
+    if kind not in ("dataset", "master", "doc_class", "rule", "setting", "event", "any", "cron", "config"):
         raise HTTPException(422, f"알 수 없는 트리거 종류: {kind}")
     if kind == "cron" and not is_valid(target):
         raise HTTPException(422, "cron 식 오류 — '분 시 일 월 요일' (예: 0 6 * * 1-5 → 평일 06:00)")
@@ -140,7 +140,7 @@ def workflows(session: Session = Depends(get_session)):
     return {
         "workflows": [_wf_json(session, w) for w in session.execute(select(Workflow).order_by(Workflow.sort)).scalars()],
         "impls": [{"key": k, "description": v} for k, v in NODE_DESCRIPTIONS.items()],
-        "triggerKinds": ["dataset", "master", "doc_class", "rule", "setting", "event", "any", "cron"],
+        "triggerKinds": ["dataset", "master", "doc_class", "rule", "setting", "event", "any", "cron", "config"],
     }
 
 
@@ -294,6 +294,11 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True) -> dict[s
     out["storage"] = f"{d.origin}.row_store"
     metrics = [m.code for m in session.execute(select(Metric)).scalars() if d.code in str(m.args)]
     out["usedByMetrics"] = metrics
+    # 정의 관리(Phase M · DOB-09) — 시드가 넣은 '업무 화면 연결 정의'인지, 지우면 끊기는 것
+    from nhdip.seed import defs_branch as _B, defs_contracts as _DC, defs_data as _D
+
+    out["seedDefined"] = d.code in {x["code"] for x in [*_D.DATASETS, _DC.DATASET, *_B.DATASETS]}
+    out["references"] = dataset_references(session, d.code)
     if with_versions:
         vs = session.execute(select(t.version).where(t.version.dataset_code == d.code).order_by(t.version.version.desc()).limit(30)).scalars().all()
         # 최근 30개 밖으로 밀린 현재 버전도 항상 포함 (되돌리기 · 정정이 쌓여도 기준일별 현재 버전이 보이도록)
@@ -350,6 +355,65 @@ def dataset_patch(code: str, body: dict[str, Any], request: Request, session: Se
     audit(session, admin.emp_no, "admin.dataset.update", "dataset", code, patch, client_ip(request))
     session.commit()
     return _ds_json(session, d)
+
+
+def dataset_references(session: Session, code: str) -> list[str]:
+    """정의를 지우면 끊기는 것 — 남은 버전 · 지표 · 화면 바인딩 · 트리거 · 온톨로지 원천 · 대기 중 요청 (Phase M · DOB-09)."""
+    from nhdip.graph.projection import _datasets_in_args, active_schema
+    from nhdip.models import UploadRequest
+
+    d = session.get(Dataset, code)
+    if d is None:
+        return []
+    t = source(d.origin)
+    out: list[str] = []
+    n_v = session.execute(select(func.count()).select_from(t.version).where(t.version.dataset_code == code, t.version.status != "deleted")).scalar() or 0
+    if n_v:
+        out.append(f"올라온 버전 {n_v}개 — [버전 삭제]로 먼저 지우거나 '중지'하세요")
+    mets = [m.code for m in session.execute(select(Metric)).scalars() if code in _datasets_in_args(m.args)]
+    if mets:
+        out.append(f"지표 {len(mets)}개({', '.join(mets[:3])}{' 등' if len(mets) > 3 else ''})가 이 자료로 계산")
+    binds = [b.builder for b in session.execute(select(ViewBinding)).scalars() if code in _datasets_in_args(b.params)]
+    if binds:
+        out.append(f"화면 바인딩 {len(binds)}개가 이 자료를 읽음")
+    trig = session.execute(select(WorkflowTrigger.workflow_code).where(WorkflowTrigger.kind.in_(["dataset", "master"]), WorkflowTrigger.target == code)).scalars().all()
+    if trig:
+        out.append(f"워크플로 트리거 {len(trig)}개({', '.join(sorted(set(trig))[:3])})")
+    sc = active_schema(session)
+    if sc is not None and any(bk.get("dataset") == code for c in sc.classes or [] for bk in c.get("backing") or []) or (sc is not None and any(bk.get("dataset") == code for r in sc.relations or [] for bk in r.get("backing") or [])):
+        out.append("온톨로지 객체 · 링크 유형의 원천")
+    pend = session.execute(select(func.count()).select_from(UploadRequest).where(UploadRequest.kind == "dataset", UploadRequest.target == code, UploadRequest.status.in_(["pending", "draft"]))).scalar() or 0
+    if pend:
+        out.append(f"처리 중인 자료 등록 · 요청 {pend}건")
+    return out
+
+
+@router.delete("/datasets/{code}")
+def dataset_delete(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """데이터셋 정의 삭제(Phase M · DOB-09 · Q194) — 참조가 남아 있으면 막고 이유를 돌려준다(그때는 '중지' = active=false). 지운 시드 정의는 다시 넣지 않는다."""
+    from nhdip.models import DataProfile
+
+    d = _ds(session, code)
+    refs = dataset_references(session, code)
+    if refs:
+        raise HTTPException(409, "지울 수 없습니다 — " + " · ".join(refs))
+    t = source(d.origin)
+    session.execute(t.version.__table__.delete().where(t.version.dataset_code == code))  # 삭제 표시만 남은 버전 기록
+    for p in session.execute(select(DataProfile).where(DataProfile.dataset_code == code)).scalars():
+        session.delete(p)
+    session.delete(d)
+    st = session.get(Setting, "seed.suppressed_datasets")
+    sup = list(st.value) if st is not None and isinstance(st.value, list) else []
+    if code not in sup:
+        sup.append(code)
+    if st is None:
+        session.add(Setting(key="seed.suppressed_datasets", value=sup, description="관리자가 지운 데이터셋 정의 — 시드가 다시 넣지 않는다(Phase M · Q194). 빼면 다음 기동에 시드 정의가 돌아온다"))
+    else:
+        st.value = sup
+    _config_changed(session, "dataset", code, admin.emp_no)
+    audit(session, admin.emp_no, "admin.dataset.delete", "dataset", code, {"name": d.name}, client_ip(request))
+    session.commit()
+    return {"deleted": code}
 
 
 async def _read(file: UploadFile, purpose: str, session: Session, request: Request | None = None, actor: str | None = None) -> tuple[str, bytes]:
@@ -751,11 +815,13 @@ class SchemaIn(BaseModel):
     classes: list[dict[str, Any]]
     relations: list[dict[str, Any]]
     aliases: dict[str, Any] = {}
+    interfaces: list[dict[str, Any]] = []
     note: str | None = None
 
 
 class IssuePatch(BaseModel):
     status: str
+    key: str | None = None  # 미해석 항목을 수락할 때 붙일 대표 키(비우면 원문 이름을 새 대표 키로)
 
 
 @router.get("/ontology")
@@ -767,32 +833,51 @@ def ontology(session: Session = Depends(get_session)):
         gs: dict[str, Any] = {"ok": True, **graph_stats()}
     except GraphUnavailable as exc:
         gs = {"ok": False, "error": str(exc)[:200]}
+    from nhdip.graph.schema import schema_summary
+    from nhdip.models import OntologyProposal
+
+    pending = session.execute(select(func.count()).select_from(OntologyProposal).where(OntologyProposal.status == "pending")).scalar() or 0
     return {
-        "schema": {"version": sc.version, "classes": sc.classes, "relations": sc.relations, "aliases": sc.aliases, "note": sc.note} if sc else None,
+        "schema": {"version": sc.version, "classes": sc.classes, "relations": sc.relations, "aliases": sc.aliases, "interfaces": sc.interfaces or [], "note": sc.note,
+                   "summary": schema_summary(sc)} if sc else None,
         "versions": [{"version": v, "active": a, "note": n, "createdAt": _iso(c)} for v, a, n, c in versions],
         "graph": gs,
         "openIssues": issues,
+        "pendingProposals": pending,
     }
 
 
 @router.put("/ontology/schema")
 def ontology_put(body: SchemaIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    import re
+    from nhdip.graph.proposals import activate_schema
+    from nhdip.graph.schema import validate_schema
 
-    for c in body.classes:
-        if not re.match(r"^[A-Za-z][A-Za-z0-9_]{0,60}$", c.get("label", "")):
-            raise HTTPException(422, f"클래스 라벨 형식 오류: {c.get('label')}")
-    for r in body.relations:
-        if not re.match(r"^[A-Z][A-Z0-9_]{0,60}$", r.get("type", "")):
-            raise HTTPException(422, f"관계 이름 형식 오류(대문자): {r.get('type')}")
-    last = session.execute(select(func.max(OntologySchema.version))).scalar() or 0
-    for s in session.execute(select(OntologySchema).where(OntologySchema.active)).scalars():
-        s.active = False
-    session.add(OntologySchema(version=last + 1, classes=body.classes, relations=body.relations, aliases=body.aliases, note=body.note, active=True))
-    emit(session, "ontology.changed", {"version": last + 1}, admin.emp_no)
-    audit(session, admin.emp_no, "admin.ontology.schema", "ontology", str(last + 1), {"classes": len(body.classes), "relations": len(body.relations)}, client_ip(request))
+    new = {"classes": body.classes, "relations": body.relations, "aliases": body.aliases, "interfaces": body.interfaces}
+    check = validate_schema(new, session)  # 끝점 · 별칭 라벨 · 원천 데이터셋/열 · 기본 타입 · 다중도까지 (ONB-03)
+    if check["errors"]:
+        raise HTTPException(422, " · ".join(check["errors"][:8]))
+    v = activate_schema(session, new, note=body.note or "관리자 편집", actor=admin.emp_no)
+    audit(session, admin.emp_no, "admin.ontology.schema", "ontology", str(v), {"classes": len(body.classes), "relations": len(body.relations), "warnings": check["warnings"][:10]}, client_ip(request))
     session.commit()
-    return ontology(session)
+    return {**ontology(session), "warnings": check["warnings"]}
+
+
+@router.post("/ontology/schema/{version}/activate")
+def ontology_activate(version: int, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """이전 판 되돌리기(ONB-03) — 그 판의 내용으로 새 판을 만든다(판 번호는 계속 늘어난다 · 이력 보존)."""
+    from nhdip.graph.proposals import activate_schema
+    from nhdip.graph.schema import as_dict, validate_schema
+
+    old = session.get(OntologySchema, version)
+    if old is None:
+        raise HTTPException(404, "그 판이 없습니다")
+    check = validate_schema(as_dict(old), session)
+    if check["errors"]:
+        raise HTTPException(422, "그 판은 지금 데이터와 맞지 않습니다: " + " · ".join(check["errors"][:6]))
+    v = activate_schema(session, as_dict(old), note=f"v{version} 으로 되돌림", actor=admin.emp_no)
+    audit(session, admin.emp_no, "admin.ontology.rollback", "ontology", str(v), {"from_version": version}, client_ip(request))
+    session.commit()
+    return {**ontology(session), "warnings": check["warnings"]}
 
 
 @router.get("/ontology/issues")
@@ -809,9 +894,98 @@ def ontology_issue_patch(iid: int, body: IssuePatch, session: Session = Depends(
     if body.status not in ("open", "accepted", "rejected"):
         raise HTTPException(422, "status 는 open | accepted | rejected")
     i.status, i.resolved_by, i.resolved_at = body.status, admin.emp_no, utcnow()
-    audit(session, admin.emp_no, "admin.ontology.issue", "extraction_issue", str(iid), {"status": body.status}, None)
+    proposal = None
+    raw = i.raw if isinstance(i.raw, dict) else {}
+    if body.status == "accepted" and i.kind == "unresolved_entity" and isinstance(raw.get("label"), str) and (raw.get("key") or raw.get("name")):
+        # 수락 = 별칭 제안(Phase M · ONB-07) — 예전에는 상태만 바뀌고 별칭 · 개체가 생기지 않았다
+        from nhdip.graph.proposals import create_proposal
+
+        name = str(raw.get("key") or raw.get("name"))[:120]
+        key = (body.key or "").strip()[:120] or name
+        p = create_proposal(session, [{"op": "add_alias", "label": raw["label"], "key": key, "aliases": [name] if name != key else [name]}], title=f"추출 검토 수락 — {raw['label']} '{name}'", summary=f"검토 #{iid} 수락", source="review", actor=admin.emp_no, evidence={"issue": iid, "minConfidence": 1.0})
+        proposal = p.id if p is not None else None
+    audit(session, admin.emp_no, "admin.ontology.issue", "extraction_issue", str(iid), {"status": body.status, "proposal": proposal}, None)
     session.commit()
-    return {"ok": True}
+    return {"ok": True, "proposal": proposal}
+
+
+# ── 변경 제안 (Phase M · ONB-09 · AGG-04) ──
+class ProposalDecision(BaseModel):
+    approve: bool
+    drop: list[int] = []
+    note: str | None = None
+
+
+@router.get("/ontology/proposals")
+def ontology_proposals(status: str | None = None, limit: int = 50, session: Session = Depends(get_session)):
+    from nhdip.graph.proposals import proposal_json
+    from nhdip.models import OntologyProposal
+
+    q = select(OntologyProposal).order_by(OntologyProposal.id.desc()).limit(min(max(limit, 1), 200))
+    if status:
+        q = q.where(OntologyProposal.status == status)
+    rows = session.execute(q).scalars().all()
+    counts = dict(session.execute(select(OntologyProposal.status, func.count()).group_by(OntologyProposal.status)).all())
+    return {"proposals": [proposal_json(p) for p in rows], "counts": counts}
+
+
+@router.post("/ontology/proposals/{pid}/decide")
+def ontology_proposal_decide(pid: int, body: ProposalDecision, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    from nhdip.graph.proposals import decide, proposal_json
+    from nhdip.models import OntologyProposal
+
+    p = session.get(OntologyProposal, pid, with_for_update=True)
+    if p is None:
+        raise HTTPException(404, "제안 없음")
+    if not body.approve and not (body.note or "").strip():
+        raise HTTPException(422, "반려 사유를 적어 주세요")
+    res = decide(session, p, approve=body.approve, actor=admin.emp_no, drop=body.drop, note=body.note)
+    audit(session, admin.emp_no, "admin.ontology.proposal", "ontology_proposal", str(pid), {"approve": body.approve, "drop": body.drop, "result": res.get("status")}, client_ip(request))
+    session.commit()
+    if not res.get("ok"):
+        raise HTTPException(422, res.get("error") or "적용하지 못했습니다")
+    return {**res, "proposal": proposal_json(p)}
+
+
+@router.get("/ontology/build")
+def ontology_build(session: Session = Depends(get_session)):
+    """[온톨로지 › 구축 파이프라인] — 최근 구축 실행(단계 · 상태) · 데이터셋별 구조 파악 · 최신 품질 점검 (AGG-04)."""
+    from nhdip.graph.profile import latest_profile
+    from nhdip.models import AgentDecision, NodeRun, WorkflowRun
+
+    runs = session.execute(select(WorkflowRun).where(WorkflowRun.workflow_code == "wf_ontology_build").order_by(WorkflowRun.started_at.desc()).limit(8)).scalars().all()
+    stages = []
+    quality = None
+    if runs:
+        for nr in session.execute(select(NodeRun).where(NodeRun.workflow_run_id == runs[0].id).order_by(NodeRun.seq)).scalars():
+            out = nr.output if isinstance(nr.output, dict) else {}
+            stages.append({"key": nr.node_key, "impl": nr.impl, "agent": nr.agent_code, "status": nr.status, "ms": nr.duration_ms, "output": {k: v for k, v in out.items() if k not in ("checks",)} if nr.impl != "check_ontology" else {"grade": out.get("grade")}, "error": (nr.error or "").splitlines()[0][:300] if nr.error else None})
+            if nr.impl == "check_ontology" and out.get("checks"):
+                quality = out
+    if quality is None:
+        last_q = session.execute(select(NodeRun).where(NodeRun.impl == "check_ontology").order_by(NodeRun.started_at.desc()).limit(1)).scalars().first()
+        quality = last_q.output if last_q is not None and isinstance(last_q.output, dict) else None
+    profiles = []
+    for d in session.execute(select(Dataset).where(Dataset.active).order_by(Dataset.code)).scalars():
+        lp = latest_profile(session, d.code)
+        prof = (lp.profile if lp else {}) or {}
+        profiles.append({"dataset": d.code, "name": d.name, "kind": d.kind, "profiled": lp is not None, "at": _iso(lp.created_at) if lp else None, "by": lp.by if lp else None, "rows": prof.get("rows"),
+                         "dimensions": (prof.get("dimensions") or [])[:8], "measures": (prof.get("measures") or [])[:8], "keyCandidates": (prof.get("keyCandidates") or [])[:5],
+                         "entity": ((lp.semantics or {}).get("entity") if lp else None), "summary": ((lp.semantics or {}).get("summary") if lp else None)})
+    decisions = session.execute(select(AgentDecision).where(AgentDecision.workflow_code == "wf_ontology_build").order_by(AgentDecision.id.desc()).limit(40)).scalars().all()
+    return {
+        "runs": [{"id": r.id, "status": r.status, "startedAt": _iso(r.started_at), "finishedAt": _iso(r.finished_at), "causes": [c.get("type") for c in (r.causes or []) if isinstance(c, dict)][-3:]} for r in runs],
+        "stages": stages, "quality": quality, "profiles": profiles,
+        "decisions": [{"id": d.id, "at": _iso(d.at), "agent": d.agent_code, "decision": d.decision, "summary": d.summary} for d in decisions],
+    }
+
+
+@router.post("/ontology/build/run")
+def ontology_build_run(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    emit(session, "manual", {"workflow": "wf_ontology_build", "reason": "관리자 구축 실행"}, admin.emp_no)
+    audit(session, admin.emp_no, "admin.ontology.build", "workflow", "wf_ontology_build", None, client_ip(request))
+    session.commit()
+    return {"queued": True}
 
 
 @router.post("/ontology/reproject")

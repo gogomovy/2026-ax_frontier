@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 DELETED = "deleted"
 REASON_MIN, REASON_MAX = 2, 500
 CONTENT_PREVIEW_KEYS = ("sample", "excerpt")  # 자료 요청 미리보기 중 내용이 든 항목(db_uploads: 표 sample · 문서 excerpt)
+INTAKE_CONTENT_KEYS = ("sample", "samples", "excerpt")  # 자료 등록 분석 결과 중 내용이 든 항목(data/onboarding)
 
 
 class DeleteError(ValueError):
@@ -69,6 +70,9 @@ def _request_files(session: Session, kind: str, origin: str, match: dict[str, An
         if all(res.get(k) == v for k, v in match.items()):
             r.result = {**res, "deleted": marker}
             r.preview = {k: v for k, v in (r.preview or {}).items() if k not in CONTENT_PREVIEW_KEYS}
+            meta = r.meta or {}
+            if isinstance(meta.get("intake"), dict):  # 자료 등록(Phase M · DOB) 분석 결과 안의 값 예시 · 본문 발췌도 지운다
+                r.meta = {**meta, "intake": {k: v for k, v in meta["intake"].items() if k not in INTAKE_CONTENT_KEYS}}
             if r.file_path:
                 out.append(r.file_path)
     return out

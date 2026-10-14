@@ -6,6 +6,7 @@
   display_mask_columns 화면 · 내보내기에서 가릴 열(예: 차주명 brwr_nm → 김*수)
   mask_llm_log        ops.llm_call 에 남기는 메시지의 개인정보 형식 값을 가림(전송 내용은 그대로)
   mask_assist_audit   질문하기 감사 기록(질문 · 피드백 · 진단 검색)에 남기는 질문의 개인정보 형식 값을 가림 — 사용자가 질문에 주민번호 등을 붙여 넣어도 감사 로그에 원문이 남지 않는다
+  mask_llm_input      게이트웨이로 **보내는** 메시지의 개인정보 형식 값을 가림(Phase M · LLM-P04 · Q186) — 외부 모델에 원문이 나가지 않게. 끄면 원문 그대로 보낸다
 패턴은 형식 기반이라 실제 개인정보 여부를 보증하지 않는다(오탐 시 pii_allow_columns 로 제외).
 """
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-DEFAULTS: dict[str, Any] = {"pii_scan": True, "pii_allow_columns": [], "display_mask_columns": ["brwr_nm"], "mask_llm_log": True, "mask_assist_audit": True}
+DEFAULTS: dict[str, Any] = {"pii_scan": True, "pii_allow_columns": [], "display_mask_columns": ["brwr_nm"], "mask_llm_log": True, "mask_assist_audit": True, "mask_llm_input": True}
 
 PATTERNS: dict[str, re.Pattern[str]] = {
     "rrn": re.compile(r"(?<!\d)\d{6}\s?-\s?[1-8]\d{6}(?!\d)"),

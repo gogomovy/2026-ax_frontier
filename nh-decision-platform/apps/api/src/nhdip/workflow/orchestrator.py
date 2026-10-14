@@ -21,7 +21,7 @@ from nhdip.models import AgentDecision, Job, Metric, Setting, WorkflowNode, utcn
 AGENT = "orchestrator"
 DEFAULT_POLICY: dict[str, Any] = {"enabled": True, "depends_on": {}, "derive": True, "evidence_upstream": "wf_graph_projection", "hold_sec": 15, "max_hold_sec": 300,
                                   # LLM 경로 지정 (B.31) — 이 이벤트가 오면 LLM 이 영향받는 다른 워크플로우를 판단해 추가 실행
-                                  "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection"], "route_rules": [],
+                                  "route_on": ["change.detected", "document.ingested"], "max_route": 2, "max_chain": 3, "route_exclude": ["wf_graph_projection", "wf_ontology_build"], "route_rules": [],
                                   # 사람 승인 (B.32) — 이 워크플로우는 자동 이벤트로 생긴 작업을 관리자 승인 후 실행 ("*" = 전체, 빈 목록 = 끔)
                                   "require_approval": []}
 
@@ -153,7 +153,8 @@ def route(session: Session, ev: Any, matched: dict[str, list[str]]) -> dict[str,
     chain = list(p.get("chain") or ([p["workflow"]] if p.get("workflow") else []))
     if len(chain) >= int(pol.get("max_chain", 3)):
         return matched
-    excl = set(pol.get("route_exclude") or []) | set(chain) | set(matched)
+    # 기반 워크플로(그래프 투영 · 온톨로지 구축 — Q183)는 업무 판단 경로 지정 대상이 아니다
+    excl = set(pol.get("route_exclude") or []) | {"wf_graph_projection", "wf_ontology_build"} | set(chain) | set(matched)
     wfs = [w for w in session.execute(select(Workflow).where(Workflow.enabled).order_by(Workflow.sort)).scalars() if w.code not in excl]
     if not wfs:
         return matched

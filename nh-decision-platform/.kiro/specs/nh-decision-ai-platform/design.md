@@ -3443,3 +3443,87 @@ delete_dataset_version(현재 버전) ─ PurgeTask(store="pg", subject_ref="{re
 - `OntologyMap.tsx` `drawSpace` — 원형 그라데이션 바탕, 별 420개(고정 시드 `starfield`, 시점 회전의 0.6배만 따름 · 확대 · 이동은 무시), 3D: 바닥 격자 7×7 · 정육면체 모서리 12 · 교차점 7³(반폭 1.15, 선은 6토막으로 나눠 토막마다 원근 밝기, 카메라 뒤 · 너무 가까운 점은 잇지 않음), 2D: 모눈. 점은 클래스 색 구 그림(64px, 빛무리 반지름 = 점 × 2.3)을 `drawImage` 로 — 아주 작은 점(1.8px 미만)은 원. 군집 이름표 = 알약(주 클래스 색 테두리 · 점, `clusterTitle` 로 앞의 클래스 이름 제거, 28자).
 - 순수 함수(`mapMath.ts`): `rgba` · `mixHex` · `starfield` · `clusterTitle`.
 - 군집 목록 · 범례 · Neo4j 노드 종류 칩(`KindChip`) · 관계 표 칸(`NodeCell`) — 색은 원장 클래스 목록(`/admin/ontology/map` 의 `classes[].color`)으로 지도와 같게.
+
+## 30. 에이전틱 온톨로지 구축 · LLM 에이전트 보강 · 에이전트 그룹 (Phase M · 요구사항 §30 · Q179~Q190)
+
+### 30.1 온톨로지 모델 v3 (ONB-01~03 · Q179 · Q180)
+- 판(`cfg.ontology_schema`) JSON 을 늘린다(별도 유형 표 없음). 클래스: `label` · `ko` · `kind`(object | concept | document) · `primary_key` · `title_property` · `properties[{name, ko, base_type}]` · `backing[{dataset, key_col, title_col, props}]` · `implements[]`. 관계: `type` · `ko` · `from` · `to` · `cardinality`(1:1 · N:1 · 1:N · N:M) · `inverse` · `backing[{dataset, from_col, to_col}]`. `interfaces[{name, ko, properties}]` 열(마이그레이션 0017).
+- `graph/schema.py`: `validate_schema(dict, session?)`(끝점 · 별칭 클래스 · 기본 타입 · 기본 키 · 다중도 · 인터페이스 · 원천 데이터셋/열 — 오류는 막고 경고는 알림), `apply_ops(base, ops) → (new, applied, skipped)`(멱등 · 입력 불변), `op_key`, `diff_schema`, `schema_summary`, `as_dict`. 연산: `add_class` · `update_class` · `add_property` · `add_backing` · `add_relation` · `update_relation` · `add_link_backing` · `add_alias`.
+- 투영(`graph/projection.collect_graph`)이 클래스 · 관계 `backing` 을 읽어 객체 · 링크를 만든다(관계 값은 별칭 해석기 통과). `dataset.mapping` 은 호환으로 유지. `Batch.dangling()` = 끝 노드가 없어 버려진 관계 수.
+- `PUT /admin/ontology/schema` 는 검증 오류면 422, 경고는 응답 `warnings`. `POST /admin/ontology/schema/{v}/activate` = 그 판 내용으로 새 판(이력 보존). 시드 v3 필드(`ONTOLOGY_V3_CLASS/_REL/_INTERFACES`)는 `ontology_v3_upgrade` 가 없는 필드만 1회 채운다.
+
+### 30.2 구축 에이전트 · 워크플로 (ONB-04~10 · DYN-01 · Q181~Q183)
+```
+dataset.committed(* 모든 데이터셋) · config.changed(dataset) · cron 07시 · 관리자 [지금 구축 실행]
+  └▶ wf_ontology_build
+       profile_datasets  (onto_profiler)  열 통계 · 의미 유형 · 키 후보(결정론) + 열 업무 의미(LLM) → ops.data_profile(version_sig 마다 1회)
+       design_object_types (onto_modeler)  원천 없는 데이터셋 → 기존 클래스 원천 붙이기 / 새 객체 유형(기본 키 · 제목 · 속성 — 측정값은 복제 안 함)
+       discover_links    (onto_linker)    값 포함률(기본 0.95) · 고유 수로 외래 키 후보 → 링크 유형(이름 · 다중도 · 원천 열)
+       resolve_entities  (onto_resolver)  추출 미해석 후보 → 유사도(0.84↑) 별칭 · 애매한 띠(0.7~0.84)는 LLM 판정
+       check_ontology    (onto_qa · 규칙)  스키마 · 범위 · 버려진 관계 · 키 중복 · 다중도 · 후보 적체 · 재추출 대상 → 등급 ok/warn/risk
+       propose_ontology  (onto_steward · 규칙) 연산을 제안으로(대기 중 · 이미 반영된 연산과 겹치면 뺌) · auto_apply 에 둔 연산만 자동 적용
+```
+- 판단 순서(Q182): 결정론이 먼저 후보를 만들고 LLM 은 이름 · 의미 · 애매한 경우만(`llm_judge.ask_json`, 실패 · 없음 = 규칙). 스키마는 제안 → 관리자 승인으로만 바뀐다(Q181, `cfg.ontology_proposal` · `graph/proposals.decide` — 승인 시 연산 일부 빼기, 반려는 사유 필수, 적용 = 새 판 + `ontology.changed`).
+- 오케스트레이터 · 플래너 경로 지정 · 후속 대상에서 `wf_graph_projection` · `wf_ontology_build` 를 늘 뺀다(Q183). 트리거 종류 `config`(대상 = 설정 변경 종류) · 데이터셋 대상 `*`.
+- 문서 추출(ONB-11): `schema_prompt` 에 업무 이름 · 속성, JSON 형식 오류 한 번 재요청, 활성 판보다 옛 판으로 추출한 문서를 실행당 `reextract_per_run`(기본 5)개씩 다시 추출. 추출 검토 [확인](미해석 개체) = 별칭 제안.
+
+### 30.3 LLM 플랫폼 (LLM-P02 · P03 · P04 · P09)
+| 위치 | 동작 |
+|---|---|
+| `llm/breaker.py`(새) | 연결별(`conn:{id}`) 연속 실패 수 → `llm.breaker.failures`(3)회면 `open_sec`(120초) 동안 `BreakerOpen(LlmError)` — 보내지 않고 `ops.llm_call` 에 `skipped` 기록. 시간이 지나면 한 번 보내 보고(반열림) 성공 = 닫힘, 실패 = 다시 열림. 세는 실패: 네트워크 · 시간 초과 · 5xx · 429 · 401 · 408(모델별 거절 400 · 403 · 404 는 안 셈). 프로세스 메모리(API · 워커 각각) |
+| `llm/client._outgoing` | `privacy.policy.mask_llm_input`(기본 켬)이면 `chat` · `chat_stream` · `embed` 가 보내는 메시지 · 입력의 주민번호 · 휴대전화 · 이메일 · 카드 형식 값을 가린 **복사본**을 보낸다 |
+| `llm/budget._cached_status` | 호출 전 예산 검사의 월 집계를 `llm.budget.cache_sec`(30초) 보관 — 예산 설정 지문이 바뀌면 바로 다시 집계, 관리자 화면 `status()` 는 보관 없음 |
+| `calc/kernel.run_and_record` · `formulas._graded` | 라이브러리(numpy · scipy · scikit-learn) 입력 검증 오류(`ValueError` — 빈 배열 · 모양 불일치)도 그 지표의 실패 기록으로 남긴다. 팀 자료가 일부 구분(모형)에만 있을 때 워크플로 전체가 멈추지 않게. 등급 자료가 비거나 등급 수가 다르면 업무 말로 알린다 |
+| `workflow/nodes._narrate_call` · `_statement_of` | 서술 출력 모양(JSON 객체 · `statement` 문자열 · 비어 있지 않음 · 2000자 이내) 검증, 틀리면 오류를 알려 한 번 다시 받는다(`agents.llm_judge.format_retries`). 형식 오류는 그 인사이트만 기존 문장(연결 장애가 아니므로 나머지 서술은 계속) |
+
+### 30.4 새 에이전트 · 프롬프트 (LLM-P01 · P05~P08 · Q184 · Q185 · Q190)
+- 프롬프트 표준: 역할 · 입력 · 규칙 · 출력 형식 · 금지 · 예시 순서(`seed/defs_core.*_V2` · `_COMMON_RULES`). 기존 DB 는 최신 판이 이전 시드 문구(`PROMPT_SEED_V1`) 그대로일 때만 새 판(`phase_m_upgrade`).
+- **근거 일치 점검**(`critic_grounded`): `n_critic` 이 규칙 점검을 통과한 문장만 실행당 `max_per_run`(6)개까지 `ask_json` → `{verdict: supported|unsupported|unknown, reason, claims}`(claims 는 문장에 실제로 있는 구절만). 결과는 점검 `grounding`(`advisory`) · 결정 `grounding`. 기본 권고(막지 않음), `agents.grounding.block=true` 면 unsupported 반려.
+- **AI 어시스턴트**: 도구 안내(`TOOL_RULES`)는 `tools_enabled` 일 때만. 도구 = `calc_*` + `knowledge/assist_tools.py`(`onto_find` · `onto_neighbors` · `data_aggregate`) — LLM 계층은 `llm.tools.ExtraTools(schemas, run)` 만 받는다(계층 규칙). 인용 점검 `verify_citations`(`[지표:]` · `[분석:]` · `[문서:]` · `[도구:]` 가 이번 답의 실제 출처인지) → `verification.citations`.
+- **검색어 재작성 · 재정렬**: `knowledge/query.agent_llm(code)` — 전용 에이전트(`query_rewriter` · `search_reranker`)가 있으면 그 연결 · 모델 · 프롬프트, 없거나 연결 실패면 `query_assistant`, 꺼 두면 LLM 안 씀. 과제 문구는 사용자 메시지에 두어 프롬프트를 바꿔도 출력 형식이 유지된다.
+- **AI 주목 사항 해설**(`attention_curator`): HQ 워크플로 `rank`(규칙 점수) 뒤 노드 `curate_attentions` — 점수 구성 항목 이름 · 판정 · 숫자 지운 의견으로 `{items:[{id, reason}]}`, 숫자 점검 통과 문장만 `rankReason`(`rankReasonBy=llm`), 나머지는 점수가 큰 구성 항목으로 만든 규칙 문장(`rule`). 순위는 그대로. 화면: 주목 사항 시트 · 목표 화면 목록.
+
+### 30.5 에이전트 그룹 · 에이전틱 파이프라인 · 온톨로지 화면 (AGG-01~04 · Q188 · Q189)
+- `cfg.agent_group`(8개: 오케스트레이션 · 자료 등록 · 온톨로지 구축 · 지식 · 변화 판단 · 서술 · AI 어시스턴트 · 분석 에이전트) + `cfg.agent.group_code`. 새 동적 분석 에이전트 = `analysis`.
+- API: `GET /admin/agent-groups`(그룹별 요약 — 에이전트 · LLM/규칙 · 사용 · 24시간 호출 · 오류율 · 평균 지연 · 토큰), `PATCH /admin/agent-groups/{code}`, `POST /admin/agent-groups/{code}/apply`(`connection_id` · `model` · `temperature` · `top_p` · `max_tokens` · `timeout_sec` · `retries` · `tools_enabled` 만, 빈 값 = 그 키 제거, 규칙형 건너뜀), 에이전트 PATCH `group_code`.
+- `GET /admin/agentic/overview`(`api/admin_agentic.py`): 그룹 → 그 그룹 에이전트가 노드인 워크플로(노드 순서 · 최근 실행 노드 상태 · 24시간 실행 수 · `inGroup`), 노드 밖 에이전트는 정해 둔 호출 경로(`FLOWS` — 오케스트레이션 · 자료 등록 · 지식 · AI 어시스턴트), 에이전트별 모델 · 준비 상태 · 24시간 통계, 최근 결정 8, 온톨로지 그룹 = 구조 파악 범위 · 대기/적용 제안 · 품질 등급, 자료 등록 그룹 = 초안 · 대기 · 반영 · 실패, 연결 차단기 상태.
+- 화면: `/admin/agentic`(관리자 메뉴 'AI · 에이전트' 129 · `ADMIN_AGENTIC`) — [전체 보기] 그룹 카드(건강 · 노드 막대) · 그룹 탭(단계 사슬: 굵은 카드 = 이 그룹 · 점선 = 다른 단계, 호출 경로, 에이전트 표, 결정). `/admin/agents` — 그룹 탭 · 그룹 요약 · 일괄 적용(고른 LLM 에이전트) · 카드의 [그룹] 선택. `/admin/ontology` — [구축 파이프라인](`BuildPipeline`: 단계 · 품질 점검 · 구조 파악 표 · 결정 · [지금 구축 실행]) · [변경 제안](`ProposalsPanel`: 연산 체크로 빼기 · 예상 개체/관계 변화 · 검증 · 근거 · 승인/반려) · 스키마 탭의 판 되돌리기.
+- [파이프라인] 단계 설정 `pipeline.stages` 에 '온톨로지 구축' 단계 · `curate_attentions` 를 더한다(`phase_m_stages_upgrade`, 없는 구현만).
+
+## 31. 팀 데이터 등록(온보딩) — 정형 · 비정형 → 에이전트 분석 → 반영 → 3-way · 온톨로지 (Phase M · 요구사항 §31 · Q191~Q197)
+
+### 31.1 흐름 (DOB-01~06)
+```
+[자료 올리기 › 자료 등록(에이전트 분석)] · [데이터셋·문서 › 자료 등록(에이전트 분석)]  — 공용 IntakeWizard
+  파일 | 붙여 넣은 본문 ─ POST /db/intake ─▶ data/onboarding
+     정형(.csv .xlsx .json): match_datasets(파일 이름 규칙 0.6 + 머리글 겹침 0.4)
+        ≥0.6 → existing: 그 정의로 check_file(직전 버전 대비 품질) 미리보기
+        아니면 → new: infer_definition + profile_rows · rule_semantics + data_intake(LLM: 이름 · 설명 · 열 업무 이름 · 의미 · 행 대상, 값 예시는 가림)
+     비정형: extract_text → 규칙(첫 머리 · 분류 키워드 · 기관 · 날짜) + doc_intake(LLM: 제목 · 분류 · 기관 · 시행일 · 출처 · 요약, 본문 가림)
+  → ops.upload_request(status=draft, meta.intake=분석, meta.proposal=새 정의) — 아직 아무것도 반영 안 함
+  PATCH /db/intake/{id}  정의(validate_definition) · 문서 정보 · 다른 기존 자료 · 기준일 · 메모
+  POST  /db/intake/{id}/submit
+     관리자 · 데이터 관리자(via=admin) · 자기 부서 책임자(via=steward-self, 설정 intake.steward_self_apply) → do_approve(기존 확정 경로)
+     그 밖의 사용자 → pending(기존 [승인할 자료]로 — Q107 유지)
+  POST  /db/intake/{id}/discard  → discarded + 저장 파일 삭제
+  GET   /db/intake/{id} · /db/intake/mine — storage_status(반영 상태)
+```
+- 상태: `draft` · `pending` · `approved` · `failed` · `rejected` · `discarded`(`UploadRequest` 재사용 — Q197). 남의 등록 건은 404. 반영된 건은 [우리 부서 자료] 삭제 대상(Q157 소유 그대로)이고, 삭제 시 `meta.intake` 안의 값 예시 · 발췌(`sample` · `samples` · `excerpt`)도 지운다.
+
+### 31.2 3-way 저장 · 에이전틱 연동 (DOB-05 · DOB-06 · DOB-10)
+| 단계(storage_status key) | 정형 | 비정형 |
+|---|---|---|
+| ledger | PostgreSQL 원장 버전 · 행 · 품질 · 현재 여부 | PostgreSQL 문서 · 청크 수 |
+| profile / vector | 구조 파악(`ops.data_profile`) | pgvector 임베딩 n/m |
+| ontology / search | 구축 에이전트 제안(`agent_decision` object_type · link) | Elasticsearch(미구성 = 건너뜀) |
+| catalog / extract | AI 어시스턴트 설명 카드(`dataset:{code}`) | 온톨로지 구조화(문서 추출 개체 · 관계) |
+| graph · workflows | `wf_graph_projection` 상태 · 반영 이벤트(`dataset.committed` · `document.ingested`)가 깨운 워크플로 실행 상태 | 같음 |
+- 반영 이벤트 → `wf_ontology_build`(모든 데이터셋) · `wf_graph_projection` · 계보가 맞는 업무 워크플로. 새 자료 정의는 `config.changed{kind:dataset}` 로 구축을 다시 깨운다.
+
+### 31.3 설명 카드 · 데이터 조회 도구 (DOB-07 · DOB-08 · Q195 · Q196)
+- `data/catalog.index_dataset_cards(session, codes?)`: 확정 버전이 있는 사용 중 데이터셋마다 카드 1개(`app.kb_chunk`, collection `catalog.data`, `source_kind=dataset`, `required_resource=datasets`) — 이름 · 설명 · 출처 · 종류 · 행 대상 · 열 업무 이름(의미) · 기준일. **값 없음**. 본문 지문이 같으면 그대로(임베딩 재사용), 없어진 데이터셋 카드는 지움. `knowledge.dataset_cards=false` 면 끔. 호출: 워커 `run_maintenance`(실패 격리) · 정형 반영 직후(`do_approve`). 산출물 대조(`stale_keys` · 사라진 키)는 `source_kind=artifact` 만 본다.
+- `data_aggregate`: 데이터셋 화면 권한(datasets) 또는 관리자만. 현재 버전 행에서 같음 조건 · 그룹(30개 상한) → 합계 · 평균은 커널 `SUM` · `RATIO`, 건수 · 최소 · 최대. 정의에 없는 열 · 숫자가 아닌 측정 열 · 화면 가림 열 · 개인정보 형식 값이 보이는 열(그룹 · 조건)은 거절. 행 원문은 돌려주지 않는다.
+
+### 31.4 정의 관리 (DOB-09 · Q194)
+- `dataset_references(code)`: 남은 버전(삭제 표시 제외) · 지표 · 화면 바인딩 · 트리거(dataset · master) · 온톨로지 원천 · 처리 중 등록/요청. `DELETE /admin/datasets/{code}` 는 참조가 있으면 409(이유 나열), 없으면 정의 · 삭제 표시 버전 기록 · 구조 파악 결과를 지우고 `seed.suppressed_datasets` 에 올린 뒤 `config.changed`.
+- 시드: `seed_dataset_defs(s)` — `SEED_DATASET_DEFS=0|false|no` 면 넣지 않음, 억제 목록은 넣지 않음, 없는 정의만. `_ds_json` 에 `seedDefined`(업무 화면 연결 정의) · `references`. 화면: 데이터셋 표 배지(중지 · 업무 화면 연결 정의), 상세 [정의 관리](사용/중지 · 삭제 — 참조 목록이 있으면 막음).

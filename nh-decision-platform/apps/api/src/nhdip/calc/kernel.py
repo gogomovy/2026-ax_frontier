@@ -107,7 +107,9 @@ def run_and_record(
         run.display_value = display
         run.result = _jsonable({"value": result.value, **result.extra})
         run.library = result.library
-    except (FormulaError, ArithmeticError, TypeError) as exc:
-        run.error = str(exc)
+    except (FormulaError, ArithmeticError, TypeError, ValueError) as exc:
+        # ValueError — numpy · scipy · scikit-learn 의 입력 검증(빈 배열 · 모양 불일치 등). 자료가 일부 구분(예: 한 모형)에만 있을 때
+        # 그 지표만 실패로 남기고 워크플로 전체를 멈추지 않는다 (Phase M — 팀이 올린 부분 자료). FormulaError 도 ValueError 하위
+        run.error = f"{type(exc).__name__}: {exc}" if not isinstance(exc, FormulaError) else str(exc)
     session.add(run)
     return run, result, display

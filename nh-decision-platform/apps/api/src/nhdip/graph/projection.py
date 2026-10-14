@@ -54,6 +54,19 @@ class Batch:
         clean.update(extracted_by=extracted_by, src_ref=src_ref, schema_version=self.sv)
         self.rels[(rtype, from_label, to_label)].append({"from": str(from_key), "to": str(to_key), "props": clean})
 
+    def dangling(self) -> dict[str, int]:
+        """끝점 개체가 이번 투영에 없어 Neo4j 에서 빠질 관계 수(관계 유형별) — 품질 검증(ONB-08)이 본다(투영은 조용히 버린다)."""
+        have: dict[str, set[str]] = defaultdict(set)
+        for labels, items in self.nodes.items():
+            for lbl in labels:
+                have[lbl] |= set(items)
+        out: dict[str, int] = {}
+        for (rtype, fl, tl), items in self.rels.items():
+            n = sum(1 for it in items if it["from"] not in have[fl] or it["to"] not in have[tl])
+            if n:
+                out[rtype] = out.get(rtype, 0) + n
+        return out
+
     def flush(self) -> dict[str, int]:
         n_nodes = n_rels = 0
         for labels, items in self.nodes.items():
@@ -123,9 +136,11 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
     b = Batch(schema.version, gen, labels, rels)
 
     # 1) 데이터셋 · 버전 · 결정론 매핑(ONT-14)
+    rows_by_ds: dict[str, tuple[Any, list[dict[str, Any]], str]] = {}
     for ds in session.execute(select(Dataset).where(Dataset.active)).scalars():
         b.node("Dataset", ds.code, {"name": ds.name, "origin": ds.origin, "kind": ds.kind, "refresh_cycle": ds.refresh_cycle}, origin=ds.origin, src_kind="dataset", src_ref=f"cfg.dataset({ds.code})")
         v, rows = current_rows(session, ds)
+        rows_by_ds[ds.code] = (v, rows, ds.origin)
         for cv in current_versions(session, ds):
             vkey = f"{ds.code}:v{cv.version}"
             b.node("DatasetVersion", vkey, {"version": cv.version, "as_of": cv.as_of.isoformat() if cv.as_of else None, "data_origin": cv.data_origin, "committed_at": cv.committed_at.isoformat() if cv.committed_at else None, "file": cv.file_name}, origin=ds.origin, src_kind="dataset", src_ref=f"{ds.origin}.dataset_version({cv.id})")
@@ -151,6 +166,42 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
                 b.rel(e["type"], e.get("from_label", c["label"]), e.get("from", c["key"]), e["to_label"], e["to"], src_ref=ds.code)
             if c.get("about"):
                 b.rel("DESCRIBES", "Dataset", ds.code, c["label"], c["key"], src_ref=ds.code)
+
+    # 1-b) 스키마의 원천(backing) — 객체 유형 = 원천 데이터셋의 행, 링크 유형 = 행의 두 열 (Phase M · ONB-01 · ONB-02 · Q180)
+    for c in schema.classes:
+        for bk in c.get("backing") or []:
+            got = rows_by_ds.get(str(bk.get("dataset") or ""))
+            kc = bk.get("key_col")
+            if not got or not kc:
+                continue
+            v, rows, origin = got
+            tc = bk.get("title_col")
+            for r in rows:
+                key = r.get(kc)
+                if key in (None, ""):
+                    continue
+                props = {p: r.get(col) for p, col in (bk.get("props") or {}).items()}
+                b.node(c["label"], key, {"name": r.get(tc) if tc and r.get(tc) not in (None, "") else key, **props}, origin=origin, src_kind="backing", src_ref=f"{bk['dataset']} v{v.version if v else '-'}")
+                b.counts["backed_objects"] = b.counts.get("backed_objects", 0) + 1
+    from .extraction import Resolver as _Resolver
+
+    _res = _Resolver(schema)
+    for rdef in schema.relations:
+        frm, to = rdef.get("from"), rdef.get("to")
+        if "*" in (frm, to):
+            continue
+        for bk in rdef.get("backing") or []:
+            got = rows_by_ds.get(str(bk.get("dataset") or ""))
+            if not got or not bk.get("from_col") or not bk.get("to_col"):
+                continue
+            for r in got[1]:
+                fk, tk = r.get(bk["from_col"]), r.get(bk["to_col"])
+                if fk in (None, "") or tk in (None, ""):
+                    continue
+                if _res.alias.get(to):  # 개념 클래스(별칭 사전)는 행 값이 별칭일 수 있다 — 대표 키로
+                    tk = _res.match(to, str(tk)) or tk
+                b.rel(rdef["type"], frm, fk, to, tk, extracted_by="backing", src_ref=str(bk["dataset"]))
+                b.counts["backed_links"] = b.counts.get("backed_links", 0) + 1
 
     # 2) 지표 · 워크플로우 계보 (영향 범위 질의 원천, EVT-03)
     metrics = session.execute(select(Metric)).scalars().all()
@@ -212,7 +263,7 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         b.node("Artifact", skey, {"name": skey}, src_kind="artifact", src_ref=f"app.kb_chunk({skey})")
         b.rel("MENTIONS", "Artifact", skey, label, concept, src_ref=f"app.kb_chunk({skey})")
         n_mentions += 1
-    b.counts = {"artifact_mentions": n_mentions, "documents": n_docs}
+    b.counts = {**b.counts, "artifact_mentions": n_mentions, "documents": n_docs}
     # 화면용 — 산출물 키 대신 화면 제목(색인 청크의 artifactTitle). Neo4j 노드 이름은 그대로(키)
     titles: dict[str, str] = {}
     for skey, title in session.execute(select(KbChunk.source_key, KbChunk.meta["artifactTitle"].astext).distinct()).all():

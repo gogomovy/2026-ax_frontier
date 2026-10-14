@@ -201,6 +201,28 @@ class ExtractionIssue(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
+class DataProfile(Base):
+    """구조 파악 에이전트의 결과 (Phase M · ONB-04) — 데이터셋 현재 버전 묶음(version_sig)마다 한 번.
+
+    profile: {columns: {열: {nullRate, distinct, uniqueRatio, min, max, top[], semantic, baseType, keyCandidate}}, keys: [[열...]], rows}
+    semantics: LLM(또는 규칙)이 붙인 업무 의미 {columns: {열: {meaning, entity}}, entity, summary}
+    """
+
+    __tablename__ = "data_profile"
+    __table_args__ = (UniqueConstraint("dataset_code", "version_sig"), {"schema": "ops"})
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dataset_code: Mapped[str] = mapped_column(String(60))
+    origin: Mapped[str] = mapped_column(String(10))
+    version_sig: Mapped[str] = mapped_column(String(200))
+    rows: Mapped[int] = mapped_column(Integer, default=0)
+    profile: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    semantics: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    by: Mapped[str] = mapped_column(String(80), default="rule")
+    workflow_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeat"
     __table_args__ = {"schema": "ops"}

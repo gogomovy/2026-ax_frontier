@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AdminPage, C, Card, JsonEditor, JsonView, Loading, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { BuildPipeline, ProposalsPanel } from "@/components/admin/ontology/BuildPanels";
 import { OntologyMap } from "@/components/admin/ontology/OntologyMap";
 import { SchemaMap } from "@/components/admin/ontology/SchemaMap";
 import { colorOf, relKo, type MapClass, type OntologyMapData } from "@/components/admin/ontology/mapMath";
@@ -17,6 +18,8 @@ interface Onto {
   versions: { version: number; active: boolean; note: string | null; createdAt: string }[];
   graph: { ok: boolean; labels?: { label: string; n: number }[]; relationships?: { type: string; n: number }[]; error?: string };
   openIssues: Record<string, number>;
+  /** 승인 대기 변경 제안 수 (Phase M · ONB-09) */
+  pendingProposals?: number;
 }
 interface Issue {
   id: number;
@@ -71,7 +74,7 @@ function NodeCell({ cls, name, info }: { cls: string; name?: string; info: Recor
 export default function OntologyAdmin() {
   const data = useApiData<Onto>("/admin/ontology");
   const issues = useApiData<Issue[]>("/admin/ontology/issues?status=open");
-  const [tab, setTab] = useState<"map" | "graph" | "schema" | "issues">("map");
+  const [tab, setTab] = useState<"map" | "build" | "proposals" | "graph" | "schema" | "issues">("map");
   const [view, setView] = useState<MapView>("3d");
   const [mapRefresh, setMapRefresh] = useState(0);
   const map = useApiData<OntologyMapData>(`/admin/ontology/map?limit=1500${mapRefresh ? `&refresh=true&n=${mapRefresh}` : ""}`);
@@ -125,11 +128,15 @@ export default function OntologyAdmin() {
         onChange={setTab}
         tabs={[
           { key: "map", label: "구성 지도" },
+          { key: "build", label: "구축 파이프라인" },
+          { key: "proposals", label: "변경 제안", count: d?.pendingProposals },
           { key: "graph", label: "그래프 관계(Neo4j)" },
           { key: "schema", label: "스키마 편집" },
           { key: "issues", label: "추출 검토", count: issues.data?.length },
         ]}
       />
+      {tab === "build" ? <BuildPipeline /> : null}
+      {tab === "proposals" ? <ProposalsPanel onApplied={() => { void data.reload(); setMapRefresh((x) => x + 1); }} /> : null}
       {tab === "map" ? (
         <Card>
           <div className="mb-md flex flex-wrap items-center justify-between gap-xs">
@@ -229,9 +236,25 @@ export default function OntologyAdmin() {
       {tab === "schema" && d?.schema ? (
         <Card title="스키마 (저장 시 새 버전 · 그래프 재투영)">
           <SchemaEditor schema={d.schema} busy={busy} onSave={(v) => run(() => apiPut("/admin/ontology/schema", v), "새 스키마 버전을 적용했습니다", data.reload)} />
-          <p className="mt-md text-[11.5px] text-stone">
-            버전 이력: {d.versions.map((v) => `v${v.version}${v.active ? "(활성)" : ""} ${fmtTime(v.createdAt)}`).join(" · ")}
-          </p>
+          <div className="mt-lg border-t border-hairline-soft pt-md">
+            <p className="mb-xs text-[12.5px] font-bold text-ink">판 이력 · 되돌리기</p>
+            <p className="mb-md text-[11.5px] text-stone">되돌리기는 그 판의 내용으로 새 판을 만듭니다(이력은 남고 판 번호는 계속 늘어남). 지금 데이터와 맞지 않는 판은 거절됩니다.</p>
+            <ul className="flex flex-col gap-1 text-[12px]">
+              {d.versions.slice(0, 12).map((v) => (
+                <li key={v.version} className="flex flex-wrap items-center gap-xs">
+                  <b className="tnum">v{v.version}</b>
+                  {v.active ? <Badge tone="success">활성</Badge> : null}
+                  <span className="text-stone">{fmtTime(v.createdAt)}</span>
+                  <span className="min-w-0 flex-1 text-charcoal">{v.note ?? ""}</span>
+                  {!v.active ? (
+                    <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => apiPost(`/admin/ontology/schema/${v.version}/activate`), `v${v.version} 내용으로 새 판을 만들었습니다`, data.reload)}>
+                      이 판으로 되돌리기
+                    </Button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         </Card>
       ) : null}
       {tab === "issues" ? (

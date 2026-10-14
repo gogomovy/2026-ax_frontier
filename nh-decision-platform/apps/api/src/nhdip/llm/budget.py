@@ -4,9 +4,13 @@
   llm.pricing : {"모델명" | "*": {"prompt_per_1k": 원, "completion_per_1k": 원}} — 비우면 금액 0(사내 게이트웨이)
   llm.budget  : {"monthly_tokens": 0, "monthly_cost": 0, "per_agent_tokens": {}, "on_exceed": "warn" | "block", "warn_pct": 80}
                0 은 한도 없음. block 이면 초과 후 호출을 막고(LlmUnavailable) 서술은 기존 문장 유지(축소 실행)
+               cache_sec(기본 30) — 호출 전 검사가 쓰는 집계 보관 시간(Phase M · LLM-P09). 0 이면 호출마다 집계
 """
 from __future__ import annotations
 
+import json
+import threading
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -72,12 +76,36 @@ def status(session: Session) -> dict[str, Any]:
     return out
 
 
+_CACHE: dict[str, Any] = {}  # 호출 전 검사용 집계 보관 {"key": 예산 설정 지문, "at": monotonic, "status": ...} (Phase M · LLM-P09)
+_CACHE_LOCK = threading.Lock()
+
+
+def _cached_status(session: Session, b: dict[str, Any]) -> dict[str, Any]:
+    """월 사용량 집계를 cache_sec(기본 30초) 동안 보관한다 — 호출마다 ops.llm_call 전체 집계를 돌지 않게.
+    예산 설정이 바뀌면(지문 다름) 바로 다시 집계한다. 관리자 화면(status)은 보관 없이 늘 새로 집계."""
+    ttl = float(b.get("cache_sec", 30) or 0)
+    key = json.dumps(b, sort_keys=True, default=str)
+    now = time.monotonic()
+    with _CACHE_LOCK:
+        if ttl > 0 and _CACHE.get("key") == key and now - float(_CACHE.get("at", 0)) < ttl:
+            return _CACHE["status"]
+    st = status(session)
+    with _CACHE_LOCK:
+        _CACHE.update(key=key, at=now, status=st)
+    return st
+
+
+def clear_cache() -> None:
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
+
 def check(session: Session, agent_code: str | None) -> None:
     """호출 전 예산 검사 — on_exceed=block 이고 한도를 넘었으면 LlmBudgetExceeded(LlmError)."""
     b = {**DEFAULT_BUDGET, **(_setting(session, "llm.budget", {}) or {})}
     if b.get("on_exceed") != "block" or not (b.get("monthly_tokens") or b.get("monthly_cost") or b.get("per_agent_tokens")):
         return
-    st = status(session)
+    st = _cached_status(session, b)
     over = (st["tokensPct"] or 0) >= 100 or (st["costPct"] or 0) >= 100
     if agent_code and agent_code in st["perAgent"]:
         over = over or (st["perAgent"][agent_code]["pct"] or 0) >= 100

@@ -117,6 +117,12 @@ export function AttentionSheet({
 
       {insight.rankBasis ? (
         <SheetSection title="우선순위 산출 근거" aside={<span className="text-[12px] font-bold text-ink tnum">{insight.rankScore?.toFixed(1)}점</span>}>
+          {insight.rankReason ? (
+            <p className="mb-1.5 text-[13px] leading-relaxed text-ink">
+              {insight.rankReason}
+              <span className="ml-1.5 align-middle text-[11px] text-stone">{insight.rankReasonBy === "llm" ? "AI 해설" : "점수 구성 요약"}</span>
+            </p>
+          ) : null}
           <p className="text-[12.5px] leading-relaxed text-charcoal">{insight.rankBasis}</p>
           {insight.rankRule ? <p className="mt-1.5 text-[11px] text-stone">{insight.rankRule} · 가중합 규칙</p> : null}
         </SheetSection>

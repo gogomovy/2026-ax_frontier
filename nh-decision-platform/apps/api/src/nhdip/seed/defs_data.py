@@ -330,6 +330,8 @@ def _hq_nodes(*a, **kw):
     nodes[at:at] = [
         ("recommend", "경영목표 추천 범위(커널)", "recommend_goals", None, {"items": REC_ITEMS}),
         ("rank", "AI Attention 우선순위(규칙)", "rank_attentions", None, {"rule": "ATTENTION_SCORE"}),
+        # Phase M · LLM-P08 — 순위는 규칙 그대로, 항목마다 숫자 없는 해설(rankReason). LLM 없음 · 실패면 점수 구성으로 만든 규칙 문장
+        ("curate", "AI 주목 사항 해설(에이전트)", "curate_attentions", "attention_curator", {"optional": True}),
     ]
     nodes.insert(len(nodes) - 1, ("contracts", "컬럼 정의서 테이블 적재·대조", "materialize_contracts", None, {"tables": ["T01", "T02", "T03"], "optional": True}))
     return nodes

@@ -27,6 +27,8 @@ make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트
 
 **내 자료로 시작하기(기본)** — `make up` 은 정의(데이터셋 · 지표 · 규칙 · 워크플로우)만 시드하고 업무 자료는 넣지 않습니다. 화면은 자료가 올라오기 전까지 "미제공"으로 보이고, 관리자 `/admin/datasets`(또는 업무 `/knowledge/upload`)에서 직접 올리면 관련 워크플로우만 계산합니다. 시연 자료가 필요하면 `make sample`(43개 파일 업로드) 또는 `.env` 에 `LOAD_SAMPLE_ON_START=1`(`make set k=LOAD_SAMPLE_ON_START v=1`). **이미 시연 자료가 올라간 DB 를 비우려면** `make reset`(볼륨까지 삭제 — 되돌릴 수 없음) 후 `make up`. 기존 `.env` 에 `LOAD_SAMPLE_ON_START=1` 이 있으면 먼저 `make set k=LOAD_SAMPLE_ON_START v=0`.
 
+**팀 자료 등록(Phase M)** — 부서 데이터 책임자는 업무 `/knowledge/upload` › [자료 등록(에이전트 분석)], 관리자는 `/admin/datasets` › [자료 등록]에서 파일(엑셀 · CSV · JSON · PDF · 워드 · 텍스트)을 놓으면 에이전트가 열 · 의미(정형) 또는 제목 · 분류 · 기관 · 시행일(비정형)을 제안합니다. 확인하고 [확인 · 반영]하면 원장(PostgreSQL) → 임베딩 · Elasticsearch · 온톨로지 구축(제안은 관리자 `/admin/ontology` › [변경 제안]에서 승인) → Neo4j · 관련 워크플로로 이어지고, 진행은 등록 건의 [반영 상태]에서 봅니다. 쓰지 않는 시드 정의는 [데이터셋·문서] 상세 [정의 관리]에서 중지 · 삭제하고(되살아나지 않음), 정의 없이 시작하려면 `.env` 에 `SEED_DATASET_DEFS=0`. 에이전트 그룹 · 파이프라인은 `/admin/agentic`, 그룹별 모델 · 파라미터는 `/admin/agents`.
+
 | 서비스 | 주소 | 역할 |
 |---|---|---|
 | web | http://localhost:3000 | 로그인 · 업무 화면 · 관리자(`/admin`) — `/backend/*` 를 api 로 프록시 |

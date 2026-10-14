@@ -44,8 +44,11 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
     for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled)).scalars():
         if t.kind == "any" and t.target in ("*", ev.type.split(".")[0]):
             add(t.workflow_code, f"trigger:any({t.target})")
-        elif t.kind in ("dataset", "master") and ev.type.startswith("dataset.") and t.target == p.get("dataset"):
-            add(t.workflow_code, f"trigger:{t.kind}({t.target})")
+        elif t.kind in ("dataset", "master") and ev.type.startswith("dataset.") and t.target in ("*", p.get("dataset")):
+            add(t.workflow_code, f"trigger:{t.kind}({p.get('dataset') if t.target == '*' else t.target})")
+        elif t.kind == "config" and ev.type == "config.changed" and t.target in ("*", p.get("kind")):
+            # 정의 변경(Phase M · DYN-01) — 예: 데이터셋 정의가 생기거나 바뀌면 온톨로지 구축이 구조를 다시 파악
+            add(t.workflow_code, f"trigger:config({p.get('kind')}:{p.get('code') or p.get('key') or ''})")
         elif t.kind == "doc_class" and ev.type.startswith("document.") and t.target == p.get("doc_class"):
             add(t.workflow_code, f"trigger:doc_class({t.target})")
         elif t.kind == "event" and t.target == ev.type:

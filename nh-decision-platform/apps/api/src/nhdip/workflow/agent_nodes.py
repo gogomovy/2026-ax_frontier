@@ -276,7 +276,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     max_chain = min(int(pol.get("max_chain", 3)), int(orch_policy(ctx.session).get("max_chain", 3)))
     allow_follow = len(chain) + 1 < max_chain
     wfs = ctx.session.execute(select(Workflow).where(Workflow.enabled)).scalars().all()
-    follow_cands = [{"code": w.code, "name": w.name, "description": w.description} for w in wfs if allow_follow and w.code != ctx.workflow.code and w.code not in chain and w.code not in set(pol.get("followup_exclude") or ["wf_graph_projection"])]
+    follow_cands = [{"code": w.code, "name": w.name, "description": w.description} for w in wfs if allow_follow and w.code != ctx.workflow.code and w.code not in chain and w.code not in set(pol.get("followup_exclude") or ["wf_graph_projection"]) | {"wf_graph_projection", "wf_ontology_build"}]
     # 3) LLM 계획
     context = {"workflow": {"code": ctx.workflow.code, "name": ctx.workflow.name, "description": ctx.workflow.description},
                "causes": [{"type": c.get("type"), "reasons": c.get("reasons"), "payload": {k: v for k, v in (c.get("payload") or {}).items() if k in ("dataset", "doc_class", "workflow", "reason", "rule", "key", "from", "major")}} for c in ctx.causes if isinstance(c, dict)][:20],

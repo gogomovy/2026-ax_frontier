@@ -51,6 +51,19 @@ class LlmProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class AgentGroup(Base):
+    """에이전트 기능 묶음 (Phase M · AGG-01 · Q188) — 관리자 [에이전트·프롬프트] 그룹 탭 · [에이전틱 파이프라인] 그림 단위."""
+
+    __tablename__ = "agent_group"
+    __table_args__ = S
+
+    code: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str] = mapped_column(Text, default="")
+    sort: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class Agent(Base):
     __tablename__ = "agent"
     __table_args__ = S
@@ -59,6 +72,7 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(100))
     role: Mapped[str] = mapped_column(Text, default="")
     kind: Mapped[str] = mapped_column(String(10), default="llm")  # llm | rule
+    group_code: Mapped[str | None] = mapped_column(ForeignKey("cfg.agent_group.code", ondelete="SET NULL"), nullable=True)
     profile_id: Mapped[int | None] = mapped_column(ForeignKey("cfg.llm_profile.id", ondelete="SET NULL"), nullable=True)
     # 에이전트 전용 연결·모델·파라미터 (프로필 값 위에 덮어씀): connection_id, model, temperature ...
     override: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -224,9 +238,41 @@ class OntologySchema(Base):
     relations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     # 엔티티 링크 별칭 사전: {"ProductGroup": {"햇살론": ["햇살론", "햇살론뱅크"]}, ...}
     aliases: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # 인터페이스(공통 모양) — [{name, ko, properties[]}] (Phase M · ONB-01)
+    interfaces: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class OntologyProposal(Base):
+    """온톨로지 변경 제안 (Phase M · ONB-09 · Q181) — 연산 목록(ops)을 승인하면 활성 스키마에 적용해 새 판을 만든다.
+
+    status: pending(대기) | applied(적용) | rejected(반려) | superseded(같은 연산이 이미 반영 · 새 제안으로 대체) | failed(적용 검증 실패)
+    ops: [{op, ...}] — add_class · update_class · add_property · add_backing · add_relation · update_relation · add_alias (graph.schema.apply_ops)
+    """
+
+    __tablename__ = "ontology_proposal"
+    __table_args__ = S
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    source: Mapped[str] = mapped_column(String(20), default="agent")  # agent | admin | review
+    agent_code: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    workflow_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    ops: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    impact: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    validation: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    base_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    applied_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    decided_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Setting(Base):

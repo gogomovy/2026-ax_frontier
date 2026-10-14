@@ -313,9 +313,12 @@ export function GoalsWorkspace({
                 {looseAttentions.map((a) => (
                   <li key={a.id} className="flex items-start gap-2">
                     <Badge tone="info">AI 주목 사항</Badge>
-                    <button type="button" onClick={() => setSheet({ kind: "attention", id: a.id })} className="min-w-0 flex-1 text-left font-medium leading-snug text-ink-deep hover:underline">
-                      {a.title}
-                    </button>
+                    <span className="min-w-0 flex-1">
+                      <button type="button" onClick={() => setSheet({ kind: "attention", id: a.id })} className="text-left font-medium leading-snug text-ink-deep hover:underline">
+                        {a.title}
+                      </button>
+                      {a.rankReason ? <span className="mt-0.5 block text-[12px] leading-snug text-steel">{a.rankReason}</span> : null}
+                    </span>
                     {a.rankScore != null ? <span className="shrink-0 text-[12px] text-steel tnum">우선순위 {a.rankScore.toFixed(1)}</span> : null}
                   </li>
                 ))}

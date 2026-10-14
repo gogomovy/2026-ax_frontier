@@ -115,7 +115,7 @@ def index_artifacts(session: Session, keys: Iterable[str] | None = None) -> Inde
             stats.errors.append(f"{key}: {type(exc).__name__}: {str(exc)[:200]}")
     # 사라졌거나 제외된 산출물의 청크 삭제
     if wanted is None:
-        gone = [k for (k,) in session.execute(select(KbChunk.source_key).distinct()).all() if k not in present]
+        gone = [k for (k,) in session.execute(select(KbChunk.source_key).where(KbChunk.source_kind == "artifact").distinct()).all() if k not in present]
     else:
         gone = [k for k in wanted if k not in present]
     for k in sorted(gone):
@@ -202,7 +202,8 @@ def stale_keys(session: Session, empty: dict[str, int] | None = None) -> tuple[l
     cfg = setting_dict(session, "knowledge.index", INDEX_DEFAULT)
     exclude = set(cfg.get("exclude_keys") or [])
     arts = {k: g for k, g in session.execute(select(ViewArtifact.key, ViewArtifact.generation).where(ViewArtifact.is_current)).all() if base_key(k) not in exclude}
-    idx = {k: (lo, hi) for k, lo, hi in session.execute(select(KbChunk.source_key, func.min(KbChunk.source_generation), func.max(KbChunk.source_generation)).group_by(KbChunk.source_key)).all()}
+    # 산출물 청크만 대조한다 — 데이터셋 설명 카드(source_kind=dataset, Phase M · DOB-07)는 data/catalog.py 가 관리
+    idx = {k: (lo, hi) for k, lo, hi in session.execute(select(KbChunk.source_key, func.min(KbChunk.source_generation), func.max(KbChunk.source_generation)).where(KbChunk.source_kind == "artifact").group_by(KbChunk.source_key)).all()}
     empty = empty or {}
     todo = [k for k, g in arts.items() if (k not in idx or idx[k] != (g, g)) and empty.get(k) != g]
     drop = [k for k in idx if k not in arts]

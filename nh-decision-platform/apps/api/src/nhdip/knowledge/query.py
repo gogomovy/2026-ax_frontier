@@ -200,13 +200,33 @@ def _digits(s: str) -> set[str]:
     return set(re.findall(r"\d+(?:\.\d+)?", s or ""))
 
 
+def agent_llm(session: Session, code: str, fallback: str = "query_assistant") -> tuple[Any, bool]:
+    """(설정, 자기 에이전트인지) — Phase M · LLM-P07. 전용 에이전트(query_rewriter · search_reranker)가 있으면 그 연결 · 모델 · 프롬프트 판,
+    에이전트가 없거나(이전 DB) 연결이 안 되면 이전처럼 AI 어시스턴트 연결. 관리자가 전용 에이전트를 끄면 LLM 을 쓰지 않는다(LlmUnavailable)."""
+    from nhdip.models import Agent
+
+    a = session.get(Agent, code)
+    if a is not None and not a.enabled:
+        raise LlmUnavailable(f"에이전트 비활성: {code}")
+    if a is not None:
+        try:
+            return resolve(session, code), True
+        except LlmUnavailable:
+            pass
+    return resolve(session, fallback), False
+
+
+REWRITE_TASK = "대화 맥락을 반영해 마지막 질문을 독립적으로 이해되는 한국어 질문 한 문장으로 다시 쓴다. 새로운 사실 · 숫자를 만들지 않는다. JSON 하나: {\"query\": \"...\"}"
+
+
 def llm_rewrite(session: Session, question: str, history: list[dict[str, str]]) -> str | None:
     try:
-        cfg = resolve(session, "query_assistant")
+        cfg, own = agent_llm(session, "query_rewriter")
         convo = "\n".join(f"Q: {h['q']}\nA: {h['a'][:200]}" for h in history)
+        system = (cfg.system_prompt if own and cfg.system_prompt else "너는 검색 질의 재작성기다.") + "\n\n" + GUARD
         messages = [
-            {"role": "system", "content": "너는 검색 질의 재작성기다. 대화 맥락을 반영해 마지막 질문을 독립적으로 이해되는 한국어 질문 한 문장으로 다시 쓴다. 새로운 사실 · 숫자를 만들지 않는다. JSON 하나: {\"query\": \"...\"}\n\n" + GUARD},
-            {"role": "user", "content": f"이전 대화:\n{fence(convo)}\n\n마지막 질문:\n{fence(question)}"},
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"과제: {REWRITE_TASK}\n\n이전 대화:\n{fence(convo)}\n\n마지막 질문:\n{fence(question)}"},
         ]
         res = chat(session, cfg, messages, json_mode=True, purpose="assist_rewrite")
         q = str(parse_json(res.text).get("query", "")).strip()

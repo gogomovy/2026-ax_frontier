@@ -6,11 +6,12 @@ import { PurgeStatus, useDataDelete, useIsDataAdmin } from "@/components/admin/D
 import { ValueView } from "@/components/admin/ValueView";
 import { useConfirm } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
+import { IntakeWizard } from "@/components/knowledge/IntakeWizard";
 import { NewDatasetPanel, definitionPayload, type InferredColumn, type PanelSubmit } from "@/components/knowledge/NewDatasetPanel";
 import { Advanced, EmptyState, KeyValueList } from "@/components/ui/Layout";
 import { Badge, Button, PillTabs } from "@/components/ui/primitives";
 import { StatCard, StatGrid } from "@/components/ui/StatCard";
-import { api, apiGetC, apiPatch, apiPost } from "@/lib/api-client";
+import { api, apiDelete, apiGetC, apiPatch, apiPost } from "@/lib/api-client";
 import { confidentSuggestion, suggestDatasets, titleFromFile } from "@/lib/upload-match";
 
 /** 관리자 업로드 형식 — 안내 문구와 파일 입력의 accept 를 같은 값으로 (Phase E · F7) */
@@ -133,6 +134,12 @@ interface Ds {
   storage: string;
   usedByMetrics: string[];
   versions: Version[];
+  /** 사용/중지 (Phase M · DOB-09) — 중지하면 업로드 대상 · 매칭에서 빠진다 */
+  active?: boolean;
+  /** 시드(업무 화면 연결 정의)로 들어온 정의인지 */
+  seedDefined?: boolean;
+  /** 지우면 끊기는 것 — 비어 있어야 삭제할 수 있다 */
+  references?: string[];
 }
 interface Doc {
   origin: "bank" | "ext";
@@ -157,14 +164,14 @@ interface Doc {
 
 /** 데이터셋 정의 · 당행/외부 업로드 · 버전 · 롤백 · 품질 / 문서 업로드 · 구조화 (ADM-08, ING-01~07) */
 export default function DatasetsAdmin() {
-  const [tab, setTab] = useState<"datasets" | "documents">("datasets");
+  const [tab, setTab] = useState<"intake" | "datasets" | "documents">("datasets");
   return (
     <AdminPage
       title="데이터셋 · 문서"
-      description="당행(bank) 데이터와 외부(ext) 데이터는 저장 스키마가 분리됩니다. 업로드 시 출처를 다시 확인하고, 품질 검증을 통과한 버전만 현재 버전이 됩니다. 확정되면 관련 워크플로우만 자동으로 다시 계산합니다."
+      description="당행(bank) 데이터와 외부(ext) 데이터는 저장 스키마가 분리됩니다. 업로드 시 출처를 다시 확인하고, 품질 검증을 통과한 버전만 현재 버전이 됩니다. 확정되면 관련 워크플로우만 자동으로 다시 계산합니다. [자료 등록]은 파일을 에이전트가 분석해 정의 · 문서 정보를 제안하고, 확인하면 같은 확정 경로로 반영합니다."
     >
-      <Tabs active={tab} onChange={setTab} tabs={[{ key: "datasets", label: "정형 데이터셋" }, { key: "documents", label: "문서 (비정형)" }]} />
-      {tab === "datasets" ? <Datasets /> : <Documents />}
+      <Tabs active={tab} onChange={setTab} tabs={[{ key: "intake", label: "자료 등록(에이전트 분석)" }, { key: "datasets", label: "정형 데이터셋" }, { key: "documents", label: "문서 (비정형)" }]} />
+      {tab === "intake" ? <IntakeWizard context="admin" /> : tab === "datasets" ? <Datasets /> : <Documents />}
       <PurgeStatus />
     </AdminPage>
   );
@@ -322,6 +329,8 @@ function Datasets() {
                 </C>
                 <C>
                   <span className="font-bold text-ink-deep">{d.name}</span>
+                  {d.active === false ? <Badge tone="neutral" className="ml-1">중지</Badge> : null}
+                  {d.seedDefined ? <Badge tone="info" className="ml-1">업무 화면 연결 정의</Badge> : null}
                   <p className="font-mono text-[10.5px] text-stone">{d.code}</p>
                 </C>
                 <C>{d.kind === "master" ? "마스터" : "사실"}</C>
@@ -406,6 +415,52 @@ function NewColumnsFinder({ ds, file, reload }: { ds: Ds; file: File; reload: ()
         )
       ) : null}
     </div>
+  );
+}
+
+/** 정의 관리(Phase M · DOB-09 · Q194) — 사용/중지 · 삭제(참조가 남아 있으면 이유를 보이고 막는다). 지운 시드 정의는 다시 시드되지 않는다 */
+function DefinitionManage({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) {
+  const { run, busy } = useAction();
+  const confirm = useConfirm();
+  const refs = ds.references ?? [];
+  const active = ds.active !== false;
+  return (
+    <Card title="정의 관리" actions={ds.seedDefined ? <Badge tone="info">업무 화면 연결 정의</Badge> : <Badge tone="neutral">등록한 정의</Badge>}>
+      <p className="mb-md text-[12.5px] text-steel">
+        {ds.seedDefined
+          ? "업무 화면 수치 · 지표 · 화면 바인딩이 이 정의를 읽습니다. 쓰지 않으면 먼저 '중지'하세요 — 업로드 대상 · 파일 매칭에서 빠지고 정의는 남습니다. 지우면 다시 시드되지 않습니다(설정 seed.suppressed_datasets)."
+          : "자료 등록 · 파일로 만든 정의입니다. 중지하면 업로드 대상 · 파일 매칭에서 빠집니다."}
+      </p>
+      <div className="flex flex-wrap items-center gap-xs">
+        <Check label={active ? "사용 중" : "중지됨"} checked={active} disabled={busy} onChange={(v) => run(() => apiPatch(`/admin/datasets/${ds.code}`, { active: v }), v ? "정의를 다시 사용합니다" : "정의를 중지했습니다", reload)} />
+        <Button
+          size="sm"
+          variant="danger"
+          disabled={busy || refs.length > 0}
+          onClick={async () => {
+            const ok = await confirm({
+              title: `${ds.name} 정의를 지울까요?`,
+              body: <p>정의 · 삭제 표시만 남은 버전 기록 · 구조 파악 결과가 지워집니다. 되돌리려면 정의를 다시 만들어야 합니다.</p>,
+              confirmLabel: "정의 삭제",
+              tone: "danger",
+            });
+            if (!ok) return;
+            await run(() => apiDelete(`/admin/datasets/${ds.code}`), "정의를 지웠습니다", reload);
+          }}
+          data-dataset-delete
+        >
+          정의 삭제
+        </Button>
+        {refs.length ? <span className="text-[12px] text-attention">지울 수 없음 — 아래가 이 정의를 쓰고 있습니다</span> : <span className="text-[12px] text-steel">이 정의를 쓰는 곳이 없습니다</span>}
+      </div>
+      {refs.length ? (
+        <ul className="mt-xs list-disc pl-5 text-[12px] text-charcoal" aria-label="정의를 쓰는 곳">
+          {refs.map((r) => (
+            <li key={r}>{r}</li>
+          ))}
+        </ul>
+      ) : null}
+    </Card>
   );
 }
 
@@ -494,6 +549,8 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
         {preview ? <UploadResultView r={preview} /> : null}
         {file ? <NewColumnsFinder ds={ds} file={file} reload={reload} /> : null}
       </Card>
+
+      <DefinitionManage ds={ds} reload={reload} />
 
       <Card title="버전">
         <Table head={["버전", "기준일", "상태", "성격", "파일", "행", "품질", "업로드", ""]}>

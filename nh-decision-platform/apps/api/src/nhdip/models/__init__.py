@@ -1,6 +1,8 @@
 from .base import Base, new_id, utcnow
 from .cfg import (
     Agent,
+    AgentGroup,
+    OntologyProposal,
     AnalysisAgent,
     AnalysisAgentVersion,
     ColumnContract,
@@ -25,6 +27,7 @@ from .runtime import (
     AgentDecision,
     AuditLog,
     CalcRun,
+    DataProfile,
     ExtractionIssue,
     Job,
     LlmCall,

@@ -67,6 +67,9 @@ def db():
 def _reset_rate_limits():
     """테스트마다 속도 제한 창을 비운다 — 같은 IP(testclient)로 여러 번 로그인하므로."""
     from nhdip import ratelimit
+    from nhdip.llm import breaker, budget
 
     ratelimit.reset()
+    breaker.reset()  # LLM 연결 차단기(프로세스 메모리)도 시험마다 비운다 — 앞 시험의 의도된 실패가 뒤 시험의 호출을 막지 않게
+    budget.clear_cache()
     yield

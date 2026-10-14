@@ -38,7 +38,7 @@ admin_router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(
 _DEFAULT_TARGETS: dict[str, Any] = {"datasets": "*", "doc_classes": "*", "new_datasets": True}
 # 제안 정의에서 저장하는 필드 — 매핑(온톨로지 투영)은 관리자가 따로 정하므로 제안에서는 받지 않는다
 PROPOSAL_FIELDS = ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "columns", "key_columns", "as_of_column", "quality_rules", "parser")
-STATUS_LABEL = {"pending": "승인 대기", "approved": "승인 · 반영", "rejected": "반려", "failed": "반영 실패"}
+STATUS_LABEL = {"pending": "승인 대기", "approved": "승인 · 반영", "rejected": "반려", "failed": "반영 실패", "draft": "확인 중(초안)", "discarded": "버림"}
 
 
 def _iso(v):
@@ -436,6 +436,15 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
     audit(session, actor.emp_no, "db.upload.approve", "upload_request", str(r.id), {"kind": r.kind, "target": r.target, "requestedBy": r.requested_by, "note": body.note, "via": via}, ip)
     audit(session, actor.emp_no, "db.upload.applied", "upload_request", str(r.id), result, ip)
     session.commit()
+    if r.kind == "dataset":
+        # 설명 카드를 바로 맞춘다(임베딩은 워커 주기 작업) — 실패해도 반영은 끝났고 다음 주기에 다시 맞춘다 (DOB-07)
+        try:
+            from nhdip.data.catalog import index_dataset_cards
+
+            index_dataset_cards(session, [r.target])
+            session.commit()
+        except Exception:  # noqa: BLE001
+            session.rollback()
     return _req_json(r, full=True)
 
 
@@ -641,3 +650,194 @@ def steward_purge_run(session: Session = Depends(get_session), user: AppUser = D
 
     ids = pending_purge_ids(session, user.emp_no)
     return run_purge_tasks(session, ids=ids) if ids else {"done": 0, "skipped": 0, "pending": 0}
+
+
+# ═════════════════════════ 자료 등록(온보딩) — 분석 → 확인 · 고침 → 반영 / 승인 요청 (Phase M · 요구사항 §31 · Q191~Q197) ═════════════════════════
+# 등록 건은 요청 표(ops.upload_request)에 '초안(draft)'으로 남는다(Q197) — 반영하면 기존 승인 경로(do_approve)를 그대로 타서
+# 소유(Q157 · 우리 부서 자료 삭제) · 감사 · 품질 검사 · 이벤트가 같다. 같은 API 를 업무 [자료 올리기]와 관리자 [데이터셋 · 문서]가 쓴다(Q191).
+class IntakePatch(BaseModel):
+    definition: dict[str, Any] | None = None  # 새 자료의 정의(코드 · 이름 · 설명 · 열 라벨 · 키 · 기준일 열 등)
+    document: dict[str, Any] | None = None  # 문서 정보 {title, doc_class, issuer, published_at, origin}
+    target: str | None = None  # 기존 자료로 올릴 때 다른 데이터셋을 고름
+    asOf: str | None = None
+    note: str | None = None
+
+
+def _self_apply(session: Session, user: AppUser) -> str | None:
+    """바로 반영할 수 있으면 감사 경로(via), 아니면 None(승인 요청). 관리자 · 데이터 관리자 · 자기 부서 책임자(설정이 허용할 때)."""
+    if user.role == "admin" or getattr(user, "data_admin", False):
+        return "admin"
+    if getattr(user, "data_steward", False):
+        from nhdip.orgs import steward_scope
+
+        st = session.get(Setting, "intake.steward_self_apply")
+        if (st is None or st.value is not False) and steward_scope(session, user.org_code) is not None:
+            return "steward-self"
+    return None
+
+
+def _intake(session: Session, rid: int, user: AppUser, lock: bool = False) -> UploadRequest:
+    r = session.get(UploadRequest, rid, with_for_update=lock)
+    if r is None or (r.requested_by != user.emp_no and user.role != "admin"):
+        raise HTTPException(404, "등록 건 없음")  # 다른 사람의 등록 건은 없는 것처럼
+    return r
+
+
+def _intake_json(session: Session, r: UploadRequest, user: AppUser) -> dict[str, Any]:
+    from nhdip.data.onboarding import storage_status
+
+    out = _req_json(r, full=True)
+    out["intake"] = (r.meta or {}).get("intake") or {}
+    out["canApply"] = r.status == "draft" and _self_apply(session, user) is not None
+    out["applyMode"] = "apply" if _self_apply(session, user) else "request"
+    out["storage"] = storage_status(session, r)
+    return out
+
+
+@router.post("/db/intake", status_code=201)
+async def intake_create(
+    request: Request,
+    file: UploadFile | None = File(None),
+    text: str | None = Form(None),
+    title: str | None = Form(None),
+    origin: str = Form("bank"),
+    user: AppUser = Depends(require_resource("db_upload")),
+    session: Session = Depends(get_session),
+):
+    """파일(또는 붙여 넣은 본문) → 정형/비정형 판별 → 에이전트 분석 → 초안 등록 건(아직 아무 데이터도 반영하지 않음)."""
+    from nhdip.data.onboarding import analyze_document, analyze_structured, is_structured
+
+    if origin not in ("bank", "ext"):
+        raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
+    if file is not None and file.filename:
+        purpose = "dataset" if is_structured(file.filename) else "document"
+        name, content = await read_upload(file, purpose, session, request, user.emp_no)
+    elif (text or "").strip():
+        purpose = "document"
+        name, content = f"{re.sub(r'[^0-9A-Za-z가-힣]+', '_', title or '붙여넣은_본문')[:60]}.txt", (text or "").encode("utf-8")
+    else:
+        raise HTTPException(422, "파일이나 본문을 넣어 주세요")
+    try:
+        if purpose == "dataset":
+            an = analyze_structured(session, name, content, origin=origin)
+        else:
+            an = analyze_document(session, name, content)
+            if title and title.strip():
+                an["document"]["title"] = title.strip()[:200]
+    except (IngestError, DocumentError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    sha, path = _store(user.emp_no, name, content)
+    if purpose == "dataset":
+        d = an.get("definition") or {}
+        meta = {"intake": an, "targetLabel": an.get("targetName") or d.get("name") or an.get("target"), "dataOrigin": "actual", **({"proposal": d} if an["mode"] == "new" else {})}
+        kind, target, org = "dataset", str(an.get("target") or ""), str(an.get("origin") or origin)
+        preview = {"rows": an.get("rows"), "quality": (an.get("quality") or {}).get("status"), "mode": an["mode"]}
+    else:
+        doc = an["document"]
+        meta = {"intake": an, "targetLabel": next((c["label"] for c in an.get("classes") or [] if c["code"] == doc["doc_class"]), doc["doc_class"]), "title": doc["title"],
+                "issuer": doc.get("issuer"), "publishedAt": doc.get("published_at")}
+        kind, target, org = "document", str(doc["doc_class"]), str(doc.get("origin") or "bank")
+        preview = {"chars": an.get("chars"), "pages": an.get("pages"), "excerpt": an.get("excerpt")}
+    r = UploadRequest(kind=kind, target=target[:60], origin=org, file_name=name, file_path=path, file_sha256=sha, meta=meta, preview=preview, status="draft", requested_by=user.emp_no, requested_org=user.org_code)
+    session.add(r)
+    session.flush()
+    audit(session, user.emp_no, "db.intake.create", "upload_request", str(r.id), {"kind": kind, "mode": an.get("mode"), "target": target, "file": name, "llm": (an.get("llm") or {}).get("by")}, client_ip(request))
+    session.commit()
+    return _intake_json(session, r, user)
+
+
+@router.get("/db/intake/mine")
+def intake_mine(user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
+    rows = session.execute(select(UploadRequest).where(UploadRequest.requested_by == user.emp_no, UploadRequest.meta["intake"].astext.is_not(None)).order_by(UploadRequest.id.desc()).limit(30)).scalars().all()
+    return {"items": [{**_req_json(r), "mode": ((r.meta or {}).get("intake") or {}).get("mode")} for r in rows], "applyMode": "apply" if _self_apply(session, user) else "request"}
+
+
+@router.get("/db/intake/{rid}")
+def intake_get(rid: int, user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
+    return _intake_json(session, _intake(session, rid, user), user)
+
+
+@router.patch("/db/intake/{rid}")
+def intake_patch(rid: int, body: IntakePatch, request: Request, user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
+    """초안 고치기 — 정의(새 자료) · 문서 정보 · 기존 자료 대상 · 기준일. 고친 정의는 저장 전 점검한다."""
+    r = _intake(session, rid, user, lock=True)
+    if r.status != "draft":
+        raise HTTPException(409, f"초안이 아닙니다({STATUS_LABEL.get(r.status, r.status)})")
+    meta = dict(r.meta or {})
+    if body.definition is not None and r.kind == "dataset":
+        d = {k: body.definition[k] for k in PROPOSAL_FIELDS if k in body.definition}
+        problems = validate_definition(d)
+        if problems:
+            raise HTTPException(422, " · ".join(problems[:6]))
+        if d["code"] != r.target and session.get(Dataset, d["code"]) is not None:
+            raise HTTPException(409, f"이미 있는 데이터셋 코드입니다: {d['code']} — 다른 코드로 하거나 '기존 자료'로 올리세요")
+        meta["proposal"], meta["targetLabel"] = d, d.get("name") or d["code"]
+        r.target = d["code"][:60]
+    if body.target is not None and r.kind == "dataset":
+        ds = _dataset_for_user(session, body.target)
+        meta.pop("proposal", None)
+        meta["targetLabel"] = ds.name
+        r.target, r.origin = ds.code, ds.origin
+    if body.document is not None and r.kind == "document":
+        doc = body.document
+        classes = {c["key"] for c in _doc_classes(session)}
+        if doc.get("doc_class") and doc["doc_class"] not in classes:
+            raise HTTPException(422, "올릴 수 없는 문서 분류입니다")
+        if doc.get("published_at") and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(doc["published_at"])):
+            raise HTTPException(422, "시행일은 YYYY-MM-DD 형식입니다")
+        title = str(doc.get("title") or meta.get("title") or "").strip()
+        if not title or len(title) > 200:
+            raise HTTPException(422, "제목은 1~200자입니다")
+        meta.update(title=title, issuer=(doc.get("issuer") or None), publishedAt=(doc.get("published_at") or None))
+        if doc.get("doc_class"):
+            r.target = doc["doc_class"]
+        if doc.get("origin") in ("bank", "ext"):
+            r.origin = doc["origin"]
+    if body.asOf is not None:
+        if body.asOf and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", body.asOf):
+            raise HTTPException(422, "기준일은 YYYY-MM-DD 형식입니다")
+        meta["asOf"] = body.asOf or None
+    if body.note is not None:
+        meta["note"] = body.note[:500]
+    r.meta = meta
+    audit(session, user.emp_no, "db.intake.update", "upload_request", str(r.id), {"target": r.target}, client_ip(request))
+    session.commit()
+    return _intake_json(session, r, user)
+
+
+@router.post("/db/intake/{rid}/submit")
+def intake_submit(rid: int, body: ReviewIn, request: Request, user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
+    """확인 끝 — 책임자(자기 부서) · 데이터 관리자 · 관리자는 바로 반영, 그 밖의 사용자는 승인 요청(기존 승인 대기)으로."""
+    r = _intake(session, rid, user, lock=True)
+    if r.status != "draft":
+        raise HTTPException(409, f"초안이 아닙니다({STATUS_LABEL.get(r.status, r.status)})")
+    if r.kind == "dataset" and (r.meta or {}).get("proposal") is None and session.get(Dataset, r.target) is None:
+        raise HTTPException(422, "올릴 데이터셋을 정하세요(기존 자료를 고르거나 새 자료 정의를 확인)")
+    if r.kind == "dataset" and (r.meta or {}).get("proposal") is not None and _pending_proposal(session, r.target):
+        raise HTTPException(409, "같은 코드의 새 자료 요청이 이미 승인 대기 중입니다")
+    via = _self_apply(session, user)
+    r.status = "pending"
+    if via is None:
+        audit(session, user.emp_no, "db.upload.request", "upload_request", str(r.id), {"kind": r.kind, "target": r.target, "via": "intake"}, client_ip(request))
+        session.commit()
+        return _intake_json(session, r, user)
+    session.flush()
+    do_approve(session, r, user, body, client_ip(request), via)
+    return _intake_json(session, session.get(UploadRequest, rid), user)
+
+
+@router.post("/db/intake/{rid}/discard")
+def intake_discard(rid: int, request: Request, user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
+    r = _intake(session, rid, user, lock=True)
+    if r.status != "draft":
+        raise HTTPException(409, "초안만 버릴 수 있습니다")
+    r.status = "discarded"
+    try:
+        if r.file_path and os.path.exists(r.file_path):
+            os.remove(r.file_path)  # 반영하지 않은 파일은 남기지 않는다
+    except OSError:
+        pass
+    audit(session, user.emp_no, "db.intake.discard", "upload_request", str(r.id), None, client_ip(request))
+    session.commit()
+    return {"ok": True}
