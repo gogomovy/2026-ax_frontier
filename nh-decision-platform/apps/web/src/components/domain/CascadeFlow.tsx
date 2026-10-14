@@ -50,8 +50,19 @@ const ICON = { 0: IconTarget, 1: IconBriefcase, 2: IconBuilding } as const;
  *  - 띠 굵기 = 전파 규모(아래로 이어진 노드 수), 확정된 흐름은 옅은 보라(primary/200), 확정 전 제안은 회색, 연결 없음은 가는 점선.
  *  - 최근 확정된 목표와 그 아래 경로는 보라 테두리. 숫자는 노드 안에만 두고 띠 위에는 쓰지 않는다.
  *  - 노드에 올리거나 포커스하면 그 경로만 강조하고 나머지는 흐리게 한다.
+ *  - highlightOrg: 사업부서 수행방안에서 그 부서가 맡은 실행 사업에 '우리 부서' 표시 (Phase K 후속 · SCP-04)
  */
-export function CascadeFlow({ nodes, goals, proposals }: { nodes: CascadeNode[]; goals: Goal[]; proposals: Proposal[] }) {
+export function CascadeFlow({
+  nodes,
+  goals,
+  proposals,
+  highlightOrg,
+}: {
+  nodes: CascadeNode[];
+  goals: Goal[];
+  proposals: Proposal[];
+  highlightOrg?: string | null;
+}) {
   const { overrides, proposalActions } = useGoalState();
   const [focus, setFocus] = useState<string | null>(null);
 
@@ -66,7 +77,10 @@ export function CascadeFlow({ nodes, goals, proposals }: { nodes: CascadeNode[];
       const goalDef = goals.find((x) => x.id === g.id);
       const prop = proposals.find((p) => p.targetGoalId === g.id);
       const pending = prop ? !proposalActions[prop.id] : false;
-      const changed = Boolean(goalDef && overrides[g.id]?.targetValue !== undefined && overrides[g.id]?.targetValue !== goalDef.targetValue);
+      // 목표값 변경 — 트리가 알려 주거나(서버 트리 · 사업부서) 이 화면의 목표 처리 상태로 판정(종합기획부)
+      const changed =
+        Boolean(g.changed) ||
+        Boolean(goalDef && overrides[g.id]?.targetValue !== undefined && overrides[g.id]?.targetValue !== goalDef.targetValue);
       const gState: FlowState = orphan ? "dashed" : pre ? "pre" : "confirmed";
       const tags: FlowNode["tags"] = orphan
         ? []
@@ -112,7 +126,7 @@ export function CascadeFlow({ nodes, goals, proposals }: { nodes: CascadeNode[];
           title: p.label,
           sub: [p.org, p.detail?.split(" · ").slice(1, 2)[0]].filter(Boolean).join(" · ") || p.detail,
           state: gState === "pre" ? "pre" : "confirmed",
-          tags: [],
+          tags: highlightOrg && p.org === highlightOrg ? [{ label: "우리 부서", tone: "info" }] : [],
           latest: changed,
         });
         ln.push({ from: g.id, to: p.id, weight: 6 + Math.min(12, Math.max(1, branches.length) * 3), state: gState === "pre" ? "pre" : gState === "dashed" ? "dashed" : "confirmed", latest: changed });
@@ -123,7 +137,7 @@ export function CascadeFlow({ nodes, goals, proposals }: { nodes: CascadeNode[];
       fn.push({ id: g.id, col: 0, y: gy, title: g.label, sub: gSub, state: gState, tags, latest: changed });
     }
     return { flow: fn, links: ln, height: Math.max(row, 1) * PITCH - GAP };
-  }, [nodes, goals, proposals, overrides, proposalActions]);
+  }, [nodes, goals, proposals, overrides, proposalActions, highlightOrg]);
 
   // 강조: 포커스한 노드와 그 위(상위) · 아래(하위) 경로
   const related = useMemo(() => {

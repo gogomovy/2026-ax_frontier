@@ -638,6 +638,8 @@ export interface CascadeNode {
   label: string;
   detail?: string;
   org?: string;
+  /** 목표값이 기본 정의와 달라진(종합기획부가 수정 · 확정한) 목표 — 흐름도의 '최신' 표시 (SCP-04) */
+  changed?: boolean;
   children?: CascadeNode[];
 }
 

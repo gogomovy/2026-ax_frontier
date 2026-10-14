@@ -1687,7 +1687,7 @@ event: error      data: {"code":"SOURCE_UNAVAILABLE","message":"외부 정책 �
 | `GuideWorkspace` + `PlanSheet` | 좌우 2열 + 시트 | 좌 진행사업(행 토글) / 우 제안안(행 등록) → 보기·수정·직접 추가 시트 | CRM-08~13 |
 | `InitiativesWorkspace` | 부서 탭 + 행 목록 | 사업부서 진행 사업(조회 전용 시트) | PROP-06 |
 | `BranchGuides` | 행 목록 | 영업점 참고 가능 진행사업만 노출 | BR-01, CRM-08 |
-| `CascadeTree` | 범례 점 3색 + 들여쓰기 | 경영목표 → 수행방안·진행사업 → 영업점, 상태 변경 즉시 반영 | PROP-03/04, CRM-14 |
+| `CascadeFlow` (구 `CascadeTree` · Phase K 후속에 삭제) | 3열 흐름도 + 띠 | 경영목표 → 실행 사업 → 영업점, 상태 변경 즉시 반영 — 종기부 · 사업부서 공용(§27.8) | PROP-03/04, CRM-14, SCP-04 |
 | `EvidenceChips` / `EvidenceSummary` | hairline pill / 3범주 행 | 근거 요약 버튼 / 시트용 3범주 블록 | PRIN-03/10, UX-02 |
 | `SourceDrawer` | 우측 520px, z-50 | 근거 원문·계산 추적·용어 정의 | DB-07, UX-03/04 |
 | `FigureText` / `TermText` | 점선 밑줄 | 수치 계산추적 / 용어 도움말(hover·focus·click) | UX-03/04, MDL-09 |
@@ -1716,7 +1716,7 @@ event: error      data: {"code":"SOURCE_UNAVAILABLE","message":"외부 정책 �
 │   [+ 직접 추가] → 입력 시트              │   → 시트(760px): 왜 필요한가 → 추천값·산출 근거
 │   → 시트: 목표 대비 실적 · 변경 이력     │      → 상위 제약 → 근거 → 배치 검증
 │   └ 검토 필요사항 N건 (접힘)             │      하단 [제안 반영][직접 수정][기존 유지] / [경영목표로 추가]
-└ 탭 전파 경로: CascadeTree (목표 수정·신설·진행사업·영업점 참고 상태 반영)
+└ 탭 전파 경로: CascadeFlow 흐름도 (목표 수정·신설·진행사업·영업점 참고 상태 반영 · 사업부서 수행방안과 공용 §27.8)
 ```
 
 **③ 신용리스크관리부 현황 (P2 STEP 1)** — 단일 컬럼, 위에서 아래로 중요도 순
@@ -3328,3 +3328,15 @@ ScopeSwitcher: 단위가 둘 이상인 칸은 ▾ 메뉴(현재 표시 · 준비
 - pytest: 설정 검사(구간 · 목표 · 조직 · 주소 오류 422), `/me/menu.config` 기본값 · 변경 반영 · 단위 매칭, ES 401 → `EsAuthError` · 상태 `errorKind=auth` · 차단기, 연결 설정 저장 · 가림 · 환경변수 복귀, 이름 바꾸기 업그레이드.
 - vitest: `bandOf` · `goalByRole` · 영역 묶기(부서 둘 · 지점 둘) · `useSeen` 저장 · 서명 변경, 하드코딩 감시(`hardcode.test.ts` — 연도 · 반기 · 분기 문구, `goal-` id, 판정 숫자 패턴).
 - E2E: 영역 전환 부서 · 지점 메뉴, 레드닷 클릭 후 사라짐, '분석 에이전트 만들기', 관리자 [화면 설정] 저장 → 화면 반영.
+
+### 27.8 사업부서 전파 경로 (SCP-04 · Q156)
+```
+/risk/guides [전파 경로] → GuideWorkspace
+  트리 = GET /cascade/tree (서버 계산 · 목표 수정/신설 + 진행사업 · 영업점 참고)  ← 탭을 열 때 · 진행사업(id · 참고 · 연결 목표 · 제목)이 바뀔 때 다시 받음
+         실패하면 useCascadeModel(화면 모델)
+  CascadeFlow(nodes, goals = session.goals, proposals = [], highlightOrg = 현재 영역이 dept 이면 그 부서 이름)
+```
+- 권한: `RISK_GUIDES.resources += cascade, goals`(시드 정의 + `risk_cascade_upgrade` 1회 · `risk-guides-cascade-v1`). `goal_state` · `goal_actions` · `proposals` 는 주지 않는다.
+- 목표 변경 표시: 서버 `build_tree` · 화면 `useCascadeModel` 이 바뀐 목표에 `changed: true` → `CascadeFlow` '최신' · 보라 테두리(종기부는 기존 목표 처리 상태 판정도 유지).
+- `CascadeTree`(들여쓰기 트리) 삭제 — 전파 경로는 두 화면 모두 `CascadeFlow`.
+- 시험: pytest `test_phase_l.py`(부서 사용자 트리 · 목표 200, 제안 · 목표 상태 · 처리 403, 업그레이드 1회 · 회수 보존, `changed`), E2E 신용리스크관리부 사용자 [수행방안 · 전파 경로] 흐름도 노드 ⊇ 종기부 노드.

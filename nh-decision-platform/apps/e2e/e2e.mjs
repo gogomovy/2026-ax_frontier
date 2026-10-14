@@ -307,6 +307,32 @@ try {
   await a.evaluate(() => [...document.querySelectorAll("button, [role=tab]")].find((x) => x.innerText.trim() === "전파 경로")?.click());
   await a.waitForFunction(() => document.body.innerText.includes("기업여신 확대 실행방안"), { timeout: 15000 }).catch(() => undefined);
   ok("전파 경로 탭 표시", (await text(a)).includes("기업여신 확대 실행방안"));
+  const hqFlow = await a.evaluate(() => [...document.querySelectorAll("[data-flow-node]")].map((x) => x.dataset.flowNode));
+
+  // 8-2a) 사업부서 수행방안의 전파 경로 = 종합기획부와 같은 흐름도 (Phase K 후속 · SCP-04 · Q156) — 신용리스크관리부 사용자
+  const RISK_EMP = String(20280000 + Math.floor(Math.random() * 9999));
+  const rk = await newPage(await browser.createBrowserContext());
+  await rk.goto(`${BASE}/login`, { waitUntil: "networkidle0" });
+  const rkSignup = await rk.evaluate(
+    async (emp, pw) => (await fetch("/backend/auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emp_no: emp, name: "E2E리스크", password: pw, org_code: "T211" }) })).status,
+    RISK_EMP,
+    PW,
+  );
+  await api(`/admin/users/${RISK_EMP}/approve`, { method: "POST" });
+  await login(rk, RISK_EMP, PW, "?next=/risk/guides");
+  await rk.evaluate(() => [...document.querySelectorAll("button, [role=tab]")].find((x) => x.innerText.trim() === "전파 경로")?.click());
+  await rk.waitForSelector('section[aria-label="경영목표 전파 경로"] [data-flow-node="goal-corp-growth"]', { timeout: 15000 }).catch(() => undefined);
+  const rkFlow = await rk.evaluate(() => {
+    const sec = document.querySelector('section[aria-label="경영목표 전파 경로"]');
+    return { nodes: [...(sec?.querySelectorAll("[data-flow-node]") ?? [])].map((x) => x.dataset.flowNode), text: sec?.innerText ?? "", own: (sec?.innerText.match(/우리 부서/g) ?? []).length };
+  });
+  ok(
+    "사업부서 수행방안: 전파 경로 = 종합기획부 흐름도(경영목표 → 실행 사업 → 영업점)",
+    rk.url().endsWith("/risk/guides") && rkSignup === 201 && rkFlow.nodes.includes("goal-corp-growth") && rkFlow.text.includes("기업여신 확대 실행방안") && rkFlow.text.includes("영업점 전파") && hqFlow.every((id) => rkFlow.nodes.includes(id)),
+    `가입 ${rkSignup} · 노드 ${rkFlow.nodes.length}(종기부 ${hqFlow.length}) · 우리 부서 ${rkFlow.own}`,
+  );
+  await shot(rk, "08-2a-risk-cascade");
+  await rk.browserContext().close();
 
   // 8-2b) 경영목표 정합성 검증 (6.4.7) — 상한 초과 직접 수정 → 경고 · 사유 입력 요구 (확정하지 않고 취소)
   await api("/state/goals/reset", { method: "POST", body: "{}" });

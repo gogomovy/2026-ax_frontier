@@ -48,6 +48,7 @@ export function useCascadeModel(): CascadeNode[] {
         ...node,
         label: before ? node.label.replace(before, after) : node.label,
         detail: `${node.detail ?? ""} · 목표 변경 ${before ?? "–"} → ${after}`.replace(/^ · /, ""),
+        changed: true,
       };
     });
 

@@ -55,6 +55,7 @@ def build_tree(
             after = f"{fixed(tv, d)}{unit}"
             n["label"] = n["label"].replace(before, after)
             n["detail"] = f"{n.get('detail') or ''} · 목표 변경 {before} → {after}".removeprefix(" · ")
+            n["changed"] = True  # 흐름도 '최신' 표시 — 목표 처리 상태(goal_state) 권한이 없는 사업부서도 같은 표시 (SCP-04)
         nodes.append(n)
 
     # 2) 종합기획부에서 신설한 목표 추가

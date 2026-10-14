@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { CascadeTree } from "@/components/domain/CascadeTree";
+import { useEffect, useState } from "react";
+import { CascadeFlow } from "@/components/domain/CascadeFlow";
 import { PlanSheet } from "@/components/domain/PlanSheet";
 import { useCascadeModel } from "@/components/domain/useCascadeModel";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { useNavModel } from "@/components/layout/nav-model";
 import { usePlanState } from "@/components/providers/PlanStateProvider";
+import { useSession } from "@/components/providers/SessionProvider";
 import { useUi } from "@/components/providers/UiProvider";
 import {
   Badge,
@@ -19,10 +21,14 @@ import {
   SectionHead,
   Switch,
 } from "@/components/ui/primitives";
+import { api } from "@/lib/api-client";
 import { ALIGNMENT_LABEL } from "@/lib/format";
-import type { ActionPlan, AnalysisTab } from "@/lib/types";
+import type { ActionPlan, AnalysisTab, CascadeNode, Goal, Proposal } from "@/lib/types";
 
 type Tab = "plans" | "cascade";
+const NO_GOALS: Goal[] = [];
+/** 수정 제안은 종합기획부 내부 검토 — 사업부서 흐름도에는 '수정 제안' 표시를 두지 않는다 */
+const NO_PROPOSALS: Proposal[] = [];
 type SheetState = { kind: "view"; id: string } | { kind: "create" } | null;
 
 /**
@@ -33,8 +39,32 @@ type SheetState = { kind: "view"; id: string } | { kind: "create" } | null;
 export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
   const { plans, proposedPlans, inProgressPlans, registerPlan, toggleBranchShare } = usePlanState();
   const { showToast } = useUi();
-  const cascade = useCascadeModel();
+  const session = useSession();
+  const localTree = useCascadeModel();
+  const goals = session.goals ?? NO_GOALS;
+  // 지금 보는 사업부서(관리자가 부서를 골라 볼 때도 그 부서) — 그 부서가 맡은 실행 사업에 '우리 부서' 표시
+  const { current } = useNavModel();
+  const ownOrg = current?.kind === "dept" ? current.orgName : null;
   const [tab, setTab] = useState<Tab>("plans");
+
+  // 전파 경로 — 목표 처리 상태(/state/goals)는 종합기획부 전용이라, 사업부서는 서버가 목표 수정 · 신설 · 진행사업을 반영해 계산한
+  // 현재 트리(/cascade/tree · F.16)를 쓴다. 진행사업 등록 · 영업점 참고를 바꾸면 다시 받는다. 받지 못하면 화면 모델로 그린다.
+  const remote = Boolean(session.menu);
+  const planKey = inProgressPlans.map((p) => `${p.id}:${p.branchShared ? 1 : 0}:${p.relatedGoalId ?? ""}:${p.title}`).join("|");
+  const [serverTree, setServerTree] = useState<CascadeNode[] | null>(null);
+  useEffect(() => {
+    if (tab !== "cascade" || !remote) return;
+    let alive = true;
+    api<CascadeNode[]>("/cascade/tree")
+      .then((t) => {
+        if (alive) setServerTree(t);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [tab, planKey, remote]);
+  const cascade = serverTree ?? localTree;
   const [sheet, setSheet] = useState<SheetState>(null);
 
   const viewing = sheet?.kind === "view" ? plans.find((p) => p.id === sheet.id) : undefined;
@@ -136,12 +166,17 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
           </section>
         </div>
       ) : (
-        <div className="shell">
-          <SectionHead
-            title="확정 목표의 전파 경로"
-            hint="목표 수정, 진행사업 등록, 영업점 참고 상태가 바로 반영됩니다"
-          />
-          <CascadeTree nodes={cascade} />
+        <div className="shell flex flex-col gap-5 pb-6">
+          {/* 종합기획부 [목표 관리 · 전파 경로]와 같은 흐름도 — 경영목표 → 실행 사업 → 영업점 (SCP-04) */}
+          <section className="rounded-xl border border-hairline-soft bg-canvas px-7 py-6" aria-label="경영목표 전파 경로">
+            <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-5">
+              <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">경영목표 전파 경로</h2>
+              <span className="text-[12px] text-steel">
+                최근 확정된 목표부터 위에 표시돼요 · 진행 사업 {inProgressPlans.length}건 · 진행사업 등록 · 영업점 참고 상태가 바로 반영돼요
+              </span>
+            </header>
+            <CascadeFlow nodes={cascade} goals={goals} proposals={NO_PROPOSALS} highlightOrg={ownOrg} />
+          </section>
         </div>
       )}
 

@@ -886,6 +886,14 @@ def analysis_spaces_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["analysis_spaces_upgrade"] = done
 
 
+def risk_cascade_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """사업부서 수행방안의 전파 경로(Phase K · SCP-04 · Q156) — 1회. 수행방안 화면(RISK_GUIDES)에 읽기 리소스 cascade · goals 를 더해
+    종합기획부 [목표 관리]와 같은 전파 경로를 보게 한다(없는 것만 · 관리자 편집 보존). 되돌리기: 관리자 [화면 권한]에서 리소스 회수."""
+    if _applied(s, "risk-guides-cascade-v1"):
+        return
+    out["risk_cascade_upgrade"] = _add_screen_resources(s, "RISK_GUIDES", ["cascade", "goals"])
+
+
 def analysis_agents_upgrade(s: Session, out: dict[str, Any]) -> None:
     """분석 에이전트(Phase C · DAG) — 1회. 분석 만들기 화면의 리소스 analysis_builder 를 더한다(정제 · 렌더링 에이전트는 seed_cfg 가 없을 때 추가)."""
     if _applied(s, "analysis-agents-v1"):
@@ -1031,6 +1039,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     admin_ia_upgrade(s, out)
     assist_rename_upgrade(s, out)
     builder_rename_upgrade(s, out)
+    risk_cascade_upgrade(s, out)
     upload_request_upgrade(s, out)
     analysis_spaces_upgrade(s, out)
     analysis_agents_upgrade(s, out)
