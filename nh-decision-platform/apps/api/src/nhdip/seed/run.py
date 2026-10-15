@@ -297,6 +297,24 @@ def _upgrade_workflow(s: Session, w: dict[str, Any]) -> None:
             s.add(WorkflowTrigger(workflow_code=w["code"], kind=kind, target=target, debounce_sec=w.get("debounce"), enabled=True))
 
 
+def keep_contract_mock_values() -> bool:
+    """컬럼 정의서의 시연 화면값(목업값 · 정정 기대값)을 시드에 넣을지 (M.22 · Q209) — 기본은 넣지 않는다(시연 수치가 화면에 남지 않게).
+    시험(conftest)은 SEED_CONTRACT_EXPECTED=1 로 켜서 시연 자료 계산이 정의서 화면값과 맞는지 대조한다."""
+    return os.environ.get("SEED_CONTRACT_EXPECTED", "0").strip().lower() in ("1", "true", "yes")
+
+
+def _contract_tables(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if keep_contract_mock_values():
+        return tables
+    return [{**t, "columns": [{**c, "expected_text": None} for c in t["columns"]]} for t in tables]
+
+
+def _contract_bindings(bindings: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    if keep_contract_mock_values():
+        return bindings
+    return {k: {kk: vv for kk, vv in v.items() if kk not in ("expected", "expected_note")} if isinstance(v, dict) else v for k, v in bindings.items()}
+
+
 def seed_contracts(s: Session, out: dict[str, Any]) -> None:
     from nhdip.contracts.materialize import import_workbook
     from nhdip.models import ColumnContract
@@ -304,10 +322,11 @@ def seed_contracts(s: Session, out: dict[str, Any]) -> None:
     if s.execute(select(ColumnContract.id).limit(1)).first():
         # 결정 반영(추천안) — 연결이 이전 기본값 그대로인 컬럼만 새 기본값으로
         n = 0
+        new_bindings = _contract_bindings(DC.BINDINGS)
         for c in s.execute(select(ColumnContract)).scalars():
             olds = DC.BINDING_UPGRADES.get(c.column_name)
-            if olds and c.binding in olds and DC.BINDINGS.get(c.column_name) not in (None, c.binding):
-                c.binding = DC.BINDINGS[c.column_name]
+            if olds and c.binding in olds and new_bindings.get(c.column_name) not in (None, c.binding):
+                c.binding = new_bindings[c.column_name]
                 n += 1
         out["contracts"] = {"exists": True, "binding_upgraded": n}
         if n:
@@ -315,7 +334,7 @@ def seed_contracts(s: Session, out: dict[str, Any]) -> None:
         return
     with open(os.path.join(HERE, "contracts", "hq_column_def_v2.json"), encoding="utf-8") as fh:
         spec = json.load(fh)
-    out["contracts"] = import_workbook(s, spec["tables"], spec["source_file"], DC.BINDINGS, "seed")
+    out["contracts"] = import_workbook(s, _contract_tables(spec["tables"]), spec["source_file"], _contract_bindings(DC.BINDINGS), "seed")
 
 
 def _template_bindings() -> list[dict[str, Any]]:
@@ -676,7 +695,7 @@ def dept_contracts_upgrade(s: Session, out: dict[str, Any], first: bool) -> None
             spec = json.load(fh)
         new = [t for t in spec["tables"] if not s.execute(select(ColumnContract.id).where(ColumnContract.table_code == t["table_code"]).limit(1)).first()]
         if new:
-            done[fn] = import_workbook(s, new, spec["source_file"], DD.BINDINGS, "seed")
+            done[fn] = import_workbook(s, _contract_tables(new), spec["source_file"], _contract_bindings(DD.BINDINGS), "seed")
     nodes = 0
     for wf, tables in DD.WORKFLOW_TABLES.items():
         have = s.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf).order_by(WorkflowNode.seq)).scalars().all()
@@ -696,6 +715,41 @@ def dept_contracts_upgrade(s: Session, out: dict[str, Any], first: bool) -> None
         for wf in DD.WORKFLOW_TABLES:
             emit(s, "manual", {"workflow": wf, "reason": "사업부서 · 영업점 컬럼 정의서 반영 후 적재"}, "seed")
     out["dept_contracts_upgrade"] = done
+
+
+def contract_mock_values_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """M.22 (Q209) — 운영 DB 의 컬럼 정의서에 시드로 들어간 시연 화면값(목업값 · 정정 기대값)을 비운다(1회).
+    시드 값 그대로인 것만 비운다 — 관리자가 정의서를 올려 바꾼 값 · 직접 고친 기대값은 건드리지 않는다."""
+    from nhdip.models import ColumnContract
+    from nhdip.seed import defs_dept_contracts as DD
+
+    if keep_contract_mock_values() or _applied(s, "contract-mock-values-v1"):
+        return
+    seeded: dict[tuple[str, str], str] = {}
+    for fn in ("hq_column_def_v2.json", *DD.SPEC_FILES):
+        with open(os.path.join(HERE, "contracts", fn), encoding="utf-8") as fh:
+            for t in json.load(fh)["tables"]:
+                for col in t["columns"]:
+                    if col.get("expected_text"):
+                        seeded[(t["table_code"], col["column_name"])] = col["expected_text"]
+    seed_expected = {k: v.get("expected") for k, v in {**DC.BINDINGS, **DD.BINDINGS}.items() if isinstance(v, dict) and v.get("expected")}
+    texts = bindings = 0
+    tables: set[str] = set()
+    for c in s.execute(select(ColumnContract)).scalars():
+        if c.expected_text and seeded.get((c.table_code, c.column_name)) == c.expected_text:
+            c.expected_text = None
+            texts += 1
+            tables.add(c.table_code)
+        b = c.binding or {}
+        exp = b.get("expected")
+        if exp and exp in (seed_expected.get(c.column_name), seed_expected.get(f"{c.table_code}.{c.column_name}")):
+            c.binding = {k: v for k, v in b.items() if k not in ("expected", "expected_note")}
+            bindings += 1
+            tables.add(c.table_code)
+    s.flush()
+    if tables and has_business_data(s):  # 자료가 있으면 대조 결과를 다시 만든다(없으면 다시 돌릴 것이 없음)
+        emit(s, "contract.changed", {"reason": "시연 화면값 제거(M.22)", "tables": sorted(tables)}, "seed")
+    out["contract_mock_values"] = {"expected_text": texts, "binding_expected": bindings, "tables": sorted(tables)}
 
 
 def score_snapshot_upgrade(s: Session, out: dict[str, Any]) -> None:
@@ -1119,6 +1173,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     hardening_upgrade(s, out)
     s.flush()
     dept_contracts_upgrade(s, out, first)
+    contract_mock_values_upgrade(s, out)
     score_snapshot_upgrade(s, out)
     ontology_extraction_upgrade(s, out)
     ontology_v3_upgrade(s, out)

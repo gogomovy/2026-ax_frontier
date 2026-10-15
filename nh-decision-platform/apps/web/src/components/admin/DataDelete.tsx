@@ -28,6 +28,63 @@ interface VersionPreview {
   emptyAfter: boolean;
   workflows: DeleteWorkflow[];
 }
+/** 연결까지 정의 삭제 미리보기 (DOB-12 · Q208) */
+export interface DefinitionPreview {
+  code: string;
+  name: string;
+  seedDefined: boolean;
+  versions: { id: number; version: number; asOf: string | null; isCurrent: boolean; rows: number; status: string }[];
+  rows: number;
+  metrics: { code: string; label: string; workflow: string | null; derived: boolean }[];
+  bindings: { id: number; workflow: string | null; builder: string; artifact: string; path: string }[];
+  triggers: { id: number; workflow: string; kind: string; debounce: number | null; enabled: boolean }[];
+  ontology: string[];
+  contracts: number;
+  pending: number;
+  workflows: { code: string; name: string }[];
+  blocked: string | null;
+}
+interface DefinitionDeleted {
+  deleted: string;
+  removed: { versions: number; rows: number; metricsDisabled: number; bindingsDisabled: number; triggersRemoved: number };
+  rerun: string[];
+}
+
+const short = (xs: string[], n = 4) => (xs.length > n ? `${xs.slice(0, n).join(", ")} 외 ${xs.length - n}개` : xs.join(", "));
+
+/** 연결까지 정의 삭제 확인 본문 — 무엇이 지워지고 무엇이 꺼지는지 */
+export function DefinitionPreviewBody({ p }: { p: DefinitionPreview }) {
+  const derived = p.metrics.filter((m) => m.derived).length;
+  return (
+    <div className="flex flex-col gap-xs text-[12.5px]" data-delete-preview="definition">
+      {p.seedDefined ? (
+        <p className="font-bold text-attention">
+          업무 화면 연결 정의입니다. 지우면 이 형식의 파일을 다시 올려도 업무 화면 수치로 이어지지 않습니다 — 같은 형식의 자료를 쓸 계획이면 지우지 말고 &apos;중지&apos;하거나 그대로 두세요(정의에는 업무 자료가 없습니다).
+        </p>
+      ) : null}
+      <ul className="list-disc pl-5">
+        <li>
+          올라온 버전 {p.versions.length}개{p.versions.length ? ` · ${p.rows.toLocaleString("ko-KR")}행` : ""} — {p.versions.length ? "행 · 원본 파일 · 그래프에서 지웁니다" : "없음"}
+        </li>
+        <li>
+          지표 {p.metrics.length}개 끔{derived ? `(파생 ${derived}개 포함)` : ""}
+          {p.metrics.length ? ` — ${short(p.metrics.map((m) => m.label || m.code))}` : ""}
+        </li>
+        <li>화면 바인딩 {p.bindings.length}개 끔</li>
+        <li>
+          워크플로 트리거 {p.triggers.length}개 지움{p.triggers.length ? ` — ${short([...new Set(p.triggers.map((t) => t.workflow))])}` : ""}
+        </li>
+        {p.ontology.length ? <li>온톨로지 원천({short(p.ontology)})은 그대로 둡니다 — 자료가 없으면 객체가 생기지 않습니다. [온톨로지]에서 정리하세요</li> : null}
+        {p.contracts ? <li>컬럼 정의서 {p.contracts}개 컬럼이 이 자료의 기준월 · 원천을 읽습니다 — &apos;입력 자료 없음&apos;으로 표시됩니다</li> : null}
+      </ul>
+      {p.versions.some((v) => v.isCurrent) && p.workflows.length ? (
+        <p className="text-steel">다시 계산되는 워크플로: {short(p.workflows.map((w) => w.name))}</p>
+      ) : null}
+      <p className="text-steel">지표 · 바인딩은 지우지 않고 끄기만 합니다([지표]에서 다시 켤 수 있음). 버전 · 행은 되돌릴 수 없습니다. 지운 시드 정의는 다시 기동해도 돌아오지 않습니다(설정 seed.suppressed_datasets).</p>
+    </div>
+  );
+}
+
 interface DocumentPreview {
   id: number;
   docCode: string;
@@ -122,7 +179,30 @@ export function useDataDelete() {
     await run(() => apiPost<{ scrubbed?: Scrubbed }>(`/admin/documents/${d.origin}/${d.id}/delete`, { reason }), (r) => `문서를 삭제했습니다 — 색인 · 그래프 반영이 이어서 실행됩니다${scrubText(r.scrubbed)}`, reload);
   };
 
-  return { deleteVersion, deleteDocument, busy };
+  /** 연결까지 정의 삭제 (DOB-12 · Q208) — 미리보기 → 사유 → 실행. 지운 뒤 onDone(목록으로 돌아가기 등) */
+  const deleteDefinition = async (ds: { code: string; name: string }, onDone: () => Promise<void> | void) => {
+    const p = await run(() => apiGetC<DefinitionPreview>(`/admin/datasets/${ds.code}/delete-preview`), undefined);
+    if (!p) return;
+    if (p.blocked) {
+      await confirm({ title: "지금은 지울 수 없습니다", body: <p className="text-[12.5px]">{p.blocked}</p>, confirmLabel: "확인", tone: "default" });
+      return;
+    }
+    const reason = await confirm({
+      title: `${ds.name} 정의를 연결까지 지울까요?`,
+      tone: "danger",
+      confirmLabel: "연결까지 정의 삭제",
+      body: <DefinitionPreviewBody p={p} />,
+      input: { label: "삭제 사유", placeholder: "예: 쓰지 않는 시연용 정의 정리", validate: reasonRule },
+    });
+    if (typeof reason !== "string" || !reason) return;
+    await run(
+      () => apiPost<DefinitionDeleted>(`/admin/datasets/${ds.code}/delete`, { reason }),
+      (r) => `정의를 지웠습니다 — 버전 ${r.removed.versions}개 · 지표 ${r.removed.metricsDisabled}개 끔 · 바인딩 ${r.removed.bindingsDisabled}개 끔 · 트리거 ${r.removed.triggersRemoved}개 지움${r.rerun.length ? ` · 다시 계산 ${r.rerun.length}개` : ""}`,
+      onDone,
+    );
+  };
+
+  return { deleteVersion, deleteDocument, deleteDefinition, busy };
 }
 
 interface PurgeTaskRow {

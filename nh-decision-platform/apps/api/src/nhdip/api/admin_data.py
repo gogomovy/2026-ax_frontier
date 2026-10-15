@@ -398,32 +398,59 @@ def dataset_connect(code: str, session: Session = Depends(get_session)):
     return connect_suggestions(session, code)
 
 
+class DeleteIn(BaseModel):
+    """삭제 요청 — 사유(2~500자). all_versions 는 문서(같은 문서 코드의 모든 판)에만 쓴다."""
+
+    reason: str
+    all_versions: bool = False
+
+
 @router.delete("/datasets/{code}")
 def dataset_delete(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    """데이터셋 정의 삭제(Phase M · DOB-09 · Q194) — 참조가 남아 있으면 막고 이유를 돌려준다(그때는 '중지' = active=false). 지운 시드 정의는 다시 넣지 않는다."""
-    from nhdip.models import DataProfile
+    """데이터셋 정의 삭제(Phase M · DOB-09 · Q194) — 참조가 남아 있으면 막고 이유를 돌려준다(그때는 '중지' 또는 [연결까지 정의 삭제]). 지운 시드 정의는 다시 넣지 않는다."""
+    from nhdip.data.definition_delete import drop_definition
 
     d = _ds(session, code)
     refs = dataset_references(session, code)
     if refs:
-        raise HTTPException(409, "지울 수 없습니다 — " + " · ".join(refs))
-    t = source(d.origin)
-    session.execute(t.version.__table__.delete().where(t.version.dataset_code == code))  # 삭제 표시만 남은 버전 기록
-    for p in session.execute(select(DataProfile).where(DataProfile.dataset_code == code)).scalars():
-        session.delete(p)
-    session.delete(d)
-    st = session.get(Setting, "seed.suppressed_datasets")
-    sup = list(st.value) if st is not None and isinstance(st.value, list) else []
-    if code not in sup:
-        sup.append(code)
-    if st is None:
-        session.add(Setting(key="seed.suppressed_datasets", value=sup, description="관리자가 지운 데이터셋 정의 — 시드가 다시 넣지 않는다(Phase M · Q194). 빼면 다음 기동에 시드 정의가 돌아온다"))
-    else:
-        st.value = sup
+        raise HTTPException(409, "지울 수 없습니다 — " + " · ".join(refs) + " (데이터 관리자는 [연결까지 정의 삭제]로 함께 정리할 수 있습니다)")
+    name = d.name
+    drop_definition(session, d)
     _config_changed(session, "dataset", code, admin.emp_no)
-    audit(session, admin.emp_no, "admin.dataset.delete", "dataset", code, {"name": d.name}, client_ip(request))
+    audit(session, admin.emp_no, "admin.dataset.delete", "dataset", code, {"name": name}, client_ip(request))
     session.commit()
     return {"deleted": code}
+
+
+@router.get("/datasets/{code}/delete-preview")
+def dataset_delete_preview(code: str, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    """연결까지 정의 삭제 — 미리보기(DOB-12 · Q208): 지울 버전 · 끌 지표 · 바인딩 · 지울 트리거 · 온톨로지 원천 · 다시 도는 워크플로."""
+    from nhdip.data.definition_delete import links
+
+    d = _ds(session, code)
+    out = links(session, d).as_dict()
+    out["name"] = d.name
+    from nhdip.seed import defs_branch as _B, defs_contracts as _DC, defs_data as _D
+
+    out["seedDefined"] = d.code in {x["code"] for x in [*_D.DATASETS, _DC.DATASET, *_B.DATASETS]}
+    return out
+
+
+@router.post("/datasets/{code}/delete")
+def dataset_delete_cascade(code: str, body: DeleteIn, request: Request, background: BackgroundTasks, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    """연결까지 정의 삭제(DOB-12 · Q208) — 버전은 모두 지우고, 지표 · 바인딩은 끄고, 트리거는 지운 뒤 정의를 지운다. 처리 중 요청이 있으면 409."""
+    from nhdip.data.deletion import DeleteError
+    from nhdip.data.definition_delete import delete_with_links
+
+    d = _ds(session, code)
+    try:
+        res = delete_with_links(session, d, admin.emp_no, body.reason, client_ip(request))
+    except DeleteError as exc:
+        session.rollback()
+        raise HTTPException(409 if "처리 중" in str(exc) else 422, str(exc)) from exc
+    session.commit()
+    _after_delete(background, res)
+    return res.as_dict()
 
 
 async def _read(file: UploadFile, purpose: str, session: Session, request: Request | None = None, actor: str | None = None) -> tuple[str, bytes]:
@@ -544,11 +571,6 @@ def dataset_rows(code: str, vid: int, limit: int = 200, session: Session = Depen
 
 
 # ═════════════════════════ 업로드 자료 삭제 (Phase J · DEL-01~08) ═════════════════════════
-class DeleteIn(BaseModel):
-    reason: str
-    all_versions: bool = False
-
-
 def _matched(session: Session, event_type: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     """삭제 이벤트가 깨우는 워크플로우 — 실제 디스패처 매칭 로직으로 미리보기."""
     names = {w.code: w.name for w in session.execute(select(Workflow)).scalars()}

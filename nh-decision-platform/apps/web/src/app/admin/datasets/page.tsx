@@ -489,17 +489,24 @@ function ConnectHelper({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) 
 function DefinitionManage({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) {
   const { run, busy } = useAction();
   const confirm = useConfirm();
+  const isDataAdmin = useIsDataAdmin();
+  const del = useDataDelete();
   const refs = ds.references ?? [];
   const active = ds.active !== false;
   return (
     <Card title="정의 관리" actions={ds.seedDefined ? <Badge tone="info">업무 화면 연결 정의</Badge> : <Badge tone="neutral">등록한 정의</Badge>}>
       <p className="mb-md text-[12.5px] text-steel">
         {ds.seedDefined
-          ? "업무 화면 수치 · 지표 · 화면 바인딩이 이 정의를 읽습니다. 쓰지 않으면 먼저 '중지'하세요 — 업로드 대상 · 파일 매칭에서 빠지고 정의는 남습니다. 지우면 다시 시드되지 않습니다(설정 seed.suppressed_datasets)."
+          ? "정의는 파일 형식(열 · 키 · 기준일)과 업무 화면 연결만 담고 업무 자료는 없습니다. 같은 형식의 파일을 올리면 이 정의로 읽혀 업무 화면 수치가 계산됩니다. 쓰지 않으면 '중지'하세요 — 업로드 대상 · 파일 매칭에서 빠지고 정의는 남습니다. 지우면 다시 시드되지 않습니다(설정 seed.suppressed_datasets)."
           : "자료 등록 · 파일로 만든 정의입니다. 중지하면 업로드 대상 · 파일 매칭에서 빠집니다."}
       </p>
       <div className="flex flex-wrap items-center gap-xs">
         <Check label={active ? "사용 중" : "중지됨"} checked={active} disabled={busy} onChange={(v) => run(() => apiPatch(`/admin/datasets/${ds.code}`, { active: v }), v ? "정의를 다시 사용합니다" : "정의를 중지했습니다", reload)} />
+        {refs.length && isDataAdmin ? (
+          <Button size="sm" variant="danger" disabled={busy || del.busy} onClick={() => del.deleteDefinition(ds, reload)} data-dataset-delete-cascade>
+            연결까지 정의 삭제
+          </Button>
+        ) : null}
         <Button
           size="sm"
           variant="danger"
@@ -518,7 +525,13 @@ function DefinitionManage({ ds, reload }: { ds: Ds; reload: () => Promise<void> 
         >
           정의 삭제
         </Button>
-        {refs.length ? <span className="text-[12px] text-attention">지울 수 없음 — 아래가 이 정의를 쓰고 있습니다</span> : <span className="text-[12px] text-steel">이 정의를 쓰는 곳이 없습니다</span>}
+        {refs.length ? (
+          <span className="text-[12px] text-attention">
+            {isDataAdmin ? "[정의 삭제]는 막힘 — 아래 연결을 함께 정리하려면 [연결까지 정의 삭제](미리보기 · 사유 확인)" : "지울 수 없음 — 아래가 이 정의를 쓰고 있습니다(연결까지 지우기는 데이터 관리자만)"}
+          </span>
+        ) : (
+          <span className="text-[12px] text-steel">이 정의를 쓰는 곳이 없습니다</span>
+        )}
       </div>
       {refs.length ? (
         <ul className="mt-xs list-disc pl-5 text-[12px] text-charcoal" aria-label="정의를 쓰는 곳">
