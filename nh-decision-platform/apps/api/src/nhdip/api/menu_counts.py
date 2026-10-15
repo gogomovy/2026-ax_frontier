@@ -6,24 +6,21 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from nhdip.models import AppUser
+from nhdip.views.readiness import gate, session_lookup
 from nhdip.views.store import get_current
 
 from .state_service import NS_PROPOSAL_ACTION, get_ns, merged_plans
 
 
-def _reviewable(p: dict[str, Any]) -> bool:
-    """검토할 수 있는 제안 — 추천값이 계산된 것(방향만 제시하는 제안 포함). 자료가 올라오기 전의 빈 제안은 '검토 필요' 건수에 세지 않는다."""
-    rec = p.get("recommendation") or {}
-    return rec.get("mode") == "direction_only" or any(rec.get(k) is not None for k in ("low", "high", "value"))
-
-
 def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
-    proposals = [p for p in (get_current(session, "proposals") or []) if isinstance(p, dict) and _reviewable(p)]
+    # 자료가 올라오기 전의 빈 제안 · 시연 탭은 '검토 필요' · 분석 건수에 세지 않는다 (views.readiness — M.19 · Q204)
+    look = session_lookup(session)
+    proposals = [p for p in (gate("proposals", get_current(session, "proposals")) or []) if isinstance(p, dict)]
     acted = get_ns(session, NS_PROPOSAL_ACTION)
     from nhdip.analysis_registry import dynamic_tabs
 
     # 신용리스크 분석 탭 = 기존 탭 + 그 공간의 분석 에이전트 탭 (Phase C · DAG-07)
-    tabs = list((get_current(session, "analysis_tabs") or {}).get("current", [])) + dynamic_tabs(session, "risk")
+    tabs = list((gate("analysis_tabs", get_current(session, "analysis_tabs"), look) or {}).get("current", [])) + dynamic_tabs(session, "risk")
     plans = merged_plans(session)
     # 영업점 분석 탭 — 사용자 영업점 산출물일 때만 센다 (Q44)
     from nhdip.orgs import can_view_office

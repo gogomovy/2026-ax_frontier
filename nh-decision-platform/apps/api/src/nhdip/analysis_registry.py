@@ -82,6 +82,11 @@ def dynamic_tabs(session: Session, space_key: str) -> list[dict[str, Any]]:
 def space_tabs(session: Session, sp: dict[str, Any], builtin: dict[str, Any] | None = None) -> dict[str, Any]:
     """기존 탭(산출물 · 범위 공간은 호출자가 지점 산출물을 넘김) + 분석 에이전트 탭."""
     base = builtin if builtin is not None else (get_current(session, sp["tabs"]) if sp.get("tabs") else None) or {}
+    if builtin is None and base:
+        # 보고서가 아직 자료로 계산되지 않은 기존 탭은 빼고 보인다 (M.19 · Q204 — 빈 DB 에 시연 탭이 남지 않게)
+        from nhdip.views.readiness import session_lookup, tabs_gate
+
+        base = tabs_gate(base, session_lookup(session), lambda t: report_key(sp, t))
     current = list(base.get("current") or [])
     have = {t.get("tabKey") for t in current}
     current += [t for t in dynamic_tabs(session, sp["key"]) if t["tabKey"] not in have]

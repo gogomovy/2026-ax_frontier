@@ -3,6 +3,8 @@
   python -m nhdip.cli seed [--with-precompute]     정의 시드 — 사용자 · 조직 · 설정 · 규칙 · 데이터셋 정의 · 지표 · 워크플로 · 값 없는 화면 틀 (멱등, 업무 자료는 넣지 않음)
   python -m nhdip.cli load-sample [--force]        시연 자료 패키지(엑셀 · CSV · PDF)를 업로드 경로(보안 검사 · 적재 함수)로 올림 — 같은 파일은 건너뜀
   python -m nhdip.cli sample-data <폴더>            시연 자료 패키지를 파일로 쓰기(manifest.json 포함 — 사람이 열어 보거나 화면에서 직접 업로드)
+  python -m nhdip.cli reset-data [--yes] [--force]  업무 자료 비우기 — 올린 자료 · 계산 결과 · 화면 산출물 · 색인 · 그래프 · 실행 기록을 지우고 정의만 남김.
+                                                   인자 없으면 미리보기(지울 행 수), --yes 로 실행. 사용자 · 설정 · 정의 · 감사 기록은 남는다 (M.19 · Q203)
   python -m nhdip.cli admin-password <사번>         비밀번호 재설정(표준입력) + 잠금 해제
   python -m nhdip.cli run <workflow_code>           워크플로우 즉시 실행(동기)
   python -m nhdip.cli db-app-role                  API 전용 DB 계정 생성 · 권한 부여 (APP_DB_PASSWORD, 소유자 계정으로 실행)
@@ -89,6 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     ap_ls.add_argument("--force", action="store_true", help="이미 올린 파일도 새 버전으로 다시 올림")
     ap_sd = sub.add_parser("sample-data")
     ap_sd.add_argument("folder")
+    ap_rd = sub.add_parser("reset-data", help="업무 자료 비우기(기본은 미리보기)")
+    ap_rd.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 지운다(되돌릴 수 없음)")
+    ap_rd.add_argument("--force", action="store_true", help="실행 중인 작업이 있어도 진행")
+    ap_rd.add_argument("--keep-external", action="store_true", help="Elasticsearch · Neo4j 는 건드리지 않음(다음 동기화 · 재투영이 정리)")
     ap_pw = sub.add_parser("admin-password")
     ap_pw.add_argument("emp_no")
     ap_run = sub.add_parser("run")
@@ -188,6 +194,25 @@ def main(argv: list[str] | None = None) -> int:
 
         paths = build().write(args.folder)
         print(json.dumps({"folder": args.folder, "files": len(paths)}, ensure_ascii=False))
+        return 0
+    if args.cmd == "reset-data":
+        from nhdip.data import reset as R
+        from nhdip.data.deletion import remove_files
+
+        with SessionLocal() as s:
+            pv = R.preview(s)
+            if not args.yes:
+                print(json.dumps({"preview": True, **pv, "next": "실제로 지우려면 --yes (make reset-data YES=1)"}, ensure_ascii=False, indent=1))
+                return 2
+            try:
+                rep = R.reset_business_data(s, "cli", external=not args.keep_external, force=args.force)
+            except R.ResetBusy as exc:
+                s.rollback()
+                print(str(exc), file=sys.stderr)
+                return 3
+            s.commit()
+            files = remove_files(s, rep.files) if rep.files else {}
+        print(json.dumps({"reset": True, **rep.as_dict(), "filesRemoved": files}, ensure_ascii=False, indent=1, default=str))
         return 0
     if args.cmd == "seed":
         from nhdip.seed.run import run_seed

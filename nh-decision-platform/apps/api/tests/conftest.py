@@ -63,6 +63,38 @@ def db():
     yield SessionLocal
 
 
+def drain_workflows(SessionLocal, rounds: int = 6, per_round: int = 60) -> int:
+    """워커 대신 — 미처리 이벤트를 디스패치하고 대기 작업을 모두 실행(디바운스 무시). 처리한 작업 수."""
+    from sqlalchemy import select
+
+    from nhdip.models import Job, utcnow
+    from nhdip.worker import process_one
+    from nhdip.workflow.dispatcher import dispatch_once
+
+    total = 0
+    for _ in range(rounds):
+        with SessionLocal() as s:
+            dispatch_once(s)
+            for j in s.execute(select(Job).where(Job.status == "queued")).scalars():
+                j.run_after = utcnow()
+            s.commit()
+        n = 0
+        while n < per_round and process_one("test"):
+            n += 1
+        total += n
+        if n == 0:
+            break
+    return total
+
+
+@pytest.fixture(scope="session")
+def computed(db):
+    """업로드 이벤트로 걸린 워크플로를 모두 돌린 상태 — 화면 산출물이 자료로 계산돼 있다(실제 업로드 뒤와 같음).
+    계산 전 값 없는 틀은 화면 · 색인에서 걸러지므로(M.19 · Q204) 분석 결과를 전제로 하는 시험은 이 fixture 를 쓴다."""
+    drain_workflows(db)
+    return db
+
+
 @pytest.fixture(autouse=True)
 def _reset_rate_limits():
     """테스트마다 속도 제한 창을 비운다 — 같은 IP(testclient)로 여러 번 로그인하므로."""

@@ -26,6 +26,15 @@ from nhdip.knowledge.render import render_artifact
 from nhdip.knowledge.search import body_signature, intent_of, rerank_analysis, rrf_fuse, search_config
 
 
+@pytest.fixture(autouse=True)
+def _analysis_computed(request):
+    """DB 시험은 분석 결과(업로드 뒤 워크플로가 계산한 산출물)를 전제로 한다 — 이 파일만 따로 돌려도 먼저 계산해 둔다.
+    계산 전 값 없는 틀의 시연 서술은 색인하지 않기 때문(M.19 · Q204)."""
+    if "db" in request.fixturenames:
+        request.getfixturevalue("computed")
+    yield
+
+
 # ═════════════════════════ 단위 — 선형화 · 청크 ═════════════════════════
 def _fig(i, label, value, unit="PCT", decimals=None):
     return {"id": i, "label": label, "value": value, "unit": unit, **({} if decimals is None else {"decimals": decimals})}

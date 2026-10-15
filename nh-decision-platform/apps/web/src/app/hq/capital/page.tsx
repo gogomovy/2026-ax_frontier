@@ -37,8 +37,14 @@ export default async function CapitalPage() {
                   <FigureText figure={c.value} strong />
                 </p>
                 <p className="mt-1.5 text-[11px] text-stone">
-                  {c.period} · {c.issuer} · {c.doc.title}
-                  {c.doc.page ? ` p.${c.doc.page}` : ""} · {formatDate(c.doc.effectiveDate ?? "")}
+                  {c.doc ? (
+                    <>
+                      {c.period} · {c.issuer} · {c.doc.title}
+                      {c.doc.page ? ` p.${c.doc.page}` : ""} · {formatDate(c.doc.effectiveDate ?? "")}
+                    </>
+                  ) : (
+                    "자료를 올리면 출처 문서와 함께 표시됩니다"
+                  )}
                 </p>
               </div>
             ))}
@@ -68,9 +74,9 @@ export default async function CapitalPage() {
                   <dt className="text-[12px] text-steel">한도 여유</dt>
                   <dd className="flex items-center gap-2">
                     <FigureText figure={capital.bankTarget.headroom} signed />
-                    <Badge tone={capital.bankTarget.passed ? "success" : "critical"}>
-                      {capital.bankTarget.passed ? "한도 이내" : "한도 초과"}
-                    </Badge>
+                    {capital.bankTarget.passed === null || capital.bankTarget.passed === undefined ? null : (
+                      <Badge tone={capital.bankTarget.passed ? "success" : "critical"}>{capital.bankTarget.passed ? "한도 이내" : "한도 초과"}</Badge>
+                    )}
                   </dd>
                 </div>
               </dl>

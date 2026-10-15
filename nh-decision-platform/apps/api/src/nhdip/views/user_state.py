@@ -92,8 +92,13 @@ def shared_plan_state(session: Session) -> dict[str, Any]:
 
 def merged_plans(session: Session) -> list[dict[str, Any]]:
     """PlanStateProvider.plans 와 같은 병합 결과 (메뉴 건수 · 영업점 화면 등 서버 계산용)."""
-    base = get_current(session, "action_plans") or []
+    from .readiness import gate, session_lookup
+
     st = plan_state(session)
+    raw = get_current(session, "action_plans") or []
+    # 근거가 아직 계산되지 않은 시연 수행방안은 빼되(M.19 · Q204), 사용자가 이미 처리한 것은 남긴다
+    ready = {p.get("id") for p in gate("action_plans", raw, session_lookup(session)) or [] if isinstance(p, dict)}
+    base = [p for p in raw if isinstance(p, dict) and (p.get("id") in ready or p.get("id") in st["runtime"])]
     out = []
     for p in [*base, *st["userPlans"]]:
         if p["id"] in st["deleted"]:

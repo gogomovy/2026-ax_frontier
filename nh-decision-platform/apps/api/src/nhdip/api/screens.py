@@ -15,6 +15,7 @@ from nhdip.db import get_session
 from nhdip.graph.evidence import doc_visible
 from nhdip.graph.search import graph_documents, hybrid_search
 from nhdip.models import AppUser, Dataset, Setting, source
+from nhdip.views.readiness import gate, session_lookup
 from nhdip.views.store import find_insight, get_current, get_current_row
 from nhdip.views.template import strip_tpl
 
@@ -27,7 +28,8 @@ def _artifact(session: Session, key: str) -> Any:
     v = get_current(session, key)
     if v is None:
         raise HTTPException(404, f"산출물 없음: {key}")
-    return strip_tpl(v)  # 서식 원문(xxxTpl · bindKey)은 서버 안에서만 — 화면에는 채워진 글만 (Phase I · Q138)
+    # 계산 전 시연 서술은 빼고(M.19 · Q204), 서식 원문(xxxTpl · bindKey)은 서버 안에서만 — 화면에는 채워진 글만 (Phase I · Q138)
+    return strip_tpl(gate(key, v, session_lookup(session)))
 
 
 def _simple(path: str, key: str, resource: str):
@@ -146,9 +148,10 @@ def report(tab_key: str, session: Session = Depends(get_session), user: AppUser 
         if allowed is not None and sp.get("resource") not in allowed:
             raise HTTPException(404, "보고서 없음")
     row = get_current_row(session, f"report.{tab_key}")
-    if not row:
+    payload = gate(f"report.{tab_key}", row.payload) if row else None
+    if payload is None:  # 없거나 아직 자료로 계산되지 않은 틀 (M.19)
         raise HTTPException(404, "보고서 없음")
-    return {**strip_tpl(row.payload), "workflow": _producer(session, f"report.{tab_key}")}
+    return {**strip_tpl(payload), "workflow": _producer(session, f"report.{tab_key}")}
 
 
 # ── 영업점 (B.29) — 산출물의 영업점(office.code)과 사용자 소속을 대조한다 (Q44) ──
@@ -200,18 +203,18 @@ def branch_dashboard(office: str | None = OFFICE_Q, session: Session = Depends(g
     v = branch_artifact(session, user, "branch_dashboard", office)
     if v is None:
         return {"available": False, "viewer": _viewer_office(session, user)}
-    return {**strip_tpl(v), "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
+    return {**strip_tpl(gate("branch_dashboard", v)), "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
 
 
 @router.get("/branch/tabs")
 def branch_tabs(office: str | None = OFFICE_Q, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_tabs"))):
     v = branch_artifact(session, user, "branch_tabs", office)
-    return strip_tpl(v) if v is not None else {"current": [], "previous": []}
+    return strip_tpl(gate("branch_tabs", v)) if v is not None else {"current": [], "previous": []}
 
 
 @router.get("/branch/reports/{tab_key}")
 def branch_report(tab_key: str, office: str | None = OFFICE_Q, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_reports"))):
-    v = branch_artifact(session, user, f"report.branch-{tab_key}", office)
+    v = gate(f"report.branch-{tab_key}", branch_artifact(session, user, f"report.branch-{tab_key}", office))
     if v is None:
         raise HTTPException(404, "보고서 없음")
     return {**strip_tpl(v), "workflow": _producer(session, f"report.branch-{tab_key}")}
@@ -250,7 +253,7 @@ def insight(insight_id: str, session: Session = Depends(get_session), user: AppU
     # 다른 부서 화면의 인사이트는 그 화면 리소스가 있을 때만 (B.32 — insights 리소스만으로 부서 간 열람 불가)
     allowed = user_resources(session, user)
     keys = [k for k in ("insights", "attentions", "risk_dashboard", "hq_dashboard") if allowed is None or k in allowed]
-    arts = {k: get_current(session, k) for k in keys}
+    arts = {k: gate(k, get_current(session, k)) for k in keys}  # 계산 전 시연 서술은 없는 것으로 (M.19)
     ins = find_insight({k: v for k, v in arts.items() if v is not None}, insight_id)
     if not ins:
         raise HTTPException(404, "인사이트 없음")

@@ -144,7 +144,11 @@ def _index_one(session: Session, key: str, gen: int, payload: Any, cfg: dict[str
         gen, payload = cur
     bkey = base_key(key)
     scope_val = key.partition("@")[2]
-    rendered = render_artifact(key, payload, cfg)
+    # 화면과 같은 기준 — 아직 자료로 계산되지 않은 시연 서술 · 보고서 틀은 색인하지 않는다 (M.19 · Q204)
+    from nhdip.views.readiness import gate
+
+    shown = gate(key, payload, flag=False)
+    rendered = render_artifact(key, shown if shown is not None else ({} if isinstance(payload, dict) else []), cfg)
     office_code = scope_val or str((rendered.office or {}).get("code") or "")
     scope_key = f"office:{office_code}" if office_code else None
     if not office_code and _office_scoped(bkey):

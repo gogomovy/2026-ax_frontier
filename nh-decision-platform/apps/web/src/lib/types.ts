@@ -305,9 +305,11 @@ export interface CapitalView {
     value: Figure;
     period: string;
     issuer: string;
-    doc: EvidenceDoc;
+    /** 계산 전(자료 업로드 전)이면 null */
+    doc: EvidenceDoc | null;
   }[];
-  bankTarget: { label: string; value: Figure; ceiling: Figure; headroom: Figure; passed: boolean };
+  /** passed — 계산 전이면 null */
+  bankTarget: { label: string; value: Figure; ceiling: Figure; headroom: Figure; passed: boolean | null };
   rwaAllocation: { org: string; allocated: Figure; used: Figure; usageRate: Figure }[];
   bisSimulation: { label: string; value: Figure; floor: Figure; note: string }[];
   proxyNote: string;
@@ -663,7 +665,8 @@ export interface BranchTarget {
   metricLabel: string;
   target: Figure;
   actual?: Figure;
-  progress?: number;
+  /** 계산 전이면 null (자료가 올라오기 전) */
+  progress?: number | null;
   periodLabel: string;
   sourcePlanTitle: string;
   sourceGoalTitle: string;
@@ -759,6 +762,8 @@ export interface HqDashboard {
 }
 
 export interface RiskDashboard {
+  /** 자료로 계산됐는지(서버 views.readiness) — false 면 값 없는 틀(자료 업로드 전) */
+  computed?: boolean;
   asOf: string;
   generatedAt: string;
   batchLabel: string;

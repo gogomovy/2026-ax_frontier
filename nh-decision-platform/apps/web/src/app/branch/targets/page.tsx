@@ -3,7 +3,7 @@ import { BranchGuides } from "@/components/domain/BranchGuides";
 import { ReportRequestForm } from "@/components/domain/ReportRequestForm";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { BandProgress } from "@/components/ui/BandProgress";
-import { SectionHead } from "@/components/ui/primitives";
+import { RowEmpty, SectionHead } from "@/components/ui/primitives";
 import { getBranchTargets } from "@/lib/data";
 
 /** 영업점 참고 — 본부에서 전파된 목표와 사업부서 가이드 (요구사항 BR-01 / BR-02) */
@@ -22,6 +22,9 @@ export default async function BranchTargetsPage() {
       <div className="shell flex flex-col gap-xxl">
         <section>
           <SectionHead title="전파된 목표" hint={`${targets.length}건${orgs.length ? ` · ${orgs.join(" · ")}` : ""}`} />
+          {targets.length === 0 ? (
+            <RowEmpty title="전파된 목표가 없습니다" description="경영목표 · 실적 자료가 올라와 목표가 계산되면 영업점 목표가 이곳에 표시됩니다." />
+          ) : null}
           <div className="grid grid-cols-1 gap-md lg:grid-cols-3">
             {targets.map((target) => (
               <article key={target.id} className="flex flex-col gap-3 rounded-2xl border border-hairline-soft p-lg">
@@ -48,7 +51,7 @@ export default async function BranchTargetsPage() {
                   ) : null}
                 </div>
 
-                {target.progress !== undefined ? (
+                {target.progress != null ? (
                   <BandProgress value={target.progress} band="targetProgress" label={`진행률 ${target.progress}%`} />
                 ) : null}
 

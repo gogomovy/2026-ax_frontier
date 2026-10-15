@@ -27,7 +27,11 @@ export default async function RiskDashboardPage() {
       <PageHeader
         eyebrow="1단계"
         title="현황"
-        description="부도율 추이와 모형 모니터링이 미리 분석되어 있습니다. 새 분석 결과는 바로 아래에서 열 수 있습니다."
+        description={
+          dashboard.computed === false
+            ? "아직 계산된 자료가 없습니다. 모형 등급별 집계 · 월별 부도율 자료를 올리면 부도율 추이와 모형 모니터링이 계산되고, 새 분석 결과가 이곳에 나타납니다."
+            : "부도율 추이와 모형 모니터링이 미리 분석되어 있습니다. 새 분석 결과는 바로 아래에서 열 수 있습니다."
+        }
       />
 
       <div className="shell flex flex-col gap-xxl">

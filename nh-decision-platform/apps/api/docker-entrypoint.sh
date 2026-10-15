@@ -37,7 +37,7 @@ case "$ROLE" in
       }
     fi
     if [[ "${SEED_ON_START:-0}" == "1" ]]; then
-      echo "[entrypoint] seeding master + simulated data"
+      echo "[entrypoint] seeding definitions (settings · dataset definitions · value-less screen templates — no business data)"
       NHDIP_USE_APP_ROLE=0 python -m nhdip.cli seed --with-precompute || echo "[entrypoint] seed skipped/failed (계속 진행)"
     fi
     if [[ "${LOAD_SAMPLE_ON_START:-0}" == "1" ]]; then

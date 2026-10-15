@@ -119,8 +119,13 @@ function SeriesTile({
         <FigureText figure={series.latest} strong />
       </p>
       <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-stone">
-        <StatusDot severity={series.severity} />
-        {SEVERITY_TEXT[series.severity]} · <FigureText figure={series.deltaPP} signed />
+        {series.severity ? (
+          <>
+            <StatusDot severity={series.severity} />
+            {SEVERITY_TEXT[series.severity]} ·{" "}
+          </>
+        ) : null}
+        <FigureText figure={series.deltaPP} signed />
       </p>
     </div>
   );

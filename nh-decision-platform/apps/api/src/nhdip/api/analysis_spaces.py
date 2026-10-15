@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 from nhdip.analysis_registry import agent_for_tab, report_key, space, space_tabs, spaces
 from nhdip.db import get_session
 from nhdip.models import AppUser
+from nhdip.views.readiness import gate
 from nhdip.views.store import get_current_row
+from nhdip.views.template import strip_tpl
 
 from .deps import current_user, user_resources
 from .screens import OFFICE_Q, _producer, branch_artifact
@@ -84,6 +86,7 @@ def report(space_key: str, tab_key: str, office: str | None = OFFICE_Q, session:
         row = get_current_row(session, key)
         payload = row.payload if row is not None else None
         extra = {}
+    payload = gate(key, payload)  # 아직 자료로 계산되지 않은 보고서 틀은 없는 것으로 (M.19 · Q204)
     if payload is None:
         raise HTTPException(404, "보고서 없음")
-    return {**payload, **extra, "workflow": _producer(session, key)}
+    return {**strip_tpl(payload), **extra, "workflow": _producer(session, key)}
