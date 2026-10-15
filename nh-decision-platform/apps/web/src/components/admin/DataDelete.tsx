@@ -39,6 +39,7 @@ export interface DefinitionPreview {
   bindings: { id: number; workflow: string | null; builder: string; artifact: string; path: string }[];
   triggers: { id: number; workflow: string; kind: string; debounce: number | null; enabled: boolean }[];
   ontology: string[];
+  proposals: number;
   contracts: number;
   pending: number;
   workflows: { code: string; name: string }[];
@@ -46,7 +47,17 @@ export interface DefinitionPreview {
 }
 interface DefinitionDeleted {
   deleted: string;
-  removed: { versions: number; rows: number; metricsDisabled: number; bindingsDisabled: number; triggersRemoved: number };
+  removed: {
+    versions: number;
+    rows: number;
+    metricsDisabled: number;
+    bindingsDisabled: number;
+    triggersRemoved: number;
+    screensCleared: number;
+    calcRunsRemoved: number;
+    noDataLeft: boolean;
+    ontologyBackingRemoved: number;
+  };
   rerun: string[];
 }
 
@@ -74,8 +85,11 @@ export function DefinitionPreviewBody({ p }: { p: DefinitionPreview }) {
         <li>
           워크플로 트리거 {p.triggers.length}개 지움{p.triggers.length ? ` — ${short([...new Set(p.triggers.map((t) => t.workflow))])}` : ""}
         </li>
-        {p.ontology.length ? <li>온톨로지 원천({short(p.ontology)})은 그대로 둡니다 — 자료가 없으면 객체가 생기지 않습니다. [온톨로지]에서 정리하세요</li> : null}
+        <li>이 자료로 계산된 값 — 업무 화면의 수치 · 서술 · 표/차트, 지난 화면 세대, 계산 기록, 실행 기록의 계산 값에서 지웁니다</li>
+        {p.ontology.length ? <li>온톨로지 원천({short(p.ontology)}) — 원천 연결을 뺀 새 스키마 판을 만듭니다(객체 · 링크 유형은 남김)</li> : null}
+        {p.proposals ? <li>이 자료를 원천으로 쓰는 승인 대기 온톨로지 제안 {p.proposals}건을 닫습니다</li> : null}
         {p.contracts ? <li>컬럼 정의서 {p.contracts}개 컬럼이 이 자료의 기준월 · 원천을 읽습니다 — &apos;입력 자료 없음&apos;으로 표시됩니다</li> : null}
+        <li>온톨로지 구성 지도 · 그래프(Neo4j)에서 빠집니다 — 꺼진 지표는 넣지 않고, 올린 자료가 하나도 없으면 비어 있습니다</li>
       </ul>
       {p.versions.some((v) => v.isCurrent) && p.workflows.length ? (
         <p className="text-steel">다시 계산되는 워크플로: {short(p.workflows.map((w) => w.name))}</p>
@@ -198,7 +212,9 @@ export function useDataDelete() {
     if (typeof reason !== "string" || !reason) return;
     await run(
       () => apiPost<DefinitionDeleted>(`/admin/datasets/${ds.code}/delete`, { reason }),
-      (r) => `정의를 지웠습니다 — 버전 ${r.removed.versions}개 · 지표 ${r.removed.metricsDisabled}개 끔 · 바인딩 ${r.removed.bindingsDisabled}개 끔 · 트리거 ${r.removed.triggersRemoved}개 지움${r.rerun.length ? ` · 다시 계산 ${r.rerun.length}개` : ""}`,
+      (r) =>
+        `정의를 지웠습니다 — 버전 ${r.removed.versions}개 · 지표 ${r.removed.metricsDisabled}개 끔 · 트리거 ${r.removed.triggersRemoved}개 지움 · 화면 ${r.removed.screensCleared}개 · 계산 기록 ${r.removed.calcRunsRemoved}건 정리` +
+        `${r.removed.ontologyBackingRemoved ? ` · 온톨로지 원천 ${r.removed.ontologyBackingRemoved}곳 제거` : ""}${r.removed.noDataLeft ? " · 올린 자료가 없어 화면을 모두 비웠습니다" : r.rerun.length ? ` · 다시 계산 ${r.rerun.length}개` : ""}`,
       onDone,
     );
   };

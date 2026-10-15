@@ -258,6 +258,8 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
   const [failure, setFailure] = useState<string | null>(null);
   // 맞는 자료가 없는 새 종류 파일 — 파일에서 추론한 정의를 확인하고 새 자료로 등록 요청 (DEF-03)
   const [proposing, setProposing] = useState(false);
+  // 정의를 미리 만들 필요 없이 올리기(M.24 · DOB-16) — 대상 없이 보내면 서버가 맞는 자료를 찾고, 없으면 파일에서 정의를 만들어 승인 때 등록한다
+  const [autoNew, setAutoNew] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
 
   const loadMine = useCallback(async () => {
@@ -300,8 +302,10 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
   const pickFile = (f: File | null) => {
     setFailure(null);
     setFile(f);
+    setProposing(false);
     if (!f) {
       if (!pinned && kind === "dataset") setTarget("");
+      setAutoNew(false);
       return;
     }
     setTextMode(false);
@@ -324,11 +328,23 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
       setKind("dataset");
       setPinned(false);
     }
-    if (wasDoc || !pinned) setTarget(confidentSuggestion(suggestDatasets(f.name, opts.datasets))?.code ?? "");
+    if (wasDoc || !pinned) {
+      const sure = confidentSuggestion(suggestDatasets(f.name, opts.datasets))?.code ?? "";
+      setTarget(sure);
+      // 확실한 자료가 없으면 '새 종류 자료(정의 자동)'로 — 서버가 머리글로 한 번 더 찾고, 없으면 파일에서 정의를 만든다
+      setAutoNew(!sure && Boolean(opts.canPropose));
+    }
   };
   const pickTarget = (code: string) => {
     setTarget(code);
     setPinned(true);
+    setAutoNew(false);
+    setFailure(null);
+  };
+  const pickAutoNew = () => {
+    setTarget("");
+    setPinned(true);
+    setAutoNew(true);
     setFailure(null);
   };
   const startText = () => {
@@ -350,7 +366,7 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
     kind === "dataset"
       ? !file
         ? "1단계에서 파일을 고르세요."
-        : !ds
+        : !ds && !autoNew
           ? "2단계에서 이 파일이 어떤 자료인지 고르세요."
           : null
       : !file && !textMode
@@ -392,7 +408,7 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
       const fd = new FormData();
       if (file) fd.append("file", file);
       if (kind === "dataset") {
-        fd.append("target", target);
+        if (!autoNew) fd.append("target", target);
         fd.append("data_origin", form.data_origin);
         if (form.as_of) fd.append("as_of", form.as_of);
       } else {
@@ -405,8 +421,16 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
       if (form.note) fd.append("note", form.note);
       const r = await api<UploadReq>(`/db/uploads/${kind}`, { method: "POST", body: fd });
       setLast(r);
-      showToast(`승인 요청을 보냈습니다 — ${APPROVER_TEXT}가 승인하면 반영됩니다`, "success");
+      showToast(
+        r.meta?.proposal
+          ? `새 종류 자료로 요청했습니다 — ${APPROVER_TEXT}가 승인하면 파일에서 만든 정의로 '${r.meta.proposal.name}' 이(가) 만들어지고 이 파일이 첫 버전이 됩니다`
+          : autoNew && kind === "dataset"
+            ? `'${r.targetLabel}' 의 새 버전으로 요청했습니다(머리글이 맞는 자료) — ${APPROVER_TEXT}가 승인하면 반영됩니다`
+            : `승인 요청을 보냈습니다 — ${APPROVER_TEXT}가 승인하면 반영됩니다`,
+        "success",
+      );
       setFile(null);
+      setAutoNew(false);
       setAutoTitle("");
       setForm((f) => ({ ...f, note: "", title: "", issuer: "", published_at: "", text: "" }));
       await loadMine();
@@ -454,7 +478,7 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
             )}
           </Step>
 
-          <Step n={2} title={kind === "dataset" ? "어떤 자료인지 확인" : "문서 분류와 제목"} done={kind === "dataset" ? Boolean(ds) : Boolean(cls && form.title.trim())}>
+          <Step n={2} title={kind === "dataset" ? "어떤 자료인지 확인" : "문서 분류와 제목"} done={kind === "dataset" ? Boolean(ds) || (autoNew && Boolean(file)) : Boolean(cls && form.title.trim())}>
             {kind === "dataset" ? (
               !showChooser ? (
                 <div className="flex flex-wrap items-center gap-sm">
@@ -480,8 +504,26 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                       </button>
                     </Notice>
                   ) : null}
-                  {file && !suggestions.length && !target ? (
-                    <p className="text-[12.5px] text-attention" role="status" data-upload-no-suggestion>
+                  {file && autoNew ? (
+                    <Notice tone="info" title="새 종류 자료로 올립니다 — 정의를 미리 만들 필요가 없습니다">
+                      <span data-upload-auto-new>
+                        보내면 머리글로 맞는 자료를 한 번 더 찾고, 없으면 파일의 머리글 · 값으로 정의(열 · 타입 · 키 · 기준일)를 만들어 함께 요청합니다. {APPROVER_TEXT}가 승인하면 그 정의로 데이터셋이 만들어지고 이 파일이 첫 버전이
+                        됩니다. 다음 달 파일은 같은 자료로 이어집니다. 기존 자료의 새 버전이라면 아래 목록에서 고르세요.{" "}
+                      </span>
+                      <button type="button" className="font-bold text-primary underline" onClick={() => setProposing(true)} data-upload-propose>
+                        만들 정의 미리 보기 · 고치기
+                      </button>
+                    </Notice>
+                  ) : null}
+                  {file && !autoNew && !ds && opts.canPropose ? (
+                    <div className="flex flex-wrap items-center gap-sm" role="status" data-upload-no-suggestion>
+                      <p className="text-[12.5px] text-attention">{suggestions.length ? "추천 자료가 맞지 않으면" : "파일 이름으로 맞는 자료를 찾지 못했습니다."} 아래 목록에서 고르거나 새 종류 자료로 올리세요.</p>
+                      <Button size="sm" variant="quiet" onClick={pickAutoNew} data-upload-pick-auto>
+                        새 종류 자료로 올리기(정의 자동)
+                      </Button>
+                    </div>
+                  ) : file && !suggestions.length && !target && !autoNew ? (
+                    <p className="text-[12.5px] text-attention" role="status">
                       파일 이름으로 맞는 자료를 찾지 못했습니다. 아래 목록에서 고르세요.
                     </p>
                   ) : null}
@@ -493,19 +535,14 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                       ))}
                     </div>
                   ) : (
-                    <EmptyState compact title="맞는 자료가 없습니다" description={opts.canPropose ? "찾는 말을 바꾸거나, 새 종류의 자료라면 아래에서 이 파일로 새 자료 등록을 요청하세요." : "찾는 말을 바꾸거나, 새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요."} />
+                    <EmptyState
+                      compact
+                      title={opts.datasets.length ? "맞는 자료가 없습니다" : "아직 등록된 자료가 없습니다"}
+                      description={opts.canPropose ? "그대로 보내면 새 종류 자료로 올라갑니다 — 파일에서 정의를 만들어 승인 때 등록합니다." : "새 종류의 자료라면 관리자에게 데이터셋 등록을 요청하세요."}
+                    />
                   )}
-                  {opts.canPropose && file ? (
-                    proposing ? (
-                      <NewDatasetPanel file={file} inferPath="/db/uploads/dataset-infer" submitLabel="검사하고 새 자료 등록 요청" onSubmit={propose} onClose={() => setProposing(false)} />
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-hairline px-md py-3">
-                        <p className="text-[12.5px] text-steel">목록에 맞는 자료가 없나요? 새 종류의 자료라면 파일의 머리글 · 값으로 열 정의를 만들어 등록을 요청할 수 있습니다. 정해진 목록에 없어도 올릴 수 있습니다.</p>
-                        <Button size="sm" variant="quiet" className="mt-xs" onClick={() => setProposing(true)} data-upload-propose>
-                          이 파일로 새 종류 자료 등록 요청
-                        </Button>
-                      </div>
-                    )
+                  {opts.canPropose && file && proposing ? (
+                    <NewDatasetPanel file={file} inferPath="/db/uploads/dataset-infer" submitLabel="이 정의로 새 자료 등록 요청" onSubmit={propose} onClose={() => setProposing(false)} />
                   ) : null}
                   {!q.trim() && ordered.length > LIST_HEAD ? (
                     <div>
@@ -543,11 +580,17 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
 
           <Step n={3} title="기준 정보" done={false}>
             {kind === "dataset" ? (
-              ds ? (
-                <div className="flex flex-col gap-md" data-upload-selected={ds.code}>
-                  <p className="text-[12.5px] leading-relaxed text-steel">
-                    <strong className="font-bold text-ink-deep">{ds.name}</strong> · {versionText(ds)} — 승인되면 새 버전이 됩니다. {ds.description}
-                  </p>
+              ds || (autoNew && file) ? (
+                <div className="flex flex-col gap-md" data-upload-selected={ds?.code ?? "auto"}>
+                  {ds ? (
+                    <p className="text-[12.5px] leading-relaxed text-steel">
+                      <strong className="font-bold text-ink-deep">{ds.name}</strong> · {versionText(ds)} — 승인되면 새 버전이 됩니다. 정의에 없는 열이 있으면 승인 때 정의에 더해 함께 저장합니다. {ds.description}
+                    </p>
+                  ) : (
+                    <p className="text-[12.5px] leading-relaxed text-steel">
+                      새 종류 자료 — 승인되면 파일에서 만든 정의로 데이터셋이 만들어지고 이 파일이 첫 버전이 됩니다.
+                    </p>
+                  )}
                   <div className="grid grid-cols-1 gap-md md:grid-cols-3">
                     <Field label="자료 성격" htmlFor="up-origin">
                       <select id="up-origin" className="input !h-9 text-[13px]" value={form.data_origin} onChange={(e) => setForm({ ...form, data_origin: e.target.value })}>
@@ -562,20 +605,22 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                       <input id="up-note" className="input !h-9 text-[13px]" value={form.note} maxLength={500} placeholder="예: 8월 정정본" onChange={(e) => setForm({ ...form, note: e.target.value })} />
                     </Field>
                   </div>
-                  <Advanced label={`이 자료의 열 ${ds.columns.length}개${ds.filePattern ? " · 파일 이름 규칙" : ""}`}>
-                    {ds.filePattern ? (
-                      <p className="mb-xs text-[11.5px] text-steel">
-                        파일 이름 규칙 <code className="font-mono text-charcoal">{ds.filePattern}</code>
-                      </p>
-                    ) : null}
-                    <ul className="grid grid-cols-1 gap-x-lg gap-y-0.5 text-[11.5px] md:grid-cols-2">
-                      {ds.columns.map((c) => (
-                        <li key={c.name}>
-                          <code className="font-mono text-charcoal">{c.name}</code> <span className="text-stone">{c.label}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </Advanced>
+                  {ds ? (
+                    <Advanced label={`이 자료의 열 ${ds.columns.length}개${ds.filePattern ? " · 파일 이름 규칙" : ""}`}>
+                      {ds.filePattern ? (
+                        <p className="mb-xs text-[11.5px] text-steel">
+                          파일 이름 규칙 <code className="font-mono text-charcoal">{ds.filePattern}</code>
+                        </p>
+                      ) : null}
+                      <ul className="grid grid-cols-1 gap-x-lg gap-y-0.5 text-[11.5px] md:grid-cols-2">
+                        {ds.columns.map((c) => (
+                          <li key={c.name}>
+                            <code className="font-mono text-charcoal">{c.name}</code> <span className="text-stone">{c.label}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </Advanced>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-[12.5px] text-stone">2단계에서 자료를 고르면 기준 정보를 넣을 수 있습니다.</p>

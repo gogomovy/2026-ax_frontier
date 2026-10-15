@@ -188,3 +188,182 @@ def test_cascade_delete_without_versions_and_guards(db):
             assert not any(e.type == "manual" and DS2 in (e.payload or {}).get("reason", "") for e in s.execute(select(OutboxEvent).where(OutboxEvent.dispatched_at.is_(None))).scalars())
     finally:
         _cleanup(db)
+
+
+# ═════════════════════════ M.23 — 이 자료로 계산된 값 · 온톨로지 · 시드 ═════════════════════════
+ART = "t_defdel_view"
+
+
+def _seed_derived(db) -> dict:
+    """이 자료로 계산된 것처럼 — 화면 산출물(수치 · 서술 · 바인딩 표) 두 세대, 계산 기록, 실행 기록."""
+    from nhdip.models import CalcRun, MetricValue, NodeRun, WorkflowRun, new_id
+    from nhdip.views.store import publish
+
+    def payload(v):
+        return {
+            "asOf": "2026-08-31",
+            "rows": [{"item": "A", "amount": v}],
+            "kpi": {"id": "t_defdel_sum", "label": "시험 합계", "unit": "KRW_BN", "value": v, "calc": {"formula": "SUM"}, "dataOrigin": "simulated"},
+            "keep": {"id": "t_defdel_other", "label": "무관한 지표", "unit": "KRW_BN", "value": 7},
+            "insight": {"id": "ins-t", "statement": "합계는 [[fig:t_defdel_sum]] 이다", "figures": {"t_defdel_sum": {}}, "asOf": "2026-08-31"},
+            "other_insight": {"id": "ins-o", "statement": "무관 [[fig:t_defdel_other]]", "figures": {"t_defdel_other": {}}, "asOf": "2026-08-31"},
+        }
+
+    with db() as s:
+        publish(s, ART, payload(10), produced_by=WF)
+        s.flush()
+        publish(s, ART, payload(31), produced_by=WF)
+        run_id = new_id()
+        s.add(WorkflowRun(id=run_id, workflow_code=WF, status="succeeded", causes=[]))
+        cr, cr_o = CalcRun(formula_id="SUM", metric_code="t_defdel_sum", value=31), CalcRun(formula_id="SUM", metric_code="t_defdel_other", value=7)
+        band = CalcRun(formula_id="BAND", metric_code="t_defdel_sum#band", value=1)
+        s.add_all([cr, cr_o, band])
+        s.flush()
+        s.add_all([MetricValue(metric_code="t_defdel_sum", value=31, display_value=31, calc_run_id=cr.id), MetricValue(metric_code="t_defdel_other", value=7, display_value=7, calc_run_id=cr_o.id)])
+        s.add(NodeRun(workflow_run_id=run_id, seq=1, node_key="compute", impl="compute_metrics", status="succeeded",
+                      output={"computed": 2, "values": {"t_defdel_sum": {"display": 31}, "t_defdel_other": {"display": 7}}, "changed": {"t_defdel_sum": {"display": 31}}, "errors": {}}))
+        s.commit()
+        return {"run": run_id, "cr_o": cr_o.id}
+
+
+def test_cascade_clears_values_computed_from_the_dataset(db):
+    from nhdip.graph.projection import collect_graph
+    from nhdip.models import CalcRun, MetricValue, NodeRun, ViewArtifact, ViewBinding
+
+    c = _admin()
+    _cleanup(db)
+    assert c.post("/admin/datasets", json=_definition(DS)).status_code == 201
+    _wire(db)
+    with db() as s:
+        b = s.execute(select(ViewBinding).where(ViewBinding.workflow_code == WF)).scalars().one()
+        b.artifact_key = ART  # 바인딩 표 = 산출물의 rows
+        s.commit()
+    try:
+        _upload(c, "defdel_d1.csv", [("202608", "A", 31)])
+        ids = _seed_derived(db)
+        with db() as s:
+            got = {(lab[0], k) for lab, items in collect_graph(s).nodes.items() for k in items}
+            assert ("Metric", "t_defdel_sum") in got and ("Workflow", WF) in got
+        r = c.post(f"/admin/datasets/{DS}/delete", json={"reason": "계산 값 정리 시험"})
+        assert r.status_code == 200, r.text
+        rm = r.json()["removed"]
+        assert rm["screensCleared"] >= 1 and rm["generationsRemoved"] >= 1 and rm["calcRunsRemoved"] == 2 and rm["metricValuesRemoved"] == 1 and rm["nodeRunsScrubbed"] >= 1
+        assert rm["noDataLeft"] is False
+        with db() as s:
+            cur = s.execute(select(ViewArtifact).where(ViewArtifact.key == ART, ViewArtifact.is_current)).scalars().one()
+            p = cur.payload
+            assert cur.produced_by == "deletion"
+            assert p["kpi"]["value"] is None and "calc" not in p["kpi"] and "dataOrigin" not in p["kpi"]  # 지운 자료로 낸 값
+            assert p["keep"]["value"] == 7  # 다른 자료의 값은 그대로
+            assert p["insight"]["asOf"] is None and p["other_insight"]["asOf"] == "2026-08-31"  # 그 수치를 쓰는 서술은 계산 전으로(숨김)
+            assert p["rows"] == []  # 이 자료를 읽던 바인딩 표
+            # 지운 값이 든 지난 세대는 없다
+            for g in s.execute(select(ViewArtifact).where(ViewArtifact.key == ART, ~ViewArtifact.is_current)).scalars():
+                assert (g.payload.get("kpi") or {}).get("value") is None
+            assert s.execute(select(func.count()).select_from(MetricValue).where(MetricValue.metric_code == "t_defdel_sum")).scalar() == 0
+            assert s.execute(select(func.count()).select_from(CalcRun).where(CalcRun.metric_code.in_(["t_defdel_sum", "t_defdel_sum#band"]))).scalar() == 0
+            assert s.get(CalcRun, ids["cr_o"]) is not None  # 무관한 지표의 계산 기록은 남는다
+            nr = s.execute(select(NodeRun).where(NodeRun.workflow_run_id == ids["run"])).scalars().one()
+            assert set(nr.output["values"]) == {"t_defdel_other"} and nr.output["changed"] == {}
+            # 구성 지도 · 그래프 — 꺼진 지표는 넣지 않는다
+            got = {(lab[0], k) for lab, items in collect_graph(s).nodes.items() for k in items}
+            assert ("Metric", "t_defdel_sum") not in got and ("Metric", "t_defdel_half") not in got and ("Metric", "t_defdel_other") in got
+    finally:
+        with db() as s:
+            for a in s.execute(select(ViewArtifact).where(ViewArtifact.key == ART)).scalars():
+                s.delete(a)
+            for x in s.execute(select(CalcRun).where(CalcRun.metric_code.like("t_defdel_%"))).scalars():
+                s.delete(x)
+            for x in s.execute(select(MetricValue).where(MetricValue.metric_code.like("t_defdel_%"))).scalars():
+                s.delete(x)
+            s.commit()
+        _cleanup(db)
+
+
+def test_unlink_ontology_removes_backing_and_closes_proposals(db):
+    from nhdip.data.definition_delete import unlink_ontology
+    from nhdip.graph.projection import active_schema
+    from nhdip.models import OntologyProposal, OntologySchema
+
+    with db() as s:
+        try:
+            sc = active_schema(s)
+            classes = [dict(c) for c in sc.classes]
+            classes[0] = {**classes[0], "backing": [*(classes[0].get("backing") or []), {"dataset": DS, "key_col": "item"}, {"dataset": "OTHER_DS", "key_col": "k"}]}
+            s.add(OntologySchema(version=9999, classes=classes, relations=sc.relations, aliases=sc.aliases, interfaces=sc.interfaces, note="시험", active=True))
+            sc.active = False
+            p = OntologyProposal(status="pending", title="원천 추가", ops=[{"op": "add_backing", "class": classes[0]["label"], "backing": {"dataset": DS}}])
+            p2 = OntologyProposal(status="pending", title="무관", ops=[{"op": "add_alias", "class": "X", "alias": "y"}])
+            s.add_all([p, p2])
+            s.flush()
+            out = unlink_ontology(s, DS, [p.id], "tester")
+            s.flush()
+            assert out["backing"] == 1 and out["schemaVersion"] == 10000 and out["proposals"] == 1
+            new = active_schema(s)
+            assert new.version == 10000 and [b["dataset"] for b in new.classes[0]["backing"] if b["dataset"] in (DS, "OTHER_DS")] == ["OTHER_DS"]
+            assert p.status == "superseded" and p2.status == "pending"
+        finally:
+            s.rollback()
+
+
+def test_empty_platform_runs_blank_outputs_instead_of_computing(db, monkeypatch):
+    """올린 자료가 하나도 없으면 워크플로는 계산하지 않고 산출물을 값 없는 틀로 둔다 — 규칙 · 상수 수치나 옛 값이 다시 채워지지 않게."""
+    import nhdip.graph.projection as P
+    from nhdip.graph.projection import collect_graph
+    from nhdip.models import ViewArtifact, Workflow
+    from nhdip.views.store import publish
+    from nhdip.workflow.engine import NO_DATA_NOTE, run_workflow
+
+    _cleanup(db)
+    with db() as s:
+        s.add(Workflow(code=WF, name="빈 플랫폼 시험", enabled=True, outputs=[ART]))
+        s.flush()
+        publish(s, ART, {"asOf": "2026-08-31", "kpi": {"id": "t_k", "label": "k", "unit": "PCT", "value": 1.5, "calc": {}}}, produced_by=WF)
+        s.commit()
+    try:
+        monkeypatch.setattr(P, "has_uploaded_data", lambda s: False)
+        with db() as s:
+            run = run_workflow(s, WF, [{"type": "manual"}])
+            assert run.status == "succeeded" and run.summary["no_data"] and run.summary["note"] == NO_DATA_NOTE and run.summary["published"] == [ART]
+            cur = s.execute(select(ViewArtifact).where(ViewArtifact.key == ART, ViewArtifact.is_current)).scalars().one()
+            assert cur.payload["kpi"]["value"] is None and cur.payload["asOf"] is None
+            # 다시 돌려도 새 세대를 만들지 않는다(이미 값 없는 틀)
+            assert run_workflow(s, WF, [{"type": "manual"}]).summary["published"] == []
+            assert collect_graph(s).nodes == {} and collect_graph(s).counts.get("no_data") == 1  # 구성 지도 · 그래프도 비어 있다
+            from nhdip.graph.ontology_map import ontology_map
+
+            m = ontology_map(s, refresh=True)  # 개체가 하나도 없어도 지도 응답이 나온다(배치 계산이 빈 목록에서 멈추지 않게)
+            assert m["total"] == {"nodes": 0, "links": 0} and m["nodes"] == [] and m["classes"]
+    finally:
+        with db() as s:
+            for a in s.execute(select(ViewArtifact).where(ViewArtifact.key == ART)).scalars():
+                s.delete(a)
+            s.commit()
+        _cleanup(db)
+
+
+def test_seed_does_not_rewire_deleted_dataset(db):
+    """지운 데이터셋 정의 — 시드(기동마다)가 그 자료를 기다리는 트리거를 다시 잇지 않고, 그 자료를 읽는 Q10 지표를 다시 켜지 않는다."""
+    from nhdip.models import Metric, Setting, Workflow, WorkflowTrigger
+    from nhdip.seed import run as seed_run
+
+    with db() as s:
+        try:
+            s.add(Workflow(code=WF, name="시드 시험", enabled=True, outputs=[]))
+            s.flush()
+            st = s.get(Setting, "seed.suppressed_datasets")
+            if st is None:
+                st = Setting(key="seed.suppressed_datasets", value=[])
+                s.add(st)
+            st.value = [*(st.value or []), DS]
+            s.flush()
+            seed_run._upgrade_workflow(s, {"code": WF, "nodes": [], "triggers": [("dataset", DS), ("dataset", "KEEP_DS"), ("event", "x.y")]})
+            s.flush()
+            got = {(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == WF)).scalars()}
+            assert ("dataset", DS) not in got and {("dataset", "KEEP_DS"), ("event", "x.y")} <= got
+            m = Metric(code="t_defdel_q10", label="q10", formula="SUM", args={"q": {"dataset": DS}}, workflow_code=WF, enabled=False, description="요구사항 Q10 시험")
+            s.add(m)
+            s.flush()
+            assert seed_run._reads_gone(s, m.args) is True and seed_run._reads_gone(s, {"q": {"dataset": "PROVISION_BY_PRODUCT"}}) is False
+        finally:
+            s.rollback()

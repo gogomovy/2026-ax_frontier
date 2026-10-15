@@ -698,6 +698,7 @@ SETTINGS.update({
                        "온톨로지 구축 에이전트 정책 — llm(이름 · 의미 판단에 LLM), max_datasets(실행당 구조 파악 수), auto_apply(자동 적용할 연산 종류, 기본 없음 — 예 [\"add_alias\"]), "
                        "min_confidence(자동 적용 신뢰도), link_min_containment(외래 키 포함률), resolve_min_score(별칭 제안 유사도), reextract_per_run(스키마 변경 후 재추출 문서 수)"),
     "intake.steward_self_apply": (True, "부서 데이터 책임자가 자기 자료 등록을 바로 반영(별도 승인 없음). false 면 책임자 등록도 승인 요청으로 (Q192)"),
+    "dataset.auto_columns": (True, "정의에 없는 열이 든 파일을 올리면 그 열을 정의에 더해 값까지 저장(타입은 값으로 추론, 선택 열). false 면 안내만 하고 저장하지 않음 (M.24 · Q212)"),
     "agents.grounding": ({"enabled": True, "block": False, "max_per_run": 6}, "서술 근거 일치 점검(critic_grounded) — enabled, block(근거 없음 판정 문장을 반려), max_per_run(실행당 점검 수) (Q185)"),
     "llm.breaker": ({"failures": 3, "open_sec": 120}, "LLM 연결 차단기 — 연속 실패 failures 회면 open_sec 초 동안 그 연결로 보내지 않음 (Q187)"),
 })

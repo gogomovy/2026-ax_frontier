@@ -199,6 +199,8 @@ def _fit_unit(sub: np.ndarray) -> np.ndarray:
 
 def layout(n: int, cluster: list[int], links: list[tuple[int, int]], dim: int) -> tuple[np.ndarray, dict[int, list[float]]]:
     """군집 중심 배치 → 군집 안 배치 → 합침. 반환: (좌표 n × dim, 군집 중심)."""
+    if n == 0:
+        return np.zeros((0, dim)), {}  # 개체가 없는 지도(올린 자료가 없을 때 — M.23)
     groups: dict[int, list[int]] = defaultdict(list)
     for i, c in enumerate(cluster):
         groups[c].append(i)
@@ -383,7 +385,9 @@ def signature(session: Session) -> tuple[Any, ...]:
         session.scalar(select(func.max(OntologySchema.version)).where(OntologySchema.active)),
         session.scalar(select(func.count()).select_from(Dataset)),
         session.scalar(select(func.count()).select_from(Metric)),
+        session.scalar(select(func.count()).select_from(Metric).where(Metric.enabled)),  # 지표를 끄면(정의 삭제 포함) 지도에서 빠진다 (M.23)
         session.scalar(select(func.count()).select_from(Workflow)),
+        session.scalar(select(func.count()).select_from(Workflow).where(Workflow.enabled)),
         session.scalar(select(func.count()).select_from(WorkflowTrigger)),
         session.scalar(select(func.max(KbChunk.indexed_at))),
     ]

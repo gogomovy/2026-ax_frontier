@@ -204,7 +204,9 @@ def suggest_code(filename: str) -> str:
         return ascii_part[:40]
     import hashlib
 
-    return "DS_" + hashlib.sha1(stem.encode("utf-8")).hexdigest()[:8].upper()
+    # 한글 이름 — 날짜 · 일련번호를 빼고 만든다(M.24): '신규상품잔액_202607' · '신규상품잔액_202608' 이 같은 코드가 되어 달마다 새 자료가 생기지 않게
+    base = re.sub(r"[\s_\-()]*\d+[\s_\-()]*", "", stem) or stem
+    return "DS_" + hashlib.sha1(base.encode("utf-8")).hexdigest()[:8].upper()
 
 
 def _find_key(cols: list[dict[str, Any]], data: list[list[Any]], as_of_idx: int | None) -> list[str]:
@@ -279,7 +281,10 @@ def infer_definition(content: bytes, filename: str, *, code: str | None = None, 
         if c["name"] in key_set or i == as_of_idx:
             c["required"] = True  # 키 · 기준일 열만 필수 — 나머지는 비어 있거나 빠져도 올라온다(자료 형식이 고정되지 않게)
     rules: list[dict[str, Any]] = [{"rule": "min_rows", "value": 1, "severity": "error"}]
-    out_name = (name or "").strip() or re.sub(r"\.[A-Za-z0-9]+$", "", filename.rsplit("/", 1)[-1]).strip() or "새 자료"
+    stem = re.sub(r"\.[A-Za-z0-9]+$", "", filename.rsplit("/", 1)[-1]).strip()
+    # 이름에서는 기준월 · 일련번호를 뺀다(M.24) — '지점별신규실적_202607' → '지점별신규실적', '(202608)7790_충당금' → '7790_충당금'
+    plain = re.sub(r"^\(?\d{6,8}\)?[\s_\-]*|[\s_\-]*\(?\d{6,8}\)?$", "", stem).strip(" _-") or stem
+    out_name = (name or "").strip() or plain or "새 자료"
     samples = {
         c["name"]: [mask_text(str(v))[:40] for v in (r[i] for r in data[:200]) if not _empty(v)][:3]
         for i, c in enumerate(cols)

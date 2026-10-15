@@ -32,6 +32,8 @@ interface UploadResult {
 function UploadResultView({ r }: { r: UploadResult }) {
   const checks = r.quality?.checks ?? [];
   const failed = checks.filter((c) => !c.passed);
+  // 통과에 영향 없는 안내 — 정의에 더한 열 · 비운 값 · 저장하지 않은 열 (M.24)
+  const notes = checks.filter((c) => c.passed && ["columns_added", "auto_column_values", "unmapped_headers"].includes(c.rule));
   return (
     <div className="mt-md flex flex-col gap-md" data-upload-result>
       <KeyValueList
@@ -48,6 +50,15 @@ function UploadResultView({ r }: { r: UploadResult }) {
           {failed.map((c, i) => (
             <li key={i} className={c.severity === "error" ? "text-critical" : "text-attention"}>
               ✕ {c.rule} — {c.detail}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {notes.length ? (
+        <ul className="flex flex-col gap-0.5 text-[12px]" data-upload-notes>
+          {notes.map((c, i) => (
+            <li key={i} className={c.severity === "warning" ? "text-attention" : "text-steel"}>
+              {c.rule === "columns_added" ? "＋" : "ⓘ"} {c.detail}
             </li>
           ))}
         </ul>
@@ -214,17 +225,17 @@ function Datasets() {
   }, [stamp, sel]);
   const createFromFile = async ({ definition, dataOrigin, note }: PanelSubmit) => {
     if (!drop) return;
+    // 정의 + 첫 버전을 한 번에(M.24) — 품질 검사로 확정되지 않으면 정의도 만들지 않는다(빈 정의가 남지 않게)
     const r = await runCreate(
       async () => {
-        await apiPost("/admin/datasets", definitionPayload(definition));
         const fd = new FormData();
         fd.append("file", drop);
-        fd.append("origin", definition.origin);
+        fd.append("definition", JSON.stringify(definitionPayload(definition)));
         fd.append("data_origin", dataOrigin);
         if (note) fd.append("note", note);
-        return api<UploadResult>(`/admin/datasets/${definition.code}/upload`, { method: "POST", body: fd });
+        return api<UploadResult>("/admin/datasets/create-upload", { method: "POST", body: fd });
       },
-      (res) => (res.status === "rejected" ? "데이터셋은 만들었지만 품질 검사에 실패해 확정되지 않았습니다 — 상세에서 확인하세요" : "데이터셋을 만들고 첫 버전을 올렸습니다"),
+      "데이터셋을 만들고 이 파일을 첫 버전으로 올렸습니다 — 관련 구조 파악 · 그래프 반영이 이어서 실행됩니다",
       data.reload,
     );
     if (r) {
@@ -239,6 +250,8 @@ function Datasets() {
     if (!f) return;
     const top = confidentSuggestion(suggestDatasets(f.name, all.map((d) => ({ code: d.code, name: d.name, filePattern: d.file_pattern }))));
     if (top) open(top.code, f);
+    // 맞는 정의가 없으면 바로 파일에서 정의를 만들어 보여 준다(M.24) — 정의를 미리 만들어 둘 필요가 없다
+    else setCreating(true);
   };
   const list = all.filter((d) => (org === "all" || d.origin === org) && (!q || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(q.toLowerCase())));
   const warn = all.filter((d) => d.versions.some((v) => v.isCurrent && v.quality.status && !["passed", "ok"].includes(v.quality.status))).length;
@@ -289,7 +302,7 @@ function Datasets() {
               </div>
             ) : (
               <p className="font-bold text-attention" data-drop-no-match>
-                맞는 데이터셋이 없습니다 — 아래 표에서 고르거나, 새 종류의 자료라면 이 파일로 데이터셋을 만드세요.
+                맞는 데이터셋이 없어 파일에서 정의를 만들었습니다 — 아래에서 확인하고 [데이터셋 만들고 첫 버전 올리기]를 누르세요. 기존 자료라면 표에서 고르세요.
               </p>
             )}
             {drop && !creating ? (

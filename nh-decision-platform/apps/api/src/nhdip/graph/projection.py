@@ -129,7 +129,7 @@ def has_uploaded_data(session: Session) -> bool:
 def project_all(session: Session) -> dict[str, Any]:
     """원장 → Neo4j. 수집(collect_graph)은 관리자 [온톨로지] 구성 지도와 같은 코드다(Q128 — 지도와 그래프가 다르지 않게).
     올린 자료가 하나도 없으면 정의(지표 · 데이터셋 · 워크플로)도 투영하지 않고 관리 노드를 모두 지운다(M.21 · Q207 — 빈 플랫폼 = 빈 그래프).
-    관리자 [온톨로지] 구성 지도는 Neo4j 가 아니라 원장에서 그리므로 그대로 보인다."""
+    관리자 [온톨로지] 구성 지도도 같은 수집을 쓰므로 함께 비어 있다(M.23 · Q210)."""
     schema = active_schema(session)
     if not schema:
         raise RuntimeError("활성 온톨로지 스키마가 없습니다")
@@ -153,6 +153,11 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
     rels = {r["type"] for r in schema.relations}
     gen = int(time.time() * 1000)
     b = Batch(schema.version, gen, labels, rels)
+    if not has_uploaded_data(session):
+        # 올린 자료가 없으면 개체도 없다(M.23 · Q210) — 구성 지도 · 그래프 투영 · 품질 점검 · 제안 영향이 같은 기준을 쓴다.
+        # 정의(데이터셋 · 지표 · 워크플로)와 스키마(객체 유형)는 원장에 그대로 있고 [데이터셋] · [지표] · [스키마 편집]에서 본다
+        b.counts["no_data"] = 1
+        return b
 
     # 1) 데이터셋 · 버전 · 결정론 매핑(ONT-14)
     rows_by_ds: dict[str, tuple[Any, list[dict[str, Any]], str]] = {}
@@ -223,7 +228,8 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
                 b.counts["backed_links"] = b.counts.get("backed_links", 0) + 1
 
     # 2) 지표 · 워크플로우 계보 (영향 범위 질의 원천, EVT-03)
-    metrics = session.execute(select(Metric)).scalars().all()
+    # 꺼진 지표 · 워크플로는 넣지 않는다(M.23 · Q210) — 정의 삭제가 끈 지표 · 은퇴한 분석 에이전트가 지도 · 그래프에 남지 않게
+    metrics = [m for m in session.execute(select(Metric).where(Metric.enabled)).scalars()]
     for m in metrics:
         b.node("Metric", m.code, {"name": m.label, "unit": m.unit, "formula": m.formula, "enabled": m.enabled}, src_kind="metric", src_ref=f"cfg.metric({m.code})")
         for dcode in _datasets_in_args(m.args):
@@ -231,15 +237,19 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         for ref in (m.args or {}).values():
             if isinstance(ref, dict) and "metric" in ref:
                 b.rel("DERIVED_FROM", "Metric", m.code, "Metric", ref["metric"])
-    for wf in session.execute(select(Workflow)).scalars():
+    live_wf: set[str] = set()
+    for wf in session.execute(select(Workflow).where(Workflow.enabled)).scalars():
+        live_wf.add(wf.code)
         b.node("Workflow", wf.code, {"name": wf.name, "enabled": wf.enabled}, src_kind="workflow", src_ref=f"cfg.workflow({wf.code})")
         for m in metrics:
-            if m.workflow_code == wf.code and m.enabled:
+            if m.workflow_code == wf.code:
                 b.rel("USES", "Workflow", wf.code, "Metric", m.code)
         for out in wf.outputs or []:
             b.node("Artifact", out, {"name": out}, src_kind="workflow")
             b.rel("PRODUCES", "Workflow", wf.code, "Artifact", out)
     for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled)).scalars():
+        if t.workflow_code not in live_wf:
+            continue
         if t.kind in ("dataset", "master"):
             b.rel("USES", "Workflow", t.workflow_code, "Dataset", t.target)
         elif t.kind == "doc_class":

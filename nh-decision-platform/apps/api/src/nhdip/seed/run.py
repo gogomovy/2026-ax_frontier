@@ -201,7 +201,7 @@ def seed_cfg(s: Session, out: dict[str, Any]) -> None:
         cur = s.get(Metric, m["code"])
         if not cur:
             s.add(Metric(**m))
-        elif m["enabled"] and not cur.enabled and (cur.description or "").startswith("요구사항 Q10"):
+        elif m["enabled"] and not cur.enabled and (cur.description or "").startswith("요구사항 Q10") and not _reads_gone(s, cur.args):
             # Q10 추천안 — 등급 집계 기준 AUROC·AR·K-S 활성화(관리자가 끈 지표는 설명이 바뀌므로 건드리지 않음)
             cur.enabled, cur.description = True, m["description"]
     _goal_engine_upgrade(s)
@@ -292,9 +292,27 @@ def _upgrade_workflow(s: Session, w: dict[str, Any]) -> None:
             seq = (nseq or 1000) - 5
         s.add(WorkflowNode(workflow_code=w["code"], seq=seq, key=key, name=name, impl=impl, agent_code=agent, enabled=True, config=cfg))
     trig = {(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == w["code"])).scalars()}
+    gone = suppressed_datasets(s)
     for kind, target in w["triggers"]:
+        if kind in ("dataset", "master") and target in gone:
+            continue  # 관리자가 연결까지 지운 데이터셋 정의 — 트리거를 다시 잇지 않는다 (M.23 · Q208)
         if (kind, target) not in trig and kind != "cron":  # cron 은 관리자 설정을 존중(이미 추가된 경우 중복 방지)
             s.add(WorkflowTrigger(workflow_code=w["code"], kind=kind, target=target, debounce_sec=w.get("debounce"), enabled=True))
+
+
+def _reads_gone(s: Session, args: Any) -> bool:
+    """지표가 지운(억제된) · 없는 데이터셋을 읽는지 — 그런 지표는 시드가 다시 켜지 않는다 (정의 삭제가 끈 지표, M.23)."""
+    from nhdip.graph.projection import _datasets_in_args
+
+    codes = _datasets_in_args(args)
+    gone = suppressed_datasets(s)
+    return any(c in gone or s.get(Dataset, c) is None for c in codes)
+
+
+def suppressed_datasets(s: Session) -> set[str]:
+    """관리자가 지운 데이터셋 정의(설정 seed.suppressed_datasets) — 시드가 정의 · 트리거를 되살리거나 그 자료를 읽는 지표를 다시 켜지 않는다."""
+    st = s.get(Setting, "seed.suppressed_datasets")
+    return {str(x) for x in st.value} if st is not None and isinstance(st.value, list) else set()
 
 
 def keep_contract_mock_values() -> bool:

@@ -149,23 +149,75 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
     }
 
 
+AUTO_MATCH_MIN = 0.6  # 파일 이름 규칙이 맞거나 머리글이 충분히 겹치면 기존 자료의 새 버전 (자료 등록 에이전트와 같은 기준)
+
+
+def auto_target(session: Session, filename: str, content: bytes) -> tuple[Dataset | None, list[dict[str, Any]]]:
+    """대상을 고르지 않고 올린 파일 — 기존 정의 중 맞는 것(파일 이름 규칙 · 머리글 겹침). 없으면 (None, 후보)."""
+    from nhdip.data.infer import _read
+    from nhdip.data.onboarding import match_datasets
+
+    try:
+        raw, _ = _read(content, filename)
+        headers = [str(h) for h in raw[0].keys()] if raw else []
+    except Exception:  # noqa: BLE001 — 원본 보고서 양식 등 일반 표로 못 읽는 파일은 이름 규칙만으로
+        headers = []
+    matches = match_datasets(session, filename, headers)
+    allow = _targets(session)["datasets"]
+    for m in matches:
+        if m["score"] >= AUTO_MATCH_MIN and _allowed(allow, m["code"]):
+            d = session.get(Dataset, m["code"])
+            if d is not None and getattr(d, "active", True):
+                return d, matches
+    return None, matches
+
+
+def inferred_proposal(session: Session, filename: str, content: bytes, origin: str) -> dict[str, Any]:
+    """맞는 정의가 없는 파일 → 파일에서 추론한 정의(제안) — 승인되면 이 정의로 데이터셋이 만들어진다 (M.24 · DOB-16)."""
+    from nhdip.data.infer import infer_definition
+
+    try:
+        out = infer_definition(content, filename, origin=origin)
+    except (IngestError, ValueError) as exc:
+        raise HTTPException(422, f"맞는 자료가 없어 파일에서 정의를 만들려 했지만 읽을 수 없습니다 — {exc}") from exc
+    base, n = out["code"], 2
+    while session.get(Dataset, out["code"]) is not None or _pending_proposal(session, out["code"]):
+        out["code"], n = f"{base}_{n}"[:60], n + 1
+    d = {k: out[k] for k in PROPOSAL_FIELDS if k in out}
+    problems = validate_definition(d)
+    if problems:
+        raise HTTPException(422, "파일에서 만든 정의에 문제가 있습니다 — " + " · ".join(problems[:4]))
+    return d
+
+
 @router.post("/db/uploads/dataset", status_code=201)
 async def request_dataset(
     request: Request,
-    target: str = Form(...),
+    target: str | None = Form(None),
     file: UploadFile = File(...),
     data_origin: str = Form("actual"),
     as_of: str | None = Form(None),
     note: str | None = Form(None),
+    origin: str = Form("bank"),
     user: AppUser = Depends(require_resource("db_upload")),
     session: Session = Depends(get_session),
 ):
-    d = _dataset_for_user(session, target)
+    """자료 올리기 — 대상(target)을 고르면 그 자료의 새 버전으로 요청. 고르지 않으면(M.24) 맞는 정의를 찾아 그 자료로, 없으면 파일에서 정의를
+    만들어 '새 종류 자료' 로 요청한다(승인되면 정의가 만들어지고 이 파일이 첫 버전). 정의를 미리 만들어 둘 필요가 없다."""
     if data_origin not in ("actual", "simulated"):
         raise HTTPException(422, "data_origin 은 actual | simulated")
     if as_of and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of):
         raise HTTPException(422, "기준일은 YYYY-MM-DD 형식입니다")
+    if origin not in ("bank", "ext"):
+        raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
+    d = _dataset_for_user(session, target) if target else None
     name, content = await read_upload(file, "dataset", session, request, user.emp_no)
+    if d is None:
+        d, _matches = auto_target(session, name, content)
+    if d is None:
+        _can_propose(session)
+        proposal = inferred_proposal(session, name, content, origin)
+        return _proposal_request(session, request, user, proposal, name, content, data_origin, as_of, note, auto=True)
     try:
         pv = check_file(session, d, name, content)
     except (IngestError, ValueError) as exc:
@@ -266,6 +318,12 @@ async def propose_dataset(
     if session.get(Dataset, code) is not None or _pending_proposal(session, code):
         raise HTTPException(409, "이미 있거나 제안 중인 데이터셋 코드입니다 — 코드를 바꾸거나 목록에서 그 자료를 고르세요")
     fname, content = await read_upload(file, "dataset", session, request, user.emp_no)
+    return _proposal_request(session, request, user, d, fname, content, data_origin, as_of, note)
+
+
+def _proposal_request(session: Session, request: Request, user: AppUser, d: dict[str, Any], fname: str, content: bytes, data_origin: str, as_of: str | None, note: str | None, *, auto: bool = False) -> dict[str, Any]:
+    """새 종류 자료 요청 — 정의(제안)로 같은 검사를 하고 요청을 남긴다. 승인(do_approve)에서 정의를 만들고 이 파일을 첫 버전으로 올린다."""
+    code = str(d["code"])
     ds = Dataset(**d, mapping={}, active=True)  # 저장하지 않는 임시 정의 — 같은 검사를 통과하는지 본다
     try:
         pv = check_file(session, ds, fname, content)
@@ -280,13 +338,13 @@ async def propose_dataset(
     sha, path = _store(user.emp_no, fname, content)
     r = UploadRequest(
         kind="dataset", target=code, origin=str(d["origin"]), file_name=fname, file_path=path, file_sha256=sha,
-        meta={"targetLabel": str(d["name"]), "asOf": as_of or None, "dataOrigin": data_origin, "note": (note or "")[:500], "proposal": d},
+        meta={"targetLabel": str(d["name"]), "asOf": as_of or None, "dataOrigin": data_origin, "note": (note or "")[:500], "proposal": d, **({"autoDefinition": True} if auto else {})},
         preview={"rows": pv["rows"], "quality": {"status": q.get("status"), "checks": q.get("checks", []), "source": q.get("source")}, "headers": pv["headers"][:60], "columns": pv["columns"][:60], "sample": pv["sample"]},
         status="pending", requested_by=user.emp_no, requested_org=user.org_code,
     )
     session.add(r)
     session.flush()
-    audit(session, user.emp_no, "db.upload.request", "upload_request", str(r.id), {"kind": "dataset", "target": code, "file": fname, "rows": pv["rows"], "quality": q.get("status"), "proposal": True, "columns": len(d["columns"])}, client_ip(request))
+    audit(session, user.emp_no, "db.upload.request", "upload_request", str(r.id), {"kind": "dataset", "target": code, "file": fname, "rows": pv["rows"], "quality": q.get("status"), "proposal": True, "auto": auto, "columns": len(d["columns"])}, client_ip(request))
     session.commit()
     return _req_json(r, full=True)
 

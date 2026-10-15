@@ -169,22 +169,53 @@ def test_admin_infer_create_upload_and_find_new_columns(db, world):
     assert up.status_code == 201 and up.json()["status"] == "committed" and up.json()["rows"] == 6
 
     wider = _csv("기준월,상품코드,상품명,잔액,담당부서", [f"202608,{p},{n},{700 + i},부서{i}" for i, (p, n) in enumerate(PRODUCTS)])
+    # 미리보기 — 정의에 없던 열을 더해 저장한다고 알린다(정의는 아직 그대로)
+    pv = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/preview", files=_files("b.csv", wider)).json()
+    assert [c["label"] for c in pv["columnsAdded"]] == ["담당부서"] and any(c["rule"] == "columns_added" for c in pv["quality"]["checks"])
+    assert len(next(x for x in admin.get("/admin/datasets").json() if x["code"] == "TEST_NEWDS_ADMIN")["columns"]) == len(d["columns"])
+    # 올리면 정의에 열이 더해지고 값까지 저장된다(M.24 · DOB-17 — 예전에는 안내만 하고 버렸다)
     up2 = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/upload", data={"origin": "bank", "data_origin": "simulated"}, files=_files("b.csv", wider)).json()
-    info = next(c for c in up2["quality"]["checks"] if c["rule"] == "unmapped_headers")
-    assert info["passed"] is True and info["severity"] == "info" and "담당부서" in info["detail"]  # 조용히 버리지 않고 알린다
-    assert up2["quality"]["status"] == "passed" and up2["status"] == "committed"  # 안내일 뿐 통과를 바꾸지 않는다
-
-    diff = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/infer-diff", files=_files("b.csv", wider))
-    assert diff.status_code == 200, diff.text
-    nd = diff.json()
-    assert [c["label"] for c in nd["newColumns"]] == ["담당부서"] and all(c["required"] is False for c in nd["newColumns"])
-    assert len(nd["columns"]) == len(d["columns"]) + 1
-    patched = admin.patch("/admin/datasets/TEST_NEWDS_ADMIN", json={"columns": nd["columns"]})
-    assert patched.status_code == 200, patched.text
+    info = next(c for c in up2["quality"]["checks"] if c["rule"] == "columns_added")
+    assert info["passed"] is True and info["severity"] == "info" and "담당부서" in info["detail"]
+    assert up2["quality"]["status"] == "passed" and up2["status"] == "committed" and not any(c["rule"] == "unmapped_headers" for c in up2["quality"]["checks"])
+    rows = admin.get(f"/admin/datasets/TEST_NEWDS_ADMIN/versions/{up2['id']}/rows").json()["rows"]
+    assert {r.get("담당부서") for r in rows} == {"부서0", "부서1", "부서2"}  # 새 열 값이 저장된다
+    cols = next(x for x in admin.get("/admin/datasets").json() if x["code"] == "TEST_NEWDS_ADMIN")["columns"]
+    added = [c for c in cols if c.get("label") == "담당부서"]
+    assert len(cols) == len(d["columns"]) + 1 and added[0]["auto"] is True and added[0]["required"] is False
+    # 이미 정의에 있으니 새 열 찾기는 비어 있고, 같은 파일을 다시 올려도 열이 또 생기지 않는다
+    assert admin.post("/admin/datasets/TEST_NEWDS_ADMIN/infer-diff", files=_files("b.csv", wider)).json()["newColumns"] == []
     up3 = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/upload", data={"origin": "bank", "data_origin": "simulated"}, files=_files("c.csv", wider)).json()
-    assert not any(c["rule"] == "unmapped_headers" for c in up3["quality"]["checks"])
-    rows = admin.get(f"/admin/datasets/TEST_NEWDS_ADMIN/versions/{up3['id']}/rows").json()["rows"]
-    assert {r.get("담당부서") for r in rows} == {"부서0", "부서1", "부서2"}  # 새 열 값이 이제 저장된다
+    assert not any(c["rule"] in ("unmapped_headers", "columns_added") for c in up3["quality"]["checks"])
+    assert len(next(x for x in admin.get("/admin/datasets").json() if x["code"] == "TEST_NEWDS_ADMIN")["columns"]) == len(d["columns"]) + 1
+    # 자동으로 더한 열은 타입이 안 맞는 값이 와도 업로드를 막지 않는다(비우고 경고)
+    with_text = _csv("기준월,상품코드,상품명,잔액,담당부서,건수", [f"202609,{p},{n},{800 + i},부서{i},{i}" for i, (p, n) in enumerate(PRODUCTS)])
+    up4 = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/upload", data={"origin": "bank", "data_origin": "simulated"}, files=_files("d.csv", with_text)).json()
+    assert up4["status"] == "committed"
+    cnt = next(c for c in next(x for x in admin.get("/admin/datasets").json() if x["code"] == "TEST_NEWDS_ADMIN")["columns"] if c.get("label") == "건수")
+    assert cnt["type"] == "int" and cnt["auto"] is True
+    bad = _csv("기준월,상품코드,상품명,잔액,담당부서,건수", [f"202610,{p},{n},{900 + i},부서{i},{'많음' if i == 0 else i}" for i, (p, n) in enumerate(PRODUCTS)])
+    up5 = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/upload", data={"origin": "bank", "data_origin": "simulated"}, files=_files("e.csv", bad)).json()
+    assert up5["status"] == "committed" and any(c["rule"] == "auto_column_values" and c["severity"] == "warning" for c in up5["quality"]["checks"])
+    # 설정으로 끄면 예전처럼 안내만
+    with db() as s:
+        from nhdip.models import Setting
+
+        st = s.get(Setting, "dataset.auto_columns")
+        if st is None:
+            s.add(Setting(key="dataset.auto_columns", value=False))
+        else:
+            st.value = False
+        s.commit()
+    try:
+        more = _csv("기준월,상품코드,상품명,잔액,메모", [f"202611,{p},{n},{1000 + i},메모{i}" for i, (p, n) in enumerate(PRODUCTS)])
+        up6 = admin.post("/admin/datasets/TEST_NEWDS_ADMIN/upload", data={"origin": "bank", "data_origin": "simulated"}, files=_files("f.csv", more)).json()
+        assert any(c["rule"] == "unmapped_headers" and "메모" in c["detail"] for c in up6["quality"]["checks"])
+        assert not any(c.get("label") == "메모" for c in next(x for x in admin.get("/admin/datasets").json() if x["code"] == "TEST_NEWDS_ADMIN")["columns"])
+    finally:
+        with db() as s:
+            s.get(Setting, "dataset.auto_columns").value = True
+            s.commit()
 
 
 def test_definition_guards(db, world):
@@ -230,3 +261,53 @@ def test_admin_infer_suggests_a_free_code(db, world):
     assert auto["code"] == "TEST_NEWDS_TAKEN_2" and auto["codeAdjusted"] is True and auto["exists"] is False
     manual = admin.post("/admin/datasets/infer", files=_files("TEST_NEWDS_TAKEN_202607.csv", MONTHLY), data={"origin": "bank", "code": "TEST_NEWDS_TAKEN"}).json()
     assert manual["code"] == "TEST_NEWDS_TAKEN" and manual["exists"] is True and manual["codeAdjusted"] is False
+
+
+# ═════════════════════════ M.24 — 정의를 미리 만들지 않고 올리기 ═════════════════════════
+def test_upload_without_choosing_a_dataset_creates_definition_on_approval(db, world):
+    """대상을 고르지 않고 올린 새 종류 파일 → 파일에서 만든 정의로 '새 종류 자료' 요청 → 승인 때 정의가 만들어지고 첫 버전.
+    다음 달 파일은 대상을 고르지 않아도 같은 데이터셋(파일 이름 규칙)으로 간다."""
+    from nhdip.models import Dataset
+
+    req, stw = world["req"], world["stw"]
+    data = _csv("기준월,지점코드,지점명,신규건수", [f"202607,{c},{n},{i + 3}" for i, (c, n) in enumerate([("001", "본점"), ("002", "강남"), ("003", "수원")])])
+    r = req.post("/db/uploads/dataset", data={"data_origin": "simulated"}, files=_files("지점별신규건수_202607.csv", data))
+    assert r.status_code == 201, r.text
+    j = r.json()
+    code = j["target"]
+    assert j["status"] == "pending" and j["meta"]["autoDefinition"] is True and j["meta"]["proposal"]["code"] == code
+    assert {c["label"] for c in j["meta"]["proposal"]["columns"]} == {"기준월", "지점코드", "지점명", "신규건수"}
+    with db() as s:
+        assert s.get(Dataset, code) is None  # 승인 전에는 정의가 없다
+    ok = stw.post(f"/db/uploads/{j['id']}/approve", json={"note": "자동 정의 승인"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["result"]["createdDataset"] == code and ok.json()["result"]["status"] == "committed"
+    nxt = _csv("기준월,지점코드,지점명,신규건수", [f"202608,{c},{n},{i + 5}" for i, (c, n) in enumerate([("001", "본점"), ("002", "강남"), ("003", "수원")])])
+    r2 = req.post("/db/uploads/dataset", data={"data_origin": "simulated"}, files=_files("지점별신규건수_202608.csv", nxt))
+    assert r2.status_code == 201, r2.text
+    assert r2.json()["target"] == code and "proposal" not in r2.json()["meta"]  # 기존 자료의 새 버전 요청
+
+
+def test_korean_file_names_keep_one_code_across_months():
+    from nhdip.data.infer import suggest_code
+
+    assert suggest_code("신규상품잔액_202607.csv") == suggest_code("신규상품잔액_202608.csv") != suggest_code("다른자료_202608.csv")
+
+
+def test_admin_create_and_upload_is_one_step(db, world):
+    """관리자 — 맞는 정의가 없는 파일을 정의 확인 뒤 한 번에(정의 + 첫 버전). 품질 검사로 확정되지 않으면 정의도 남기지 않는다."""
+    from nhdip.models import Dataset
+
+    admin = world["admin"]
+    inf = admin.post("/admin/datasets/infer", files=_files("관리자한번에_202606.csv", MONTHLY), data={"origin": "bank", "code": "TEST_NEWDS_ONESTEP"}).json()
+    defn = {k: inf[k] for k in ("code", "name", "origin", "kind", "description", "file_pattern", "columns", "key_columns", "as_of_column", "quality_rules", "parser")}
+    # 품질 실패(최소 행 수를 크게) → 정의도 만들지 않는다
+    bad = {**defn, "quality_rules": [{"rule": "min_rows", "value": 999, "severity": "error"}]}
+    r = admin.post("/admin/datasets/create-upload", data={"definition": json.dumps(bad), "data_origin": "simulated"}, files=_files("관리자한번에_202606.csv", MONTHLY))
+    assert r.status_code == 422 and "만들지 않았습니다" in r.json()["detail"], r.text
+    with db() as s:
+        assert s.get(Dataset, "TEST_NEWDS_ONESTEP") is None
+    r = admin.post("/admin/datasets/create-upload", data={"definition": json.dumps(defn), "data_origin": "simulated"}, files=_files("관리자한번에_202606.csv", MONTHLY))
+    assert r.status_code == 201, r.text
+    assert r.json()["dataset"] == "TEST_NEWDS_ONESTEP" and r.json()["status"] == "committed" and r.json()["rows"] == 6
+    assert admin.post("/admin/datasets/create-upload", data={"definition": json.dumps(defn)}, files=_files("x.csv", MONTHLY)).status_code == 409

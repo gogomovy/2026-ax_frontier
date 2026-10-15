@@ -157,8 +157,9 @@ def unmapped_headers(ds: Dataset, raw_rows: list[dict[str, Any]]) -> list[str]:
     return [h for h in headers if h not in used and h.strip() and not _AUTO_HEADER.match(h)]
 
 
-def map_rows(ds: Dataset, raw_rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
-    """원본 헤더 → 정의 컬럼 매핑 + 형 변환. (행, 오류 목록)"""
+def map_rows(ds: Dataset, raw_rows: list[dict[str, Any]], warnings: list[str] | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+    """원본 헤더 → 정의 컬럼 매핑 + 형 변환. (행, 오류 목록)
+    자동으로 더한 열(`auto`, M.24)은 형 변환이 안 되는 값을 비워 두고 warnings 에만 적는다 — 처음 본 파일로 정한 타입 때문에 다음 파일이 막히지 않게."""
     if not ds.columns:
         return [], [NO_COLUMNS_MSG]  # 정의가 비면 모든 행이 빈 값으로 '통과' 저장되던 것을 막는다
     if not raw_rows:
@@ -173,10 +174,85 @@ def map_rows(ds: Dataset, raw_rows: list[dict[str, Any]]) -> tuple[list[dict[str
             try:
                 row[col["name"]] = _coerce(raw.get(h) if h else None, col.get("type", "str"))
             except ValueError as exc:
-                errors.append(f"{i}행 {col['name']}: {exc}")
+                if col.get("auto") and not col.get("required"):
+                    if warnings is not None and len(warnings) < 50:
+                        warnings.append(f"{i}행 {col['name']}: {exc}")
+                else:
+                    errors.append(f"{i}행 {col['name']}: {exc}")
                 row[col["name"]] = None
         rows.append(row)
     return rows, errors
+
+
+# ═════════════════════════ 정의에 없는 열 — 자동으로 더하기 (M.24 · DOB-17 · Q212) ═════════════════════════
+AUTO_COLUMNS_SETTING = "dataset.auto_columns"
+_VIEW_FIELDS = ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "key_columns", "as_of_column", "mapping", "quality_rules", "parser", "materialize", "active")
+
+
+def auto_columns_on(session: Session | None) -> bool:
+    """정의에 없는 열을 정의에 더해 저장할지 — 설정 dataset.auto_columns(기본 true). false 면 예전처럼 안내만 하고 저장하지 않는다."""
+    if session is None:
+        return True
+    from nhdip.models import Setting
+
+    st = session.get(Setting, AUTO_COLUMNS_SETTING)
+    return not (st is not None and st.value is False)
+
+
+def new_columns_from(ds: Any, raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """파일에는 있지만 정의에 없는 열 → 정의에 더할 열(선택 · `auto` 표시). 이름은 머리글에서 만들고 기존 이름과 정규화 비교로 겹치지 않게,
+    타입은 값으로 추론(섞이면 문자), 라벨 = 원래 머리글(다음 업로드부터 그 머리글로 맞춘다)."""
+    from .infer import MAX_COLUMNS, SCAN_ROWS, _column_type, _slug
+
+    heads = unmapped_headers(ds, raw_rows)
+    if not heads:
+        return []
+    used = {str(c.get("name")).lower() for c in ds.columns}
+    normed = {_norm(c.get("name")) for c in ds.columns}
+    room = MAX_COLUMNS - len(ds.columns)
+    sample = raw_rows[:SCAN_ROWS]
+    out: list[dict[str, Any]] = []
+    for i, h in enumerate(heads):
+        if len(out) >= room:
+            break
+        name = _slug(h, used, len(ds.columns) + i)
+        n = 2
+        while _norm(name) in normed or not _norm(name):
+            name = f"{name}_{n}"[:60]
+            n += 1
+        normed.add(_norm(name))
+        typ, _is_ym, _note = _column_type(h, [r.get(h) for r in sample])
+        out.append({"name": name[:60], "label": str(h).strip()[:200], "type": typ, "required": False, "aliases": [], "auto": True})
+    return out
+
+
+def with_new_columns(session: Session | None, ds: Dataset, raw_rows: list[dict[str, Any]], source: dict[str, Any] | None) -> tuple[Any, list[dict[str, Any]]]:
+    """(읽을 때 쓸 정의, 더할 열). 원본 보고서 양식(어댑터)은 열이 정해져 있어 더하지 않는다. 정의 점검을 통과하지 못하면 더하지 않는다(안내만).
+    정의 자체는 바꾸지 않는다 — 확정된 업로드에서만 `extend_definition` 이 바꾼다."""
+    from types import SimpleNamespace
+
+    from .infer import validate_definition
+
+    if source is not None or not ds.columns or not auto_columns_on(session):
+        return ds, []
+    new = new_columns_from(ds, raw_rows)
+    if not new:
+        return ds, []
+    cols = [*ds.columns, *new]
+    if validate_definition({"code": ds.code, "name": ds.name, "origin": ds.origin, "columns": cols, "key_columns": ds.key_columns, "as_of_column": ds.as_of_column}):
+        return ds, []
+    return SimpleNamespace(**{k: getattr(ds, k, None) for k in _VIEW_FIELDS}, columns=cols), new
+
+
+def extend_definition(session: Session, ds: Dataset, new: list[dict[str, Any]], actor: str | None, file_name: str | None) -> None:
+    """확정된 업로드가 가져온 새 열을 정의에 더한다 — 정의 변경 이벤트로 구조 파악(온톨로지 구축) · 설명 카드 · 그래프가 새 열을 본다."""
+    have = {_norm(c.get("name")) for c in ds.columns}
+    add = [c for c in new if _norm(c["name"]) not in have]
+    if not add:
+        return
+    ds.columns = [*ds.columns, *add]  # 새 목록으로 바꿔 넣는다(JSONB 변경 감지)
+    emit(session, "config.changed", {"kind": "dataset", "code": ds.code, "columnsAdded": [c["name"] for c in add]}, actor or "system")
+    audit(session, actor, "dataset.columns_auto_added", "dataset", ds.code, {"columns": [{"name": c["name"], "label": c["label"], "type": c["type"]} for c in add], "file": file_name})
 
 
 # ═════════════════════════ 품질 검증 ═════════════════════════
@@ -189,13 +265,20 @@ def _ym_index(v: Any) -> int | None:
     return y * 12 + (m - 1) if 1 <= m <= 12 else None
 
 
-def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[str], previous: list[dict[str, Any]] | None = None, privacy: dict[str, Any] | None = None, unmapped: list[str] | None = None) -> dict[str, Any]:
+def quality_check(ds: Dataset, rows: list[dict[str, Any]], parse_errors: list[str], previous: list[dict[str, Any]] | None = None, privacy: dict[str, Any] | None = None, unmapped: list[str] | None = None,
+                  added: list[dict[str, Any]] | None = None, warnings: list[str] | None = None) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
 
     def add(rule: str, passed: bool, detail: str, severity: str = "error"):
         checks.append({"rule": rule, "passed": passed, "detail": detail, "severity": severity})
 
     add("parse", not parse_errors, "; ".join(parse_errors[:10]) or "헤더·형 변환 정상")
+    if added:
+        # 정의에 없던 열 — 정의에 더해 값까지 저장한다(M.24 · DOB-17). 통과 · 실패에 영향 없음
+        shown = ", ".join(f"{c['label']}({c['type']})" for c in added[:8]) + (f" 외 {len(added) - 8}개" if len(added) > 8 else "")
+        add("columns_added", True, f"정의에 없던 열 {len(added)}개를 정의에 더해 저장합니다: {shown}", "info")
+    if warnings:
+        add("auto_column_values", True, f"자동으로 더한 열에서 타입이 맞지 않는 값 {len(warnings)}건은 비워 두었습니다: " + "; ".join(warnings[:5]), "warning")
     if unmapped:
         # 통과·실패에 영향 없는 안내 — 정의에 없는 열은 저장하지 않는다는 것을 알려, 필요하면 정의에 열을 더하게 한다
         shown = ", ".join(unmapped[:8]) + (f" 외 {len(unmapped) - 8}개" if len(unmapped) > 8 else "")
@@ -406,36 +489,47 @@ def _read_any(content: bytes, filename: str, ds: Dataset) -> tuple[list[dict[str
     return _read_table(content, filename, ds.parser or {}, header_candidates(ds)), None
 
 
-def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **kw):
+def _read_mapped(session: Session | None, ds: Dataset, filename: str, content: bytes) -> tuple[list[dict[str, Any]], dict[str, Any] | None, Any, list[dict[str, Any]], list[dict[str, Any]], list[str], list[str]]:
+    """(원본 행, 어댑터 정보, 읽은 정의(새 열 포함), 더할 열, 행, 오류, 경고) — 확정 · 미리보기 · 요청 검사가 같은 규칙으로 읽는다."""
     raw, source = _read_any(content, filename, ds)
-    rows, errors = map_rows(ds, raw)
+    view, added = with_new_columns(session, ds, raw, source)
+    warns: list[str] = []
+    rows, errors = map_rows(view, raw, warns)
+    return raw, source, view, added, rows, errors, warns
+
+
+def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **kw):
+    raw, source, view, added, rows, errors, warns = _read_mapped(session, ds, filename, content)
     from nhdip.privacy import policy as privacy_policy
 
     _, prev = current_rows(session, ds)
-    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(ds, raw))
+    quality = quality_check(view, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(view, raw), added=added, warnings=warns)
     if source:
         quality["source"] = source  # 원본 양식 · 머리글 메타(조회일자 · 조회사무소 · 기준일 · 단위) · 변환 메모
     sha, path = _store_file(ds.origin, ds.code, filename, content)
-    return ingest_rows(session, ds, rows, quality=quality, file_name=filename, file_sha=sha, file_path=path, **kw)
+    v = ingest_rows(session, ds, rows, quality=quality, file_name=filename, file_sha=sha, file_path=path, **kw)
+    if added and v.status == "committed":
+        extend_definition(session, ds, added, kw.get("actor"), filename)
+    return v
 
 
-def preview_file(ds: Dataset, filename: str, content: bytes) -> dict[str, Any]:
-    raw, source = _read_any(content, filename, ds)
-    rows, errors = map_rows(ds, raw)
-    return {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "quality": quality_check(ds, rows, errors, unmapped=unmapped_headers(ds, raw)), "source": source}
+def preview_file(ds: Dataset, filename: str, content: bytes, session: Session | None = None) -> dict[str, Any]:
+    raw, source, view, added, rows, errors, warns = _read_mapped(session, ds, filename, content)
+    return {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "quality": quality_check(view, rows, errors, unmapped=unmapped_headers(view, raw), added=added, warnings=warns), "source": source,
+            "columnsAdded": added}
 
 
 def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10) -> dict[str, Any]:
-    """업무 사용자 자료 요청의 사전 검사(Phase C · UPL-01) — 확정과 같은 품질 검사(직전 현재 버전 대비 · 개인정보 정책), 저장 없음."""
+    """업무 사용자 자료 요청의 사전 검사(Phase C · UPL-01) — 확정과 같은 품질 검사(직전 현재 버전 대비 · 개인정보 정책), 저장 없음.
+    정의에 없는 열은 반영(승인) 때 정의에 더해 저장된다 — 여기서는 무엇이 더해지는지만 알린다(M.24)."""
     from nhdip.privacy import policy as privacy_policy
 
-    raw, source = _read_any(content, filename, ds)
-    rows, errors = map_rows(ds, raw)
+    raw, source, view, added, rows, errors, warns = _read_mapped(session, ds, filename, content)
     _, prev = current_rows(session, ds)
-    quality = quality_check(ds, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(ds, raw))
+    quality = quality_check(view, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(view, raw), added=added, warnings=warns)
     if source:
         quality["source"] = source
-    return {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in ds.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality}
+    return {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in view.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality, "columnsAdded": added}
 
 
 def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):

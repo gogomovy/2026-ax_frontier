@@ -234,6 +234,43 @@ def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any],
     return {"value": value, "status": status, "artifacts": moved, "llm": llm_off is None, **({"llmOff": llm_off} if llm_off else {})}
 
 
+NO_DATA_NOTE = "올린 자료가 없어 계산하지 않음 — 화면 산출물을 값 없는 틀로 둠(자료를 올리면 자동으로 다시 계산)"
+
+
+def blank_outputs(session: Session, wf: Workflow, run: WorkflowRun) -> WorkflowRun:
+    """올린 자료(현재 데이터셋 버전 · 현재 문서)가 하나도 없을 때 (M.23 · DEL-17 · Q210) — 계산하지 않고 이 워크플로의 화면 산출물을 값 없는 틀로 둔다.
+
+    자료를 모두 지운 뒤 정기 실행 · 수동 실행 · 삭제 뒤 재계산이 돌아도 규칙 · 상수만으로 나오는 수치(목표 · 비율 하한)나
+    지운 자료로 계산했던 옛 값이 화면에 다시 채워지지 않게 한다. 범위 산출물('<키>@<범위>')도 같이 비운다."""
+    from nhdip.models import ViewArtifact, ViewBinding
+    from nhdip.views.store import publish
+    from nhdip.views.template import to_template
+
+    binds = [{"artifact_key": b.artifact_key, "path": b.path} for b in session.execute(select(ViewBinding)).scalars()]
+    blanked: list[str] = []
+    for key in sorted(set(wf.outputs or [])):
+        rows = session.execute(select(ViewArtifact).where(ViewArtifact.is_current, (ViewArtifact.key == key) | ViewArtifact.key.like(key.replace("_", r"\_") + "@%", escape="\\"))).scalars().all()
+        for row in rows:
+            tpl = to_template(key, row.payload, binds)
+            if tpl == row.payload:
+                continue
+            publish(session, row.key, tpl, produced_by=wf.code, workflow_run_id=run.id, changes=[{"artifact": row.key, "blanked": "올린 자료 없음"}])
+            blanked.append(row.key)
+    run.status = "succeeded"
+    run.summary = {"nodes": [], "published": blanked, "figure_changes": 0, "no_data": True, "note": NO_DATA_NOTE}
+    run.finished_at = utcnow()
+    session.commit()
+    if blanked:
+        from nhdip.knowledge.indexer import index_artifacts
+
+        try:
+            index_artifacts(session, blanked)  # 자료가 없으면 색인에서 빠진다 — Elasticsearch 는 워커 대조가 맞춘다
+            session.commit()
+        except Exception:  # noqa: BLE001 — 색인 실패가 실행을 실패로 만들지 않는다(워커 대조가 복구)
+            session.rollback()
+    return run
+
+
 def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id: int | None = None) -> WorkflowRun:
     import nhdip.workflow.nodes  # noqa: F401  (노드 구현 등록)
 
@@ -243,6 +280,10 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
     run = WorkflowRun(id=new_id(), workflow_code=wf.code, job_id=job_id, status="running", causes=causes)
     session.add(run)
     session.commit()
+    from nhdip.graph.projection import has_uploaded_data
+
+    if (wf.outputs or []) and not has_uploaded_data(session):
+        return blank_outputs(session, wf, run)
     ctx = RunContext(session=session, run=run, workflow=wf, causes=causes, eval=EvalContext(session=session, workflow_run_id=run.id))
     summary: dict[str, Any] = {"nodes": []}
     try:

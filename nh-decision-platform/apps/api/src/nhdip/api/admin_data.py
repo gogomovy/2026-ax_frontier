@@ -476,7 +476,7 @@ async def dataset_preview(code: str, request: Request, file: UploadFile = File(.
     d = _ds(session, code)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     try:
-        return preview_file(d, name, content)
+        return preview_file(d, name, content, session)
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -548,7 +548,78 @@ async def dataset_upload(
         session.rollback()
         raise HTTPException(422, str(exc)) from exc
     session.commit()
+    _refresh_cards(session, [d.code], v)
     return {"version": v.version, "id": v.id, "status": v.status, "quality": v.quality, "rows": v.row_count, "isCurrent": v.is_current}
+
+
+@router.post("/datasets/create-upload", status_code=201)
+async def dataset_create_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    definition: str = Form(...),
+    data_origin: str = Form("actual"),
+    as_of: str | None = Form(None),
+    note: str | None = Form(None),
+    session: Session = Depends(get_session),
+    admin: AppUser = Depends(require_admin),
+):
+    """정의 없이 올리기(관리자 · M.24 · DOB-16) — 파일에서 추론해 확인한 정의로 데이터셋을 만들고 이 파일을 첫 버전으로 올린다.
+    한 트랜잭션: 품질 검사로 확정되지 않으면 정의도 만들지 않는다(예전에는 정의를 먼저 저장해 실패해도 빈 정의가 남았다)."""
+    import json
+
+    from nhdip.data.infer import validate_definition
+
+    try:
+        raw = json.loads(definition)
+        body = DatasetIn(**{k: v for k, v in raw.items() if k in DatasetIn.model_fields})
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, "definition 은 데이터셋 정의 JSON 이어야 합니다") from exc
+    if body.origin not in ("bank", "ext"):
+        raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
+    if data_origin not in ("actual", "simulated"):
+        raise HTTPException(422, "data_origin 은 actual | simulated")
+    if session.get(Dataset, body.code):
+        raise HTTPException(409, "이미 있는 데이터셋 코드 — 그 자료로 올리거나 코드를 바꾸세요")
+    problems = validate_definition(body.model_dump())
+    if problems:
+        raise HTTPException(422, " · ".join(problems[:6]))
+    name, content = await _read(file, "dataset", session, request, admin.emp_no)
+    d = Dataset(**body.model_dump())
+    session.add(d)
+    session.flush()
+    try:
+        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note)
+    except (IngestError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(422, f"이 정의로 파일을 읽을 수 없습니다 — {exc}") from exc
+    if v.status != "committed":
+        bad = [f"{c['rule']}: {c['detail']}" for c in (v.quality or {}).get("checks", []) if not c.get("passed") and c.get("severity") == "error"][:5]
+        session.rollback()
+        raise HTTPException(422, "품질 검사를 통과하지 못해 데이터셋을 만들지 않았습니다 — " + " · ".join(bad))
+    _config_changed(session, "dataset", d.code, admin.emp_no)
+    audit(session, admin.emp_no, "admin.dataset.create_by_upload", "dataset", d.code, {"origin": d.origin, "columns": len(d.columns), "file": name, "version": v.version}, client_ip(request))
+    session.commit()
+    try:
+        from nhdip.data.catalog import index_dataset_cards
+
+        index_dataset_cards(session, [d.code])
+        session.commit()
+    except Exception:  # noqa: BLE001 — 설명 카드는 워커 주기 작업이 다시 맞춘다
+        session.rollback()
+    return {"dataset": d.code, "version": v.version, "id": v.id, "status": v.status, "quality": v.quality, "rows": v.row_count, "isCurrent": v.is_current}
+
+
+def _refresh_cards(session: Session, codes: list[str], v: Any) -> None:
+    """정의에 열이 더해졌으면 설명 카드(분석 카탈로그 · 질문하기)를 바로 맞춘다 — 실패해도 업로드는 끝났고 워커 주기 작업이 다시 맞춘다 (M.24)."""
+    if not any(c.get("rule") == "columns_added" for c in ((v.quality or {}).get("checks") or [])) or v.status != "committed":
+        return
+    try:
+        from nhdip.data.catalog import index_dataset_cards
+
+        index_dataset_cards(session, codes)
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
 
 
 @router.post("/datasets/{code}/versions/{vid}/rollback")
