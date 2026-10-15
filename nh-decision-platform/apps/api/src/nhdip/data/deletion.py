@@ -157,6 +157,13 @@ def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor
         ev = emit(session, "dataset.deleted", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "promoted_version": promoted["version"] if promoted else None, "rows": int(n_rows)}, actor)
         session.flush()
         res.purge_ids, res.event_id = [task.id, hist.id], ev.id
+        # 이 자료로 적재한 정의서 표(mart.*) 행 · 대조 결과 — 바로 지운다(다시 계산하면 남은 자료로 다시 적재). 적재는 같은 기준월만 바꿔 넣어 지운 판의 기준월 행이 남는다
+        from nhdip.contracts.materialize import clear_contract_outputs, workflows_reading
+
+        cleared = clear_contract_outputs(session, workflows_reading(session, ds.code))
+        if cleared["tables"]:
+            res.removed["contractRows"] = cleared["rows"]
+            res.removed["contractReports"] = cleared["reports"]
         # 자료가 하나도 남지 않으면 그 자료의 설명 카드(질문하기 색인 · Elasticsearch 분석 결과 색인)도 바로 지운다 — 워커 주기를 기다리지 않게
         if not session.execute(select(t.version.id).where(t.version.dataset_code == ds.code, t.version.is_current).limit(1)).first():
             card_ids = [str(i) for i in session.execute(select(KbChunk.id).where(KbChunk.source_key == f"dataset:{ds.code}")).scalars()]

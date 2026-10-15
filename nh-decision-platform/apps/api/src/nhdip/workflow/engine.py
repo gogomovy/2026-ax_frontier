@@ -240,6 +240,35 @@ def _run_scope(ctx: RunContext, nodes: list[WorkflowNode], spec: dict[str, Any],
 NO_DATA_NOTE = "올린 자료가 없어 계산하지 않음 — 화면 산출물을 값 없는 틀로 둠(자료를 올리면 자동으로 다시 계산)"
 
 
+def workflow_has_data(session: Session, wf: Workflow) -> bool:
+    """이 워크플로가 읽는 자료(지표 · 바인딩 · 흐름 조건의 데이터셋)에 현재 판이 하나라도 있는지.
+
+    다른 부서 자료만 남아 있어도 이 흐름의 자료를 모두 지웠다면 '자료 없음'으로 본다 — 규칙 · 상수만으로 나오는 수치나
+    지운 자료로 낸 옛 값이 화면 · 정의서 · 파이프라인에 남지 않게. 마스터(코드표)만 남은 경우도 자료 없음. 읽는 데이터셋이 없는 흐름은 전체 기준."""
+    from nhdip.data.sources import Resolver
+    from nhdip.graph.projection import _datasets_in_args, has_uploaded_data
+    from nhdip.models import Metric, ViewBinding, WorkflowTrigger, source
+
+    refs: set[str] = set()
+    for m in session.execute(select(Metric).where(Metric.workflow_code == wf.code, Metric.enabled)).scalars():
+        refs |= _datasets_in_args(m.args)
+    for b in session.execute(select(ViewBinding).where(ViewBinding.workflow_code == wf.code, ViewBinding.enabled)).scalars():
+        refs |= _datasets_in_args(b.params)
+    for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf.code, WorkflowTrigger.enabled, WorkflowTrigger.kind.in_(("dataset", "master")))).scalars():
+        if t.target and t.target != "*":
+            refs.add(t.target)
+    if not refs:
+        return has_uploaded_data(session)
+    res = Resolver(session)
+    found = {d.code: d for d in (res.resolve(r) for r in refs) if d is not None}
+    business = [d for d in found.values() if d.kind != "master"] or list(found.values())
+    for d in business:
+        t = source(d.origin)
+        if session.execute(select(t.version.id).where(t.version.dataset_code == d.code, t.version.is_current).limit(1)).first():
+            return True
+    return False
+
+
 def blank_outputs(session: Session, wf: Workflow, run: WorkflowRun) -> WorkflowRun:
     """올린 자료(현재 데이터셋 버전 · 현재 문서)가 하나도 없을 때 (M.23 · DEL-17 · Q210) — 계산하지 않고 이 워크플로의 화면 산출물을 값 없는 틀로 둔다.
 
@@ -259,8 +288,12 @@ def blank_outputs(session: Session, wf: Workflow, run: WorkflowRun) -> WorkflowR
                 continue
             publish(session, row.key, tpl, produced_by=wf.code, workflow_run_id=run.id, changes=[{"artifact": row.key, "blanked": "올린 자료 없음"}])
             blanked.append(row.key)
+    # 정의서 표(mart.*) · 대조 결과 — 지운 자료로 적재한 행이 [컬럼 정의서] · [파이프라인]에 남지 않게
+    from nhdip.contracts.materialize import clear_contract_outputs
+
+    contracts = clear_contract_outputs(session, [wf.code])
     run.status = "succeeded"
-    run.summary = {"nodes": [], "published": blanked, "figure_changes": 0, "no_data": True, "note": NO_DATA_NOTE}
+    run.summary = {"nodes": [], "published": blanked, "figure_changes": 0, "no_data": True, "note": NO_DATA_NOTE, "contractsCleared": contracts}
     run.finished_at = utcnow()
     session.commit()
     if blanked:
@@ -283,9 +316,7 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
     run = WorkflowRun(id=new_id(), workflow_code=wf.code, job_id=job_id, status="running", causes=causes)
     session.add(run)
     session.commit()
-    from nhdip.graph.projection import has_uploaded_data
-
-    if (wf.outputs or []) and not has_uploaded_data(session):
+    if (wf.outputs or []) and not workflow_has_data(session, wf):
         return blank_outputs(session, wf, run)
     ctx = RunContext(session=session, run=run, workflow=wf, causes=causes, eval=EvalContext(session=session, workflow_run_id=run.id))
     summary: dict[str, Any] = {"nodes": []}

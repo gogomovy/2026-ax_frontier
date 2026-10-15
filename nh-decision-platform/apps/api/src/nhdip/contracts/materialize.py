@@ -543,3 +543,64 @@ def rows_version(old: list[dict[str, Any]], new: list[dict[str, Any]], cols: lis
         return sorted(_json.dumps([_norm_cell(r.get(c)) for c in cols], ensure_ascii=False, default=str) for r in rows)
 
     return prev if sig(old) == sig(new) else prev + 1
+
+
+# ═════════════════════════ 지운 자료로 적재한 정의서 값 정리 ═════════════════════════
+def _mart_exists(session: Session, table: str) -> bool:
+    return bool(session.execute(text("SELECT 1 FROM information_schema.tables WHERE table_schema='mart' AND table_name=:t"), {"t": table}).first())
+
+
+def clear_contract_outputs(session: Session, workflow_codes: set[str] | list[str]) -> dict[str, Any]:
+    """이 워크플로우들이 적재하는 정의서 표(mart.*)의 행과 정의서 대조 결과(산출물 contract.<표>, 지난 세대 포함)를 지운다.
+
+    적재는 같은 기준월 행만 바꿔 넣고, 기준 자료가 없으면 적재를 건너뛰므로 지운 자료로 적재한 옛 기준월 행 · 대조 결과가
+    [컬럼 정의서] · [파이프라인]에 그대로 남는다. 지운 뒤 다시 계산하면 남은 자료로 다시 적재된다."""
+    from sqlalchemy import delete
+
+    from nhdip.models import ViewArtifact, WorkflowNode
+
+    codes = set(workflow_codes or [])
+    out: dict[str, Any] = {"tables": [], "rows": 0, "reports": 0}
+    if not codes:
+        return out
+    nodes = session.execute(select(WorkflowNode).where(WorkflowNode.impl == "materialize_contracts", WorkflowNode.workflow_code.in_(codes))).scalars().all()
+    if not nodes:
+        return out
+    depts = {c.table_code: c.dept for c in session.execute(select(ColumnContract)).scalars()}
+    tables: set[str] = set()
+    for n in nodes:
+        tables |= set((n.config or {}).get("tables") or depts)  # 표를 적지 않은 적재 노드는 모든 표를 적재한다(materialize)
+    for code in sorted(tables):
+        dept = depts.get(code)
+        if dept is None:
+            continue
+        try:
+            table = mart_table(session, code, dept)
+        except ValueError:
+            continue
+        if _mart_exists(session, table):
+            out["rows"] += int(session.execute(text(f'DELETE FROM mart."{table}"')).rowcount or 0)
+        key = f"contract.{code}"
+        out["reports"] += int(session.execute(delete(ViewArtifact).where((ViewArtifact.key == key) | ViewArtifact.key.like(key.replace("_", r"\_") + "@%", escape="\\"))).rowcount or 0)
+        out["tables"].append(code)
+    return out
+
+
+def workflows_reading(session: Session, dataset_code: str) -> set[str]:
+    """이 데이터셋을 읽는 워크플로우 — 지표(args) · 바인딩(params) · 흐름 조건(데이터셋 · 마스터). 이름(업무 구성의 자료 이름)으로 가리킨 것 포함."""
+    from nhdip.data.sources import Resolver
+    from nhdip.graph.projection import _datasets_in_args
+    from nhdip.models import Metric, ViewBinding, WorkflowTrigger
+
+    names = set(Resolver(session).refs_for(dataset_code)) | {dataset_code}
+    wfs: set[str] = set()
+    for m in session.execute(select(Metric)).scalars():
+        if m.workflow_code and _datasets_in_args(m.args) & names:
+            wfs.add(m.workflow_code)
+    for b in session.execute(select(ViewBinding)).scalars():
+        if b.workflow_code and _datasets_in_args(b.params) & names:
+            wfs.add(b.workflow_code)
+    for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.kind.in_(("dataset", "master")))).scalars():
+        if t.target in names:
+            wfs.add(t.workflow_code)
+    return wfs
