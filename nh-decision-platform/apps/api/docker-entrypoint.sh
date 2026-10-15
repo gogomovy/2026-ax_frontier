@@ -40,11 +40,7 @@ case "$ROLE" in
       echo "[entrypoint] seeding definitions (settings · dataset definitions · value-less screen templates — no business data)"
       NHDIP_USE_APP_ROLE=0 python -m nhdip.cli seed --with-precompute || echo "[entrypoint] seed skipped/failed (계속 진행)"
     fi
-    if [[ "${LOAD_SAMPLE_ON_START:-0}" == "1" ]]; then
-      # 시드는 정의만 — 업무 자료는 시연 자료 패키지(엑셀 · CSV · PDF)를 실제 업로드 경로로 올린다 (Phase I · Q137)
-      echo "[entrypoint] loading sample package (같은 파일은 건너뜀)"
-      NHDIP_USE_APP_ROLE=0 python -m nhdip.cli load-sample || echo "[entrypoint] sample load failed (계속 진행)"
-    fi
+    # 기동은 업무 자료를 넣지 않는다 — 시연 자료 자동 업로드(LOAD_SAMPLE_ON_START)는 없앴다(M.20 · Q206). 자료는 화면에서 직접 올린다
     exec uvicorn nhdip.main:app --host 0.0.0.0 --port 8000 --proxy-headers
     ;;
   worker)

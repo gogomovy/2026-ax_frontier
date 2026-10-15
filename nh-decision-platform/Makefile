@@ -1,19 +1,17 @@
 SHELL := /bin/bash
 COMPOSE := docker compose
 
-.PHONY: upload-test help env build up down logs ps restart seed reset-data sample sample-verify reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set es-password
+.PHONY: upload-test help env build up down logs ps restart seed reset-data reset test e2e eval perf web-dev api-sh admin-pass backup restore wait-idle a11y keyboard preflight host-check set es-password
 
 help:
 	@echo "── 전체 기동 (Docker) ─────────────────────────────────────"
-	@echo "make up          - .env 준비 → 이미지 빌드 → 5개 서비스 기동 (최초 시드 자동)"
+	@echo "make up          - .env 준비 → 이미지 빌드 → 5개 서비스 기동 (최초 시드 자동 — 정의 · 값 없는 화면 틀만, 업무 자료 없음)"
 	@echo "make ps          - 상태 확인"
 	@echo "make logs        - 전체 로그 (s=api 처럼 서비스 지정 가능)"
 	@echo "make down        - 중지 (데이터 유지)"
 	@echo "make reset       - 중지 + 볼륨 삭제 (초기 상태로)"
 	@echo "make seed        - 기본 설정·데이터 정의 시드 재실행 (멱등 · 업무 수치는 넣지 않음)"
 	@echo "make reset-data  - 업무 자료 비우기 미리보기(지울 행 수) — YES=1 이면 실제로 지움. 사용자 · 설정 · 데이터셋 정의는 남김"
-	@echo "make sample      - 시연 자료 패키지(엑셀 · CSV · PDF)를 실제 업로드 API 로 올리기 (같은 파일은 건너뜀)"
-	@echo "make sample-verify - 엑셀에서 독립 계산한 기대값 ↔ 화면 API 수치 대조"
 	@echo "make test        - 백엔드 테스트 (api 컨테이너)"
 	@echo "make e2e         - 브라우저 E2E (기동 중인 스택 대상, Node 20+ 필요)"
 	@echo "make a11y        - 자동 접근성 점검(axe-core · WCAG 2.1 A·AA 자동 규칙, 기동 중인 스택 대상)"
@@ -68,12 +66,6 @@ seed:
 # 업무 자료 비우기 (M.19 · Q203) — 올린 자료 · 계산 결과 · 화면 산출물 · 색인 · 그래프를 지우고 정의만 남김. 되돌릴 수 없으니 먼저 make backup
 reset-data:
 	$(COMPOSE) exec -T -e NHDIP_USE_APP_ROLE=0 api python -m nhdip.cli reset-data $(if $(YES),--yes,)
-
-sample:
-	$(COMPOSE) exec -T api python -m nhdip.sample upload --base-url http://localhost:8000
-
-sample-verify:
-	$(COMPOSE) exec -T api python -m nhdip.sample verify --base-url http://localhost:8000
 
 test:
 	$(COMPOSE) exec -e NHDIP_USE_APP_ROLE=0 api python -m pytest -q tests

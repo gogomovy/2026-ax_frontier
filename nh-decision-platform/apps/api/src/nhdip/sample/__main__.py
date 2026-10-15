@@ -1,4 +1,6 @@
-"""시연 자료 패키지 도구 (Phase I).
+"""시연 자료 패키지 도구 (Phase I) — 시험(CI · pytest)용. 플랫폼 기동 · 시드는 이 자료를 쓰지 않는다(M.20 · Q206).
+
+DB 에 올리는 upload · selftest 는 NHDIP_SAMPLE_UPLOAD=1 일 때만 돈다(시험 스택 전용 — 운영 · 개발 플랫폼에 시연 자료가 들어가지 않게).
 
   python -m nhdip.sample build --out sample-data/202608 [--perturb N]      파일로 쓰기(manifest.json 포함)
   python -m nhdip.sample upload --base-url URL --user 사번 [--password-env 변수] [--force] [--perturb N]
@@ -48,6 +50,10 @@ def main(argv: list[str] | None = None) -> int:
 
     from .build import build
 
+    if args.cmd in ("upload", "selftest") and os.environ.get("NHDIP_SAMPLE_UPLOAD", "") != "1":
+        # 시연 자료를 실제 플랫폼 DB 에 넣는 명령 — 시험용(CI)으로만, 운영 · 개발 플랫폼에는 쓰지 않는다 (M.20 · Q206)
+        print("시연 자료 업로드는 시험 환경 전용입니다 — 시험 스택에서만 NHDIP_SAMPLE_UPLOAD=1 로 실행하세요(운영 · 개발 플랫폼에는 자료를 직접 올립니다)", file=sys.stderr)
+        return 2
     if args.cmd == "build":
         pkg = build(perturb_seed=args.perturb)
         paths = pkg.write(args.out)

@@ -1,8 +1,6 @@
 """운영 CLI.
 
   python -m nhdip.cli seed [--with-precompute]     정의 시드 — 사용자 · 조직 · 설정 · 규칙 · 데이터셋 정의 · 지표 · 워크플로 · 값 없는 화면 틀 (멱등, 업무 자료는 넣지 않음)
-  python -m nhdip.cli load-sample [--force]        시연 자료 패키지(엑셀 · CSV · PDF)를 업로드 경로(보안 검사 · 적재 함수)로 올림 — 같은 파일은 건너뜀
-  python -m nhdip.cli sample-data <폴더>            시연 자료 패키지를 파일로 쓰기(manifest.json 포함 — 사람이 열어 보거나 화면에서 직접 업로드)
   python -m nhdip.cli reset-data [--yes] [--force]  업무 자료 비우기 — 올린 자료 · 계산 결과 · 화면 산출물 · 색인 · 그래프 · 실행 기록을 지우고 정의만 남김.
                                                    인자 없으면 미리보기(지울 행 수), --yes 로 실행. 사용자 · 설정 · 정의 · 감사 기록은 남는다 (M.19 · Q203)
   python -m nhdip.cli admin-password <사번>         비밀번호 재설정(표준입력) + 잠금 해제
@@ -87,10 +85,6 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sp = sub.add_parser("seed")
     sp.add_argument("--with-precompute", action="store_true")
-    ap_ls = sub.add_parser("load-sample")
-    ap_ls.add_argument("--force", action="store_true", help="이미 올린 파일도 새 버전으로 다시 올림")
-    ap_sd = sub.add_parser("sample-data")
-    ap_sd.add_argument("folder")
     ap_rd = sub.add_parser("reset-data", help="업무 자료 비우기(기본은 미리보기)")
     ap_rd.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 지운다(되돌릴 수 없음)")
     ap_rd.add_argument("--force", action="store_true", help="실행 중인 작업이 있어도 진행")
@@ -180,20 +174,6 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
-        return 0
-    if args.cmd == "load-sample":
-        from nhdip.sample.build import build
-        from nhdip.sample.load import load_local
-
-        with SessionLocal() as s:
-            rep = load_local(s, build(), actor="sample", force=args.force)
-        print(json.dumps({k: v for k, v in rep.as_dict().items() if k != "files"}, ensure_ascii=False))
-        return 0 if rep.ok else 1
-    if args.cmd == "sample-data":
-        from nhdip.sample.build import build
-
-        paths = build().write(args.folder)
-        print(json.dumps({"folder": args.folder, "files": len(paths)}, ensure_ascii=False))
         return 0
     if args.cmd == "reset-data":
         from nhdip.data import reset as R

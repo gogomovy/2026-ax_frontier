@@ -42,10 +42,9 @@ jobs:
         run: lint-imports
       - name: pytest + 계산 커널 커버리지 게이트(90%)
         run: python -m pytest -q tests --cov --cov-config=.coveragerc --cov-report=term-missing
-      - name: 시연 자료 저장소 사본 = 생성기 (sample-data/202608 · Phase I)
-        run: python -m nhdip.sample check --dir ../../sample-data/202608
       - name: 교란 검사 (빈 DB → 정의 시드 → 엑셀 업로드 → 엑셀 대조 → 교란 업로드 → 하드코딩 0 · Phase I)
         env:
+          NHDIP_SAMPLE_UPLOAD: "1"  # 시험 DB 전용 — 플랫폼은 시연 자료를 넣지 않는다(M.20)
           DATABASE_URL: postgresql+psycopg://nhdip:nhdip@localhost:5432/nhdip_selftest
           NEO4J_URI: bolt://127.0.0.1:1
           SESSION_SECRET: ci-selftest-secret-ci-selftest-secret
@@ -101,10 +100,8 @@ jobs:
           df -h /
       - name: compose up (시드 = 정의만 · 시연 자료는 다음 단계에서 HTTP 업로드)
         run: docker compose up -d --build --wait --wait-timeout 600
-        env:
-          LOAD_SAMPLE_ON_START: "0"
-      - name: 시연 자료 패키지 업로드 (엑셀 · CSV · PDF → 실제 업로드 API · Phase I)
-        run: docker compose exec -T api python -m nhdip.sample upload --base-url http://localhost:8000
+      - name: 시연 자료 패키지 업로드 (시험 스택 전용 · 엑셀 · CSV · PDF → 실제 업로드 API · Phase I)
+        run: docker compose exec -T -e NHDIP_SAMPLE_UPLOAD=1 api python -m nhdip.sample upload --base-url http://localhost:8000
       - name: wait for precompute (이벤트 · 작업 처리 완료까지)
         run: docker compose exec -T api python -m nhdip.cli wait-idle --timeout 300 --settle 10
       - name: 엑셀 ↔ 화면 대조 (엑셀에서 독립 계산한 기대값 = 화면 API 수치)

@@ -1,7 +1,7 @@
 """시연 자료 패키지 올리기 (Phase I · Q137) — 실제 업로드 경로만 쓴다.
 
 - `upload_http`: 관리자 로그인 → `POST /admin/datasets/{code}/upload` · `POST /admin/documents/upload` (CI · E2E · 원격 서버)
-- `load_local`: 같은 보안 검사(check_upload) · 같은 적재 함수(ingest_file · ingest_document) — HTTP 없이 개발 DB 에 (CLI load-sample)
+- `load_local`: 같은 보안 검사(check_upload) · 같은 적재 함수(ingest_file · ingest_document) — HTTP 없이 시험 DB 에 (시험 전용 — 플랫폼 기동 · CLI 는 쓰지 않음, M.20)
 - 이미 같은 파일 이름으로 확정된 버전(문서는 같은 문서 코드 · 같은 체크섬)이 있으면 건너뛴다(`force=True` 면 새 버전으로 — 교란 검사)
 - 응답 상태가 committed 가 아니면 실패로 모은다(품질 경고는 허용)
 """

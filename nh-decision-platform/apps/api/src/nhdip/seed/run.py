@@ -12,7 +12,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from nhdip.config import get_settings
-from nhdip.data.documents import ingest_document
 from nhdip.events import audit, emit
 from nhdip.models import (
     Agent,
@@ -422,21 +421,6 @@ def _psi_bands_upgrade(s: Session) -> None:
         emit(s, "rule.changed", {"rule": rule.code, "version": rule.active_version}, "seed")
 
 
-def _doc_head(doc: dict[str, Any]) -> list[str]:
-    return [doc["title"], f"발행: {doc.get('issuer') or '-'} · 시행일 {doc.get('effectiveDate') or '-'} · 분류 {doc.get('dbClassLabel') or doc.get('dbClass')}", "주제어: " + ", ".join(doc.get("tags") or [])]
-
-
-def _doc_text(doc: dict[str, Any], snippets: list[dict[str, Any]]) -> str:
-    head = _doc_head(doc)
-    body = []
-    for sn in snippets:
-        sec = sn.get("sectionPath") or ""
-        body.append(f"{sec}\n{sn['snippet']}".strip())
-    if not body:
-        body.append(f"{doc['title']} — {', '.join(doc.get('tags') or [])} 관련 {doc.get('docType') or '문서'}.")
-    return "\n\n".join(head + body)
-
-
 def _collect_snippets() -> dict[str, list[dict[str, Any]]]:
     """화면 목데이터의 근거 인용(snippet)을 문서 제목별로 모은다."""
     snippets: dict[str, list[dict[str, Any]]] = {}
@@ -563,23 +547,8 @@ def branch_upgrade(s: Session, out: dict[str, Any], first: bool) -> None:
                 publish(s, key, template_payload(key, json.load(fh)), produced_by="seed")
             n += 1
     done["artifacts"] = n
-    # 문서 — 영업점 기준 · 공문: 예전 시드 문서가 있던 운영 DB 만(없는 문서만). 새 DB 는 업로드로(Q135)
-    from nhdip.sample.docs import catalog
-
-    docs = {d["docId"]: d for d in catalog()}
-    have_docs = {c for o in ("bank", "ext") for c in s.execute(select(source(o).document.doc_code)).scalars()}
-    snippets = _collect_snippets()
-    nd = 0
-    for doc_id in B.DOC_IDS if (not first and have_docs) else []:
-        d = docs.get(doc_id)
-        if not d or doc_id in have_docs:
-            continue
-        pages = _doc_pages(d, snippets.get(d["title"], []))
-        ingest_document(s, origin="ext" if d["dbClass"] == "gov_policy" else "bank", doc_code=doc_id, title=d["title"], doc_class=d["dbClass"], text=_doc_text(d, snippets.get(d["title"], [])),
-                        pages=[(p["page"], ("\n".join(_doc_head(d)) + "\n\n" + p["text"]) if i == 0 else p["text"]) for i, p in enumerate(pages)] or None,
-                        issuer=d.get("issuer"), published_at=d.get("effectiveDate"), meta={**d, "pages": pages} if pages else d, actor="seed", emit_event=False)
-        nd += 1
-    done["documents"] = nd
+    # 문서는 넣지 않는다 — 시드는 업무 자료(문서 포함)를 어떤 DB 에도 넣지 않는다(Q135 · M.20 · Q206). 문서는 업로드로만
+    done["documents"] = 0
     s.flush()
     if not first:
         for wf in ("wf_graph_projection", B.WF):

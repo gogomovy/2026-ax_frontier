@@ -7,15 +7,15 @@
 | 스펙 | `.kiro/specs/nh-decision-ai-platform/` — `requirements.md`(§16) · `design.md`(§19) · `tasks.md`(Phase B) |
 | 프론트엔드 | Next.js 16 · React 19 — 업무 화면 3개 부서(종합기획부 · 신용리스크관리부 · 영업점) + 로그인·가입 + 관리자 화면 25종(묶음 6개 · 관리자 홈) |
 | 백엔드 | FastAPI + 워커 — 인증·권한, 계산 커널, 데이터셋/문서 적재, 온톨로지(Neo4j), 3-way 검색(PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프), 외부 LiteLLM 연동, 변경 기반 워크플로우 |
-| 데이터 | 프론트는 항상 백엔드 API 만 쓴다(목데이터 모드 없음) — 자료를 올리기 전에는 수치 없는 화면 템플릿, 올린 뒤에는 모든 수치 · 기간을 업로드 자료로 계산. 시연 자료 패키지는 `python -m nhdip.cli load-sample` 또는 `python -m nhdip.sample upload` 로 올리고, 실데이터는 관리자 화면에서 같은 데이터셋 정의로 업로드 |
+| 데이터 | 프론트는 항상 백엔드 API 만 쓴다(목데이터 모드 없음) — 자료를 올리기 전에는 수치 없는 화면 템플릿, 올린 뒤에는 모든 수치 · 기간을 업로드 자료로 계산. 기동 · 시드는 업무 자료를 넣지 않는다 — 자료는 관리자 화면에서 데이터셋 정의로 직접 업로드 |
 
 ---
 
 ## 1. 실행 (Docker, 5개 서비스)
 
 ```bash
-make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 마이그레이션 · 정의 시드(정의만 · 업무 자료 없음). 시연 자료는 LOAD_SAMPLE_ON_START=1 일 때만 올린다(기본 0)
-make sample      # 시연 자료 패키지(엑셀 · CSV · PDF 43개)를 실제 업로드 API 로 올리기 · make sample-verify 엑셀 독립 계산 ↔ 화면 대조
+make up          # .env 준비(비밀값 자동 생성) → 빌드 → 기동 → 마이그레이션 · 정의 시드(정의 · 값 없는 화면 틀만 — 업무 자료는 넣지 않음)
+make reset-data  # 예전에 올린 업무 자료 비우기 미리보기 → make reset-data YES=1 (먼저 make backup)
 make admin-pass  # 최초 관리자 사번·비밀번호
 make ps | logs | down | reset(볼륨 삭제) | test(백엔드 테스트) | e2e(브라우저 E2E, 기동 중인 스택 대상)
 make wait-idle   # 이벤트 · 작업 처리가 끝날 때까지 대기 (기동 직후 선계산 확인)
@@ -25,7 +25,7 @@ make preflight   # 운영 준비 점검 · make host-check 서버 점검 · make
 make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트 3100)에 2026.09 시험 엑셀 · PDF 를 올려 워크플로우 · 에이전트 · mart 갱신 확인 후 내림 (LLM: E2E_LLM_BASE · E2E_LLM_KEY · E2E_LLM_MODEL 환경변수, 없으면 규칙 경로 판정 · E2E_EXPECT_LLM=0/1)
 ```
 
-**내 자료로 시작하기(기본)** — `make up` 은 정의(데이터셋 · 지표 · 규칙 · 워크플로우)만 시드하고 업무 자료는 넣지 않습니다. 화면은 자료가 올라오기 전까지 "미제공"으로 보이고, 관리자 `/admin/datasets`(또는 업무 `/knowledge/upload`)에서 직접 올리면 관련 워크플로우만 계산합니다. 시연 자료가 필요하면 `make sample`(43개 파일 업로드) 또는 `.env` 에 `LOAD_SAMPLE_ON_START=1`(`make set k=LOAD_SAMPLE_ON_START v=1`). **이미 시연 자료가 올라간 DB 를 비우려면** `make backup` 후 `make reset-data`(지울 행 수 미리보기) → `make reset-data YES=1` — 올린 자료 · 계산 결과 · 화면 산출물 · 색인 · 그래프 · 실행 기록만 지우고 사용자 · 설정 · 데이터셋 정의 · 감사 기록은 남깁니다(M.19). 모두 처음부터라면 `make reset`(볼륨까지 삭제 — 되돌릴 수 없음) 후 `make up`. 기존 `.env` 에 `LOAD_SAMPLE_ON_START=1` 이 있으면 먼저 `make set k=LOAD_SAMPLE_ON_START v=0`. 자료가 올라오기 전에는 업무 화면에 시연 서술(분석 결과 · 보고서 · 수행방안 · 경영목표 제안 · 분석 탭)이 나오지 않고, 올리면 관련 워크플로가 계산해 채웁니다. 시연 자료를 화면에서 직접 올릴 때는 `manifest.json` 순서(마스터 → 실적 · 집계 → 문서)를 따르면 됩니다.
+**내 자료로 시작하기(기본)** — `make up` 은 정의(데이터셋 · 지표 · 규칙 · 워크플로우)만 시드하고 업무 자료는 넣지 않습니다. 화면은 자료가 올라오기 전까지 "미제공"으로 보이고, 관리자 `/admin/datasets`(또는 업무 `/knowledge/upload`)에서 직접 올리면 관련 워크플로우만 계산합니다. 시연 자료를 자동으로 넣는 기능(예전 `LOAD_SAMPLE_ON_START` · `make sample` · `cli load-sample`)과 저장소의 시연 자료 사본(`sample-data/`)은 없앴습니다(M.20 · Q206). **이미 시연 자료가 올라간 DB 를 비우려면** `make backup` 후 `make reset-data`(지울 행 수 미리보기) → `make reset-data YES=1` — 올린 자료 · 계산 결과 · 화면 산출물 · 색인 · 그래프 · 실행 기록만 지우고 사용자 · 설정 · 데이터셋 정의 · 감사 기록은 남깁니다(M.19). 모두 처음부터라면 `make reset`(볼륨까지 삭제 — 되돌릴 수 없음) 후 `make up`. 기존 `.env` 에 남은 `LOAD_SAMPLE_ON_START` 는 더 읽지 않습니다. 자료가 올라오기 전에는 업무 화면에 시연 서술(분석 결과 · 보고서 · 수행방안 · 경영목표 제안 · 분석 탭)이 나오지 않고, 올리면 관련 워크플로가 계산해 채웁니다. 여러 파일을 올릴 때는 마스터(상품 · 등급 · 영업점 기준) → 실적 · 집계 → 문서 순서가 좋습니다.
 
 **팀 자료 등록(Phase M)** — 부서 데이터 책임자는 업무 `/knowledge/upload` › [자료 등록(에이전트 분석)], 관리자는 `/admin/datasets` › [자료 등록]에서 파일(엑셀 · CSV · JSON · PDF · 워드 · 텍스트)을 놓으면 에이전트가 열 · 의미(정형) 또는 제목 · 분류 · 기관 · 시행일(비정형)을 제안합니다. 확인하고 [확인 · 반영]하면 원장(PostgreSQL) → 임베딩 · Elasticsearch · 온톨로지 구축(제안은 관리자 `/admin/ontology` › [변경 제안]에서 승인) → Neo4j · 관련 워크플로로 이어지고, 진행은 등록 건의 [반영 상태]에서 봅니다. 쓰지 않는 시드 정의는 [데이터셋·문서] 상세 [정의 관리]에서 중지 · 삭제하고(되살아나지 않음), 정의 없이 시작하려면 `.env` 에 `SEED_DATASET_DEFS=0`. 에이전트 그룹 · 파이프라인은 `/admin/agentic`, 그룹별 모델 · 파라미터는 `/admin/agents`.
 
@@ -45,7 +45,7 @@ make upload-test # 업로드 기반 에이전트 시험 — 별도 스택(포트
    LLM 이 설정되지 않아도 모든 수치·화면은 동작하며, 서술 노드만 기존 문장으로 폴백(degraded)합니다.
 2. 사용자는 `/signup` 에서 사번 8자리 + 소속(본부 > 부 > 국 > 팀 또는 지역본부 > 영업점)으로 가입 → 관리자가 `/admin/users` 에서 승인.
 3. 화면 권한은 `/admin/screens` 에서 조직 단위로 부여합니다(하위 조직이 상속). 기본: 종합기획부 · 신용리스크관리부 · 수도권1지역본부 · 중부지역본부(영업점 포함).
-4. 실데이터는 `/admin/datasets` 에서 업로드(당행/외부 구분 확인) → 품질 검증 → 확정 시 관련 워크플로우만 재계산. 시연 자료 원본은 `sample-data/202608/`(직접 열어 보고 화면에서 올려도 같은 결과).
+4. 실데이터는 `/admin/datasets` 에서 업로드(당행/외부 구분 확인) → 품질 검증 → 확정 시 관련 워크플로우만 재계산.
 5. 잘못 올린 자료는 **데이터 관리자**(관리자 중 `/admin/users` 에서 지정 — 부트스트랩 관리자는 처음부터)가 `/admin/datasets` 의 버전 · 문서 표에서 [삭제]합니다. 삭제 사유를 받고, 현재 버전이면 직전 버전이 현재가 되며, 행 · 청크(임베딩) · 원본 파일과 검색 색인(Elasticsearch) · 그래프(Neo4j)에서도 지웁니다(저장소가 멈춰 있으면 워커가 끝날 때까지 재시도 — '삭제 반영 상태'). 부서 데이터 책임자는 [자료 올리기 > 우리 부서 자료]에서 **자기 부서가 올려 승인된 자료만** 같은 방식으로 지웁니다. 문서를 지우면 AI 호출 기록 · 실행 기록 · 보고서 근거에 복사된 본문 조각도 정리하고(토큰 · 비용 같은 기록은 유지), 데이터셋을 지우면 다시 계산이 끝난 뒤 옛 산출물 세대를 정리합니다(계산 기록 · 감사 로그는 지우지 않음).
 
 시연용 사용자(선택): `.env` 에 `DEMO_USER_PASSWORD` 를 넣고 최초 기동하면 20250001(종합기획부) · 20250002(신용리스크관리부) · 20250003(영업점 · 수원영통지점 001068)이 생성됩니다.
@@ -161,14 +161,13 @@ apps/
    ├─ workflow/         # 엔진 · 노드 구현 · 디스패처
    ├─ views/            # 화면 산출물 저장(세대) · 표/차트 빌더
    ├─ api/              # auth · screens · state · admin
-   ├─ sample/           # 시연 자료 패키지 생성기(시나리오 → 실무형 엑셀 · 원본 양식 · PDF) · 업로드 · 엑셀 대조 · 교란 검사
+   ├─ sample/           # 시험(pytest · CI) 전용 자료 생성기 — 플랫폼 기동 · 시드는 쓰지 않음, DB 업로드 명령은 NHDIP_SAMPLE_UPLOAD=1 일 때만
    └─ seed/             # 초기 설정 · 데이터 정의(업무 수치 없음) · screens/*.json(수치 없는 화면 템플릿 + 서식 문구)
-sample-data/202608/  시연 자료 패키지 저장소 사본(생성기와 같은지 CI 가 확인)
 infra/  postgres init · litellm config · scripts(ensure-env 등)
 .github/workflows/ci.yml  pytest · tsc · eslint · build · audit · e2e
 ```
 
-화면 수치 · 기간은 업로드 자료에서만 옵니다. 시연 자료 패키지는 `python -m nhdip.cli load-sample`(api 컨테이너 안) 또는 `python -m nhdip.sample upload --base-url URL --user 사번`(업로드 API 경유)으로 올립니다. 하드코딩 검사는 `python -m nhdip.sample selftest`(빈 DB — 정의 시드 → 업로드 → 엑셀 대조 → 셀마다 다른 비율로 바꾼 패키지 두 벌 업로드 → 그대로인 데이터 자리 0 이어야 통과, CI api 잡).
+화면 수치 · 기간은 업로드 자료에서만 옵니다. 시험용 자료 생성기(`nhdip.sample`)는 시험 DB 에만 씁니다(pytest 는 함수로 직접, CI 는 `NHDIP_SAMPLE_UPLOAD=1` 로). 하드코딩 검사는 `python -m nhdip.sample selftest`(빈 DB — 정의 시드 → 업로드 → 엑셀 대조 → 셀마다 다른 비율로 바꾼 패키지 두 벌 업로드 → 그대로인 데이터 자리 0 이어야 통과, CI api 잡).
 
 ---
 

@@ -143,14 +143,30 @@ def test_compare_dir_detects_missing_and_changed(tmp_path):
     assert compare_dir(pkg, str(tmp_path)) == ["사본에만 있음: b.csv"]
 
 
-def test_committed_sample_copy_matches_generator():
-    """저장소 사본(sample-data/202608) = 생성기 결과 (RD-02 · Q136). 생성기를 바꾸면 `python -m nhdip.sample build --out sample-data/202608` 로 다시 쓴다."""
+def test_no_sample_data_in_repository_or_startup():
+    """저장소 · 기동에 시연 자료가 없다 (M.20 · Q206) — 자료 사본 폴더, 기동 자동 업로드(LOAD_SAMPLE_ON_START), CLI load-sample 이 없다."""
     import os
 
-    from nhdip.sample.build import build
-    from nhdip.sample.check import compare_dir
+    root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    assert not os.path.isdir(os.path.join(root, "sample-data"))
+    with open(os.path.join(os.path.dirname(__file__), "..", "docker-entrypoint.sh"), encoding="utf-8") as fh:
+        entry = fh.read()
+    assert "load-sample" not in entry and 'LOAD_SAMPLE_ON_START:-' not in entry
+    compose = os.path.join(root, "docker-compose.yml")
+    if os.path.exists(compose):
+        with open(compose, encoding="utf-8") as fh:
+            assert "LOAD_SAMPLE_ON_START: ${" not in fh.read()
+    from nhdip.cli import main
 
-    folder = os.path.join(os.path.dirname(__file__), "..", "..", "..", "sample-data", "202608")
-    if not os.path.isdir(folder):
-        pytest.skip("저장소 사본 없음(패키지만 설치된 환경)")
-    assert compare_dir(build(), folder) == []
+    with pytest.raises(SystemExit):
+        main(["load-sample"])  # 없는 명령
+
+
+def test_sample_upload_cli_refuses_outside_tests(monkeypatch, capsys):
+    """시연 자료를 DB 에 올리는 명령은 시험 스택(NHDIP_SAMPLE_UPLOAD=1)에서만 돈다."""
+    from nhdip.sample.__main__ import main
+
+    monkeypatch.delenv("NHDIP_SAMPLE_UPLOAD", raising=False)
+    assert main(["upload", "--base-url", "http://127.0.0.1:9"]) == 2
+    assert main(["selftest"]) == 2
+    assert "시험 환경 전용" in capsys.readouterr().err
