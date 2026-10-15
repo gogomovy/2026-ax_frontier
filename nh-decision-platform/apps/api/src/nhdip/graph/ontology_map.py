@@ -401,7 +401,7 @@ def signature(session: Session) -> tuple[Any, ...]:
     for origin in ("bank", "ext"):
         t = source(origin)
         parts.append(",".join(str(i) for i in session.execute(select(t.version.id).where(t.version.is_current).order_by(t.version.id)).scalars()))
-    parts.append(session.scalar(select(func.max(OntologySchema.id))))
+    parts.append(session.scalar(select(func.max(OntologySchema.version))))  # 스키마 새 판(원천 제거 포함) — 기본키가 version
     return tuple(str(p) for p in parts)
 
 
