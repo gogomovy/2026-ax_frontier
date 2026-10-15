@@ -24,9 +24,20 @@ export default function PipelineAdmin() {
       title="파이프라인"
       description="데이터 · 문서 · 규칙이 바뀌면 관련 워크플로우만 실행되고, 워크플로우 안에서는 계산(커널) → 변화 감지 → 화면 갱신 → 실행 계획 → 근거 → 서술(LLM) → 검증 → 적재 → 게시 순으로 진행합니다. 편집은 워크플로우 · 에이전트 · 컬럼 정의서 화면에서 합니다."
       actions={
-        <Button size="sm" variant="quiet" onClick={data.reload}>
-          새로고침
-        </Button>
+        <span className="inline-flex gap-xs">
+          <Button size="sm" variant="quiet" onClick={data.reload}>
+            새로고침
+          </Button>
+          <Button
+            size="sm"
+            variant="confirm"
+            disabled={busy}
+            title="지금 올라와 있는 자료 기준으로 모든 흐름 · 그래프를 다시 계산합니다. 자료 없는 흐름의 화면 · 정의서 값은 비웁니다(올린 자료는 그대로)."
+            onClick={() => run(() => apiPost("/admin/pipeline/resync"), "모든 흐름을 다시 계산하도록 요청했습니다 — 1~2분 뒤 화면 · 정의서 · 온톨로지가 지금 자료 기준으로 맞춰집니다", data.reload)}
+          >
+            전체 다시 맞추기
+          </Button>
+        </span>
       }
     >
       <Loading error={data.error} loading={!d && data.loading} />

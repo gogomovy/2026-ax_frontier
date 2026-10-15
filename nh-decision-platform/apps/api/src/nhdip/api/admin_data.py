@@ -1645,6 +1645,26 @@ def pipeline(session: Session = Depends(get_session)):
     return build_pipeline(session)
 
 
+@router.post("/pipeline/resync")
+def pipeline_resync(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """전체 다시 맞추기 — 지금 올라와 있는 자료 기준으로 모든 흐름을 다시 돌린다(수동 실행 이벤트).
+    자료 없는 흐름의 정의서 표 · 대조 결과는 바로 비우고(화면 틀은 그 흐름 실행이 비움), 온톨로지 지도 보관본을 버린다.
+    그래프 투영도 같이 돌아 Neo4j 에 남은 노드가 정리된다. 올린 자료 자체는 건드리지 않는다."""
+    from nhdip.contracts.materialize import clear_contract_outputs
+    from nhdip.graph.ontology_map import clear_cache
+    from nhdip.workflow.engine import workflow_has_data
+
+    wfs = list(session.execute(select(Workflow).where(Workflow.enabled).order_by(Workflow.sort)).scalars())
+    empty = [w.code for w in wfs if (w.outputs or []) and not workflow_has_data(session, w)]
+    cleared = clear_contract_outputs(session, empty)
+    for w in wfs:
+        emit(session, "manual", {"workflow": w.code, "reason": "관리자 전체 다시 맞추기"}, admin.emp_no)
+    audit(session, admin.emp_no, "admin.pipeline.resync", "workflow", None, {"workflows": [w.code for w in wfs], "noData": empty, "contracts": cleared}, client_ip(request))
+    session.commit()
+    clear_cache()
+    return {"queued": [w.code for w in wfs], "noData": empty, "contractsCleared": cleared}
+
+
 @router.get("/agents/topology")
 def agent_topology(session: Session = Depends(get_session)):
     """워크플로우별 에이전트 배치(노드 순서) + 오케스트레이터 의존 그래프."""
