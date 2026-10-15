@@ -57,6 +57,8 @@ export interface PipeWorkflow {
   config?: string | null;
   /** 자료 대기 입력(source id) */
   waiting?: string[];
+  /** 이 흐름이 읽는 자료가 하나도 없음 — 지난 실행 결과 · 산출물 시각을 보여 주지 않는다 */
+  noData?: boolean;
   inputs: { source: string; via: "trigger" | "lineage" | "evidence"; trigger?: string }[];
   nodes: PipeNode[];
   outputs: string[];
@@ -303,6 +305,7 @@ export function PipelineMap({ data, onOpenWorkflow }: { data: PipelineData; onOp
                       <span className="mt-0.5 block text-[10.5px] text-stone">최근 {fmtTime(w.lastRun?.finishedAt ?? w.lastRun?.startedAt)}{w.lastRun?.wallMs ? ` · ${ms(w.lastRun.wallMs)}` : ""}</span>
                       {w.config ? <span className="mt-0.5 block text-[10.5px] text-steel">구성: {w.config}</span> : null}
                       {w.waiting?.length ? <span className="mt-0.5 block text-[10.5px] font-bold text-attention">자료 대기 {w.waiting.length} — 올라오면 자동 연결</span> : null}
+                      {w.noData ? <span className="mt-0.5 block text-[10.5px] text-stone" data-pipe-nodata>올린 자료 없음 — 화면은 값 없는 틀</span> : null}
                     </MapItem>
                     <button type="button" onClick={() => onOpenWorkflow(w.code)} className="mt-0.5 text-[11px] font-bold text-primary-text underline-offset-2 hover:underline">
                       {w.name} 파이프라인 보기 →

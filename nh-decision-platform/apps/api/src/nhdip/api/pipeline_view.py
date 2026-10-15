@@ -165,7 +165,8 @@ def build_pipeline(session: Session) -> dict[str, Any]:
 
     def ds_node(ref: str) -> str:
         d = res.resolve(ref)
-        if d is not None and f"dataset:{d.code}" in sources:
+        # 정의만 남고 올린 자료(현재 판)가 없으면 '자료 대기' — 지운 자료의 정의 이름(예전 파일 제목)이 원천으로 남아 보이지 않게
+        if d is not None and f"dataset:{d.code}" in sources and sources[f"dataset:{d.code}"]["version"] is not None:
             sources[f"dataset:{d.code}"].setdefault("sourceNames", [])
             if ref != d.code and ref not in sources[f"dataset:{d.code}"]["sourceNames"]:
                 sources[f"dataset:{d.code}"]["sourceNames"].append(ref)
@@ -205,6 +206,8 @@ def build_pipeline(session: Session) -> dict[str, Any]:
         metrics_by_wf.setdefault(m.workflow_code or "", set()).update(_datasets_in(m.args))
     for b in session.execute(select(ViewBinding).where(ViewBinding.enabled)).scalars():
         metrics_by_wf.setdefault(b.workflow_code or "", set()).update(_datasets_in(b.params))
+    from nhdip.workflow.engine import workflow_has_data
+
     flows = []
     for w in session.execute(select(Workflow).order_by(Workflow.sort)).scalars():
         inputs: dict[str, dict[str, Any]] = {}
@@ -252,8 +255,13 @@ def build_pipeline(session: Session) -> dict[str, Any]:
                     "currentNode": pending[0]["key"] if pending else None}
         elif jobs:
             live = {"status": jobs[0].status, "runAfter": _iso(jobs[0].run_after)}
+        no_data = bool(w.outputs) and not workflow_has_data(session, w)
+        if no_data:
+            # 이 흐름이 읽는 자료가 없다 — 지난 실행(지운 자료로 돈 것)의 노드 결과 · 산출물 시각을 보여 주지 않는다
+            for n in node_json:
+                n["last"] = None
         flows.append({
-            "code": w.code, "name": w.name, "description": w.description, "enabled": w.enabled,
+            "code": w.code, "name": w.name, "description": w.description, "enabled": w.enabled, "noData": no_data,
             "config": owner.get(w.code) or ("분석 에이전트" if w.code.startswith("wf_an_") else ("플랫폼 공통" if w.code in ("wf_graph_projection", "wf_ontology_build") else None)),
             "waiting": [i["source"] for i in inputs.values() if i["source"].startswith("waiting:")],
             "inputs": list(inputs.values()), "nodes": node_json, "outputs": list(dict.fromkeys(outs)),
@@ -272,10 +280,16 @@ def build_pipeline(session: Session) -> dict[str, Any]:
                 out["screens"] = [sc for sc in out["screens"] if sc in sib] or sorted(sib)
     # 산출물 최근 게시
     keys = [o["key"] for o in outputs.values() if o["kind"] != "mart"] + [f"contract.{o['key'][5:]}" for o in outputs.values() if o["kind"] == "mart"]
+    # 자료 없는 흐름만 만드는 산출물 — 값 없는 틀이라 '최근 게시'를 비운다(틀을 다시 게시한 시각이 옛 결과처럼 보이지 않게)
+    live_outs = {o for f in flows if not f["noData"] for o in f["outputs"]}
+    blank_outs = {o for f in flows if f["noData"] for o in f["outputs"]} - live_outs
+    for oid in blank_outs:
+        if oid in outputs:
+            outputs[oid]["empty"] = True
     if keys:
         for a in session.execute(select(ViewArtifact).where(ViewArtifact.is_current, ViewArtifact.key.in_(keys))).scalars():
             oid = f"mart:{a.key[9:]}" if a.key.startswith("contract.") else f"art:{a.key}"
-            if oid in outputs:
+            if oid in outputs and oid not in blank_outs:
                 outputs[oid]["updatedAt"] = _iso(a.created_at)
                 outputs[oid]["workflowRun"] = a.workflow_run_id
                 p = a.payload if isinstance(a.payload, dict) else {}
