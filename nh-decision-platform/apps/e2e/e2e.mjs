@@ -128,6 +128,14 @@ try {
       p,
       init,
     );
+  // 업무 구성 '자료' 이름 → 지금 이어진 데이터셋 코드 · 코드용 이름 → 파일 열 이름 (Phase O — 데이터셋 코드는 올린 파일에서 정해진다)
+  const SRC = Object.fromEntries(((await api("/admin/business-config/sources")).body ?? []).map((s) => [s.name, s]));
+  ok("업무 구성 자료 연결(자료 대기 없음)", Object.values(SRC).length > 0 && Object.values(SRC).every((s) => s.status === "linked"), Object.values(SRC).filter((s) => s.status !== "linked").map((s) => s.name).join(", "));
+  const codeOf = (name) => SRC[name]?.dataset ?? name;
+  const colOf = (name, logical) => SRC[name]?.aliases?.[logical] ?? logical;
+  const PROV = codeOf("상품별 충당금(7790)");
+  const PV = colOf("상품별 충당금(7790)", "provision");
+  const PC = colOf("상품별 충당금(7790)", "product_code");
 
   // 4) 사용자 로그인 · 권한
   await login(u, EMP, PW);
@@ -236,30 +244,34 @@ try {
   // 7) 업로드 → 관련 워크플로우만
   const debounce = (await api("/admin/settings")).body.find((s) => s.key === "workflow.debounce_default_sec")?.value ?? 60;
   await api("/admin/settings/workflow.debounce_default_sec", { method: "PUT", body: JSON.stringify({ value: 3 }) });
-  const prov = (await api("/admin/datasets")).body.find((d) => d.code === "PROVISION_BY_PRODUCT");
+  const prov = (await api("/admin/datasets")).body.find((d) => d.code === PROV);
   const cur = prov.versions.find((v) => v.isCurrent && v.asOf === "2026-08-31");
-  const rollback = () => api(`/admin/datasets/PROVISION_BY_PRODUCT/versions/${cur.id}/rollback`, { method: "POST" });
+  const rollback = () => api(`/admin/datasets/${PROV}/versions/${cur.id}/rollback`, { method: "POST" });
   const restoreDebounce = () => api("/admin/settings/workflow.debounce_default_sec", { method: "PUT", body: JSON.stringify({ value: debounce }) });
   restore = async () => {
     await rollback();
     await sleep(8000); // 되돌리기 이벤트가 짧은 디바운스로 디스패치된 뒤에 설정을 원복
     await restoreDebounce();
   };
-  const rows = (await api(`/admin/datasets/PROVISION_BY_PRODUCT/versions/${cur.id}/rows`)).body.rows;
-  const csv = ["ym,product_code,product_name,provision,is_total,src_ref", ...rows.map((r) => `${r.ym},${r.product_code},${r.product_name},${r.provision + (r.product_code === "2001107820007" ? 10000 : 0) - (r.product_code === "OTHERS" ? 10000 : 0)},${r.is_total ? 1 : 0},${r.src_ref ?? ""}`)].join("\n");
+  const rows = (await api(`/admin/datasets/${PROV}/versions/${cur.id}/rows`)).body.rows;
+  // 정정본 — 포용금융 상품 하나 +10,000 · 포용금융이 아닌 상품 하나 −10,000(총계 유지). 열은 올라온 정의 그대로
+  const heads = Object.keys(rows[0]).filter((k) => !k.startsWith("_"));
+  const cell = (v) => (v === null || v === undefined ? "" : typeof v === "boolean" ? (v ? "Y" : "N") : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+  const fix = (r) => ({ ...r, [PV]: r[PV] + (String(r[PC]) === "2001107820007" ? 10000 : 0) - (String(r[PC]) === "2001101010001" ? 10000 : 0) });
+  const csv = [heads.join(","), ...rows.map((r) => heads.map((k) => cell(fix(r)[k])).join(","))].join("\n");
   const csvPath = path.join(OUT, "(202608)7790_상품별_충당금_정정.csv");
   fs.writeFileSync(csvPath, csv);
   const before = (await api("/admin/monitor/flow?limit=1")).body[0]?.id ?? 0;
   await a.goto(`${BASE}/admin/datasets`, { waitUntil: "networkidle0" });
-  await a.waitForFunction(() => [...document.querySelectorAll("tr")].some((tr) => tr.innerText.includes("PROVISION_BY_PRODUCT")));
+  await a.waitForFunction((c) => [...document.querySelectorAll("tr")].some((tr) => tr.innerText.includes(c)), {}, PROV);
   // Phase E (UXF-03) — 머리 '파일로 업로드' 에 파일을 놓으면 이름으로 데이터셋을 찾아 상세 양식(파일 채움)을 연다
   ok("관리자 데이터셋: 머리 파일 놓기 영역", (await a.$('[data-file-drop="admin-dataset"]')) !== null);
   await (await a.$('[data-file-drop="admin-dataset"] input[type="file"]')).uploadFile(csvPath);
-  await a.waitForSelector('[data-dataset-detail="PROVISION_BY_PRODUCT"] [data-file-chosen]', { timeout: 10000 });
+  await a.waitForSelector(`[data-dataset-detail="${PROV}"] [data-file-chosen]`, { timeout: 10000 });
   const focusedDetail = await a.evaluate(() => document.activeElement?.getAttribute("data-dataset-detail") ?? document.activeElement?.closest("[data-dataset-detail]")?.getAttribute("data-dataset-detail") ?? "");
-  ok("관리자 데이터셋: 파일 이름 → 7790 상세 열림 · 초점 이동", focusedDetail === "PROVISION_BY_PRODUCT", focusedDetail);
+  ok("관리자 데이터셋: 파일 이름 → 7790 상세 열림 · 초점 이동", focusedDetail === PROV, focusedDetail);
   // 즉시 확정 업로드는 확인 대화상자 — 취소하면 아무 일도 없다
-  await a.click('[data-dataset-detail="PROVISION_BY_PRODUCT"] [data-admin-upload]');
+  await a.click(`[data-dataset-detail="${PROV}"] [data-admin-upload]`);
   await a.waitForSelector("[data-confirm-dialog]", { timeout: 5000 });
   const dlgFocus = await a
     .waitForFunction(() => document.activeElement?.hasAttribute("data-confirm-cancel") ?? false, { timeout: 3000 })
@@ -268,7 +280,7 @@ try {
   ok("확정 업로드: 확인 대화상자(초점 = 취소)", dlgFocus);
   await a.keyboard.press("Escape");
   await a.waitForFunction(() => !document.querySelector("[data-confirm-dialog]"), { timeout: 5000 });
-  await a.click('[data-dataset-detail="PROVISION_BY_PRODUCT"] [data-admin-upload]');
+  await a.click(`[data-dataset-detail="${PROV}"] [data-admin-upload]`);
   await a.waitForSelector("[data-confirm-ok]", { timeout: 5000 });
   await a.click("[data-confirm-ok]");
   await a.waitForFunction(() => document.body.innerText.includes("업로드했습니다"), { timeout: 15000 });
@@ -276,7 +288,7 @@ try {
   let ev = null;
   for (let i = 0; i < 45; i++) {
     await sleep(2000);
-    ev = (await api("/admin/monitor/flow?limit=10")).body.find((e) => e.id > before && e.type === "dataset.committed" && e.payload.dataset === "PROVISION_BY_PRODUCT");
+    ev = (await api("/admin/monitor/flow?limit=10")).body.find((e) => e.id > before && e.type === "dataset.committed" && e.payload.dataset === PROV);
     if (ev && ev.runs.length >= 2 && ev.runs.every((r) => r.status !== "running")) break;
   }
   const matched = (ev?.matched ?? []).map((m) => m.workflow).sort();
@@ -467,7 +479,8 @@ try {
         .sort((x, y) => String(y.asOf ?? "").localeCompare(String(x.asOf ?? "")))[0];
     const rowsOf = async (code) => (await api(`/admin/datasets/${code}/versions/${cur(code).id}/rows?limit=2000`)).body.rows;
     // 차주 명세에 있는 다른 사무소 하나 — 시드 기업 · 소매 명세는 같은 지점 목록이라 계산이 된다
-    const X = (await rowsOf("OBLG_GRD_DEF")).map((r) => String(r.SUVMN_BRC)).find((c) => c !== "001068");
+    const CORP = "기업여신 차주 등급";
+    const X = (await rowsOf(codeOf(CORP))).map((r) => String(r[colOf(CORP, "SUVMN_BRC")])).find((c) => c !== "001068");
     const NAME = "E2E가상지점";
     const scope = (await api("/admin/rules")).body.find((r) => r.code === "BRANCH_SCOPE");
     const body0 = scope.versions.find((v) => v.version === scope.activeVersion).body;
@@ -501,17 +514,24 @@ try {
       await api("/admin/settings/workflow.debounce_default_sec", { method: "PUT", body: JSON.stringify({ value: debounce0 }) });
     };
     restore = restoreOffices;
+    // 업무 구성 자료 이름 기준 — 열은 그 자료의 코드용 이름 별칭으로 파일 열 이름을 찾는다(Phase O)
+    const c = (src, k) => colOf(src, k);
+    const MASTER = "영업점 사무소 마스터";
+    const SCORE = "영업점 업적평가 득점 현황";
+    const BAL = "영업점 사업부문별 잔액";
     const add = {
-      BRANCH_OFFICE_MASTER: (r) => [{ ...r, office_cd: X, office_nm: NAME, org_code: "" }],
-      BRANCH_KPI_SCORE: (r) => [{ ...r, office_cd: X, score: r.score == null ? r.score : Math.round(Number(r.score) * 9) / 10 }],
-      BRANCH_BIZ_BALANCE: (r) => [{ ...r, office_cd: X, amount: Math.round(Number(r.amount) / 2) }],
+      [MASTER]: (r) => [{ ...r, [c(MASTER, "office_cd")]: X, [c(MASTER, "office_nm")]: NAME, [c(MASTER, "org_code")]: "" }],
+      [SCORE]: (r) => [{ ...r, [c(SCORE, "office_cd")]: X, [c(SCORE, "score")]: r[c(SCORE, "score")] == null ? r[c(SCORE, "score")] : Math.round(Number(r[c(SCORE, "score")]) * 9) / 10 }],
+      [BAL]: (r) => [{ ...r, [c(BAL, "office_cd")]: X, [c(BAL, "amount")]: Math.round(Number(r[c(BAL, "amount")]) / 2) }],
     };
     const ups = [];
-    for (const code of Object.keys(add)) {
+    for (const src of Object.keys(add)) {
+      const code = codeOf(src);
+      const oc = c(src, "office_cd");
       prev[code] = cur(code).id;
-      const all = (await rowsOf(code)).filter((r) => String(r.office_cd) !== X); // 같은 구획의 다른 지점 행은 그대로
-      const res = await upload(code, [...all, ...all.filter((r) => String(r.office_cd) === "001068").flatMap(add[code])]);
-      ups.push(`${code}:${res.status}/${res.body?.status ?? res.body?.detail ?? ""}`);
+      const all = (await rowsOf(code)).filter((r) => String(r[oc]) !== X); // 같은 구획의 다른 지점 행은 그대로
+      const res = await upload(code, [...all, ...all.filter((r) => String(r[oc]) === "001068").flatMap(add[src])]);
+      ups.push(`${src}:${res.status}/${res.body?.status ?? res.body?.detail ?? ""}`);
     }
     ok("다지점: 가상 지점 자료 업로드(마스터 · 득점 · 잔액)", ups.every((u) => u.includes(":201/committed")), ups.join(", "));
     const r = await api("/admin/rules/BRANCH_SCOPE/versions", { method: "POST", body: JSON.stringify({ body: { ...body0, office_codes: ["001068", X] }, note: "E2E 다지점(B.47)" }) });
@@ -635,8 +655,8 @@ try {
     await a.waitForFunction(() => document.body.innerText.includes("버림"), { timeout: 10000 }).catch(() => undefined);
     ok("자료 등록: 버리기(반영 없음)", discarded && (await text(a)).includes("버림"));
     // 연결 도우미(DOB-11) — 데이터셋 상세: 연결된 워크플로 · 지표 · 분석 에이전트 만들기 주소
-    const conn = await api("/admin/datasets/PROVISION_BY_PRODUCT/connect");
-    ok("연결 도우미: 연결된 워크플로 · 지표 · 분석 주소", conn.status === 200 && (conn.body?.connected ?? []).some((w) => w.workflow === "wf_inclusive_risk") && (conn.body?.metrics ?? []).length > 0 && conn.body?.builderHref === "/analysis/builder?dataset=PROVISION_BY_PRODUCT", JSON.stringify({ c: conn.body?.connected, m: conn.body?.metrics?.length }));
+    const conn = await api(`/admin/datasets/${PROV}/connect`);
+    ok("연결 도우미: 연결된 워크플로 · 지표 · 분석 주소", conn.status === 200 && (conn.body?.connected ?? []).some((w) => w.workflow === "wf_inclusive_risk") && (conn.body?.metrics ?? []).length > 0 && conn.body?.builderHref === `/analysis/builder?dataset=${PROV}`, JSON.stringify({ c: conn.body?.connected, m: conn.body?.metrics?.length }));
     await tabClick(a, "정형 데이터셋");
     // 데이터셋 목록이 그려질 때까지(자료 등록 탭에도 표가 있어 표만으로는 기다리지 않는다)
     const openBtn = () => [...document.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "").includes("상품별 충당금") && (b.textContent || "").trim() === "열기");
@@ -819,27 +839,27 @@ try {
     ok("데이터베이스: 자료 올리기 버튼(권한 있는 부서)", (await u.$("[data-upload-cta]")) !== null);
     ok("데이터베이스: 승인할 자료 버튼(데이터 책임자)", (await u.$("[data-steward-cta]")) !== null);
     // Phase E (UXF-05) — 표 행의 '새 버전 올리기' → 그 자료를 고른 채 [자료 올리기]
-    ok("데이터베이스: 행마다 '새 버전 올리기'", (await u.$('[data-dataset-upload="PROVISION_BY_PRODUCT"]')) !== null);
-    await Promise.all([u.waitForNavigation({ waitUntil: "networkidle0" }), u.click('[data-dataset-upload="PROVISION_BY_PRODUCT"]')]);
-    await u.waitForSelector('[data-upload-selected="PROVISION_BY_PRODUCT"]', { timeout: 10000 }).catch(() => undefined);
-    const deep = await u.evaluate(() => ({
+    ok("데이터베이스: 행마다 '새 버전 올리기'", (await u.$(`[data-dataset-upload="${PROV}"]`)) !== null);
+    await Promise.all([u.waitForNavigation({ waitUntil: "networkidle0" }), u.click(`[data-dataset-upload="${PROV}"]`)]);
+    await u.waitForSelector(`[data-upload-selected="${PROV}"]`, { timeout: 10000 }).catch(() => undefined);
+    const deep = await u.evaluate((c) => ({
       url: location.pathname + location.search,
-      selected: document.querySelector('[data-upload-target="PROVISION_BY_PRODUCT"]')?.getAttribute("aria-checked"),
+      selected: document.querySelector(`[data-upload-target="${c}"]`)?.getAttribute("aria-checked"),
       blocker: document.querySelector("[data-upload-blocker]")?.textContent ?? "",
       disabled: document.querySelector("[data-upload-submit]")?.disabled ?? false,
-    }));
-    ok("자료 올리기 깊은 링크: 자료 미리 선택 · 못 누르는 이유(파일)", deep.url.includes("target=PROVISION_BY_PRODUCT") && deep.selected === "true" && deep.blocker.includes("파일") && deep.disabled, JSON.stringify(deep));
+    }), PROV);
+    ok("자료 올리기 깊은 링크: 자료 미리 선택 · 못 누르는 이유(파일)", deep.url.includes(`target=${PROV}`) && deep.selected === "true" && deep.blocker.includes("파일") && deep.disabled, JSON.stringify(deep));
     // 파일 먼저 → 파일 이름으로 추천 (Q121 — 골라 두기만, 확정은 사용자)
     await u.goto(`${BASE}/knowledge/upload`, { waitUntil: "networkidle0" });
     ok("자료 올리기: 파일 놓기 영역이 첫 단계", (await u.$('[data-file-drop="upload"] input[type="file"]')) !== null);
     await (await u.$('[data-file-drop="upload"] input[type="file"]')).uploadFile(csvPath);
     await u.waitForSelector("[data-upload-suggestion]", { timeout: 10000 }).catch(() => undefined);
-    const sug = await u.evaluate(() => ({
+    const sug = await u.evaluate((c) => ({
       text: document.querySelector("[data-upload-suggestion]")?.textContent ?? "",
-      checked: document.querySelector('[data-upload-target="PROVISION_BY_PRODUCT"]')?.getAttribute("aria-checked"),
-      reason: document.querySelector('[data-upload-target="PROVISION_BY_PRODUCT"]')?.textContent ?? "",
+      checked: document.querySelector(`[data-upload-target="${c}"]`)?.getAttribute("aria-checked"),
+      reason: document.querySelector(`[data-upload-target="${c}"]`)?.textContent ?? "",
       enabled: !(document.querySelector("[data-upload-submit]")?.disabled ?? true),
-    }));
+    }), PROV);
     ok("자료 올리기: 파일 이름 → 7790 추천 · 근거 · 요청 가능", sug.checked === "true" && sug.text.includes("7790") && sug.reason.includes("보고서 번호 7790") && sug.enabled, JSON.stringify(sug).slice(0, 220));
     await shot(u, "08a-upload-suggest");
     // 문서 — 파일 없이 본문 붙여 넣기

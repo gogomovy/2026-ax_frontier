@@ -7,7 +7,6 @@
 """
 from __future__ import annotations
 
-import glob
 import io
 import json
 import os
@@ -22,19 +21,15 @@ def catalog() -> list[dict[str, Any]]:
         return json.load(fh)
 
 
-def _screens_dir() -> str:
-    from nhdip.seed.run import _screens_dir as d
-
-    return d()
-
-
 def collect_snippets() -> dict[str, list[dict[str, Any]]]:
-    """화면 틀의 문서 근거(doc + snippet)를 문서 제목별로 — 같은 (제목, 인용문)은 한 번."""
+    """시연 업무 구성의 화면 틀이 인용한 문서 근거(doc + snippet)를 문서 제목별로 — 같은 (제목, 인용문)은 한 번."""
     out: dict[str, list[dict[str, Any]]] = {}
     seen: set[tuple[str, str]] = set()
-    for path in sorted(glob.glob(os.path.join(_screens_dir(), "*.json"))):
-        with open(path, encoding="utf-8") as fh:
-            stack = [json.load(fh)]
+    with open(os.path.join(HERE, "business_config.json"), encoding="utf-8") as fh:
+        arts = sorted(json.load(fh).get("artifacts") or [], key=lambda a: a["key"])
+    for a in arts:
+        if True:
+            stack = [a["payload"]]
         while stack:
             o = stack.pop()
             if isinstance(o, dict):

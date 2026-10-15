@@ -7,6 +7,7 @@ from __future__ import annotations
 import io
 
 import pytest
+from conftest import code_of  # 시나리오 자료 구분 → 시연 파일을 올려 만들어진 데이터셋 코드(Phase O)
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -350,7 +351,7 @@ def test_dataset_definition_delete_guard_and_seed_suppression(db, iw):
 
     admin = iw["admin"]
     lst = {d["code"]: d for d in admin.get("/admin/datasets").json()}
-    seeded = next(c for c, d in lst.items() if d.get("seedDefined"))
+    seeded = next(c for c, d in lst.items() if d.get("sources"))  # 업무 구성 자료로 이어진 정의
     r = admin.delete(f"/admin/datasets/{seeded}")
     assert r.status_code == 409 and "지울 수 없습니다" in r.json()["detail"]
     assert lst[seeded]["references"]
@@ -367,28 +368,8 @@ def test_dataset_definition_delete_guard_and_seed_suppression(db, iw):
     assert admin.delete("/admin/datasets/PHASE_M_DEL_TEST").status_code == 404
     with db() as s:
         assert s.get(Dataset, "PHASE_M_DEL_TEST") is None
-        assert "PHASE_M_DEL_TEST" in s.get(Setting, "seed.suppressed_datasets").value
-    # 시드 — 억제된 정의는 넣지 않고, 억제를 빼면 다시 넣는다. SEED_DATASET_DEFS=0 이면 아무것도 넣지 않는다
-    fake = {"code": "PHASE_M_SEED_FAKE", "name": "시드 시험", "origin": "bank", "kind": "fact", "description": "", "columns": [{"name": "k", "label": "키", "type": "str"}], "key_columns": ["k"]}
-    mp = pytest.MonkeyPatch()
-    try:
-        mp.setattr(seed_run.D, "DATASETS", [*seed_run.D.DATASETS, fake])
-        with db() as s:
-            st = s.get(Setting, "seed.suppressed_datasets")
-            st.value = [*st.value, "PHASE_M_SEED_FAKE"]
-            s.flush()
-            assert seed_run.seed_dataset_defs(s) == []
-            st.value = [c for c in st.value if c != "PHASE_M_SEED_FAKE"]
-            s.flush()
-            mp.setenv("SEED_DATASET_DEFS", "0")
-            assert seed_run.seed_dataset_defs(s) == []
-            mp.delenv("SEED_DATASET_DEFS")
-            assert seed_run.seed_dataset_defs(s) == []  # 기본값은 넣지 않음(SEED-13 — 미리 정한 구조 없음)
-            mp.setenv("SEED_DATASET_DEFS", "1")
-            assert seed_run.seed_dataset_defs(s) == ["PHASE_M_SEED_FAKE"]
-            s.rollback()  # 시험용 변경은 모두 되돌린다
-    finally:
-        mp.undo()
+    # 시드는 업무 정의를 넣지 않는다(Phase O · BIZ-01) — 함수 자체가 없다
+    assert not hasattr(seed_run, "seed_dataset_defs")
 
 
 def test_dataset_cards_reconcile_in_maintenance(db):
@@ -583,16 +564,18 @@ def test_assistant_tools_ontology_and_data_aggregate_respect_scope(db):
         names = {t["function"]["name"] for t in build(s, admin).schemas}
         assert names == {"onto_find", "onto_neighbors", "data_aggregate"}
         assert "data_aggregate" not in {t["function"]["name"] for t in build(s, plain).schemas}
-        assert "권한" in data_aggregate(s, plain, "PROVISION_BY_PRODUCT", "count")["error"]
-        ds = s.get(Dataset, "PROVISION_BY_PRODUCT")
+        # 7790 은 파일에서 만든 정의(Phase O) — 열 이름은 파일 머리글
+        P, PV, PN, YM = code_of("PROVISION_BY_PRODUCT"), "손실충당금_및_충당부채_총계", "상품명", "기준년월"
+        assert "권한" in data_aggregate(s, plain, P, "count")["error"]
+        ds = s.get(Dataset, P)
         _, rows = current_rows(s, ds)
-        want = sum(Decimal(str(r["provision"])) for r in rows if r.get("provision") is not None)
-        got = data_aggregate(s, admin, "PROVISION_BY_PRODUCT", "sum", "provision")
+        want = sum(Decimal(str(r[PV])) for r in rows if r.get(PV) is not None)
+        got = data_aggregate(s, admin, P, "sum", PV)
         assert Decimal(got["value"]) == want and got["rows"] == len(rows) and not any(isinstance(v, list) for v in got.values())  # 행 원문 없음
-        grp = data_aggregate(s, admin, "PROVISION_BY_PRODUCT", "count", group_by="ym")
+        grp = data_aggregate(s, admin, P, "count", group_by=YM)
         assert grp["groupCount"] >= 1 and sum(g["value"] for g in grp["groups"]) == len(rows)
-        assert "정의에 없는 열" in data_aggregate(s, admin, "PROVISION_BY_PRODUCT", "sum", "provision", filters={"없는열": 1})["error"]
-        assert "숫자 열" in data_aggregate(s, admin, "PROVISION_BY_PRODUCT", "sum", "product_name")["error"]
+        assert "정의에 없는 열" in data_aggregate(s, admin, P, "sum", PV, filters={"없는열": 1})["error"]
+        assert "숫자 열" in data_aggregate(s, admin, P, "sum", PN)["error"]
         sc = active_schema(s)
         label, entries = next((lb, e) for lb, e in (sc.aliases or {}).items() if e)
         key = next(iter(entries))
@@ -758,14 +741,14 @@ def test_dataset_connect_helper_suggests_workflows_and_connects(db):
     from nhdip.models import WorkflowTrigger
 
     c = _admin()
-    seeded = c.get("/admin/datasets/PROVISION_BY_PRODUCT/connect").json()
-    assert any(w["workflow"] == "wf_inclusive_risk" for w in seeded["connected"]) and seeded["metrics"]
+    seeded = c.get(f"/admin/datasets/{code_of('PROVISION_BY_PRODUCT')}/connect").json()
+    assert any(w["workflow"] == "wf_inclusive_risk" for w in seeded["connected"]) and seeded["metrics"], seeded
     assert all(s["workflow"] not in ("wf_graph_projection", "wf_ontology_build") for s in seeded["suggestions"])
     # 상품별 충당금과 같은 열(상품코드 · 상품명 · 충당금)을 가진 새 자료 → 포용금융 워크플로가 추천된다
     new = {"code": "PHASE_M_CONNECT", "name": "연결 시험 충당금", "origin": "bank", "kind": "fact", "description": "",
-           "columns": [{"name": "ym", "label": "기준월", "type": "str", "required": True}, {"name": "product_code", "label": "상품코드", "type": "str", "required": True},
-                       {"name": "product_name", "label": "상품명", "type": "str"}, {"name": "provision", "label": "충당금", "type": "num"}],
-           "key_columns": ["ym", "product_code"], "as_of_column": "ym"}
+           "columns": [{"name": "기준년월", "label": "기준년월", "type": "str", "required": True}, {"name": "상품코드", "label": "상품코드", "type": "str", "required": True},
+                       {"name": "상품명", "label": "상품명", "type": "str"}, {"name": "손실충당금_및_충당부채_총계", "label": "손실충당금 및 충당부채 총계", "type": "num"}],
+           "key_columns": ["기준년월", "상품코드"], "as_of_column": "기준년월"}
     assert c.post("/admin/datasets", json=new).status_code in (200, 201)
     try:
         s = c.get("/admin/datasets/PHASE_M_CONNECT/connect").json()

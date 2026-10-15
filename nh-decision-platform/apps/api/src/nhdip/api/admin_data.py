@@ -288,16 +288,18 @@ def _ds(session: Session, code: str) -> Dataset:
     return d
 
 
-def _ds_json(session: Session, d: Dataset, with_versions: bool = True) -> dict[str, Any]:
+def _ds_json(session: Session, d: Dataset, with_versions: bool = True, resolver: Any = None) -> dict[str, Any]:
+    from nhdip.data.sources import Resolver
+    from nhdip.graph.projection import _datasets_in_args
+
     t = source(d.origin)
+    res = resolver or Resolver(session)
     out: dict[str, Any] = {k: getattr(d, k) for k in ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "columns", "key_columns", "as_of_column", "mapping", "quality_rules", "parser", "materialize", "active")}
     out["storage"] = f"{d.origin}.row_store"
-    metrics = [m.code for m in session.execute(select(Metric)).scalars() if d.code in str(m.args)]
-    out["usedByMetrics"] = metrics
-    # 정의 관리(Phase M · DOB-09) — 시드가 넣은 '업무 화면 연결 정의'인지, 지우면 끊기는 것
-    from nhdip.seed import defs_branch as _B, defs_contracts as _DC, defs_data as _D
-
-    out["seedDefined"] = d.code in {x["code"] for x in [*_D.DATASETS, _DC.DATASET, *_B.DATASETS]}
+    # 업무 구성의 자료 이름으로 이 정의를 읽는 지표까지(Phase O)
+    out["sources"] = _config_sources(session, d, res)
+    names = {d.code, *out["sources"]}
+    out["usedByMetrics"] = [m.code for m in session.execute(select(Metric)).scalars() if names & _datasets_in_args(m.args)]
     out["references"] = dataset_references(session, d.code)
     if with_versions:
         vs = session.execute(select(t.version).where(t.version.dataset_code == d.code).order_by(t.version.version.desc()).limit(30)).scalars().all()
@@ -314,7 +316,10 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True) -> dict[s
 
 @router.get("/datasets")
 def datasets(session: Session = Depends(get_session)):
-    return [_ds_json(session, d) for d in session.execute(select(Dataset).order_by(Dataset.origin, Dataset.code)).scalars()]
+    from nhdip.data.sources import Resolver
+
+    res = Resolver(session)
+    return [_ds_json(session, d, resolver=res) for d in session.execute(select(Dataset).order_by(Dataset.origin, Dataset.code)).scalars()]
 
 
 @router.post("/datasets", status_code=201)
@@ -430,10 +435,16 @@ def dataset_delete_preview(code: str, session: Session = Depends(get_session), a
     d = _ds(session, code)
     out = links(session, d).as_dict()
     out["name"] = d.name
-    from nhdip.seed import defs_branch as _B, defs_contracts as _DC, defs_data as _D
-
-    out["seedDefined"] = d.code in {x["code"] for x in [*_D.DATASETS, _DC.DATASET, *_B.DATASETS]}
+    out["sources"] = _config_sources(session, d)
     return out
+
+
+def _config_sources(session: Session, d: Dataset, resolver: Any = None) -> list[str]:
+    """이 정의로 이어진 업무 구성의 자료 이름(Phase O · BIZ-03) — 정의를 지워도 구성은 남고 '자료 대기'가 된다."""
+    from nhdip.data.sources import Resolver
+
+    res = resolver or Resolver(session)
+    return sorted(s.name for s in res.specs.values() if (x := res.resolve(s.name)) is not None and x.code == d.code)
 
 
 @router.post("/datasets/{code}/delete")
@@ -1419,12 +1430,13 @@ async def contract_import(request: Request, file: UploadFile = File(...), sessio
     """컬럼 정의서 엑셀 반영 — 기존 바인딩 유지, 새 컬럼은 기본 바인딩, 빠진 컬럼은 비활성."""
     from nhdip.contracts.materialize import import_workbook
     from nhdip.contracts.workbook import parse_workbook
-    from nhdip.seed.defs_contracts import BINDINGS
-    from nhdip.seed.defs_dept_contracts import BINDINGS as DEPT_BINDINGS
+    from nhdip.bizconfig.apply import active_configs
 
+    # 새 컬럼의 기본 연결 — 활성 업무 구성 파일의 [정의서] 연결(표.컬럼). 코드에 기본 연결을 두지 않는다(Phase O)
+    BINDINGS = {f"{c['table_code']}.{c['column_name']}": c.get("binding") or {} for cfg in active_configs(session) for c in (cfg.content or {}).get("contracts") or [] if c.get("binding")}
     _, content = await _read(file, "contract", session, request, admin.emp_no)
-    prefixes = (session.get(Setting, "contracts.dept_prefix").value if session.get(Setting, "contracts.dept_prefix") else None) or {"종기부": "hq"}
-    raw = (session.get(Setting, "contracts.raw_depts").value if session.get(Setting, "contracts.raw_depts") else None) or ["종기부"]
+    prefixes = (session.get(Setting, "contracts.dept_prefix").value if session.get(Setting, "contracts.dept_prefix") else None) or {}
+    raw = (session.get(Setting, "contracts.raw_depts").value if session.get(Setting, "contracts.raw_depts") else None) or []
     try:
         tables = parse_workbook(content, prefixes, raw)
     except Exception as exc:  # noqa: BLE001 — 형식 오류는 사용자에게
@@ -1435,7 +1447,7 @@ async def contract_import(request: Request, file: UploadFile = File(...), sessio
     unknown = sorted({t["dept"] for t in tables if t["dept"] not in prefixes})
     if unknown:
         raise HTTPException(422, f"부서 접두가 없습니다: {', '.join(unknown)} — 설정 contracts.dept_prefix 에 추가 후 다시 올려 주세요")
-    res = import_workbook(session, tables, file.filename or "upload.xlsx", {**BINDINGS, **DEPT_BINDINGS}, admin.emp_no)
+    res = import_workbook(session, tables, file.filename or "upload.xlsx", BINDINGS, admin.emp_no)
     emit(session, "contract.changed", {"workbook": file.filename, **res}, admin.emp_no)
     audit(session, admin.emp_no, "admin.contract.import", "contract", file.filename, {**res, "invalid": invalid}, client_ip(request))
     session.commit()

@@ -1,4 +1,4 @@
-"""질의 패널 지표 찾기(B.44) — 시드 지표 정의 · 설정으로 골든셋 질의 순위를 DB 없이 재현한다."""
+"""질의 패널 지표 찾기(B.44) — 업무 구성 파일 지표 정의 · 설정으로 골든셋 질의 순위를 DB 없이 재현한다."""
 from __future__ import annotations
 
 import json
@@ -7,19 +7,26 @@ from types import SimpleNamespace
 
 from nhdip.api.assist import metric_score, rank_metrics
 from nhdip.graph.extraction import Resolver
-from nhdip.seed import defs_branch as B
-from nhdip.seed import defs_contracts as DC
+from nhdip.sample.build import business_config
 from nhdip.seed import defs_core as C
-from nhdip.seed import defs_data as D
+
+BIZ = business_config()  # 시연 업무 구성 파일(Phase O) — 지표 · 온톨로지 · 별칭은 여기서 온다
+_SET = {s["key"]: s["value"] for s in BIZ["settings"]}
 
 
 def _metrics():
-    return [(m["code"], m["label"], m.get("sort") or 0) for m in [*D.metrics(), *DC.metrics(), *B.metrics()] if m.get("enabled", True)]
+    return [(m["code"], m["label"], m.get("sort") or 0) for m in BIZ["metrics"] if m.get("enabled", True)]
+
+
+def _metric_synonyms() -> dict:
+    return {**(C.SETTINGS["assist.metric_synonyms"][0] or {}), **(_SET.get("assist.metric_synonyms") or {})}
 
 
 def _concepts(q: str) -> list[str]:
-    """api.assist.concepts_of 와 같은 규칙(온톨로지 별칭 사전) — 시드 스키마로."""
-    r = Resolver(SimpleNamespace(classes=C.ONTOLOGY_CLASSES, relations=C.ONTOLOGY_RELATIONS, aliases=C.ONTOLOGY_ALIASES))
+    """api.assist.concepts_of 와 같은 규칙(온톨로지 별칭 사전) — 플랫폼 + 업무 구성 스키마로."""
+    o = BIZ["ontology"]
+    r = Resolver(SimpleNamespace(classes=[*C.ONTOLOGY_CLASSES, *(o.get("classes") or [])], relations=[*C.ONTOLOGY_RELATIONS, *(o.get("relations") or [])],
+                                 aliases={**C.ONTOLOGY_ALIASES, **(o.get("aliases") or {})}))
     low, found = q.lower(), []
     for amap in r.alias.values():
         for alias, key in amap.items():
@@ -29,7 +36,7 @@ def _concepts(q: str) -> list[str]:
 
 
 def _rank(q: str) -> list[str]:
-    return rank_metrics(_metrics(), q, _concepts(q), C.SETTINGS["assist.synonyms"][0], C.SETTINGS["assist.metric_synonyms"][0])
+    return rank_metrics(_metrics(), q, _concepts(q), C.SETTINGS["assist.synonyms"][0], _metric_synonyms())
 
 
 def test_golden_assist_questions_find_expected_metric_in_top8():

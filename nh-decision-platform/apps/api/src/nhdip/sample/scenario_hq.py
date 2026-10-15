@@ -10,7 +10,7 @@ import json
 import os
 from typing import Any
 
-from nhdip.seed.defs_contracts import K
+K = "HQ_PLAN_KPI"  # 시연 묶음 안의 자료 구분(manifest) — 플랫폼 데이터셋 코드가 아님
 
 HERE = os.path.dirname(__file__)
 

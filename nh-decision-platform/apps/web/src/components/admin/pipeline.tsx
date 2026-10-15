@@ -14,9 +14,15 @@ export interface PipeStage {
 }
 export interface PipeSource {
   id: string;
-  kind: "dataset" | "doc_class" | "rule" | "event" | "cron" | "any" | "setting";
+  /** waiting = 업무 구성이 이름으로 가리키는 자료가 아직 없음(Phase O · BIZ-03) — 올라오면 자동 연결 */
+  kind: "dataset" | "doc_class" | "rule" | "event" | "cron" | "any" | "setting" | "waiting";
   code: string;
   label: string;
+  /** 이 데이터셋으로 이어진 업무 구성 자료 이름 */
+  sourceNames?: string[];
+  /** 자료 대기 — 필요한 열 · 그 자료를 적은 업무 구성 */
+  columns?: string[];
+  config?: string | null;
   origin?: string;
   version?: number | null;
   committedAt?: string | null;
@@ -47,6 +53,10 @@ export interface PipeWorkflow {
   name: string;
   description: string;
   enabled: boolean;
+  /** 이 흐름을 만든 업무 구성 이름(플랫폼 공통 · 분석 에이전트 · 없음) */
+  config?: string | null;
+  /** 자료 대기 입력(source id) */
+  waiting?: string[];
   inputs: { source: string; via: "trigger" | "lineage" | "evidence"; trigger?: string }[];
   nodes: PipeNode[];
   outputs: string[];
@@ -82,7 +92,7 @@ export interface PipelineData {
 export const STATUS_KO: Record<string, string> = { succeeded: "성공", degraded: "축소 실행", skipped: "건너뜀", failed: "실패", running: "실행 중", queued: "대기", approval: "승인 대기", done: "완료" };
 const STATUS_BAR: Record<string, string> = { succeeded: "bg-success", degraded: "bg-warning", skipped: "bg-hairline", failed: "bg-critical", running: "bg-primary", queued: "bg-steel", approval: "bg-attention" };
 const STATUS_TONE: Record<string, "success" | "attention" | "critical" | "neutral" | "info"> = { succeeded: "success", degraded: "attention", skipped: "neutral", failed: "critical", running: "info", queued: "neutral", approval: "attention" };
-const KIND_KO: Record<string, string> = { dataset: "데이터셋", doc_class: "문서 분류", rule: "판정 규칙", event: "이벤트", cron: "정기 실행", any: "전체 변경", setting: "설정" };
+const KIND_KO: Record<string, string> = { dataset: "데이터셋", doc_class: "문서 분류", rule: "판정 규칙", event: "이벤트", cron: "정기 실행", any: "전체 변경", setting: "설정", waiting: "자료 대기" };
 const COMPACT = new Set(["rule", "event", "cron", "any", "setting"]);
 const OUT_KO: Record<string, string> = { artifact: "화면 산출물", report: "보고서", mart: "정의서 mart" };
 
@@ -216,6 +226,7 @@ export function PipelineMap({ data, onOpenWorkflow }: { data: PipelineData; onOp
     ["문서 분류", data.sources.filter((s) => s.kind === "doc_class")],
     ["판정 규칙", data.sources.filter((s) => s.kind === "rule")],
     ["이벤트 · 정기 실행 · 설정", data.sources.filter((s) => ["event", "cron", "any", "setting"].includes(s.kind))],
+    ["자료 대기(업무 구성)", data.sources.filter((s) => s.kind === "waiting")],
   ];
   const usedScreens = new Set(data.outputs.flatMap((o) => o.screens));
 
@@ -251,11 +262,20 @@ export function PipelineMap({ data, onOpenWorkflow }: { data: PipelineData; onOp
                       <li key={s.id}>
                         <MapItem id={s.id} selected={sel === s.id} className={dim(s.id)} onClick={() => pick(s.id)}>
                           <span className="block truncate font-bold text-ink-deep">{s.label}</span>
-                          <span className="block truncate font-mono text-[10px] text-stone">
-                            {s.code}
-                            {s.kind === "dataset" ? ` · v${s.version ?? "-"}${s.rows !== undefined && s.rows !== null ? ` · ${s.rows.toLocaleString()}행` : ""}${s.dataOrigin === "simulation" ? " · 시뮬레이션" : ""}` : ""}
-                            {s.kind === "doc_class" ? ` · 문서 ${s.documents ?? 0}건` : ""}
-                          </span>
+                          {s.kind === "waiting" ? (
+                            <span className="block text-[10px] text-attention" data-pipe-waiting>
+                              자료 대기 — 필요한 열 {(s.columns ?? []).slice(0, 4).join(", ")}
+                              {(s.columns ?? []).length > 4 ? " …" : ""}
+                              {s.config ? ` · ${s.config}` : ""}
+                            </span>
+                          ) : (
+                            <span className="block truncate font-mono text-[10px] text-stone">
+                              {s.code}
+                              {s.kind === "dataset" ? ` · v${s.version ?? "-"}${s.rows !== undefined && s.rows !== null ? ` · ${s.rows.toLocaleString()}행` : ""}${s.dataOrigin === "simulation" ? " · 시뮬레이션" : ""}` : ""}
+                              {s.kind === "doc_class" ? ` · 문서 ${s.documents ?? 0}건` : ""}
+                            </span>
+                          )}
+                          {s.sourceNames?.length ? <span className="block truncate text-[10px] text-steel">업무 구성 자료: {s.sourceNames.join(", ")}</span> : null}
                         </MapItem>
                       </li>
                       ),
@@ -281,6 +301,8 @@ export function PipelineMap({ data, onOpenWorkflow }: { data: PipelineData; onOp
                         <StatusPill status={w.lastRun?.status} /> 노드 {w.nodes.length} · LLM 에이전트 {llm} · 입력 {w.inputs.length} · 산출물 {w.outputs.length}
                       </span>
                       <span className="mt-0.5 block text-[10.5px] text-stone">최근 {fmtTime(w.lastRun?.finishedAt ?? w.lastRun?.startedAt)}{w.lastRun?.wallMs ? ` · ${ms(w.lastRun.wallMs)}` : ""}</span>
+                      {w.config ? <span className="mt-0.5 block text-[10.5px] text-steel">구성: {w.config}</span> : null}
+                      {w.waiting?.length ? <span className="mt-0.5 block text-[10.5px] font-bold text-attention">자료 대기 {w.waiting.length} — 올라오면 자동 연결</span> : null}
                     </MapItem>
                     <button type="button" onClick={() => onOpenWorkflow(w.code)} className="mt-0.5 text-[11px] font-bold text-primary-text underline-offset-2 hover:underline">
                       {w.name} 파이프라인 보기 →

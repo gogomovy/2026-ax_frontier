@@ -158,6 +158,28 @@ def build_pipeline(session: Session) -> dict[str, Any]:
                 sources[sid] = {"id": sid, "kind": "event", "code": target, "label": {"goal.confirmed": "경영목표 확정", "contract.changed": "정의서 변경", "change.detected": "변화 감지"}.get(target, target)}
         return sid
 
+    # 업무 구성(Phase O)은 원천을 자료 이름으로 적는다 — 지금 있는 데이터셋으로 잇고, 없으면 '자료 대기' 칸
+    from nhdip.data.sources import Resolver
+
+    res = Resolver(session)
+
+    def ds_node(ref: str) -> str:
+        d = res.resolve(ref)
+        if d is not None and f"dataset:{d.code}" in sources:
+            sources[f"dataset:{d.code}"].setdefault("sourceNames", [])
+            if ref != d.code and ref not in sources[f"dataset:{d.code}"]["sourceNames"]:
+                sources[f"dataset:{d.code}"]["sourceNames"].append(ref)
+            return f"dataset:{d.code}"
+        sid = f"waiting:{ref}"
+        if sid not in sources:
+            sp = res.spec(ref)
+            sources[sid] = {"id": sid, "kind": "waiting", "code": ref, "label": f"{ref} (자료 대기)", "columns": sp.columns if sp else [], "config": sp.config_name if sp else None}
+        return sid
+
+    from nhdip.bizconfig.apply import active_configs
+
+    owner = {w: c.name for c in active_configs(session) for w in ((c.owned or {}).get("keys") or {}).get("workflows") or []}
+
     # ── 산출물 · 화면
     res_map = _setting(session, "screen.resources", {}) or {}
     screens = {s.code: s for s in session.execute(select(Screen).where(Screen.active)).scalars() if s.kind in ("flow", "reference")}
@@ -188,11 +210,11 @@ def build_pipeline(session: Session) -> dict[str, Any]:
         inputs: dict[str, dict[str, Any]] = {}
         for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == w.code, WorkflowTrigger.enabled)).scalars():
             kind = "dataset" if t.kind in ("dataset", "master") else t.kind
-            sid = f"dataset:{t.target}" if kind == "dataset" and f"dataset:{t.target}" in sources else ensure(kind, t.target)
+            sid = ds_node(t.target) if kind == "dataset" and t.target != "*" else ensure(kind, t.target)
             inputs[sid] = {"source": sid, "via": "trigger", "trigger": t.kind}
         for ds in sorted(metrics_by_wf.get(w.code, set())):
-            sid = f"dataset:{ds}"
-            if sid in sources and sid not in inputs:
+            sid = ds_node(ds)
+            if sid not in inputs:
                 inputs[sid] = {"source": sid, "via": "lineage"}
         nodes = session.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == w.code).order_by(WorkflowNode.seq, WorkflowNode.id)).scalars().all()
         outs = [out_node(k) for k in (w.outputs or [])]
@@ -232,6 +254,8 @@ def build_pipeline(session: Session) -> dict[str, Any]:
             live = {"status": jobs[0].status, "runAfter": _iso(jobs[0].run_after)}
         flows.append({
             "code": w.code, "name": w.name, "description": w.description, "enabled": w.enabled,
+            "config": owner.get(w.code) or ("분석 에이전트" if w.code.startswith("wf_an_") else ("플랫폼 공통" if w.code in ("wf_graph_projection", "wf_ontology_build") else None)),
+            "waiting": [i["source"] for i in inputs.values() if i["source"].startswith("waiting:")],
             "inputs": list(inputs.values()), "nodes": node_json, "outputs": list(dict.fromkeys(outs)),
             "lastRun": {"id": last.id, "status": last.status, "startedAt": _iso(last.started_at), "finishedAt": _iso(last.finished_at),
                         "causes": [{"type": c.get("type"), "reasons": c.get("reasons")} for c in (last.causes or [])][-5:],

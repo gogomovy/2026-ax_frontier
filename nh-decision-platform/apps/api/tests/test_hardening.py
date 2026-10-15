@@ -257,14 +257,17 @@ def test_pii_scan_blocks_load_and_name_mask(db):
     from nhdip.models import Dataset
     from nhdip.privacy import mask_name
 
+    from conftest import code_of
+
     with db() as s:
-        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
-        ok = quality_check(ds, [{"office_cd": "001068", "segment_nm": "수신"}], [])
+        ds = s.get(Dataset, code_of("BRANCH_BIZ_BALANCE"))  # 파일에서 만든 정의(Phase O) — 열 이름은 파일 머리글
+        oc, nm = "사무소코드", "부문명"
+        ok = quality_check(ds, [{oc: "001068", nm: "수신"}], [])
         assert next(c for c in ok["checks"] if c["rule"] == "pii")["passed"]
-        bad = quality_check(ds, [{"office_cd": "001068", "segment_nm": "900101-1234567"}, {"office_cd": "001068", "segment_nm": "연락 010-9999-8888"}], [])
+        bad = quality_check(ds, [{oc: "001068", nm: "900101-1234567"}, {oc: "001068", nm: "연락 010-9999-8888"}], [])
         pii = next(c for c in bad["checks"] if c["rule"] == "pii")
         assert bad["status"] == "failed" and not pii["passed"] and "900101" not in pii["detail"]
-        allowed = quality_check(ds, [{"office_cd": "001068", "segment_nm": "010-9999-8888"}], [], privacy={"pii_allow_columns": ["segment_nm"]})
+        allowed = quality_check(ds, [{oc: "001068", nm: "010-9999-8888"}], [], privacy={"pii_allow_columns": [nm]})
         assert next(c for c in allowed["checks"] if c["rule"] == "pii")["passed"]
     assert mask_name("김철수") == "김*수" and mask_name("홍길") == "홍*" and mask_name("농협은행주식회사") == "농협******"
 

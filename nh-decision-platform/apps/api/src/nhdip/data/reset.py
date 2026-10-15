@@ -44,7 +44,7 @@ KEEP_TABLES: frozenset[str] = frozenset(
         "cfg.setting", "cfg.secret", "cfg.rule", "cfg.rule_version", "cfg.llm_connection", "cfg.llm_profile",
         "cfg.agent", "cfg.agent_group", "cfg.prompt", "cfg.workflow", "cfg.workflow_node", "cfg.workflow_trigger",
         "cfg.metric", "cfg.view_binding", "cfg.dataset", "cfg.column_contract", "cfg.kb_collection", "cfg.ontology_schema",
-        "cfg.analysis_agent", "cfg.analysis_agent_version",
+        "cfg.analysis_agent", "cfg.analysis_agent_version", "cfg.business_config",
         "audit.audit_log", "ops.request_log", "ops.rate_limit", "ops.worker_heartbeat",
         "public.alembic_version",
     }
@@ -164,7 +164,7 @@ def reset_business_data(session: Session, actor: str, ip: str | None = None, *, 
 
     external=True 면 커밋 전에 ES 색인 · Neo4j 관리 노드도 지운다(커밋이 실패해도 원장 기준으로 다시 만들 수 있는 저장소들)."""
     from nhdip.locks import lock
-    from nhdip.seed.run import seed_artifacts, seed_knowledge
+    from nhdip.seed.run import seed_knowledge
 
     b = busy(session)
     if not force and any(b.values()):
@@ -183,7 +183,9 @@ def reset_business_data(session: Session, actor: str, ip: str | None = None, *, 
     session.flush()
     # 새 DB 와 같은 상태 — 값 없는 화면 틀(0세대) · 그 틀의 분석 결과 색인
     out: dict[str, Any] = {}
-    seed_artifacts(session, out)
+    from nhdip.bizconfig.apply import publish_templates
+
+    out["artifacts"] = publish_templates(session)  # 활성 업무 구성의 화면 틀(값 없는 0세대) — 시드에는 화면 틀이 없다(Phase O)
     session.flush()
     seed_knowledge(session, out)
     session.flush()

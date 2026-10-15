@@ -55,18 +55,22 @@ def ontology_classes(schema: Any, code: str) -> set[str]:
     return {x for x in out if x}
 
 
-def _metrics_using(session: Session, code: str) -> list[str]:
+def _metrics_using(session: Session, code: str, names: set[str] | None = None) -> list[str]:
     from nhdip.graph.projection import _datasets_in_args
 
-    return [m.code for m in session.execute(select(Metric).where(Metric.enabled)).scalars() if code in _datasets_in_args(m.args)]
+    names = names or {code}
+    return [m.code for m in session.execute(select(Metric).where(Metric.enabled)).scalars() if names & _datasets_in_args(m.args)]
 
 
 def connect_suggestions(session: Session, code: str, limit: int = 3) -> dict[str, Any]:
+    from nhdip.data.sources import Resolver
     from nhdip.graph.projection import active_schema
 
     ds = session.get(Dataset, code)
     if ds is None:
         raise KeyError(code)
+    res = Resolver(session)
+    names = res.refs_for(code)  # 코드 + 업무 구성의 자료 이름(Phase O)
     schema = active_schema(session)
     mine = column_keys(ds)
     my_classes = ontology_classes(schema, code)
@@ -74,7 +78,8 @@ def connect_suggestions(session: Session, code: str, limit: int = 3) -> dict[str
     trig = session.execute(select(WorkflowTrigger).where(WorkflowTrigger.kind.in_(["dataset", "master"]), WorkflowTrigger.enabled)).scalars().all()
     reads: dict[str, set[str]] = {}
     for t in trig:
-        reads.setdefault(t.workflow_code, set()).add(t.target)
+        hit = res.resolve(t.target) if t.target != "*" else None
+        reads.setdefault(t.workflow_code, set()).add(hit.code if hit is not None else t.target)
     datasets = {d.code: d for d in session.execute(select(Dataset)).scalars()}
     connected, cands = [], []
     for w in session.execute(select(Workflow).where(Workflow.enabled).order_by(Workflow.sort, Workflow.code)).scalars():
@@ -111,7 +116,7 @@ def connect_suggestions(session: Session, code: str, limit: int = 3) -> dict[str
     cands.sort(key=lambda x: (-x["score"], x["workflow"]))
     return {
         "dataset": code, "name": ds.name, "kind": ds.kind, "triggerKind": "master" if ds.kind == "master" else "dataset",
-        "connected": connected, "metrics": _metrics_using(session, code)[:20], "suggestions": cands[:limit],
+        "connected": connected, "metrics": _metrics_using(session, code, names)[:20], "suggestions": cands[:limit],
         "ontology": [{"label": c, "ko": ko.get(c, c)} for c in sorted(my_classes)],
         "builderHref": f"/analysis/builder?dataset={code}",
     }

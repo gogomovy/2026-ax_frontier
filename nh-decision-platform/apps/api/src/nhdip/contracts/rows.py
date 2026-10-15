@@ -71,18 +71,42 @@ def _rule(ctx: EvalContext, code: str) -> dict[str, Any]:
         return {}
 
 
+# 읽을 자료 · 규칙 · 기준 값은 행 생성기 설정(contracts.row_builders 의 params)으로만 받는다 — 코드에 기본 코드를 두지 않는다 (Phase O · BIZ-08)
+#   params.sources = {역할: 자료}(자료 = 업무 구성의 자료 이름 또는 데이터셋 코드) · params.rules = {역할: 규칙 코드}
+def _src(p: dict[str, Any], key: str) -> str:
+    from nhdip.calc.metrics import ResolveError
+
+    v = (p.get("sources") or {}).get(key)
+    if not v:
+        raise ResolveError(f"행 생성기 설정(params.sources)에 '{key}' 자료가 없습니다")
+    return str(v)
+
+
+def _rule_of(ctx: EvalContext, p: dict[str, Any], key: str) -> dict[str, Any]:
+    code = (p.get("rules") or {}).get(key)
+    return _rule(ctx, code) if code else {}
+
+
+def _need(p: dict[str, Any], key: str) -> Any:
+    from nhdip.calc.metrics import ResolveError
+
+    if p.get(key) in (None, ""):
+        raise ResolveError(f"행 생성기 설정(params)에 '{key}' 가 없습니다")
+    return p[key]
+
+
 # ═════════════════════════ 사업부서 (신용리스크관리부) ═════════════════════════
 @row_builder("risk_grade_rows", "사업부서 T02 — 모형 · 등급별 관측 · 부도 · 비중 · PSI 기여도 · 실제부도율 · PD 비교")
 def risk_grade_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
-    model = p.get("model_code", "CORP_MICRO")
-    g = [r for r in _rows(ctx, "MODEL_MONITORING_GRADE") if r.get("model_code") == model]
+    model = _need(p, "model_code")
+    g = [r for r in _rows(ctx, _src(p, "grades")) if r.get("model_code") == model]
     if not g:
         return []
     dates = sorted({str(r.get("as_of")) for r in g})
     cur_d, base_d = dates[-1], dates[0]
     cur = {r["grade"]: r for r in g if str(r.get("as_of")) == cur_d}
     base = {r["grade"]: r for r in g if str(r.get("as_of")) == base_d}
-    pd_ = {r["grade"]: r for r in _rows(ctx, "PD_MASTER_SCALE") if r.get("model_code") == model}
+    pd_ = {r["grade"]: r for r in _rows(ctx, _src(p, "pd_scale")) if r.get("model_code") == model}
     order = sorted(cur, key=lambda k: cur[k].get("grade_seq") or 0)
     tot_cur = sum(_D(cur[k].get("obs_count")) or 0 for k in order)
     tot_base = sum(_D(base[k].get("obs_count")) or 0 for k in order if k in base)
@@ -131,18 +155,18 @@ def risk_model_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]
             return None
         return None if v is None else Decimal(str(v))
 
-    model = p.get("model_code", "CORP_MICRO")
-    grades = risk_grade_rows(ctx, {"model_code": model})
-    meta = {r.get("model_code"): r for r in _rows(ctx, "MODEL_MONITORING_GRADE")}
-    labels = _rule(ctx, "MODEL_LABELS") or {}
-    g = p.get("grade", "6B")
-    mm = [r for r in _rows(ctx, "MODEL_MONITORING_GRADE") if r.get("model_code") == model]
+    model = _need(p, "model_code")
+    grades = risk_grade_rows(ctx, {**p, "model_code": model})
+    meta = {r.get("model_code"): r for r in _rows(ctx, _src(p, "grades"))}
+    labels = _rule_of(ctx, p, "model_labels")
+    g = _need(p, "grade")
+    mm = [r for r in _rows(ctx, _src(p, "grades")) if r.get("model_code") == model]
     last = max((str(r.get("as_of")) for r in mm), default=None)
     exp = _k("SUM", values=[_D(r.get("exposure_amt")) or 0 for r in mm if str(r.get("as_of")) == last])
     won = _D(p.get("exposure_won_per_unit"))  # 데이터셋 단위(억원) → 정의서 단위(원)
     if exp is not None and won is not None:
         exp = _k("LINEAR", a=0, b=exp, c=won)
-    dr, mid, mx = m(p.get("dr_metric", "dr_6b")), m(p.get("pd_mid_metric", "pd_mid_6b")), m(p.get("pd_max_metric", "pd_max_6b"))
+    dr, mid, mx = m(_need(p, "dr_metric")), m(_need(p, "pd_mid_metric")), m(_need(p, "pd_max_metric"))
     labels_st = p.get("status_labels") or {}
     status = None
     if dr is not None and mid is not None and mx is not None:
@@ -150,8 +174,8 @@ def risk_model_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]
     return [{
         "base_ym": _ym(last), "monitor_status_cd": status,
         "model_id": model, "model_nm": p.get("model_name") or labels.get(model) or model, "model_segment_cd": p.get("segment", model),
-        "exposure_cnt": m(p.get("obs_metric", "total_obs")), "exposure_amt": exp,
-        "psi": m(p.get("psi_metric", "psi_micro")), "ar_rt": m(p.get("ar_metric", "ar_micro")),
+        "exposure_cnt": m(_need(p, "obs_metric")), "exposure_amt": exp,
+        "psi": m(_need(p, "psi_metric")), "ar_rt": m(_need(p, "ar_metric")),
         "actual_default_rt": dr, "pred_pd_rt": mid, "pred_pd_max_rt": mx,
         "exceed_grade_cnt": Decimal(sum(1 for r in grades if r.get("exceed_rep_pd_yn") == "Y")),
         # 정의서: 'T03 의 8월 비중 − 1월 비중' — T03 행 생성기와 같은 계산(실행 순서와 무관)
@@ -162,7 +186,7 @@ def risk_model_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]
 
 def _inclusive_diff(ctx: EvalContext, p: dict[str, Any]) -> Decimal | None:
     try:
-        rows = risk_product_rows(ctx, {"with_retail": False, **(p.get("inclusive_params") or {})})
+        rows = risk_product_rows(ctx, {"sources": p.get("sources"), "rules": p.get("rules"), "with_retail": False, **(p.get("inclusive_params") or {})})
     except Exception:  # noqa: BLE001 — 충당금 데이터셋이 없으면 산출불가
         return None
     return rows[0].get("prov_share_diff_pp") if rows else None
@@ -170,12 +194,12 @@ def _inclusive_diff(ctx: EvalContext, p: dict[str, Any]) -> Decimal | None:
 
 @row_builder("risk_product_rows", "사업부서 T03 — 포용금융 상품별 당기 · 기준월 충당금, 비중 · 증가율 (7790 X컬럼)")
 def risk_product_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
-    prov = _rows(ctx, "PROVISION_BY_PRODUCT")
-    master = {r["product_code"]: r for r in _rows(ctx, "INCLUSIVE_PRODUCTS")}
+    prov = _rows(ctx, _src(p, "provision"))
+    master = {r["product_code"]: r for r in _rows(ctx, _src(p, "inclusive"))}
     yms = sorted({str(r.get("ym")) for r in prov})
     if not yms:
         return []
-    base_ym = str(p.get("base_ym") or (_rule(ctx, "INC_PROVISION_SHARE_TREND").get("base_ym")) or yms[0])
+    base_ym = str(p.get("base_ym") or (_rule_of(ctx, p, "share_trend").get("base_ym")) or yms[0])
     now_ym = resolve_token(prov, "ym", "$latest")
     now = {r["product_code"]: r for r in prov if str(r["ym"]) == now_ym and not r.get("is_total")}
     jan = {r["product_code"]: r for r in prov if str(r["ym"]) == base_ym and not r.get("is_total")}
@@ -186,11 +210,11 @@ def risk_product_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any
     share_now, share_jan = _k("SHARE", numerator=inc_now, denominator=tot_now), _k("SHARE", numerator=inc_jan, denominator=tot_jan)
     won = _D(p.get("provision_won_per_unit"))  # 7790 충당금 단위(백만원) → 정의서 단위(원)
     to_won = (lambda v: v if v is None or won is None else _k("LINEAR", a=0, b=v, c=won))  # noqa: E731
-    retail = _rows(ctx, "RETAIL_EXPOSURE") if p.get("with_retail", True) else []
+    retail = _rows(ctx, _src(p, "retail")) if p.get("with_retail", True) and (p.get("sources") or {}).get("retail") else []
     if retail:
         r_ym = max(str(r.get("std_ym")) for r in retail)
         retail = [r for r in retail if str(r.get("std_ym")) == r_ym]
-    pools = {r["pool_id"]: r for r in _rows(ctx, "RETAIL_POOL_MASTER")} if retail else {}
+    pools = {r["pool_id"]: r for r in _rows(ctx, _src(p, "pools"))} if retail else {}
     ret_tot = _k("SUM", values=[_D(r["exp_amt"]) or 0 for r in retail]) if retail else None
     ret_wpd = _q(_k("WEIGHTED_AVG", values=[_D((pools.get(r["pool_id"]) or {}).get("pd_pct")) or 0 for r in retail], weights=[_D(r["exp_amt"]) or 0 for r in retail])) if retail else None
     common = {
@@ -212,7 +236,7 @@ def risk_product_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any
 # ═════════════════════════ 영업점 ═════════════════════════
 def _office(ctx: EvalContext, p: dict[str, Any]) -> str:
     """대상 지점 — 호출 인자 → 규칙 BRANCH_SCOPE.office_code. 정해지지 않았으면 빈 문자열(특정 지점으로 대신 계산하지 않고 행을 만들지 않는다)."""
-    return str(p.get("office_cd") or _rule(ctx, "BRANCH_SCOPE").get("office_code") or "")
+    return str(p.get("office_cd") or _rule_of(ctx, p, "scope").get("office_code") or "")
 
 
 @row_builder("branch_status_rows", "영업점 T01 — 업적평가 항목(KPI) 행 + 사업부문(BIZ) 행")
@@ -220,13 +244,15 @@ def branch_status_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, An
     office = _office(ctx, p)
     if not office:
         return []
-    scope = _rule(ctx, "BRANCH_SCOPE")
-    period = scope.get("period", "2026H2")
-    scheme = {r["item_cd"]: r for r in _rows(ctx, "BRANCH_KPI_SCHEME") if r.get("period") == period}
-    sc_rows = [r for r in _rows(ctx, "BRANCH_KPI_SCORE") if r.get("office_cd") == office and r.get("period") == period]
+    scope = _rule_of(ctx, p, "scope")
+    period = str(p.get("period") or scope.get("period") or "")
+    if not period:
+        return []  # 평가기간을 모르면 행을 만들지 않는다(특정 기간으로 대신하지 않음)
+    scheme = {r["item_cd"]: r for r in _rows(ctx, _src(p, "scheme")) if r.get("period") == period}
+    sc_rows = [r for r in _rows(ctx, _src(p, "score")) if r.get("office_cd") == office and r.get("period") == period]
     last = max((str(r.get("as_of")) for r in sc_rows), default=None)
     scores = {r["item_cd"]: r for r in sc_rows if str(r.get("as_of")) == last}  # 최근 기준일 스냅숏만
-    off = next((r for r in _rows(ctx, "BRANCH_OFFICE_MASTER") if r.get("office_cd") == office), {})
+    off = next((r for r in _rows(ctx, _src(p, "offices")) if r.get("office_cd") == office), {})
     base_ym = _ym(max((str(r.get("as_of")) for r in scores.values() if r.get("as_of")), default="")) or _ym(_asof(ctx))
     out = []
     for code, s in sorted(scheme.items(), key=lambda kv: (kv[1].get("level") or 0, kv[0])):
@@ -234,7 +260,7 @@ def branch_status_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, An
         out.append({"base_ym": base_ym, "brc": office, "row_kind_cd": "KPI", "item_cd": code, "brc_nm": off.get("office_nm"), "eval_half": period[-2:],
                     "kpi_parent_cd": s.get("parent_cd") or s.get("group_cd"), "kpi_item_nm": s.get("item_nm"), "max_score": _D(s.get("max_points")),
                     "earned_score": _D(sc.get("score")), "rule_changed_yn": "Y" if s.get("change_type") else "N", "rule_change_summary": s.get("change_summary") or None})
-    for r in _rows(ctx, "BRANCH_BIZ_BALANCE"):
+    for r in (_rows(ctx, _src(p, "biz")) if (p.get("sources") or {}).get("biz") else []):
         if r.get("office_cd") != office:
             continue
         out.append({"base_ym": base_ym, "brc": office, "row_kind_cd": "BIZ", "item_cd": str(r.get("segment_cd")).upper(), "brc_nm": off.get("office_nm"), "eval_half": period[-2:],
@@ -247,8 +273,8 @@ def branch_corp_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]
     office = _office(ctx, p)
     if not office:
         return []
-    labels = _rule(ctx, "CORP_GRADE_SCALE").get("labels") or []
-    all_rows = _rows(ctx, "OBLG_GRD_DEF")
+    labels = _rule_of(ctx, p, "grade_scale").get("labels") or []
+    all_rows = _rows(ctx, _src(p, "corp"))
     ym = max((str(r.get("std_ym")) for r in all_rows), default=None)  # 최근 기준월만 (월별 구획이 쌓여도 중복 집계하지 않음)
     rows = [r for r in all_rows if str(r.get("std_ym")) == ym and not r.get("onlycard") and 1 <= int(r.get("Ls_nics_GRDC") or 0) <= 16]
     br = [r for r in rows if r.get("SUVMN_BRC") == office]
@@ -267,7 +293,7 @@ def branch_corp_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]
     groups += [("SIZE_GRADE", s, labels[g - 1] if 0 < g <= len(labels) else str(g), (lambda s, g: lambda r: str(r.get("crdevl_pttp_dsc_f")) == s and int(r["Ls_nics_GRDC"]) == g)(s, g)) for s in sizes for g in range(1, 17)]
     out = []
     b_all, k_all = agg(br, br), agg(rows, rows)
-    micro = p.get("micro_size", "15")
+    micro = str(_need(p, "micro_size"))
     b_micro, k_micro = agg([r for r in br if str(r.get("crdevl_pttp_dsc_f")) == micro], br), agg([r for r in rows if str(r.get("crdevl_pttp_dsc_f")) == micro], rows)
     for kind, size, grade, f in groups:
         bs, ks = [r for r in br if f(r)], [r for r in rows if f(r)]
@@ -290,12 +316,12 @@ def branch_retail_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, An
     office = _office(ctx, p)
     if not office:
         return []
-    pools = {r["pool_id"]: r for r in _rows(ctx, "RETAIL_POOL_MASTER")}
-    all_rows = _rows(ctx, "RETAIL_EXPOSURE")
+    pools = {r["pool_id"]: r for r in _rows(ctx, _src(p, "pools"))}
+    all_rows = _rows(ctx, _src(p, "retail"))
     ym = max((str(r.get("std_ym")) for r in all_rows), default=None)
     rows = [r for r in all_rows if str(r.get("std_ym")) == ym]
     br = [r for r in rows if r.get("office_cd") == office]
-    limit_mn = _D((_rule(ctx, "BRANCH_SEOMIN_POLICY") or {}).get("per_borrower_max_mn"))
+    limit_mn = _D(_rule_of(ctx, p, "seomin").get("per_borrower_max_mn"))
 
     def side(sel: list[dict[str, Any]]) -> dict[str, Any]:
         tot = _k("SUM", values=[_D(r["exp_amt"]) or 0 for r in sel]) or Decimal(0)
@@ -327,7 +353,7 @@ def doc_meta_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
     from nhdip.models import Setting, source
 
     session = ctx.session
-    visible = set(p.get("branch_visible_classes") or ["branch_ref", "gov_policy"])
+    visible = set(p.get("branch_visible_classes") or [])  # 영업점에 보이는 문서 분류 — 설정으로만(코드 기본값 없음)
     labels = (session.get(Setting, "doc_class.labels").value if session.get(Setting, "doc_class.labels") else {}) or {}
     owners = (session.get(Setting, "docs.owner_orgs").value if session.get(Setting, "docs.owner_orgs") else {}) or {}
     classes = set(p.get("doc_classes") or [])

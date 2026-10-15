@@ -9,7 +9,12 @@ import random
 from functools import lru_cache
 from typing import Any
 
-from nhdip.seed.defs_branch import GRADE_LABELS, OFFICE, ORG_CODE, PERIOD, PREV_PERIOD, YM
+# 시연 영업점 시나리오 값(예전 seed.defs_branch 상수 — Phase O 에서 시드를 빼며 시연 자료 생성기로 옮김)
+OFFICE = "001068"
+ORG_CODE = "001068"  # 조직 코드 = 사무소 코드
+YM = "202608"
+PERIOD, PREV_PERIOD = "2026H2", "2026H1"
+GRADE_LABELS = ["1", "2A", "2B", "3A", "3B", "4A", "4B", "5A", "5B", "5C", "6A", "6B", "6C", "7A", "7B", "8"]
 
 IND = {  # KSIC 11차 (중분류 대표 세분류 코드, 명칭)
     "C10": ("C10712", "떡 · 빵류 제조업"), "C20": ("C20499", "기타 화학제품 제조업"), "C21": ("C21210", "완제 의약품 제조업"), "C25": ("C25929", "기타 금속가공제품 제조업"),

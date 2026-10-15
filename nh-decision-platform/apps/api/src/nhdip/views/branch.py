@@ -21,6 +21,15 @@ def _rule(ctx: EvalContext, code: str) -> dict[str, Any]:
     return resolve_ref(ctx, {"rule": code})[0] or {}
 
 
+def _need(p: dict[str, Any], key: str) -> Any:
+    """읽을 자료 · 규칙 · 열은 바인딩 설정으로만 받는다 — 코드에 기본값을 두지 않는다 (Phase O · BIZ-08)."""
+    from nhdip.calc.metrics import ResolveError
+
+    if p.get(key) in (None, ""):
+        raise ResolveError(f"화면 연결 설정에 '{key}' 가 없습니다")
+    return p[key]
+
+
 def _sum(vals: list[Any]) -> Decimal:
     return execute("SUM", {"values": [v for v in vals if v is not None]}).value or Decimal(0)
 
@@ -34,14 +43,14 @@ def _portfolio(ctx: EvalContext, p: dict[str, Any]) -> tuple[list[dict[str, Any]
     where = dict(p.get("where") or {})
     bank = _rows(ctx, p["dataset"], where)
     br = [r for r in _rows(ctx, p["dataset"], {**where, p["office_col"]: office})]
-    return br, bank, _rule(ctx, p.get("scale_rule", "CORP_GRADE_SCALE"))
+    return br, bank, _rule(ctx, _need(p, "scale_rule"))
 
 
 # ═════════════════════════ 대시보드 ═════════════════════════
 @builder("branch_office", "영업점 정보(사무소 마스터) — 코드 · 이름 · 지역 · 지역본부")
 def b_branch_office(ctx: EvalContext, p: dict[str, Any]):
     office = _val(ctx, p["office"])
-    rows = _rows(ctx, p.get("dataset", "BRANCH_OFFICE_MASTER"), {"office_cd": office})
+    rows = _rows(ctx, _need(p, "dataset"), {"office_cd": office})
     if not rows:
         raise KeyError(f"사무소 마스터에 없음: {office}")
     r = rows[0]
@@ -51,9 +60,9 @@ def b_branch_office(ctx: EvalContext, p: dict[str, Any]):
 @builder("branch_kpi_scorecard", "업적평가 평가항목별 득점 · 배점 · 상반기 대비 변경 (배점표 × 득점 현황)")
 def b_kpi_scorecard(ctx: EvalContext, p: dict[str, Any]):
     office, period, prev = _val(ctx, p["office"]), _val(ctx, p["period"]), _val(ctx, p.get("prev_period"))
-    scheme = _rows(ctx, p.get("scheme", "BRANCH_KPI_SCHEME"), {"period": period})
-    prev_max = {r["item_cd"]: r.get("max_points") for r in _rows(ctx, p.get("scheme", "BRANCH_KPI_SCHEME"), {"period": prev})} if prev else {}
-    scores = {r["item_cd"]: r for r in _rows(ctx, p.get("score", "BRANCH_KPI_SCORE"), {"office_cd": office, "period": period, "as_of": "$latest"})}  # 득점 현황은 기준일 스냅숏 — 최근 기준일만
+    scheme = _rows(ctx, _need(p, "scheme"), {"period": period})
+    prev_max = {r["item_cd"]: r.get("max_points") for r in _rows(ctx, _need(p, "scheme"), {"period": prev})} if prev else {}
+    scores = {r["item_cd"]: r for r in _rows(ctx, _need(p, "score"), {"office_cd": office, "period": period, "as_of": "$latest"})}  # 득점 현황은 기준일 스냅숏 — 최근 기준일만
 
     def item(r: dict[str, Any]) -> dict[str, Any]:
         sc = scores.get(r["item_cd"], {})
@@ -81,7 +90,7 @@ def b_kpi_scorecard(ctx: EvalContext, p: dict[str, Any]):
 @builder("branch_size_table", "기업규모별 익스포저 — 지점 건수 · 금액 · 비중 vs 전행 비중")
 def b_size_table(ctx: EvalContext, p: dict[str, Any]):
     br, bank, sc = _portfolio(ctx, p)
-    col_s = p.get("size_col", "crdevl_pttp_dsc_f")
+    col_s = _need(p, "size_col")
     bt_c, bt_a = len(br), _sum([r["ln_bac"] for r in br])
     kt_c, kt_a = len(bank), _sum([r["ln_bac"] for r in bank])
     rows = []
@@ -99,7 +108,7 @@ def b_size_table(ctx: EvalContext, p: dict[str, Any]):
 @builder("branch_grade_table", "신용등급(16단계)별 익스포저 — 지점 건수 · 금액 · 비중 vs 전행 비중")
 def b_grade_table(ctx: EvalContext, p: dict[str, Any]):
     br, bank, sc = _portfolio(ctx, p)
-    g_col = p.get("grade_col", "Ls_nics_GRDC")
+    g_col = _need(p, "grade_col")
     bt_c, bt_a = len(br), _sum([r["ln_bac"] for r in br])
     kt_c, kt_a = len(bank), _sum([r["ln_bac"] for r in bank])
     rows = []
@@ -124,7 +133,7 @@ def _band_of(seq: int, sc: dict[str, Any]) -> int:
 @builder("branch_size_grade_table", "기업규모 × 신용등급 구간 비중 — mode: count(건수) · amount(금액), 지점 전체 = 100%")
 def b_size_grade_table(ctx: EvalContext, p: dict[str, Any]):
     br, _, sc = _portfolio(ctx, p)
-    col_s, g_col = p.get("size_col", "crdevl_pttp_dsc_f"), p.get("grade_col", "Ls_nics_GRDC")
+    col_s, g_col = _need(p, "size_col"), _need(p, "grade_col")
     amount = p.get("mode") == "amount"
     bands = sc.get("bands") or []
     w = (lambda r: r["ln_bac"]) if amount else (lambda r: 1)
@@ -143,7 +152,7 @@ def b_size_grade_table(ctx: EvalContext, p: dict[str, Any]):
 @builder("branch_grade_band_series", "신용등급 구간별 금액 비중 차트 — 지점 vs 전행")
 def b_grade_band_series(ctx: EvalContext, p: dict[str, Any]):
     br, bank, sc = _portfolio(ctx, p)
-    g_col = p.get("grade_col", "Ls_nics_GRDC")
+    g_col = _need(p, "grade_col")
     out = []
     for name, rows in (("지점", br), ("전행", bank)):
         tot = _sum([r["ln_bac"] for r in rows])
@@ -172,8 +181,8 @@ def b_top_borrowers(ctx: EvalContext, p: dict[str, Any]):
 
 @builder("branch_prime_weights", "우량기업여신 신용등급 구간별 가중치 — 상반기(가중치 없음) vs 하반기")
 def b_prime_weights(ctx: EvalContext, p: dict[str, Any]):
-    pol = _rule(ctx, p.get("rule", "BRANCH_PRIME_CORP_POLICY"))
-    labels = _rule(ctx, p.get("scale_rule", "CORP_GRADE_SCALE")).get("labels") or []
+    pol = _rule(ctx, _need(p, "rule"))
+    labels = _rule(ctx, _need(p, "scale_rule")).get("labels") or []
     rows, lo = [], 1
     for w in pol.get("weights") or []:
         hi = _grade_seq(w.get("max_grade"), labels) or len(labels)
@@ -192,7 +201,7 @@ def _outcome(ctx: EvalContext, code: str):
 @builder("branch_prospect_table", "마케팅 후보 기업 표 — 선정 지표(PROSPECT_SELECT) 결과")
 def b_prospect_table(ctx: EvalContext, p: dict[str, Any]):
     oc = _outcome(ctx, p["metric"])
-    sizes = _rule(ctx, "CORP_GRADE_SCALE").get("size_labels") or {}
+    sizes = _rule(ctx, _need(p, "scale_rule")).get("size_labels") or {}
     rows = []
     for i, s in enumerate(oc.extra.get("selected") or [], start=1):
         rows.append({"rank": i, "corp": s["corp_nm"], "industry": f"{s.get('ind_nm') or '-'} ({str(s.get('ind_cd') or '')[:3]})", "model": sizes.get(str(s.get("nics_model")), s.get("nics_model")), "grade": s["exp_grade"],
@@ -204,7 +213,7 @@ def b_prospect_table(ctx: EvalContext, p: dict[str, Any]):
 @builder("branch_prospect_note", "마케팅 후보 선정 · 제외 사유 요약 문구")
 def b_prospect_note(ctx: EvalContext, p: dict[str, Any]):
     oc = _outcome(ctx, p["metric"])
-    pol = _rule(ctx, p.get("rule", "BRANCH_PROSPECT_POLICY"))
+    pol = _rule(ctx, _need(p, "rule"))
     ex = oc.extra.get("excluded") or {}
     ov = ", ".join(oc.extra.get("overlap_industries") or []) or "없음"
     return (f"본부 추천 기업 중 제외 — 기존 여신 거래 {ex.get('existing', 0)}개 · 지역 외 {ex.get('region', 0)}개 · 예상재무등급 {pol.get('max_grade')} 초과 {ex.get('grade', 0)}개 · 부채비율 {pol.get('max_debt_ratio_pct')}% 초과 {ex.get('debt', 0)}개 · "

@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 set -a; . ./.env; set +a
 P=nhdipe2e
-export SEED_DATASET_DEFS=1 SEED_COLUMN_CONTRACTS=1 SEED_CONTRACT_EXPECTED=1  # 시험 스택만 시연 정의 · 정의서 시드(M.25 — 플랫폼 기본은 넣지 않음)
+# 시드는 플랫폼만(Phase O) — 시험 스택도 사용자처럼 시연 업무 구성 파일 + 2026.08 시연 자료를 올린 뒤 2026.09 시험 파일을 올린다
 export WEB_PORT=${E2E_WEB_PORT:-3100} API_PORT=${E2E_API_PORT:-8100} NEO4J_HTTP_PORT=${E2E_NEO4J_HTTP_PORT:-7574} NEO4J_BOLT_PORT=${E2E_NEO4J_BOLT_PORT:-7787} ES_PORT=${E2E_ES_PORT:-9300}
 FIX="${TMPDIR:-/tmp}/nhdip-upload-fixtures"
 cleanup() { [[ "${KEEP:-0}" == "1" ]] || docker compose -p "$P" down -v >/dev/null 2>&1 || true; }
@@ -22,6 +22,9 @@ for _ in $(seq 1 90); do
   [[ "$st" == *"api=healthy"* && "$st" == *"worker=healthy"* && "$st" == *"web=healthy"* ]] && break
   sleep 5
 done
+docker compose -p "$P" exec -T api python -m nhdip.cli wait-idle --timeout 900
+echo "[upload-test] 기준 자료 — 시연 업무 구성 · 2026.08 자료 · 문서 올리기(관리자 API)"
+docker compose -p "$P" exec -T -e NHDIP_SAMPLE_UPLOAD=1 api python -m nhdip.sample upload --base-url http://127.0.0.1:8000
 docker compose -p "$P" exec -T api python -m nhdip.cli wait-idle --timeout 900
 echo "[upload-test] 시험 파일 생성"
 rm -rf "$FIX" && mkdir -p "$FIX"

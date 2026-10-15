@@ -319,21 +319,33 @@ def test_report_form_file_without_definition_is_structured_from_the_file(db, wor
     from nhdip.models import Dataset, source
     from nhdip.sample import excel as X
 
-    req, stw = world["req"], world["stw"]
+    from conftest import code_of
+
+    req, stw, admin = world["req"], world["stw"], world["admin"]
     tree = [("대출금", 0, [100.0, 110.0]), ("기업자금대출금", 1, [60.0, 65.0]), ("가계자금대출금", 1, [40.0, 45.0])]
     content = X.report_2020(2026, 2, tree, base_date="2026-02-28")
     name = "(202602)과목별 여신 보고서.xlsx"
-    r = req.post("/db/uploads/dataset", data={"data_origin": "simulated"}, files={"file": (name, io.BytesIO(content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
-    assert r.status_code == 201, r.text
-    j = r.json()
-    prop = j["meta"]["proposal"]
-    assert prop["parser"] == {"layout": "report"} and {c["label"] for c in prop["columns"]} >= {"기준년월", "과목구분", "상위 항목", "계리잔액"}
-    ok = stw.post(f"/db/uploads/{j['id']}/approve", json={"note": "보고서 양식 승인"})
-    assert ok.status_code == 200, ok.text
-    assert ok.json()["result"]["status"] == "committed" and ok.json()["result"]["rows"] == 6
-    with db() as s:
-        ds = s.get(Dataset, j["target"])
-        t = source("bank")
-        rows = [x.data for x in s.execute(select(t.row).where(t.row.dataset_code == ds.code)).scalars()]
-    by_label = {c["label"]: c["name"] for c in ds.columns}
-    assert {(x[by_label["기준년월"]], x[by_label["과목구분"]], x[by_label["상위 항목"]]) for x in rows} >= {("202602", "기업자금대출금", "대출금")}
+    # 시험 DB 에는 시연 2020 파일로 만든 같은 열 구성의 자료가 있다(Phase O — 같은 열 구성이면 같은 자료, DOB-21) — 잠시 중지해 '정의 없음' 을 만든다
+    old = code_of("LOAN_BALANCE_MONTHLY")
+    assert admin.patch(f"/admin/datasets/{old}", json={"active": False}).status_code == 200
+    new_code = None
+    try:
+        r = req.post("/db/uploads/dataset", data={"data_origin": "simulated"}, files={"file": (name, io.BytesIO(content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+        assert r.status_code == 201, r.text
+        j = r.json()
+        prop = j["meta"]["proposal"]
+        assert prop["parser"] == {"layout": "report"} and {c["label"] for c in prop["columns"]} >= {"기준년월", "과목구분", "상위 항목", "계리잔액"}
+        ok = stw.post(f"/db/uploads/{j['id']}/approve", json={"note": "보고서 양식 승인"})
+        assert ok.status_code == 200, ok.text
+        new_code = j["target"]
+        assert ok.json()["result"]["status"] == "committed" and ok.json()["result"]["rows"] == 6
+        with db() as s:
+            ds = s.get(Dataset, new_code)
+            t = source("bank")
+            rows = [x.data for x in s.execute(select(t.row).where(t.row.dataset_code == ds.code)).scalars()]
+        by_label = {c["label"]: c["name"] for c in ds.columns}
+        assert {(x[by_label["기준년월"]], x[by_label["과목구분"]], x[by_label["상위 항목"]]) for x in rows} >= {("202602", "기업자금대출금", "대출금")}
+    finally:
+        if new_code:  # 시험 자료는 중지 — 업무 구성 '자료'가 시연 자료로 다시 이어지게
+            admin.patch(f"/admin/datasets/{new_code}", json={"active": False})
+        assert admin.patch(f"/admin/datasets/{old}", json={"active": True}).status_code == 200

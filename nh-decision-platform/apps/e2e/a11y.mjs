@@ -30,9 +30,11 @@ const PAGES = (process.env.A11Y_PAGES ?? "").split(",").filter(Boolean).length
       "/admin/monitor", "/admin/settings", "/admin/ui", "/admin/uploads", "/admin/analysis-agents", "/admin/monitor/runs", "/admin/workflows", "/admin/ontology", "/admin/knowledge",
       "/knowledge/upload", "/analysis/builder?space=risk",
       // Phase E — 자료를 고른 채 연 업로드(목록 · 기준 정보 펼침) · 권한 없음 · 없는 화면
-      "/knowledge/upload?target=PROVISION_BY_PRODUCT", "/forbidden?from=/risk", "/no-such-page",
+      "/knowledge/upload?target=PD_MASTER_SCALE", "/forbidden?from=/risk", "/no-such-page",
       // Phase M — 에이전틱 파이프라인 · 그룹별 에이전트 · 자료 등록(업무)
       "/admin/agentic", "/admin/agents", "/knowledge/upload?tab=intake",
+      // Phase O — 업무 구성(자료 연결 · 자료 대기)
+      "/admin/business-config",
     ];
 if (!ADMIN || !ADMIN_PW) {
   console.error("E2E_ADMIN_EMP · E2E_ADMIN_PW 가 필요합니다 (make a11y 는 .env 의 BOOTSTRAP_ADMIN_* 를 사용)");

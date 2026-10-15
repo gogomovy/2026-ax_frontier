@@ -1,8 +1,11 @@
 """지표 평가 엔진 — `cfg.metric` 정의(입력 참조 + 커널 수식)를 계산해 calc_run · metric_value 로 남긴다.
 
 입력 참조 형식 (관리자 화면에서 편집)
-  {"q": {"dataset": 코드, "where": {...}, "col": 컬럼, "agg": sum|first|list|count|max|min, "order_by": 컬럼}}
-       where 값: 스칼라(=) · {"in": [...]} · {"in_dataset": {"dataset": 코드, "col": 컬럼, "where": {...}}}
+  {"q": {"dataset": 자료, "where": {...}, "col": 컬럼, "agg": sum|first|list|count|max|min, "order_by": 컬럼}}
+       자료: 데이터셋 코드 또는 업무 구성의 자료 이름(Phase O — 실행할 때 data.sources 가 찾는다)
+       where 값: 스칼라(=) · {"in": [...]} · {"nin": [...]} · {"ne": v} · {"not": v} · {"path_endswith": "상위>이름"}
+                 · {"startswith" | "endswith" | "contains": 글자} · {"ref": 참조} · {"in_dataset": {"dataset": 자료, "col": 컬럼, "where": {...}}}
+                 (코드 비교는 글자로 · 모르는 연산자는 오류)
   {"metric": 지표코드, "field": "value"|추가필드}    다른 지표 결과 (같은 실행 또는 최근 값)
   {"rule": 규칙코드, "path": "a.b"}                  활성 규칙 버전 본문 값
   {"setting": 키}                                     cfg.setting 값
@@ -79,47 +82,92 @@ class EvalContext:
     # 기본 범위(덮어쓰기 없음)는 이전과 똑같이 동작한다.
     rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     scope_suffix: str = ""
+    resolver: Any = None  # data.sources.Resolver — 자료 이름 → 데이터셋(실행 하나 동안 같은 답)
 
     def scoped(self, code: str) -> str:
         """지표 값 · 이력에 쓰는 코드 — 범위 실행이면 '<코드>@<범위>'."""
         return f"{code}{self.scope_suffix}" if self.scope_suffix else code
 
-    def dataset(self, code: str):
-        if code not in self.rows:
-            ds = self.session.get(Dataset, code)
+    def dataset(self, ref: str):
+        """자료 참조(데이터셋 코드 또는 업무 구성의 자료 이름 — Phase O · BIZ-03) → (버전, 행, 정의).
+        자료 이름은 실행할 때마다 지금 있는 정의에서 찾고, 그 자료의 코드용 열 별칭을 행에 더한다(원래 열은 그대로)."""
+        if ref not in self.rows:
+            from nhdip.data.sources import Resolver
+
+            if self.resolver is None:
+                self.resolver = Resolver(self.session)
+            ds = self.resolver.resolve(ref)
             if not ds:
-                raise ResolveError(f"데이터셋 없음: {code}")
+                raise ResolveError(f"데이터셋 없음: {ref}" + ("" if self.session.get(Dataset, ref) is not None else " (자료 대기 — 그 자료를 올리면 이어집니다)"))
             v, rows = current_rows(self.session, ds)
             if not v:
-                raise ResolveError(f"확정된 버전 없음: {code}")
-            self.rows[code] = (v, rows, ds)
-            self.used_versions[code] = {"dataset": code, "origin": ds.origin, "version": v.version, "version_id": v.id, "file": v.file_name, "data_origin": v.data_origin}
-        return self.rows[code]
+                raise ResolveError(f"확정된 버전 없음: {ref}")
+            al = self.resolver.aliases(ref, ds)
+            if al:
+                rows = [{**r, **{k: r.get(c) for k, c in al.items() if k not in r}} for r in rows]
+            self.rows[ref] = (v, rows, ds)
+            self.used_versions[ds.code] = {"dataset": ds.code, "origin": ds.origin, "version": v.version, "version_id": v.id, "file": v.file_name, "data_origin": v.data_origin}
+        return self.rows[ref]
+
+
+def _key(v: Any) -> Any:
+    """코드 비교용 값 — 정수 · 글자 코드가 섞여도 맞게 글자로(2001107820007 = '2001107820007'), 참거짓 · 빈 값은 그대로 (Phase O · BIZ-04)."""
+    if v is None or isinstance(v, bool):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    if isinstance(v, Decimal) and v == v.to_integral_value():
+        return str(int(v))
+    return str(v).strip()
+
+
+WHERE_OPS = ("in", "nin", "ne", "not", "in_dataset", "path_endswith", "startswith", "endswith", "contains", "ref")
+
+
+def _path_parts(v: Any) -> list[str]:
+    return [p.strip() for p in str(v or "").split(">") if p.strip()]
 
 
 def _match(row: dict[str, Any], where: dict[str, Any], ctx: EvalContext) -> bool:
     for k, cond in (where or {}).items():
         val = row.get(k)
         if isinstance(cond, dict):
-            if "in" in cond:
-                if val not in cond["in"]:
+            op = next((o for o in WHERE_OPS if o in cond), None)
+            if op == "in":
+                if _key(val) not in {_key(x) for x in cond["in"]}:
                     return False
-            elif "in_dataset" in cond:
+            elif op == "in_dataset":
                 spec = cond["in_dataset"]
                 _, rows, _ = ctx.dataset(spec["dataset"])
-                allowed = {r.get(spec["col"]) for r in rows if _match(r, spec.get("where") or {}, ctx)}
-                if val not in allowed:
+                allowed = {_key(r.get(spec["col"])) for r in rows if _match(r, spec.get("where") or {}, ctx)}
+                if _key(val) not in allowed:
                     return False
-            elif "ne" in cond:
-                if val == cond["ne"]:
+            elif op == "ne":
+                if _key(val) == _key(cond["ne"]):
                     return False
-            elif "nin" in cond:
+            elif op == "nin":
                 # 목록에 없는 값만 (분석 에이전트 — 최댓값 · 최솟값에서 합계 · 기타 같은 집계 행 빼기)
-                if val in cond["nin"]:
+                if _key(val) in {_key(x) for x in cond["nin"]}:
                     return False
-            elif "not" in cond:
+            elif op == "not":
                 if bool(val) == bool(cond["not"]):
                     return False
+            elif op == "path_endswith":
+                # 계층 경로('대출금>가계자금대출금')의 끝부분이 같은가 — 상위 항목 이름이 파일마다 몇 단계 위까지 적히는지 몰라도 맞게
+                want = _path_parts(cond["path_endswith"])
+                have = _path_parts(val)
+                if not want or have[-len(want):] != want:
+                    return False
+            elif op == "ref":  # 안쪽 조건(in_dataset.where)의 참조 — 바깥 조건은 resolve_where 가 미리 바꾼다
+                if str(val) != str(resolve_ref(ctx, cond["ref"])[0]):
+                    return False
+            elif op in ("startswith", "endswith", "contains"):
+                s, t = str(val or ""), str(cond[op])
+                if not (s.startswith(t) if op == "startswith" else s.endswith(t) if op == "endswith" else t in s):
+                    return False
+            else:
+                # 모르는 조건은 모든 행을 맞게 두지 않는다 — 잘못 적은 구성이 조용히 전체 합계를 내지 않게
+                raise ResolveError(f"알 수 없는 조건 연산자: {k}={cond}")
         elif str(val) != str(cond) if not isinstance(cond, bool) else bool(val) != cond:
             return False
     return True

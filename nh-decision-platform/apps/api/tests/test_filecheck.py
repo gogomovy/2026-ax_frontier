@@ -90,3 +90,23 @@ def test_antivirus_command_that_cannot_run_rejects_instead_of_crashing(monkeypat
     monkeypatch.setenv("UPLOAD_AV_COMMAND", 'unterminated "quote {path}')  # 따옴표 오류(shlex ValueError)
     with pytest.raises(UploadRejected, match="백신"):
         check_upload("a.csv", b"a\n1\n", "dataset")
+
+
+def test_hwpx_document_text_and_upload_check():
+    from hwpx import HwpxDocument
+
+    from nhdip.data.documents import extract_text
+
+    d = HwpxDocument.new()
+    d.add_heading("포용금융 확대방안", level=1)
+    d.add_paragraph("1. 추진 방향")
+    d.add_paragraph("서민 대출 공급 목표를 상향한다.")
+    for fmt, name in (("hwpx", "정책.hwpx"), ("hwp", "정책.hwp")):
+        data = d.to_bytes(format=fmt)
+        assert check_upload(name, data, "document") == name
+        text, pages = extract_text(name, data)
+        assert "서민 대출 공급 목표를 상향한다." in text and pages[0][0] == 1
+    with pytest.raises(UploadRejected, match="HWPX"):
+        check_upload("가짜.hwpx", b"%PDF-1.4", "document")
+    with pytest.raises(UploadRejected, match="HWP"):
+        check_upload("가짜.hwp", b"PK\x03\x04", "document")

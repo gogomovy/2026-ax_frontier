@@ -190,10 +190,11 @@ def resolve_binding(ctx: EvalContext, c: ColumnContract, artifacts: dict[str, An
         return {"kind": "row", "col": b["row"]}
     if "dataset" in b:
         # 원천 정의(S 시트) — 데이터셋 정의에 그 컬럼이 있는지 검사(값은 데이터셋에 있음)
-        from nhdip.models import Dataset
+        from nhdip.data.sources import Resolver
 
-        ds = ctx.session.get(Dataset, b["dataset"])
-        cols = {x["name"] for x in (ds.columns if ds else [])}
+        res = Resolver(ctx.session)
+        ds = res.resolve(b["dataset"])  # 데이터셋 코드 또는 업무 구성의 자료 이름 (Phase O)
+        cols = {x["name"] for x in (ds.columns if ds else [])} | (set(res.aliases(b["dataset"], ds)) if ds else set())
         ok = ds is not None and (not b.get("column") or b["column"] in cols)
         return {"kind": "source", "ok": ok, "ref": f"{b['dataset']}.{b.get('column') or '*'}", "reason": None if ok else ("데이터셋 없음" if ds is None else f"데이터셋에 {b.get('column')} 없음")}
     if "analysis" in b:

@@ -9,7 +9,7 @@
   기준년월      파일 이름의 (YYYYMM) 또는 안내 줄의 기준일 · 기준년월 — 표에 기간 열이 없으면 '기준년월' 열로 붙인다
   합계 행       항목이 '합계 · 총계 · 소계 · Total' 이면 '합계 행' 열(참)
   머리글 이름   기준월과 같은 'N월'(예: 8월 누계)은 '기준월 누계' 로 — 달마다 열 이름이 바뀌지 않게
-안내 줄의 조회자 · 담당자 같은 개인 이름은 저장하지 않는다(adapters._header_meta).
+안내 줄의 조회자 · 담당자 같은 개인 이름은 저장하지 않는다(sheets._header_meta).
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .adapters import MONTH_RE, Sheet, _header_meta, _level, _num, file_info, load_sheets
+from .sheets import MONTH_RE, Sheet, _header_meta, _level, _num, file_info, load_sheets
 
 MAX_SCAN = 40  # 머리글을 찾는 앞부분 줄 수
 MAX_HEADER_ROWS = 3

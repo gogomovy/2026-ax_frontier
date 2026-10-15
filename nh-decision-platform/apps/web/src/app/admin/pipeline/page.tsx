@@ -33,7 +33,7 @@ export default function PipelineAdmin() {
       {d ? (
         <>
           <div className="mb-md grid grid-cols-2 gap-xs md:grid-cols-5" data-pipeline-summary>
-            <Stat label="원천" value={d.sources.length} />
+            <Stat label="원천" value={d.sources.filter((s) => s.kind !== "waiting").length} sub={d.sources.some((s) => s.kind === "waiting") ? `자료 대기 ${d.sources.filter((s) => s.kind === "waiting").length}` : undefined} />
             <Stat label="워크플로우" value={d.workflows.length} sub={running ? `실행 중 ${running}` : "대기"} />
             <Stat label="에이전트 노드" value={d.workflows.reduce((a, w) => a + w.nodes.filter((n) => n.agent).length, 0)} sub={`LLM ${d.workflows.reduce((a, w) => a + w.nodes.filter((n) => n.agent?.kind === "llm").length, 0)}`} />
             <Stat label="산출물" value={d.outputs.length} sub={`정의서 mart ${d.outputs.filter((o) => o.kind === "mart").length}`} />
@@ -101,6 +101,10 @@ export default function PipelineAdmin() {
             ·{" "}
             <Link href="/admin/contracts" className="font-bold text-primary-text">
               컬럼 정의서
+            </Link>{" "}
+            ·{" "}
+            <Link href="/admin/business-config" className="font-bold text-primary-text">
+              업무 구성(자료 연결 · 자료 대기)
             </Link>
           </p>
         </>

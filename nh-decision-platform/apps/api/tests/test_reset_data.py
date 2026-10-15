@@ -51,9 +51,9 @@ def test_reset_data_returns_to_definitions_only(db):
             for name in R.mart_tables(s):
                 assert s.execute(text(f'SELECT count(*) FROM mart."{name}"')).scalar() == 0
             assert not has_business_data(s)
-            # 화면 산출물은 값 없는 틀(0세대)만 — 시드가 게시하는 것과 같다
+            # 화면 산출물은 값 없는 틀(0세대)만 — 업무 구성 반영 때 게시한 것과 같다(Phase O)
             arts = s.execute(select(ViewArtifact.key, ViewArtifact.generation, ViewArtifact.produced_by)).all()
-            assert arts and len(arts) == rep.artifacts and {p for _, _, p in arts} == {"seed"}
+            assert arts and len(arts) == rep.artifacts and {p for _, _, p in arts} == {"business_config"}
             assert all(g == 1 or g == 0 for _, g, _ in arts) and len({k for k, _, _ in arts}) == len(arts)
             assert _count(s, KbChunk) == 0  # 자료가 없으면 분석 결과 색인(벡터)도 비어 있다(M.21 · Q207)
             from nhdip.graph.projection import has_uploaded_data
@@ -120,17 +120,14 @@ def test_reset_clear_external_tolerates_stores_down(monkeypatch):
 
 # ═════════════════════════ 자료 전 화면 거르기 (M.19 · DEL-14 · Q204) ═════════════════════════
 def _templates() -> dict:
-    import glob
-    import os
+    """시연 업무 구성 파일의 화면 틀 — 반영 때 게시하는 값 없는 틀과 같다(Phase O)."""
+    import copy
 
-    from nhdip.seed.run import _screens_dir, template_payload
+    from nhdip.sample.build import business_config
+    from nhdip.views.template import to_template
 
-    out = {}
-    for p in sorted(glob.glob(os.path.join(_screens_dir(), "*.json"))):
-        key = os.path.basename(p)[:-5]
-        with open(p, encoding="utf-8") as fh:
-            out[key] = template_payload(key, json.load(fh))
-    return out
+    b = business_config()
+    return {a["key"]: to_template(a["key"], copy.deepcopy(a["payload"]), [bd for bd in b["bindings"] if bd.get("artifact_key") == a["key"]]) for a in b["artifacts"]}
 
 
 def _statements(o) -> int:

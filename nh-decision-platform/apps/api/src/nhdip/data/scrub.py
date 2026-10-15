@@ -172,8 +172,11 @@ def _datasets_in(args: Any) -> set[str]:
 
 def lineage_keys(session: Session, dataset_code: str) -> set[str]:
     """이 데이터셋으로 계산되는 화면 산출물 키 — 지표(참조 지표까지) → 그 수치 id 를 가진 산출물, 바인딩(표 · 차트)의 산출물."""
+    from nhdip.data.sources import Resolver
+
+    names = Resolver(session).refs_for(dataset_code)  # 코드 + 이 자료를 가리키는 업무 구성의 자료 이름 (Phase O)
     metrics = list(session.execute(select(Metric)).scalars())
-    chosen = {m.code for m in metrics if dataset_code in _datasets_in(m.args)}
+    chosen = {m.code for m in metrics if names & _datasets_in(m.args)}
     grew = True
     while grew:  # {"metric": X} 로 이어지는 지표도
         grew = False
@@ -187,7 +190,7 @@ def lineage_keys(session: Session, dataset_code: str) -> set[str]:
 
     for b in session.execute(select(ViewBinding)).scalars():
         blob = json.dumps(b.params or {}, ensure_ascii=False, default=str)
-        if dataset_code in _datasets_in(b.params) or any(f'"{c}"' in blob for c in chosen):
+        if names & _datasets_in(b.params) or any(f'"{c}"' in blob for c in chosen):
             keys.add(b.artifact_key)
     if fig_ids:
         from nhdip.knowledge.render import collect_figures

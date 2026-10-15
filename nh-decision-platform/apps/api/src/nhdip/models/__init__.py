@@ -5,6 +5,7 @@ from .cfg import (
     OntologyProposal,
     AnalysisAgent,
     AnalysisAgentVersion,
+    BusinessConfig,
     ColumnContract,
     Dataset,
     LlmConnection,

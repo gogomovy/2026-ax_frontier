@@ -159,7 +159,10 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         b.counts["no_data"] = 1
         return b
 
-    # 1) 데이터셋 · 버전 · 결정론 매핑(ONT-14)
+    # 1) 데이터셋 · 버전 · 결정론 매핑(ONT-14) — 정의의 mapping + 업무 구성 자료 정의의 온톨로지 연결(Phase O)
+    from nhdip.data.sources import Resolver as _MapResolver
+
+    _maps = _MapResolver(session)
     rows_by_ds: dict[str, tuple[Any, list[dict[str, Any]], str]] = {}
     for ds in session.execute(select(Dataset).where(Dataset.active)).scalars():
         b.node("Dataset", ds.code, {"name": ds.name, "origin": ds.origin, "kind": ds.kind, "refresh_cycle": ds.refresh_cycle}, origin=ds.origin, src_kind="dataset", src_ref=f"cfg.dataset({ds.code})")
@@ -169,7 +172,11 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
             vkey = f"{ds.code}:v{cv.version}"
             b.node("DatasetVersion", vkey, {"version": cv.version, "as_of": cv.as_of.isoformat() if cv.as_of else None, "data_origin": cv.data_origin, "committed_at": cv.committed_at.isoformat() if cv.committed_at else None, "file": cv.file_name}, origin=ds.origin, src_kind="dataset", src_ref=f"{ds.origin}.dataset_version({cv.id})")
             b.rel("HAS_VERSION", "Dataset", ds.code, "DatasetVersion", vkey)
-        mapping = ds.mapping or {}
+        mapping = dict(ds.mapping or {})
+        for extra in _maps.mappings_for(ds.code):
+            for k in ("nodes", "edges", "concepts"):
+                if extra.get(k):
+                    mapping[k] = [*(mapping.get(k) or []), *extra[k]]
         for spec in mapping.get("nodes", []):
             for r in rows:
                 key = r.get(spec["key_col"])
@@ -192,9 +199,22 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
                 b.rel("DESCRIBES", "Dataset", ds.code, c["label"], c["key"], src_ref=ds.code)
 
     # 1-b) 스키마의 원천(backing) — 객체 유형 = 원천 데이터셋의 행, 링크 유형 = 행의 두 열 (Phase M · ONB-01 · ONB-02 · Q180)
+    # 원천은 데이터셋 코드 또는 업무 구성의 자료 이름(Phase O — 지금 있는 정의로 찾는다)
+    from nhdip.data.sources import Resolver as _SourceResolver
+
+    _src = _SourceResolver(session)
+
+    def _rows_of(ref: Any):
+        d = _src.resolve(str(ref or "")) if ref else None
+        return rows_by_ds.get(d.code) if d is not None else None
+
+    def _code_of(ref: str) -> str | None:
+        d = _src.resolve(ref)
+        return d.code if d is not None else None
+
     for c in schema.classes:
         for bk in c.get("backing") or []:
-            got = rows_by_ds.get(str(bk.get("dataset") or ""))
+            got = _rows_of(bk.get("dataset"))
             kc = bk.get("key_col")
             if not got or not kc:
                 continue
@@ -215,7 +235,7 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         if "*" in (frm, to):
             continue
         for bk in rdef.get("backing") or []:
-            got = rows_by_ds.get(str(bk.get("dataset") or ""))
+            got = _rows_of(bk.get("dataset"))
             if not got or not bk.get("from_col") or not bk.get("to_col"):
                 continue
             for r in got[1]:
@@ -232,8 +252,10 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
     metrics = [m for m in session.execute(select(Metric).where(Metric.enabled)).scalars()]
     for m in metrics:
         b.node("Metric", m.code, {"name": m.label, "unit": m.unit, "formula": m.formula, "enabled": m.enabled}, src_kind="metric", src_ref=f"cfg.metric({m.code})")
-        for dcode in _datasets_in_args(m.args):
-            b.rel("FEEDS", "Dataset", dcode, "Metric", m.code)
+        for ref in _datasets_in_args(m.args):
+            dcode = _code_of(ref)
+            if dcode:  # 아직 연결되지 않은 자료(자료 대기)는 그래프에 넣지 않는다
+                b.rel("FEEDS", "Dataset", dcode, "Metric", m.code)
         for ref in (m.args or {}).values():
             if isinstance(ref, dict) and "metric" in ref:
                 b.rel("DERIVED_FROM", "Metric", m.code, "Metric", ref["metric"])
@@ -251,7 +273,9 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         if t.workflow_code not in live_wf:
             continue
         if t.kind in ("dataset", "master"):
-            b.rel("USES", "Workflow", t.workflow_code, "Dataset", t.target)
+            dcode = _code_of(t.target) if t.target != "*" else None
+            if dcode:
+                b.rel("USES", "Workflow", t.workflow_code, "Dataset", dcode)
         elif t.kind == "doc_class":
             b.node("DocClass", t.target, {"name": t.target}, src_kind="workflow")
             b.rel("READS_CLASS", "Workflow", t.workflow_code, "DocClass", t.target)

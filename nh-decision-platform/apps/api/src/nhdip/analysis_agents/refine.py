@@ -34,7 +34,9 @@ TASK = (
 
 
 def _tokens(text: str) -> set[str]:
-    return {t for t in re.split(r"[^0-9A-Za-z가-힣_]+", text.lower()) if len(t) >= 2}
+    # 파일에서 만든 이름 · 열은 밑줄로 낱말을 잇는다(예: 7790_상품별_충당금 · 손실충당금_및_충당부채_총계) — 밑줄로도 나눈다
+    low = text.lower()
+    return {t for t in re.split(r"[^0-9a-z가-힣]+", low) if len(t) >= 2} | {t for t in re.split(r"[^0-9a-z가-힣_]+", low) if len(t) >= 2 and "_" in t}
 
 
 def _score(text_tokens: set[str], text: str, d: dict[str, Any]) -> int:
@@ -68,13 +70,18 @@ def rule_refine(session: Session, text: str, space: str, hints: dict[str, Any] |
     strs = [c for c in d["columns"] if c["type"] == "str" and c["name"] != d.get("asOfColumn")]
     low = text.lower()
 
+    asked = [t for t in toks if len(t) >= 3]
+
     def mentioned(cols):
-        hit = [c for c in cols if any(t in low for t in _tokens(c["label"] or c["name"]))]
+        # 열 이름 낱말이 요청 글에 있거나, 요청 글 낱말이 열 이름 안에 있으면(예: '충당금' → '손실충당금 및 충당부채 총계')
+        hit = [c for c in cols if any(t in low for t in _tokens(c["label"] or c["name"])) or any(t in str(c["label"] or c["name"]).lower() for t in asked)]
         return hit or cols
 
     where: dict[str, Any] = {d["asOfColumn"]: "$latest"} if d.get("asOfColumn") else {}
-    if any(c["name"] == "is_total" for c in d["columns"]):
-        where["is_total"] = False
+    # 합계 행 표시 열(참거짓 — 예: 보고서 양식에서 만든 '합계 행', 예전 is_total)이 있으면 항목 행만
+    tot = next((c["name"] for c in d["columns"] if c["type"] == "bool" and re.search(r"합계|소계|total", f"{c['name']} {c.get('label') or ''}", re.I)), None)
+    if tot:
+        where[tot] = False
     metrics, sec_metrics = [], []
     for c in mentioned(nums)[:3]:
         key = re.sub(r"[^a-z0-9_]", "_", c["name"].lower())[:24].strip("_") or "value"

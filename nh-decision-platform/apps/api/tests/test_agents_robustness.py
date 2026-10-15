@@ -86,9 +86,13 @@ def test_prospect_select_excludes_existing_borrowers():
 # ── B.42 온톨로지 추출 '부분 추출' 보완 ─────────────────────────────
 
 def _seed_schema():
+    """플랫폼 시스템 온톨로지 + 시연 업무 구성 파일의 온톨로지(Phase O — 업무 클래스 · 별칭은 구성 파일에서 온다)."""
+    from nhdip.sample.build import business_config
     from nhdip.seed import defs_core as C
 
-    return SimpleNamespace(classes=C.ONTOLOGY_CLASSES, relations=C.ONTOLOGY_RELATIONS, aliases=C.ONTOLOGY_ALIASES)
+    o = business_config()["ontology"]
+    return SimpleNamespace(classes=[*C.ONTOLOGY_CLASSES, *(o.get("classes") or [])], relations=[*C.ONTOLOGY_RELATIONS, *(o.get("relations") or [])],
+                           aliases={**C.ONTOLOGY_ALIASES, **(o.get("aliases") or {})})
 
 
 def test_span_found_in_title_spacing_and_ellipsis():
@@ -144,20 +148,6 @@ def test_validate_title_span_name_fallback_and_relation_label():
     # 제목 없이 같은 입력이면 제목 인용 근거는 원문에 없다고 본다(이전 동작)
     _, _, issues2 = validate(s, Resolver(s), body, data)
     assert [i["kind"] for i in issues2] == ["span_not_found"]
-
-
-def test_merge_aliases_keeps_admin_edits():
-    """B.42 운영 DB 보강 — 없는 별칭만 더하고, 관리자가 지운 키는 되살리지 않으며 관리자가 넣은 별칭은 그대로."""
-    from nhdip.seed.run import merge_aliases
-
-    cur = {"PolicyTheme": {"포용금융": ["포용금융", "관리자별칭"]}, "ProductGroup": {"햇살론": ["햇살론"]}}
-    add = {"PolicyTheme": {"포용금융": ["포용금융", "취약차주"], "가계부채 관리": ["가계부채"]}, "ProductGroup": {"햇살론": ["햇살론15"]}, "Segment": {"소기업": ["소기업"]}}
-    merged, n = merge_aliases(cur, add)
-    assert n == 2
-    assert merged["PolicyTheme"] == {"포용금융": ["포용금융", "관리자별칭", "취약차주"]}
-    assert merged["ProductGroup"]["햇살론"] == ["햇살론", "햇살론15"] and "Segment" not in merged
-    assert cur["PolicyTheme"]["포용금융"] == ["포용금융", "관리자별칭"]  # 원본은 바꾸지 않는다
-    assert merge_aliases(merged, add)[1] == 0  # 멱등
 
 
 # ── B.43 판단 입력 글자 상한 — JSON 을 자르지 않고 목록을 덜어 낸다 ─────────────

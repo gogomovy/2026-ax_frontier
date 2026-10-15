@@ -23,7 +23,14 @@ def run_checks(session: Session, schema: Any, batch: Any, rows_by_ds: dict[str, 
     v = validate_schema(as_dict(schema), session)
     add("schema", "스키마 정합성", not v["errors"], "risk", f"오류 {len(v['errors'])} · 경고 {len(v['warnings'])}", len(v["errors"]), v["errors"] + v["warnings"])
     backed = {bk.get("dataset") for c in schema.classes or [] for bk in c.get("backing") or []}
-    uncovered = [d.code for d in session.execute(select(Dataset).where(Dataset.active)).scalars() if d.code not in backed and not ((d.mapping or {}).get("nodes") or (d.mapping or {}).get("concepts") or (d.mapping or {}).get("edges"))]
+    from nhdip.data.sources import Resolver
+
+    res = Resolver(session)
+
+    def mapped(d: Dataset) -> bool:  # 정의 자체 또는 이어진 업무 구성 '자료'의 온톨로지 연결(Phase O)
+        return any(m.get("nodes") or m.get("concepts") or m.get("edges") for m in [d.mapping or {}, *res.mappings_for(d.code)])
+
+    uncovered = [d.code for d in session.execute(select(Dataset).where(Dataset.active)).scalars() if d.code not in backed and not mapped(d)]
     add("coverage", "온톨로지에 연결되지 않은 데이터셋", not uncovered, "warn", f"{len(uncovered)}개 — 구축 에이전트가 객체 유형 · 개념 연결을 제안합니다" if uncovered else "모든 데이터셋이 객체 · 개념으로 연결됨", len(uncovered), uncovered)
     rejected = sorted(set(getattr(batch, "rejected", []) or []))
     add("rejected", "스키마에 없어 버려진 라벨 · 관계", not rejected, "warn", f"{len(rejected)}종", len(rejected), rejected)

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 
+from conftest import code_of, from_cols, prov_correction_csv, strip_alias, to_cols  # 시나리오 자료 구분 → 시연 파일을 올려 만들어진 데이터셋 코드 · 열 이름(Phase O)
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -100,21 +101,16 @@ def test_change_triggers_only_related_workflow(db):
     admin = _client()
     _login(admin, "00000001", "Admin1234!")
     # 7790 2026.08 정정본 업로드 → wf_inclusive_risk(+그래프 투영)만 돌아야 한다
+    P = code_of("PROVISION_BY_PRODUCT")
     rows = admin.get("/admin/datasets").json()
-    prov = next(d for d in rows if d["code"] == "PROVISION_BY_PRODUCT")
+    prov = next(d for d in rows if d["code"] == P)
     cur = next(v for v in prov["versions"] if v["isCurrent"] and v["asOf"] == "2026-08-31")
-    data = admin.get(f"/admin/datasets/PROVISION_BY_PRODUCT/versions/{cur['id']}/rows").json()["rows"]
-    lines = ["ym,product_code,product_name,provision,is_total,src_ref"]
-    for r in data:
-        amt = r["provision"] + (10_000 if r["product_code"] == "2001107820007" else 0)
-        if r["product_code"] == "OTHERS":
-            amt -= 10_000
-        lines.append(f"{r['ym']},{r['product_code']},{r['product_name']},{amt},{'1' if r['is_total'] else '0'},{r.get('src_ref') or ''}")
-    f = io.BytesIO("\n".join(lines).encode("utf-8"))
-    bad = admin.post("/admin/datasets/PROVISION_BY_PRODUCT/upload", data={"origin": "ext"}, files={"file": ("(202608)7790_상품별_충당금.csv", f, "text/csv")})
+    data = admin.get(f"/admin/datasets/{P}/versions/{cur['id']}/rows").json()["rows"]
+    f = io.BytesIO(prov_correction_csv(data))
+    bad = admin.post(f"/admin/datasets/{P}/upload", data={"origin": "ext"}, files={"file": ("(202608)7790_상품별_충당금.csv", f, "text/csv")})
     assert bad.status_code == 422  # 당행 데이터를 외부로 올리면 거절
     f.seek(0)
-    r = admin.post("/admin/datasets/PROVISION_BY_PRODUCT/upload", data={"origin": "bank", "data_origin": "simulated"}, files={"file": ("(202608)7790_상품별_충당금.csv", f, "text/csv")})
+    r = admin.post(f"/admin/datasets/{P}/upload", data={"origin": "bank", "data_origin": "simulated"}, files={"file": ("(202608)7790_상품별_충당금.csv", f, "text/csv")})
     assert r.status_code == 201, r.text
     with db() as s:
         before = {r.id for r in s.execute(select(WorkflowRun)).scalars()}
@@ -130,7 +126,7 @@ def test_change_triggers_only_related_workflow(db):
     # (312,470 + 10,000) / 3,412,180 × 100 = 9.4505 → 9.45
     assert inc["shareNow"]["value"] == 9.45
     # 롤백 → 다시 원래 값
-    assert admin.post(f"/admin/datasets/PROVISION_BY_PRODUCT/versions/{cur['id']}/rollback").status_code == 200
+    assert admin.post(f"/admin/datasets/{P}/versions/{cur['id']}/rollback").status_code == 200
     _drain(db)
     assert admin.get("/screens/inclusive").json()["shareNow"]["value"] == 9.16
 
@@ -679,14 +675,12 @@ def test_highlights_fragments():
 
 def test_document_viewer_excerpt_and_file(db):
     """F.12 — 화면 근거 문서(시연 자료 패키지 PDF, Phase I)와 업로드 PDF 모두 면별 본문 + 인용 하이라이트 + 원본 파일."""
-    import json
-    import os
-
     c = _client()
     _login(c, "00000001", "Admin1234!")
-    # 화면 근거 하나를 골라 뷰어로 연다 (파일명 · 면 · 인용문)
-    path = os.path.join(os.path.dirname(__file__), "..", "src", "nhdip", "seed", "screens", "risk_dashboard.json")
-    stack, ev = [json.load(open(path, encoding="utf-8"))], None
+    # 화면 근거 하나를 골라 뷰어로 연다 (파일명 · 면 · 인용문) — 화면 틀은 업무 구성 파일(Phase O)
+    from nhdip.sample.build import business_config
+
+    stack, ev = [next(a["payload"] for a in business_config()["artifacts"] if a["key"] == "risk_dashboard")], None
     while stack and not ev:
         o = stack.pop()
         if isinstance(o, dict):
@@ -760,7 +754,7 @@ def test_upload_rejections_are_audited(db):
     """8.4.4 — 위장 · 매크로 파일은 파싱 전에 차단되고 감사에 남는다."""
     c = _client()
     _login(c, "00000001", "Admin1234!")
-    r = c.post("/admin/datasets/PROVISION_BY_PRODUCT/upload", data={"origin": "bank"}, files={"file": ("x.exe", b"MZ\x90\x00", "application/octet-stream")})
+    r = c.post(f"/admin/datasets/{code_of('PROVISION_BY_PRODUCT')}/upload", data={"origin": "bank"}, files={"file": ("x.exe", b"MZ\x90\x00", "application/octet-stream")})
     assert r.status_code == 422 and "허용 형식" in r.json()["detail"]
     r = c.post("/admin/documents/upload", data={"origin": "ext", "doc_class": "gov_policy", "title": "스크립트 PDF"}, files={"file": ("a.pdf", b"%PDF-1.4\n<< /JS (x) >>", "application/pdf")})
     assert r.status_code == 422 and "스크립트" in r.json()["detail"]
@@ -895,15 +889,16 @@ def test_original_report_preview_and_hwpx_document(db):
     """1.3 — 관리자 미리보기가 원본 2020 양식을 자동 인식(메타 · 계보), 한글 문서 업로드 → 원본 뷰어."""
     from hwpx import HwpxDocument
 
-    from test_adapters import wb_2020
+    from report_forms import wb_2020
 
     c = _client()
     _login(c, "00000001", "Admin1234!")
-    r = c.post("/admin/datasets/LOAN_BALANCE_MONTHLY/preview", files={"file": ("(202608)2020 과목별 월별 여신현황.xlsx", wb_2020(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    r = c.post(f"/admin/datasets/{code_of('LOAN_BALANCE_MONTHLY')}/preview", files={"file": ("(202608)2020 과목별 월별 여신현황.xlsx", wb_2020(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["source"]["adapter"] == "report_2020" and body["source"]["meta"]["구분"] == "계리잔액"
-    assert any(x["account_code"] == "CORP" and x["src_ref"].startswith("Sheet1!") for x in body["rows"])
+    # 보고서 양식은 파일 모양(머리글 · 들여쓰기 계층 · 월 열)에서 읽는다 — 양식별 어댑터 없음(Phase O)
+    assert body["source"]["layout"] == "report" and body["source"]["hierarchy"] and body["source"]["meta"]["구분"] == "계리잔액"
+    assert any(x["과목구분"] == "대출금" and x["수준"] == 0 and x["계리잔액"] for x in body["rows"])
     d = HwpxDocument.new()
     d.add_paragraph("가계부채 관리 기조를 유지한다.")
     r = c.post("/admin/documents/upload", data={"origin": "ext", "doc_class": "gov_policy", "title": "한글 정책 문서", "doc_code": "doc-hwpx-test"}, files={"file": ("정책.hwpx", d.to_bytes(), "application/hwp+zip")})
@@ -1065,15 +1060,15 @@ def test_agents_orchestrate_detect_plan(db):
     assert r["items"][0]["summary"] == "유의 변화 없음"
     # 수신 평잔 +10% 정정본 → 주요 변화 + 데이터 변경, 영업점 범위로 변화 피드
     with db() as s:
-        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
-        rows = [{"office_cd": "001068", "ym": "202608", "segment_cd": c, "segment_nm": n, "amount": a * (1.1 if c == "deposit" else 1), "measure": m} for c, n, a, m in (("deposit", "수신", 142_060_000_000, "평잔"), ("fx", "외환", 3_840_000_000, "누적 실적"), ("pension", "퇴직연금", 21_030_000_000, "적립금"), ("card", "카드", 5_210_000_000, "누적 이용실적"))]
+        ds = s.get(Dataset, code_of("BRANCH_BIZ_BALANCE"))
+        rows = to_cols(s, "BRANCH_BIZ_BALANCE", [{"office_cd": "001068", "ym": "202608", "segment_cd": c, "segment_nm": n, "amount": a * (1.1 if c == "deposit" else 1), "measure": m} for c, n, a, m in (("deposit", "수신", 142_060_000_000, "평잔"), ("fx", "외환", 3_840_000_000, "누적 실적"), ("pension", "퇴직연금", 21_030_000_000, "적립금"), ("card", "카드", 5_210_000_000, "누적 이용실적"))])
         ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="영업점 사업부문별 잔액(202608)_정정.xlsx", data_origin="simulated", actor="test", note="정정", force=True)
         s.commit()
     _drain(db)
     det = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "change_detector", "limit": 1}).json()["items"][0]
     items = {i["code"]: i for i in det["detail"]["items"]}
     assert items["br_seg_deposit"]["level"] == "major" and items["br_seg_deposit"]["direction"] == "up"
-    assert items["BRANCH_BIZ_BALANCE"]["kind"] == "data" and det["detail"]["scope"] == {"office": "001068"}
+    assert items[code_of("BRANCH_BIZ_BALANCE")]["kind"] == "data" and det["detail"]["scope"] == {"office": "001068"}
     plan = admin.get("/admin/agents/decisions", params={"workflow": "wf_branch_kpi", "agent": "planner", "limit": 1}).json()["items"][0]["detail"]
     # 서술 이력이 없으면 최초 1회 대상(LLM 미연결이라 기존 문장 유지), 수신 변화는 의견 수치가 아니라 서술 사유가 아님
     assert plan["llm"] is False and plan["why"]["ins-br-prime-corp"].startswith("LLM 서술 이력 없음")
@@ -1147,8 +1142,8 @@ def test_llm_judged_agents_dynamic_flow(db, monkeypatch):
     admin = _client()
     _login(admin, "00000001", "Admin1234!")
     with db() as s:
-        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
-        rows = [{"office_cd": "001068", "ym": "202608", "segment_cd": c, "segment_nm": n, "amount": a, "measure": m} for c, n, a, m in (("deposit", "수신", 170_000_000_000, "평잔"), ("fx", "외환", 3_840_000_000, "누적 실적"), ("pension", "퇴직연금", 21_030_000_000, "적립금"), ("card", "카드", 5_210_000_000, "누적 이용실적"))]
+        ds = s.get(Dataset, code_of("BRANCH_BIZ_BALANCE"))
+        rows = to_cols(s, "BRANCH_BIZ_BALANCE", [{"office_cd": "001068", "ym": "202608", "segment_cd": c, "segment_nm": n, "amount": a, "measure": m} for c, n, a, m in (("deposit", "수신", 170_000_000_000, "평잔"), ("fx", "외환", 3_840_000_000, "누적 실적"), ("pension", "퇴직연금", 21_030_000_000, "적립금"), ("card", "카드", 5_210_000_000, "누적 이용실적"))])
         ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="영업점 사업부문별 잔액(202608)_정정2.xlsx", data_origin="simulated", actor="test", note="정정", force=True)
         s.commit()
     _drain(db)
@@ -1165,10 +1160,11 @@ def test_llm_judged_agents_dynamic_flow(db, monkeypatch):
     # 후속 실행 이벤트 · 오케스트레이터 경로 지정
     with db() as s:
         dispatch_once(s)
-        fu = s.execute(select(OutboxEvent).where(OutboxEvent.type == "agent.followup").order_by(OutboxEvent.id.desc())).scalars().first()
-        assert fu.payload["workflow"] == "wf_hq_goal_review" and fu.payload["chain"] == ["wf_branch_kpi"]
+        # 영업점 실행이 낸 후속 — 연쇄로 이어 돈 실행(포용금융)의 후속은 연쇄가 더 길다
+        fu = next(e for e in s.execute(select(OutboxEvent).where(OutboxEvent.type == "agent.followup").order_by(OutboxEvent.id.desc())).scalars() if (e.payload or {}).get("from") == "wf_branch_kpi")
+        assert fu.payload["workflow"] == "wf_hq_goal_review" and fu.payload["chain"] == ["wf_branch_kpi"], fu.payload
         assert any(m["workflow"] == "wf_hq_goal_review" for m in fu.matched)
-        ch = s.execute(select(OutboxEvent).where(OutboxEvent.type == "change.detected").order_by(OutboxEvent.id.desc())).scalars().first()
+        ch = next(e for e in s.execute(select(OutboxEvent).where(OutboxEvent.type == "change.detected").order_by(OutboxEvent.id.desc())).scalars() if (e.payload or {}).get("workflow") == "wf_branch_kpi")
         assert {m["workflow"] for m in ch.matched} >= {"wf_inclusive_risk"} and "wf_branch_kpi" not in {m["workflow"] for m in ch.matched}  # 연쇄 원점은 다시 넣지 않음
         job = s.execute(select(Job).where(Job.workflow_code == "wf_hq_goal_review", Job.status == "queued")).scalars().first()
         assert job is not None and any("agent:planner" in r for c in job.causes for r in c.get("reasons", []))
@@ -1210,26 +1206,31 @@ def test_branch_multi_office_scope(db):
         return {k: v for k, v in r.items() if not k.startswith("__")}
 
     with db() as s:
-        _, corp = current_rows(s, s.get(Dataset, "OBLG_GRD_DEF"))
-        _, retail = current_rows(s, s.get(Dataset, "RETAIL_EXPOSURE"))
+        def read(kind: str):
+            ds = s.get(Dataset, code_of(kind))
+            return ds, from_cols(s, kind, [clean(r) for r in current_rows(s, ds)[1]])  # 코드용 이름 열을 더해 읽는다(Phase O)
+
+        def put(kind: str, ds, rows, fname: str):
+            rows = strip_alias(s, kind, to_cols(s, kind, rows))  # 바꾼 코드용 이름 값 → 파일 열, 더한 이름 열은 뺀다
+            ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name=fname, data_origin="simulated", actor="test", note="B.47", force=True)
+
+        _, corp = read("OBLG_GRD_DEF")
+        _, retail = read("RETAIL_EXPOSURE")
         x = sorted({str(r["SUVMN_BRC"]) for r in corp} & {str(r["office_cd"]) for r in retail} - {"001068"})[0]
         # 가상 지점 x — 마스터 · 득점 현황 · 사업부문 잔액(기존 001068 행 + x 행, 같은 기준일 구획은 통째로 교체되므로 함께 올린다)
-        ds = s.get(Dataset, "BRANCH_OFFICE_MASTER")
-        _, rows = current_rows(s, ds)
-        rows = [clean(r) for r in rows if str(r.get("office_cd")) != x] + [{"office_cd": x, "office_nm": "가상지점", "region": "경기", "sigungu": "수원시", "region_hq": "수도권1지역본부", "org_code": "BR303"}]
-        ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="영업점 사무소 마스터(다지점).xlsx", data_origin="simulated", actor="test", note="B.47", force=True)
-        ds = s.get(Dataset, "BRANCH_KPI_SCORE")
-        _, rows = current_rows(s, ds)
+        ds, rows = read("BRANCH_OFFICE_MASTER")
+        rows = [r for r in rows if str(r.get("office_cd")) != x] + [{"office_cd": x, "office_nm": "가상지점", "region": "경기", "sigungu": "수원시", "region_hq": "수도권1지역본부", "org_code": "BR303"}]
+        put("BRANCH_OFFICE_MASTER", ds, rows, "영업점 사무소 마스터(다지점).xlsx")
+        ds, rows = read("BRANCH_KPI_SCORE")
         latest = max(str(r["as_of"]) for r in rows if str(r.get("office_cd")) == "001068")
-        base = [clean(r) for r in rows if str(r["as_of"]) == latest and str(r.get("office_cd")) == "001068"]
+        base = [r for r in rows if str(r["as_of"]) == latest and str(r.get("office_cd")) == "001068"]
         mine = [{**r, "office_cd": x, "score": None if r.get("score") is None else round(float(r["score"]) * 0.9, 1)} for r in base]
-        ingest_rows(s, ds, base + mine, quality=quality_check(ds, base + mine, []), file_name="영업점 업적평가 득점 현황(다지점).xlsx", data_origin="simulated", actor="test", note="B.47", force=True)
-        ds = s.get(Dataset, "BRANCH_BIZ_BALANCE")
-        _, rows = current_rows(s, ds)
+        put("BRANCH_KPI_SCORE", ds, base + mine, "영업점 업적평가 득점 현황(다지점).xlsx")
+        ds, rows = read("BRANCH_BIZ_BALANCE")
         ym = max(str(r["ym"]) for r in rows if str(r.get("office_cd")) == "001068")
-        base = [clean(r) for r in rows if str(r["ym"]) == ym and str(r.get("office_cd")) == "001068"]
+        base = [r for r in rows if str(r["ym"]) == ym and str(r.get("office_cd")) == "001068"]
         mine = [{**r, "office_cd": x, "amount": round(float(r["amount"]) * 0.5)} for r in base]
-        ingest_rows(s, ds, base + mine, quality=quality_check(ds, base + mine, []), file_name="영업점 사업부문별 잔액(다지점).xlsx", data_origin="simulated", actor="test", note="B.47", force=True)
+        put("BRANCH_BIZ_BALANCE", ds, base + mine, "영업점 사업부문별 잔액(다지점).xlsx")
         # 지점 x 의 조직 — 기존 영업점 BR303(수도권1지역본부 아래)을 사무소 코드 x 로 매핑
         st = s.get(Setting, "branch.office_codes")
         old_map = dict(st.value) if st is not None and isinstance(st.value, dict) else None
@@ -1451,25 +1452,22 @@ def test_db_upload_request_and_approval(db):
     assert "/knowledge/upload" in hrefs(u) and "/knowledge/upload" not in hrefs(b)
     assert b.get("/db/uploadable").status_code == 403 and b.get("/db/uploads/mine").status_code == 403
     up = u.get("/db/uploadable").json()
-    assert any(d["code"] == "PROVISION_BY_PRODUCT" for d in up["datasets"]) and any(c["key"] == "gov_policy" for c in up["docClasses"])
+    P = code_of("PROVISION_BY_PRODUCT")
+    assert any(d["code"] == P for d in up["datasets"]) and any(c["key"] == "gov_policy" for c in up["docClasses"])
     assert "/admin/uploads" in hrefs(admin)
 
     rows = admin.get("/admin/datasets").json()
-    prov = next(d for d in rows if d["code"] == "PROVISION_BY_PRODUCT")
+    prov = next(d for d in rows if d["code"] == P)
     cur = next(v for v in prov["versions"] if v["isCurrent"] and v["asOf"] == "2026-08-31")
-    data = admin.get(f"/admin/datasets/PROVISION_BY_PRODUCT/versions/{cur['id']}/rows").json()["rows"]
-    lines = ["ym,product_code,product_name,provision,is_total,src_ref"]
-    for r in data:
-        amt = r["provision"] + (10_000 if r["product_code"] == "2001107820007" else 0) - (10_000 if r["product_code"] == "OTHERS" else 0)
-        lines.append(f"{r['ym']},{r['product_code']},{r['product_name']},{amt},{'1' if r['is_total'] else '0'},{r.get('src_ref') or ''}")
+    data = admin.get(f"/admin/datasets/{P}/versions/{cur['id']}/rows").json()["rows"]
     fname = "(202608)7790_상품별_충당금.csv"
     # 품질 실패(키 중복)는 요청 단계에서 거절 — 요청 · 데이터 모두 없음
-    bad = u.post("/db/uploads/dataset", data={"target": "PROVISION_BY_PRODUCT"}, files={"file": (fname, ("\n".join(lines + [lines[1]])).encode("utf-8"), "text/csv")})
+    bad = u.post("/db/uploads/dataset", data={"target": P}, files={"file": (fname, prov_correction_csv(data, extra=[data[0]]), "text/csv")})
     assert bad.status_code == 422 and "품질" in bad.json()["detail"], bad.text
-    assert b.post("/db/uploads/dataset", data={"target": "PROVISION_BY_PRODUCT"}, files={"file": (fname, b"x", "text/csv")}).status_code == 403
+    assert b.post("/db/uploads/dataset", data={"target": P}, files={"file": (fname, b"x", "text/csv")}).status_code == 403
     with db() as s:
         ev0 = s.execute(select(OutboxEvent.id).order_by(OutboxEvent.id.desc()).limit(1)).scalar() or 0
-    r = u.post("/db/uploads/dataset", data={"target": "PROVISION_BY_PRODUCT", "data_origin": "simulated", "note": "8월 정정본"}, files={"file": (fname, "\n".join(lines).encode("utf-8"), "text/csv")})
+    r = u.post("/db/uploads/dataset", data={"target": P, "data_origin": "simulated", "note": "8월 정정본"}, files={"file": (fname, prov_correction_csv(data), "text/csv")})
     assert r.status_code == 201, r.text
     req = r.json()
     assert req["status"] == "pending" and req["preview"]["rows"] == len(data) and req["preview"]["quality"]["status"] in ("passed", "warning")
@@ -1515,7 +1513,7 @@ def test_db_upload_request_and_approval(db):
     assert a2.status_code == 200 and a2.json()["result"]["docCode"].startswith("doc-")
     assert any(x["title"] == "업무 등록 승인 정책" for x in admin.get("/admin/documents").json())
     # 원상 복구 — 충당금 버전 되돌리기
-    assert admin.post(f"/admin/datasets/PROVISION_BY_PRODUCT/versions/{cur['id']}/rollback").status_code == 200
+    assert admin.post(f"/admin/datasets/{P}/versions/{cur['id']}/rollback").status_code == 200
     _drain(db)
     assert admin.get("/screens/inclusive").json()["shareNow"]["value"] == 9.16
 
@@ -1523,6 +1521,8 @@ def test_db_upload_request_and_approval(db):
 def test_analysis_agent_builder_flow(db, monkeypatch):
     """Phase C · DAG-01~09 — 정제(규칙 · LLM 흉내 · 허용 목록 검증 · 인젝션) → 미리보기(되돌림) → 요청 → 관리자 승인(생성)
     → 실행(동적 수행 · 범용 렌더링 · 검증 · 게시) → 분석 레지스트리 탭 · 보고서 · 내려받기 · 권한 · 수명(중지 · 재개 · 폐기)."""
+    import json
+
     from sqlalchemy import func
 
     from nhdip.data.datasets import current_rows
@@ -1545,8 +1545,10 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     menu = {i["href"] for s in u.get("/me/menu").json()["sections"] for i in s["flow"] + s["reference"]}
     assert "/analysis/builder" in menu
     assert b.get("/analysis-agents/catalog").status_code == 403
+    # 7790 은 파일에서 만든 정의(Phase O) — 열 이름은 파일 머리글
+    P, PN, PC, PV, YM, TOT = code_of("PROVISION_BY_PRODUCT"), "상품명", "상품코드", "손실충당금_및_충당부채_총계", "기준년월", "합계_행"
     cat = u.get("/analysis-agents/catalog", params={"space": "risk"}).json()
-    assert any(s["key"] == "risk" for s in cat["spaces"]) and any(d["code"] == "PROVISION_BY_PRODUCT" for d in cat["datasets"]) and "SUM" in {f["id"] for f in cat["formulas"]}
+    assert any(s["key"] == "risk" for s in cat["spaces"]) and any(d["code"] == P for d in cat["datasets"]) and "SUM" in {f["id"] for f in cat["formulas"]}
     assert u.get("/analysis-agents/catalog", params={"space": "branch"}).status_code == 422  # 영업점 공간은 만들기 없음
     spaces = {s["key"]: s for s in u.get("/screens/analysis/spaces").json()}
     assert "risk" in spaces and "hq" not in spaces and spaces["risk"]["builder"]
@@ -1557,10 +1559,12 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert r["meta"]["by"] == "rule" and r["validation"]["ok"], r
     spec = r["spec"]
     assert spec["space"] == "risk" and spec["metrics"] and all(m["formula"] in ("SUM", "VALUE") for m in spec["metrics"])
-    assert {q["q"]["dataset"] for m in spec["metrics"] for q in m["args"].values()} == {"PROVISION_BY_PRODUCT"}
-    assert spec["tables"] and spec["tables"][0]["group_by"] == "product_name"
-    # 집계 행은 순위 표에서 뺀다(실 LLM 시험에서 발견). 시연 7790 원본(Phase I)은 그 외 상품을 28개 상품으로 풀어 '합계' 행만 집계 행
-    assert "합계" in spec["tables"][0].get("exclude", [])
+    assert {q["q"]["dataset"] for m in spec["metrics"] for q in m["args"].values()} == {P}
+    assert spec["tables"] and spec["tables"][0]["group_by"] == PN
+    assert spec["tables"][0]["where"].get(TOT) is False  # 합계 행 표시 열(참거짓)은 항목 행만
+    # 집계 행은 순위 표에서 뺀다(실 LLM 시험에서 발견). 시연 7790 원본(Phase I)은 그 외 상품을 28개 상품으로 풀어 '합계' 행만 집계 행 —
+    # 파일에서 만든 정의는 '합계 행' 표시 열이 있어 그 조건(위 where)으로 빠진다
+    assert "합계" in spec["tables"][0].get("exclude", []) or spec["tables"][0]["where"].get(TOT) is False
     # 허용 목록 밖 · 숫자 본문 · 없는 열은 빠지고 사유가 남는다
     bad = {**spec, "metrics": spec["metrics"] + [{"key": "x1", "label": "x", "formula": "EXEC", "args": {}}, {"key": "x2", "label": "y", "formula": "SUM", "args": {"values": {"q": {"dataset": "NOPE", "col": "a", "agg": "list"}}}}],
            "sections": spec["sections"] + [{"heading": "메모", "blocks": [{"type": "text", "text": "충당금은 123억"}, {"type": "html", "html": "<script>"}]}]}
@@ -1569,25 +1573,26 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert "EXEC" in msgs and "NOPE" in msgs and "숫자" in msgs and "html" in msgs, msgs
     assert [m["key"] for m in vr["spec"]["metrics"]] == [m["key"] for m in spec["metrics"]]
     # 최댓값 지표 — 집계 행(그 외 상품 합계 · 합계)은 결정론으로 뺀다(실 LLM 시험에서 OTHERS 가 '최대 상품' 으로 잡힘)
-    top1 = {"key": "top1", "label": "최대 상품 충당금", "formula": "VALUE", "args": {"value": {"q": {"dataset": "PROVISION_BY_PRODUCT", "col": "provision", "agg": "max", "where": {"ym": "$latest"}}}}, "unit": "KRW_MN", "decimals": 0}
+    top1 = {"key": "top1", "label": "최대 상품 충당금", "formula": "VALUE", "args": {"value": {"q": {"dataset": P, "col": PV, "agg": "max", "where": {YM: "$latest"}}}}, "unit": "KRW_MN", "decimals": 0}
     vm = u.post("/analysis-agents/validate", json={"space": "risk", "spec": {**spec, "metrics": spec["metrics"] + [top1]}}).json()
     w = next(m for m in vm["spec"]["metrics"] if m["key"] == "top1")["args"]["value"]["q"]["where"]
-    # 집계 행 값은 현재 자료에서 찾는다 — 시연 7790(Phase I)은 그 외 상품을 풀어 써 '합계 · TOTAL' 만 남는다
-    assert "합계" in w["product_name"]["nin"] and "TOTAL" in w["product_code"]["nin"], w
+    # 집계 행 값은 현재 자료에서 찾는다 — 시연 7790(Phase I)은 그 외 상품을 풀어 써 '합계' 행만 집계 행
+    assert "합계" in json.dumps(w, ensure_ascii=False), w
     assert any("집계 행" in i["message"] for i in vm["validation"]["issues"])
     # 실행 조건이 없는 명세(실 LLM 시험에서 발견 — 승인 422) → 기본값 '자료가 바뀌면 다시 계산' 으로 두고 알린다
     vs = u.post("/analysis-agents/validate", json={"space": "risk", "spec": {**spec, "schedule": {"cron": None, "on_data_change": False}}}).json()
     assert vs["spec"]["schedule"] == {"cron": None, "on_data_change": True} and any(i["path"] == "schedule" for i in vs["validation"]["issues"])
     rc = next(m for m in vm["spec"]["metrics"] if m["key"] == "row_count")["args"]["value"]["q"]["where"]
-    assert "TOTAL" in rc["product_code"]["nin"], rc  # 건수도 항목만(합계 행 제외 — 시연 7790 은 그 외 상품을 풀어 써 OTHERS 행이 없다)
+    assert rc.get(TOT) is False or "합계" in json.dumps(rc, ensure_ascii=False), rc  # 건수도 항목만(합계 행 제외)
     with db() as s:
-        _, prov = current_rows(s, s.get(Dataset, "PROVISION_BY_PRODUCT"))
-    ym = max(str(r["ym"]) for r in prov)
-    real = max(float(r["provision"]) for r in prov if str(r["ym"]) == ym and r["product_code"] not in ("OTHERS", "TOTAL"))
+        _, prov = current_rows(s, s.get(Dataset, P))
+    ym = max(str(r[YM]) for r in prov)
+    items = [r for r in prov if str(r[YM]) == ym and not r.get(TOT) and r.get(PN) != "합계"]
+    real = max(float(r[PV]) for r in items)
     pvm = u.post("/analysis-agents/preview", json={"space": "risk", "spec": vm["spec"]}).json()
     got = next(f for f in pvm["report"]["figures"].values() if f["label"] == "최대 상품 충당금")["value"]
     assert abs(float(got) - real) < 1, (got, real)
-    n_items = sum(1 for r in prov if str(r["ym"]) == ym and r["product_code"] not in ("OTHERS", "TOTAL"))
+    n_items = len(items)
     cnt = next(f for f in pvm["report"]["figures"].values() if f["label"].endswith("건수"))["value"]
     assert int(float(cnt)) == n_items, (cnt, n_items)
 
@@ -1595,7 +1600,7 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     def fake_refine(session, agent_code, task, context, **kw):
         assert agent_code == "analysis_refiner" and "<<자료>>" not in task and context["request"].startswith("7790")
         return ({"title": "충당금 집중도", "purpose": "상품 집중 점검", "metrics": [
-            {"key": "total", "label": "충당금 합계", "formula": "SUM", "args": {"values": {"q": {"dataset": "PROVISION_BY_PRODUCT", "col": "provision", "agg": "list", "where": {"ym": "$latest", "is_total": False}}}}, "unit": "KRW_MN", "decimals": 0, "rule": {"op": ">", "value": 1, "severity": "watch"}},
+            {"key": "total", "label": "충당금 합계", "formula": "SUM", "args": {"values": {"q": {"dataset": P, "col": PV, "agg": "list", "where": {YM: "$latest", TOT: False}}}}, "unit": "KRW_MN", "decimals": 0, "rule": {"op": ">", "value": 1, "severity": "watch"}},
             {"key": "hack", "label": "주민번호", "formula": "SUM", "args": {"values": {"q": {"dataset": "BORROWERS_SECRET", "col": "rrn", "agg": "list"}}}},
         ], "insights": [{"key": "main", "title": "충당금 집중", "metrics": ["total", "hack"], "instruction": "집중도"}], "notes": ["주민번호 열은 없음"]}, {"by": "llm", "llm_call_id": None, "model": "fake"})
 
@@ -1671,7 +1676,7 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     calls = []
 
     def fake_task(session, agent_code, task, context, **kw):
-        if agent_code == "critic_grounded":  # 근거 일치 점검(Phase M · LLM-P05)은 이 시험의 대상이 아니다 — 점검 생략(LLM 없음과 같음)
+        if agent_code != code:  # 근거 일치 점검 · 판단 에이전트(변화 감지 · 플래너 · 오케스트레이터)는 이 시험의 대상이 아니다 — LLM 없음과 같게
             return None, {"by": "rule", "reason": "시험"}
         calls.append(agent_code)
         st = f"상품별 충당금 합계는 [[fig:{fid}]] 수준이며 상위 상품 쏠림을 점검할 필요가 있습니다." if len(calls) == 1 else "충당금이 123억 늘었다."
@@ -1824,7 +1829,6 @@ def test_analysis_agent_approval_options(db, monkeypatch):
 def test_hq_custom_tabs_in_existing_screen(db):
     """Q109 — 새 분석은 기존 부서 분석 화면의 탭으로: 종합기획부 [데이터 분석]이 맞춤 분석 탭(공간 hq)을 본다, 별도 메뉴 없음. 운영 DB 1회 보강."""
     from nhdip.models import Screen, Setting
-    from nhdip.seed.run import analysis_spaces_upgrade
 
     admin = _client()
     _login(admin, "00000001", "Admin1234!")
@@ -1836,17 +1840,7 @@ def test_hq_custom_tabs_in_existing_screen(db):
     assert tabs["space"]["path"] == "/hq/analysis" and tabs["builder"]["allowed"] is True
     hrefs = {i["href"] for s in u.get("/me/menu").json()["sections"] for i in s["flow"] + s["reference"]}
     assert "/hq/analysis" in hrefs and "/analysis/hq" not in hrefs
-    # 운영 DB 보강 — v1 에서 만든 별도 메뉴는 끄고, 데이터 분석 화면에 리소스를 더한다(관리자 편집 보존)
+    # 업무 화면 리소스는 업무 구성 파일이 넣는다(Phase O — 운영 DB 보강 시드 없음)
     with db() as s:
-        s.add(Screen(code="ANALYSIS_HQ", path="/analysis/hq", label="분석 보고서", section="종합기획부", kind="reference", sort=16, active=True, admin_only=False))
-        res = s.get(Setting, "screen.resources")
-        res.value = {**res.value, "HQ_ANALYSIS": [r for r in res.value["HQ_ANALYSIS"] if r != "hq_reports"] + ["custom_x"]}
-        st = s.get(Setting, "seed.applied_upgrades")
-        st.value = [x for x in (st.value or []) if x != "analysis-spaces-v2"]
-        s.commit()
-        out: dict = {}
-        analysis_spaces_upgrade(s, out)
-        s.commit()
-        assert out["analysis_spaces_upgrade"] == {"HQ_ANALYSIS": ["hq_reports"], "ANALYSIS_HQ": "inactive"}
-        assert not s.get(Screen, "ANALYSIS_HQ").active
-        assert s.get(Setting, "screen.resources").value["HQ_ANALYSIS"][-2:] == ["custom_x", "hq_reports"]
+        assert "hq_reports" in s.get(Setting, "screen.resources").value["HQ_ANALYSIS"]
+        assert s.get(Screen, "ANALYSIS_HQ") is None

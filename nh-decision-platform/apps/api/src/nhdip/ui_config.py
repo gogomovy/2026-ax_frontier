@@ -1,7 +1,7 @@
 """화면 설정 (Phase K · 요구사항 §27 HC-01~05 · SCP-01 · 설계 §27.1 · Q148~Q151).
 
 화면 코드에 두던 판정 구간 · 기준값 · 목표 역할 · 업무 영역 · 예시 질문 · 알림 목록을 `cfg.setting` 의 `ui.*` 키로 둔다.
-- 기본값(`DEFAULTS`)은 Phase K 이전 화면에 있던 값 그대로 — 시드는 없는 키만 넣는다(관리자 값 보존).
+- 기본값(`DEFAULTS`)은 업무 값이 없는 틀 — 목표 역할 · 업무 영역 · 예시 질문 · 하위 영역 이름은 업무 구성 파일이 채운다(Phase O). 시드는 없는 키만 넣는다.
 - `validate(key, value)` — 저장 전 형식 검사(관리자 [화면 설정] · `PUT /admin/settings/{key}`). 틀리면 `UiConfigError`(→ 422).
 - `client_config(session, user, branch=...)` — `/me/menu.config` 로 내려 주는 값. 저장된 값이 깨져 있으면 기본값으로(화면이 멈추지 않게).
 """
@@ -64,32 +64,19 @@ DEFAULTS: dict[str, tuple[Any, str]] = {
         "화면 기준값 (Phase K) — 계획 수준 허용 폭(%p) · 한도 여유 경고 폭 · 구성비 기준선(%) · 제안 사유 최소 글자 수",
     ),
     "ui.goal_roles": (
-        {"bankRevenue": "goal-annual-revenue", "corpGrowth": "goal-corp-growth", "hhLimit": "goal-hh-balance", "hhControl": "goal-hh-control"},
+        {},
         "화면이 집어 쓰는 목표 (Phase K · Q150) — 역할 → 목표 id. 비우면 그 자리는 표시하지 않는다",
     ),
     "ui.scopes": (
-        {
-            "hq": {"label": "종기부", "units": [{"org": "D100", "section": "종합기획부"}]},
-            "dept": {"label": "사업부서", "units": [{"org": "D200", "section": "신용리스크관리부"}, {"org": "D310", "section": "여신관리부"}]},
-            "branch": {"label": "영업점", "units": [{"org": None, "section": "영업점"}]},
-        },
+        {},
         "업무 영역 (Phase K · Q151) — 종류(hq · dept · branch)별 이름과 단위(조직 + 메뉴 묶음). 화면이 없는 단위는 '준비 중'. 영업점 지점은 BRANCH_SCOPE 규칙",
     ),
     "ui.examples": (
-        {
-            "assist": [
-                {"q": "포용금융 충당금 비중은 얼마인가요?", "hint": "확정 수치와 분석 결과"},
-                {"q": "소기업 6B 등급 부도율은 예측 대비 어떤가요?", "hint": "모형 모니터링"},
-                {"q": "기업여신 증가율과 목표 대비 이탈은?", "hint": "목표 대비 현황"},
-                {"q": "가계부채 관리 기조 관련 근거를 알려줘", "hint": "정책 근거 문서"},
-            ]
-        },
+        {"assist": []},
         "예시 질문 (Phase K) — assist = AI 어시스턴트 첫 화면 [{q, hint}] (최대 8개)",
     ),
     "ui.notices": (
         [
-            {"countKey": "goalProposals", "label": "경영목표 AI 제안 검토"},
-            {"countKey": "proposedPlans", "label": "수행방안 제안 확인"},
             {"countKey": "adminUsers", "label": "가입 승인 대기"},
             {"countKey": "adminUploads", "label": "자료 승인 대기"},
             {"countKey": "adminAnalyses", "label": "분석 에이전트 승인 대기"},
@@ -99,10 +86,7 @@ DEFAULTS: dict[str, tuple[Any, str]] = {
     ),
     "ui.issue_order": (["breach", "below", "near_limit"], "주요 이슈로 보여 줄 목표 판정과 순서 (Phase K) — breach · below · near_limit · on_track"),
     "ui.labels": (
-        {
-            "subDomain": {"corporate": "기업여신", "household": "가계여신", "revenue": "여신 종합수익", "portfolio": "포트폴리오", "model_risk": "모형 리스크", "inclusive_finance": "포용금융"},
-            "subDomainHref": {"corporate": "/hq/analysis", "household": "/hq/analysis", "revenue": "/hq/analysis", "portfolio": "/hq/analysis", "inclusive_finance": "/risk/analysis"},
-        },
+        {"subDomain": {}, "subDomainHref": {}},
         "화면 표시 이름 · 연결 (Phase K) — subDomain = 하위 영역 코드 → 이름(없는 코드는 코드 그대로), subDomainHref = 하위 영역 → [상세 분석] 화면 주소",
     ),
 }

@@ -33,6 +33,18 @@ def type_name(code: str) -> str:
     return pascal(base or code)
 
 
+PROP_OK = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,60}$")
+
+
+def prop_name(col: str, i: int) -> str:
+    """열 이름 → 속성 이름(영문 · 숫자 · 밑줄). 파일에서 만든 한글 열은 'col_<순번>' — 한글 이름은 속성의 ko 로 남는다(Phase O)."""
+    s = str(col or "")
+    if not PROP_OK.match(s):
+        asc = re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_").lower()
+        s = asc if asc and PROP_OK.match(asc) and len(asc) >= 2 else f"col_{i + 1}"
+    return f"{s}_col" if s in ("name", "key") else s  # 객체 공통 속성(이름 · 키)과 겹치지 않게
+
+
 def type_ko(name: str) -> str:
     out = TABLE_SUFFIX_KO.sub("", (name or "").strip())
     return out or (name or "")
@@ -74,15 +86,17 @@ def backed_by(schema: Any) -> dict[str, tuple[str, str]]:
     return out
 
 
-def object_type_candidates(datasets: list[Any], profiles: dict[str, dict[str, Any]], schema: Any, rows_by_ds: dict[str, list[dict[str, Any]]], resolver: Any, policy: dict[str, Any]) -> list[dict[str, Any]]:
-    """원천 · 매핑이 없는 데이터셋 → 객체 유형 제안 초안(규칙). 사실 수치 열은 속성으로 넣지 않는다."""
+def object_type_candidates(datasets: list[Any], profiles: dict[str, dict[str, Any]], schema: Any, rows_by_ds: dict[str, list[dict[str, Any]]], resolver: Any, policy: dict[str, Any],
+                           mapped: set[str] | None = None) -> list[dict[str, Any]]:
+    """원천 · 매핑이 없는 데이터셋 → 객체 유형 제안 초안(규칙). 사실 수치 열은 속성으로 넣지 않는다.
+    mapped = 업무 구성 '자료'의 온톨로지 연결(nodes)로 이미 객체가 되는 데이터셋 코드(Phase O)."""
     backed = backed_by(schema)
     unis = class_universes(schema, rows_by_ds, resolver)
     labels = {c.get("label") for c in schema.classes or []}
     out: list[dict[str, Any]] = []
     for ds in datasets:
         prof = profiles.get(ds.code)
-        if not prof or ds.code in backed or (ds.mapping or {}).get("nodes"):
+        if not prof or ds.code in backed or (ds.mapping or {}).get("nodes") or ds.code in (mapped or set()):
             continue
         cols = prof.get("columns") or {}
         keys = list(ds.key_columns or [])
@@ -101,8 +115,8 @@ def object_type_candidates(datasets: list[Any], profiles: dict[str, dict[str, An
             if ratio > best_ratio:
                 best, best_ratio = label, ratio
         title = next((k for k, v in cols.items() if v.get("semantic") == "name" and k != key), None)
-        props = {k: k for k, v in cols.items() if k not in (key, title) and v.get("semantic") in ("code", "name", "date", "yearmonth", "flag") and not v.get("pii")}
-        props = dict(list(props.items())[:8])
+        picked = [k for k, v in cols.items() if k not in (key, title) and v.get("semantic") in ("code", "name", "date", "yearmonth", "flag") and not v.get("pii")][:8]
+        props = {k: k for k in picked}  # 후보 열(LLM 이 고른다) — 속성 이름은 제안을 만들 때 prop_name 으로(파일 머리글은 한글)
         target = best if best and best_ratio >= float(policy.get("link_min_containment", 0.95)) else None
         label = target or type_name(ds.code)
         n = 2

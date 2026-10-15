@@ -157,7 +157,12 @@ def n_design_object_types(ctx: RunContext, node) -> NodeResult:
         return NodeResult({"skipped": "활성 스키마 없음"}, "skipped")
     profiles = ctx.state.get("onto_profiles") or {}
     rows_by = _rows(ctx)
-    cands = L.object_type_candidates(_datasets(ctx), profiles, schema, rows_by, Resolver(schema), pol)
+    from nhdip.data.sources import Resolver as Sources
+
+    src = Sources(ctx.session)  # 업무 구성 '자료'의 온톨로지 연결(nodes)로 이미 객체가 되는 데이터셋은 다시 제안하지 않는다(Phase O)
+    dss = _datasets(ctx)
+    mapped = {d.code for d in dss if any(m.get("nodes") for m in src.mappings_for(d.code))}
+    cands = L.object_type_candidates(dss, profiles, schema, rows_by, Resolver(schema), pol, mapped)
     if not cands:
         ctx.state["onto_planned"] = {}
         return NodeResult({"candidates": 0})
@@ -186,10 +191,13 @@ def n_design_object_types(ctx: RunContext, node) -> NodeResult:
         ko, _ = clean_reason(d.get("ko") if d else None, 30)
         desc, _ = clean_reason(d.get("description") if d else None, 160)
         title = d.get("title_col") if d and d.get("title_col") in ({c["title_col"]} | set(c["props"])) else c["title_col"]
-        props = {p: p for p in (d.get("props") if d and isinstance(d.get("props"), list) else list(c["props"])) if p in c["props"] and p != title}
+        cols = [p for p in (d.get("props") if d and isinstance(d.get("props"), list) else list(c["props"])) if p in c["props"] and p != title]
+        # {속성 이름: 열} — 파일에서 만든 열(한글 머리글)은 속성 이름 규칙(영문 · 숫자 · 밑줄)에 맞춘 이름으로, 한글은 ko 로(Phase O)
+        props = {L.prop_name(col, i): col for i, col in enumerate(cols)}
         backing = {"dataset": c["dataset"], "key_col": c["key_col"], **({"title_col": title} if title else {}), "props": props}
         prof_cols = (profiles.get(c["dataset"]) or {}).get("columns") or {}
-        properties = [{"name": "name", "ko": "이름", "base_type": "string", "required": True}] + [{"name": p, "ko": prof_cols.get(p, {}).get("label") or p, "base_type": prof_cols.get(p, {}).get("baseType", "string"), "required": False} for p in props]
+        properties = [{"name": "name", "ko": "이름", "base_type": "string", "required": True}] + [
+            {"name": p, "ko": prof_cols.get(col, {}).get("label") or col, "base_type": prof_cols.get(col, {}).get("baseType", "string"), "required": False} for p, col in props.items()]
         why = f"{c['datasetName']}({c['dataset']}) 행 = {'기존 ' + target if target else '새 객체 유형 ' + label} · 키 {c['key_col']}" + (f" · 기존 키 포함률 {c['containment']:.0%}" if c.get("containment") else "")
         if target:
             _add_op(ctx, {"op": "add_backing", "label": target, "backing": backing}, why, c["confidence"], by)

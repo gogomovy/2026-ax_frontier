@@ -41,10 +41,16 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
         # 플래너가 정한 후속 실행 (B.31) — 연쇄(chain)는 원인에 남아 오케스트레이터가 순서 · 깊이를 관리
         add(p["workflow"], f"agent:{p.get('by', 'planner')}({str(p.get('reason') or '')[:80]})")
         return out
+    # 이 이벤트의 데이터셋을 가리키는 이름들 — 코드 + 업무 구성의 자료 이름(Phase O · BIZ-03: 구성은 코드가 아니라 자료 이름으로 원천을 적는다)
+    refs: set[str] = set()
+    if ev.type.startswith("dataset.") and p.get("dataset"):
+        from nhdip.data.sources import Resolver
+
+        refs = Resolver(session).refs_for(p["dataset"])
     for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled)).scalars():
         if t.kind == "any" and t.target in ("*", ev.type.split(".")[0]):
             add(t.workflow_code, f"trigger:any({t.target})")
-        elif t.kind in ("dataset", "master") and ev.type.startswith("dataset.") and t.target in ("*", p.get("dataset")):
+        elif t.kind in ("dataset", "master") and ev.type.startswith("dataset.") and (t.target == "*" or t.target in refs):
             add(t.workflow_code, f"trigger:{t.kind}({p.get('dataset') if t.target == '*' else t.target})")
         elif t.kind == "config" and ev.type == "config.changed" and t.target in ("*", p.get("kind")):
             # 정의 변경(Phase M · DYN-01) — 예: 데이터셋 정의가 생기거나 바뀌면 온톨로지 구축이 구조를 다시 파악
@@ -65,12 +71,11 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
             if hit:
                 add(n.workflow_code, f"lineage:contract({', '.join(hit[:3])})")
     if ev.type.startswith("dataset.") and p.get("dataset"):
-        ds = p["dataset"]
         for m in session.execute(select(Metric).where(Metric.enabled)).scalars():
-            if ds in _datasets_in(m.args):
+            if refs & _datasets_in(m.args):
                 add(m.workflow_code, f"lineage:metric({m.code})")
         for b in session.execute(select(ViewBinding).where(ViewBinding.enabled)).scalars():
-            if ds in _datasets_in(b.params):
+            if refs & _datasets_in(b.params):
                 add(b.workflow_code, f"lineage:binding({b.builder})")
     # 사유 중복 제거 + 요약(지표 계보는 개수만)
     for wf, reasons in out.items():

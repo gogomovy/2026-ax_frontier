@@ -42,7 +42,7 @@ jobs:
         run: lint-imports
       - name: pytest + 계산 커널 커버리지 게이트(90%)
         run: python -m pytest -q tests --cov --cov-config=.coveragerc --cov-report=term-missing
-      - name: 교란 검사 (빈 DB → 정의 시드 → 엑셀 업로드 → 엑셀 대조 → 교란 업로드 → 하드코딩 0 · Phase I)
+      - name: 교란 검사 (빈 DB → 플랫폼 시드 → 업무 구성 · 엑셀 업로드 → 엑셀 대조 → 교란 업로드 → 하드코딩 0 · Phase I · O)
         env:
           NHDIP_SAMPLE_UPLOAD: "1"  # 시험 DB 전용 — 플랫폼은 시연 자료를 넣지 않는다(M.20)
           DATABASE_URL: postgresql+psycopg://nhdip:nhdip@localhost:5432/nhdip_selftest
@@ -52,9 +52,6 @@ jobs:
           BOOTSTRAP_ADMIN_PASSWORD: Selftest1234!
           FILESTORE_DIR: /tmp/nhdip-selftest-files
           NHDIP_USE_APP_ROLE: "0"
-          SEED_DATASET_DEFS: "1"  # 시험 스택만 시연 정의 · 정의서를 넣는다(M.25 — 플랫폼 기본은 넣지 않음)
-          SEED_COLUMN_CONTRACTS: "1"
-          SEED_CONTRACT_EXPECTED: "1"
         run: |
           python -c "import psycopg; c = psycopg.connect('postgresql://nhdip:nhdip@localhost:5432/nhdip', autocommit=True); c.execute('DROP DATABASE IF EXISTS nhdip_selftest WITH (FORCE)'); c.execute('CREATE DATABASE nhdip_selftest')"
           alembic upgrade head
@@ -94,20 +91,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: .env (비밀값 자동 생성 · 시험 스택은 시연 정의 · 정의서 시드)
+      - name: .env (비밀값 자동 생성 — 시드는 플랫폼만, 업무 구성 · 시연 자료는 다음 단계에서 HTTP 업로드)
         run: |
           bash infra/scripts/ensure-env.sh
-          bash infra/scripts/set-env.sh SEED_DATASET_DEFS 1
-          bash infra/scripts/set-env.sh SEED_COLUMN_CONTRACTS 1
-          bash infra/scripts/set-env.sh SEED_CONTRACT_EXPECTED 1
       - name: Elasticsearch 커널 설정 (vm.max_map_count — 3-way 검색 엔진) · 디스크 확보(쓰지 않는 도구 정리)
         run: |
           sudo sysctl -w vm.max_map_count=262144
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
           df -h /
-      - name: compose up (시드 = 정의만 · 시연 자료는 다음 단계에서 HTTP 업로드)
+      - name: compose up (시드 = 플랫폼만 · 업무 구성 · 시연 자료는 다음 단계에서 HTTP 업로드)
         run: docker compose up -d --build --wait --wait-timeout 600
-      - name: 시연 자료 패키지 업로드 (시험 스택 전용 · 엑셀 · CSV · PDF → 실제 업로드 API · Phase I)
+      - name: 시연 업무 구성 + 자료 패키지 업로드 (시험 스택 전용 · 구성 파일 → 엑셀 · CSV · PDF → 실제 업로드 API · Phase I · O)
         run: docker compose exec -T -e NHDIP_SAMPLE_UPLOAD=1 api python -m nhdip.sample upload --base-url http://localhost:8000
       - name: wait for precompute (이벤트 · 작업 처리 완료까지)
         run: docker compose exec -T api python -m nhdip.cli wait-idle --timeout 300 --settle 10

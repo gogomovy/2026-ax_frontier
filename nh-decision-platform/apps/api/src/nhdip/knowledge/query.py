@@ -113,8 +113,14 @@ def reset_graph_breaker() -> None:
 # ── 개념 확장 ────────────────────────────────────────────────
 def concept_edges(session: Session) -> dict[str, list[tuple[str, str]]]:
     """개념 간선 인접 목록 {키: [(이웃, 관계)]} — 데이터셋 매핑의 개념 간선(PostgreSQL 원천). 무방향."""
+    from nhdip.data.sources import Resolver
+
     adj: dict[str, list[tuple[str, str]]] = {}
-    for mapping in session.execute(select(Dataset.mapping).where(Dataset.active)).scalars():
+    mappings = list(session.execute(select(Dataset.mapping).where(Dataset.active)).scalars())
+    # 업무 구성 '자료'의 온톨로지 연결 — 그 자료가 이어졌을 때(Phase O · BIZ-03, 그래프 투영과 같은 기준)
+    res = Resolver(session)
+    mappings += [sp.mapping for sp in res.specs.values() if sp.mapping and res.resolve(sp.name) is not None]
+    for mapping in mappings:
         for c in (mapping or {}).get("concepts") or []:
             key = c.get("key")
             for e in c.get("edges") or []:

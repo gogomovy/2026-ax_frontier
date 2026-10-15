@@ -123,9 +123,10 @@ def test_branch_portfolio_formulas():
 
 
 def test_prospect_select_filters_and_weights():
-    from nhdip.seed.defs_branch import GRADE_LABELS, RULES
+    from nhdip.sample.build import business_config
 
-    pol = {r[0]: r[4] for r in RULES}
+    pol = {r["code"]: r["body"] for r in business_config()["rules"]}  # 업무 구성 파일의 규칙(Phase O)
+    GRADE_LABELS = pol["CORP_GRADE_SCALE"]["labels"]
     office = {"region": "경기", "sigungu": "수원시"}
     branch_rows = [{"ln_bac": 90, "STD_INDS_CFC": "G46510"}, {"ln_bac": 10, "STD_INDS_CFC": "C29199"}]
 

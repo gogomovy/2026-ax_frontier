@@ -134,26 +134,6 @@ def test_owner_org_and_period_come_from_config(db):
         assert hq_org_name(s) == "종합기획부"
 
 
-def test_builder_rename_upgrade_keeps_admin_label(db):
-    from nhdip.models import Screen, Setting
-    from nhdip.seed.run import builder_rename_upgrade
-
-    with db() as s:
-        sc = s.get(Screen, "ANALYSIS_BUILDER")
-        st = s.get(Setting, "seed.applied_upgrades")
-        st.value = [x for x in st.value if x != "analysis-builder-rename-v1"]
-        sc.label = "분석 만들기"
-        out: dict = {}
-        builder_rename_upgrade(s, out)
-        assert sc.label == "분석 에이전트 만들기" and out == {"builder_rename_upgrade": 1}
-        # 한 번만 — 관리자가 다른 이름으로 바꾼 뒤에는 건드리지 않는다
-        sc.label = "새 분석 요청"
-        builder_rename_upgrade(s, out)
-        assert sc.label == "새 분석 요청"
-        sc.label = "분석 에이전트 만들기"
-        s.commit()
-
-
 # ── Elasticsearch 인증 (ES-01~03) ───────────────────────────────
 @pytest.fixture()
 def es_clean():

@@ -337,6 +337,27 @@ class ColumnContract(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 
+class BusinessConfig(Base):
+    """업무 구성 파일 (Phase O · BIZ-02 · BIZ-05) — 자료 · 지표 · 업무 흐름 · 화면 연결 · 화면 틀 · 규칙 · 조직 · 화면 · 설정 …
+    시드 대신 관리자가 올린다. 같은 이름 = 같은 구성의 새 판(활성은 이름마다 하나). owned = 이 구성이 만든 것(지우면 함께 지움)."""
+
+    __tablename__ = "business_config"
+    __table_args__ = (UniqueConstraint("name", "version"), S)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(150))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), default="active")  # active | superseded | removed
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    owned: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    report: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    uploaded_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class AnalysisAgent(Base):
     """분석 에이전트 (Phase C · DAG · Q100) — 사용자 글을 정제한 분석 명세로 만든 분석. 승인되면 지표 · 워크플로 · 전용 에이전트가 생긴다."""
 

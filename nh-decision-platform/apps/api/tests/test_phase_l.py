@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-OLD_RISK_GUIDES = ["analysis_tabs", "action_plans", "plan_state", "plan_actions", "reports"]
-
 
 def _client() -> TestClient:
     from nhdip.main import app
@@ -58,43 +56,11 @@ def test_dept_user_reads_cascade_and_goals_only(db):
     assert r.status_code == 403
 
 
-def test_risk_cascade_upgrade_adds_resources_once(db):
-    """기존 DB — 수행방안 리소스에 cascade · goals 를 1회 더한다. 이후 관리자가 회수하면 다시 넣지 않는다."""
-    from nhdip.models import Setting
-    from nhdip.seed.run import risk_cascade_upgrade
-
-    with db() as s:
-        res = s.get(Setting, "screen.resources")
-        applied = s.get(Setting, "seed.applied_upgrades")
-        before_res, before_applied = dict(res.value), list(applied.value)
-        try:
-            # 이전 기본값(Phase K 이전) · 보강 미적용 상태로 되돌린다
-            res.value = {**before_res, "RISK_GUIDES": list(OLD_RISK_GUIDES)}
-            applied.value = [x for x in before_applied if x != "risk-guides-cascade-v1"]
-            s.flush()
-            out: dict = {}
-            risk_cascade_upgrade(s, out)
-            assert out["risk_cascade_upgrade"] == ["cascade", "goals"]
-            assert s.get(Setting, "screen.resources").value["RISK_GUIDES"] == OLD_RISK_GUIDES + ["cascade", "goals"]
-            assert "risk-guides-cascade-v1" in s.get(Setting, "seed.applied_upgrades").value
-
-            # 관리자가 회수 → 다시 시드해도 보존
-            res.value = {**res.value, "RISK_GUIDES": list(OLD_RISK_GUIDES)}
-            s.flush()
-            out2: dict = {}
-            risk_cascade_upgrade(s, out2)
-            assert "risk_cascade_upgrade" not in out2
-            assert s.get(Setting, "screen.resources").value["RISK_GUIDES"] == OLD_RISK_GUIDES
-        finally:
-            res.value, applied.value = before_res, before_applied
-            s.commit()
-
-
 def test_fresh_seed_risk_guides_resources():
-    """새 DB 의 기본 화면 정의에도 같은 리소스가 있다(시드 정의 = 보강 결과)."""
-    from nhdip.seed import defs_core as C
+    """시연 업무 구성 파일의 화면 정의에 같은 리소스가 있다(Phase O — 업무 화면은 구성 파일에서 온다)."""
+    from nhdip.sample.build import business_config
 
-    spec = next(x for x in C.SCREENS if x["code"] == "RISK_GUIDES")
+    spec = next(x for x in business_config()["screens"] if x["code"] == "RISK_GUIDES")
     assert {"cascade", "goals"} <= set(spec["resources"])
     assert "proposals" not in spec["resources"] and "goal_actions" not in spec["resources"]
 

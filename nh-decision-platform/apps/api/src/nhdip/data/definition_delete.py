@@ -41,9 +41,10 @@ def _datasets_in(obj: Any) -> set[str]:
     return _datasets_in_args(obj)
 
 
-def metric_closure(metrics: list[Metric], code: str) -> tuple[list[str], list[str]]:
-    """(이 자료를 바로 읽는 지표, 그 지표를 {"metric": X} 로 이어 쓰는 파생 지표)."""
-    direct = {m.code for m in metrics if code in _datasets_in(m.args)}
+def metric_closure(metrics: list[Metric], code: str | set[str]) -> tuple[list[str], list[str]]:
+    """(이 자료를 바로 읽는 지표, 그 지표를 {"metric": X} 로 이어 쓰는 파생 지표). code = 데이터셋 코드 또는 이 자료를 가리키는 이름 집합."""
+    names = {code} if isinstance(code, str) else set(code)
+    direct = {m.code for m in metrics if names & _datasets_in(m.args)}
     chosen = set(direct)
     grew = True
     while grew:
@@ -101,35 +102,43 @@ def links(session: Session, ds: Dataset) -> Links:
     out = Links(code)
     for v in session.execute(select(t.version).where(t.version.dataset_code == code, t.version.status != DELETED).order_by(t.version.version)).scalars():
         out.versions.append({"id": v.id, "version": v.version, "asOf": v.as_of.isoformat() if v.as_of else None, "isCurrent": bool(v.is_current), "rows": int(v.row_count or 0), "status": v.status})
+    from nhdip.data.sources import Resolver
+
+    # 업무 구성(Phase O)은 자료 이름으로 원천을 가리킨다 — 그 지표 · 바인딩의 값은 지우되 끄지 않는다(구성은 남고 '자료 대기'가 된다).
+    # 데이터셋 코드를 직접 적은 것(분석 에이전트 등)만 예전처럼 끈다.
+    names = Resolver(session).refs_for(code)
     metrics = list(session.execute(select(Metric)).scalars())
     direct, derived = metric_closure(metrics, code)
+    a_direct, a_derived = metric_closure(metrics, names)
     by_code = {m.code: m for m in metrics}
-    out.metric_codes = direct + derived
+    out.metric_codes = sorted(set(a_direct + a_derived))
     for c in direct + derived:
         m = by_code[c]
         if m.enabled:
             out.metrics.append({"code": c, "label": m.label, "workflow": m.workflow_code, "derived": c in derived})
     for b in session.execute(select(ViewBinding).order_by(ViewBinding.id)).scalars():
-        if code in _datasets_in(b.params):
+        refs = _datasets_in(b.params)
+        if names & refs:
             out.binding_ids.append(b.id)
-            if b.enabled:
+            if b.enabled and code in refs:
                 out.bindings.append({"id": b.id, "workflow": b.workflow_code, "builder": b.builder, "artifact": b.artifact_key, "path": b.path})
     for tr in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.kind.in_(["dataset", "master"]), WorkflowTrigger.target == code).order_by(WorkflowTrigger.id)).scalars():
         out.triggers.append({"id": tr.id, "workflow": tr.workflow_code, "kind": tr.kind, "debounce": tr.debounce_sec, "enabled": tr.enabled})
     sc = active_schema(session)
     if sc is not None:
         out.ontology = sorted(
-            {c.get("ko") or c["label"] for c in sc.classes or [] if any(bk.get("dataset") == code for bk in c.get("backing") or [])}
-            | {r.get("ko") or r.get("type") or "" for r in sc.relations or [] if any(bk.get("dataset") == code for bk in r.get("backing") or [])}
+            {c.get("ko") or c["label"] for c in sc.classes or [] if any(bk.get("dataset") in names for bk in c.get("backing") or [])}
+            | {r.get("ko") or r.get("type") or "" for r in sc.relations or [] if any(bk.get("dataset") in names for bk in r.get("backing") or [])}
             - {""}
         )
     from nhdip.models import OntologyProposal
 
     needle = f'"{code}"'
     out.proposals = [p.id for p in session.execute(select(OntologyProposal).where(OntologyProposal.status == "pending")).scalars() if needle in json.dumps(p.ops or [], ensure_ascii=False)]
-    out.contracts = sum(1 for c in session.execute(select(ColumnContract).where(ColumnContract.active)).scalars() if code in {(c.binding or {}).get("base_ym"), (c.binding or {}).get("dataset")})
+    out.contracts = sum(1 for c in session.execute(select(ColumnContract).where(ColumnContract.active)).scalars() if names & {(c.binding or {}).get("base_ym"), (c.binding or {}).get("dataset")})
     out.pending = int(session.execute(select(func.count()).select_from(UploadRequest).where(UploadRequest.kind == "dataset", UploadRequest.target == code, UploadRequest.status.in_(["pending", "draft"]))).scalar() or 0)
     wf_codes = {m["workflow"] for m in out.metrics if m["workflow"]} | {b["workflow"] for b in out.bindings if b["workflow"]} | {t["workflow"] for t in out.triggers}
+    wf_codes |= {by_code[c].workflow_code for c in out.metric_codes if by_code[c].workflow_code}  # 자료 이름으로 읽는 업무 구성 흐름도 다시 돌아 '자료 대기'를 보인다
     # 영향 워크플로 = 켜져 있는 것만(멈춘 · 은퇴한 분석 에이전트의 워크플로는 다시 돌지 않는다 — 그 지표 · 트리거는 그래도 함께 정리)
     names = dict(session.execute(select(Workflow.code, Workflow.name).where(Workflow.code.in_(wf_codes or {""}), Workflow.enabled)).all())
     out.workflows = [{"code": w, "name": names[w]} for w in sorted(wf_codes) if w in names]

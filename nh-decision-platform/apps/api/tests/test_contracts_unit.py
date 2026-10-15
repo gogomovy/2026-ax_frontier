@@ -58,13 +58,15 @@ def test_report_section_text_includes_kv_blocks():
 
 def test_dept_default_bindings_are_valid_kinds():
     from nhdip.api.admin_data import BINDING_KINDS
-    from nhdip.seed.defs_dept_contracts import BINDING_UPGRADES, BINDINGS, ROW_BUILDERS, WORKFLOW_TABLES
     from nhdip.contracts.rows import ROW_BUILDERS as IMPLS
+    from nhdip.sample.build import business_config
 
-    assert all(any(k in b for k in BINDING_KINDS) for b in BINDINGS.values())
-    assert all(v["builder"] in IMPLS for v in ROW_BUILDERS.values())
-    assert set(ROW_BUILDERS) <= {t for ts in WORKFLOW_TABLES.values() for t in ts}
-    assert all(k in BINDINGS for k in BINDING_UPGRADES)
+    b = business_config()  # 업무 구성 파일(Phase O) — 정의서 연결 · 표 생성기가 플랫폼 구현과 맞는다
+    bindings = [c["binding"] for c in b["contracts"] if c.get("binding")]
+    assert bindings and all(any(k in x for k in BINDING_KINDS) for x in bindings)
+    builders = next(s["value"] for s in b["settings"] if s["key"] == "contracts.row_builders")
+    assert builders and all(v["builder"] in IMPLS for v in builders.values())
+    assert set(builders) <= {c["table_code"] for c in b["contracts"]}
 
 
 def test_rows_version_multi_row_proposal():

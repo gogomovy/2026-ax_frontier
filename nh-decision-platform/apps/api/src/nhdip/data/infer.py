@@ -7,7 +7,7 @@
 - `validate_definition` 저장 전 정의 점검 (코드 형식 · 열 이름 중복 · 타입 · 키/기준일 열이 정의 안에 있는지)
 
 추론은 제안일 뿐 저장하지 않는다. 확정한 정의로 올린 파일은 기존 업로드와 같은 품질 · 개인정보 검사를 거친다.
-원본 보고서 양식(2633 · 2020 · 7790)은 전용 어댑터가 있어 새 데이터셋으로 만들지 않고 기존 데이터셋에 올리게 안내한다.
+업무 보고서 양식(다단 머리글 · 들여쓰기 계층 · 월 열)도 정해 둔 양식 없이 파일 모양에서 구조를 만든다(data/layout.py · M.25).
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ _DATE_FMTS = ("%Y-%m-%d", "%Y.%m.%d", "%Y/%m/%d")
 _DATE_HEADER = re.compile(r"(일자|날짜|기준일|일시|date|dt\b|as_?of)", re.I)
 _YM_HEADER = re.compile(r"(기준월|기준년월|연월|년월|ym|yyyymm|period|기간)", re.I)
 _ID_HEADER = re.compile(r"(코드|번호|code|id\b|no\b|num\b|구분|종류|명\b)", re.I)
+_CODE_HEADER = re.compile(r"(코드|번호|code\b|_cd\b|id\b|no\b)", re.I)  # 값이 정수여도 글자로 둘 열(코드 · 번호)
 
 
 class InferError(IngestError):
@@ -77,6 +78,8 @@ def _tag(v: Any, header: str) -> str:
             return "ym" if _YM.match(str(int(v))) else "int"
         return "num"
     s = str(v).strip()
+    if s.upper() in ("Y", "N"):
+        return "yn"
     if _YM.match(s):
         return "ym"
     if _is_date_text(s, header):
@@ -99,8 +102,11 @@ def _column_type(header: str, values: list[Any]) -> tuple[str, bool, str | None]
         return "str", True, None
     if tags == {"date"}:
         return "date", False, None
-    if tags == {"bool"}:
+    if tags <= {"bool", "yn"}:  # 참/거짓 · Y/N 만 있는 열(예: 저신용자 Pool = Y/N) — 참거짓으로 (Phase O)
         return "bool", False, None
+    if tags <= {"int", "ym"} and _CODE_HEADER.search(header or ""):
+        # 머리글이 코드 · 번호를 말하는 정수 열(상품코드 2001107820007 등) — 글자로 둔다: 다른 자료의 글자 코드와 맞춰지고 앞자리 0 이 사라지지 않게 (Phase O)
+        return "str", False, None
     if tags <= {"int", "num", "ym"}:  # 연월처럼 보이는 숫자가 다른 숫자와 섞이면 그냥 숫자
         return ("int" if tags <= {"int", "ym"} else "num"), False, None
     if tags & {"int", "num"} and "str" in tags:

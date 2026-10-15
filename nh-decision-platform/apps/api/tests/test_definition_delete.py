@@ -103,7 +103,7 @@ def test_cascade_delete_removes_versions_and_unwires(db):
         # 미리보기 — 지울 버전 · 끌 지표(파생 포함, 무관한 지표 제외) · 바인딩 · 트리거 · 다시 도는 워크플로
         p = c.get(f"/admin/datasets/{DS}/delete-preview").json()
         assert [v["version"] for v in p["versions"]] == sorted([v1["version"], v2["version"], v3["version"]])
-        assert p["rows"] == 5 and p["blocked"] is None and p["seedDefined"] is False
+        assert p["rows"] == 5 and p["blocked"] is None and p["sources"] == []
         assert {m["code"]: m["derived"] for m in p["metrics"]} == {"t_defdel_sum": False, "t_defdel_half": True}
         assert len(p["bindings"]) == 1 and [(t["workflow"], t["kind"]) for t in p["triggers"]] == [(WF, "dataset")]
         assert [w["code"] for w in p["workflows"]] == [WF]
@@ -340,30 +340,3 @@ def test_empty_platform_runs_blank_outputs_instead_of_computing(db, monkeypatch)
                 s.delete(a)
             s.commit()
         _cleanup(db)
-
-
-def test_seed_does_not_rewire_deleted_dataset(db):
-    """지운 데이터셋 정의 — 시드(기동마다)가 그 자료를 기다리는 트리거를 다시 잇지 않고, 그 자료를 읽는 Q10 지표를 다시 켜지 않는다."""
-    from nhdip.models import Metric, Setting, Workflow, WorkflowTrigger
-    from nhdip.seed import run as seed_run
-
-    with db() as s:
-        try:
-            s.add(Workflow(code=WF, name="시드 시험", enabled=True, outputs=[]))
-            s.flush()
-            st = s.get(Setting, "seed.suppressed_datasets")
-            if st is None:
-                st = Setting(key="seed.suppressed_datasets", value=[])
-                s.add(st)
-            st.value = [*(st.value or []), DS]
-            s.flush()
-            seed_run._upgrade_workflow(s, {"code": WF, "nodes": [], "triggers": [("dataset", DS), ("dataset", "KEEP_DS"), ("event", "x.y")]})
-            s.flush()
-            got = {(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == WF)).scalars()}
-            assert ("dataset", DS) not in got and {("dataset", "KEEP_DS"), ("event", "x.y")} <= got
-            m = Metric(code="t_defdel_q10", label="q10", formula="SUM", args={"q": {"dataset": DS}}, workflow_code=WF, enabled=False, description="요구사항 Q10 시험")
-            s.add(m)
-            s.flush()
-            assert seed_run._reads_gone(s, m.args) is True and seed_run._reads_gone(s, {"q": {"dataset": "PROVISION_BY_PRODUCT"}}) is False
-        finally:
-            s.rollback()

@@ -32,7 +32,8 @@ interface VersionPreview {
 export interface DefinitionPreview {
   code: string;
   name: string;
-  seedDefined: boolean;
+  /** 이 정의로 이어진 업무 구성의 자료 이름 (Phase O · BIZ-03) */
+  sources?: string[];
   versions: { id: number; version: number; asOf: string | null; isCurrent: boolean; rows: number; status: string }[];
   rows: number;
   metrics: { code: string; label: string; workflow: string | null; derived: boolean }[];
@@ -68,9 +69,9 @@ export function DefinitionPreviewBody({ p }: { p: DefinitionPreview }) {
   const derived = p.metrics.filter((m) => m.derived).length;
   return (
     <div className="flex flex-col gap-xs text-[12.5px]" data-delete-preview="definition">
-      {p.seedDefined ? (
+      {p.sources?.length ? (
         <p className="font-bold text-attention">
-          업무 화면 연결 정의입니다. 지우면 이 형식의 파일을 다시 올려도 업무 화면 수치로 이어지지 않습니다 — 같은 형식의 자료를 쓸 계획이면 지우지 말고 &apos;중지&apos;하거나 그대로 두세요(정의에는 업무 자료가 없습니다).
+          업무 구성 자료({short(p.sources)})로 이어진 정의입니다. 지우면 그 자료는 &apos;자료 대기&apos;가 되고, 같은 열 구성의 파일을 다시 올리면 자동으로 다시 이어집니다.
         </p>
       ) : null}
       <ul className="list-disc pl-5">
@@ -94,7 +95,7 @@ export function DefinitionPreviewBody({ p }: { p: DefinitionPreview }) {
       {p.versions.some((v) => v.isCurrent) && p.workflows.length ? (
         <p className="text-steel">다시 계산되는 워크플로: {short(p.workflows.map((w) => w.name))}</p>
       ) : null}
-      <p className="text-steel">지표 · 바인딩은 지우지 않고 끄기만 합니다([지표]에서 다시 켤 수 있음). 버전 · 행은 되돌릴 수 없습니다. 지운 시드 정의는 다시 기동해도 돌아오지 않습니다(설정 seed.suppressed_datasets).</p>
+      <p className="text-steel">지표 · 바인딩은 지우지 않고 끄기만 합니다([지표]에서 다시 켤 수 있음). 버전 · 행은 되돌릴 수 없습니다. 업무 구성(지표 산식 · 화면 연결)은 남습니다.</p>
     </div>
   );
 }

@@ -63,13 +63,15 @@ function file(name) {
   return new Blob([fs.readFileSync(p)]);
 }
 
+// [업무 구성 '자료' 이름, 파일, 메모] — 데이터셋 코드는 올린 파일에서 정해지므로 자료 이름으로 찾는다(Phase O · GET /admin/business-config/sources)
 const DATASETS = [
-  ["PROVISION_BY_PRODUCT", "(202609)7790_상품별_충당금.xlsx", "2026.09 상품별 충당금 마감"],
-  ["MODEL_MONITORING_GRADE", "신용평가모형_등급별_모니터링_집계(2026.09).xlsx", "2026.09 등급별 모니터링 집계"],
-  ["OBLG_GRD_DEF", "Oblg_grd_def_202609.xlsx", "2026.09 기업 익스포저(지점 신규 유치 2건 포함)"],
-  ["RETAIL_EXPOSURE", "TB_JC_PM_C_LA_202609.xlsx", "2026.09 소매 익스포저(새희망홀씨 신규 8건)"],
-  ["BRANCH_KPI_SCORE", "영업점 업적평가 득점 현황(202609).xlsx", "2026.09.30 업적평가 득점"],
+  ["상품별 충당금(7790)", "(202609)7790_상품별_충당금.xlsx", "2026.09 상품별 충당금 마감"],
+  ["신용평가모형 등급별 집계", "신용평가모형_등급별_모니터링_집계(2026.09).xlsx", "2026.09 등급별 모니터링 집계"],
+  ["기업여신 차주 등급", "Oblg_grd_def_202609.xlsx", "2026.09 기업 익스포저(지점 신규 유치 2건 포함)"],
+  ["소매여신 차주 익스포저", "TB_JC_PM_C_LA_202609.xlsx", "2026.09 소매 익스포저(새희망홀씨 신규 8건)"],
+  ["영업점 업적평가 득점 현황", "영업점 업적평가 득점 현황(202609).xlsx", "2026.09.30 업적평가 득점"],
 ];
+let CODE = {}; // 자료 이름 → 데이터셋 코드(로그인 뒤 채움)
 const DOCS = [
   { file: "(시뮬레이션) 2026년 하반기 서민금융 공급 확대 및 취약차주 보호 방안.pdf", origin: "ext", doc_class: "gov_policy", title: "(시뮬레이션) 2026년 하반기 서민금융 공급 확대 및 취약차주 보호 방안", issuer: "정책 당국(시뮬레이션)", published_at: "2026-09-25", doc_code: "doc-sim-seomin-2026h2" },
   { file: "(시뮬레이션) 신용리스크관리부 공문 - 소기업 모형 6B 등급 부도율 점검 요청(2026.09).pdf", origin: "bank", doc_class: "model_method", title: "(시뮬레이션) 소기업 모형 6B 등급 부도율 점검 및 등급계량화 재검토 요청", issuer: "신용리스크관리부", published_at: "2026-10-05", doc_code: "doc-sim-micro-6b-2609" },
@@ -115,7 +117,11 @@ try {
 
   // 4) 업로드 — 화면의 [업로드]와 같은 API
   const uploads = [];
-  for (const [code, name, note] of DATASETS) {
+  const src = (await get("/admin/business-config/sources")) ?? [];
+  CODE = Object.fromEntries(src.filter((s) => s.status === "linked").map((s) => [s.name, s.dataset]));
+  ok("업무 구성 자료 연결", DATASETS.every(([n]) => CODE[n]), DATASETS.map(([n]) => `${n}=${CODE[n] ?? "자료 대기"}`).join(" · "));
+  for (const [srcName, name, note] of DATASETS) {
+    const code = CODE[srcName] ?? srcName;
     const fd = new FormData();
     fd.append("file", file(name), name);
     fd.append("origin", "bank");
@@ -155,12 +161,14 @@ try {
     .slice()
     .reverse()
     .map((e) => ({ id: e.id, type: e.type, payload: { dataset: e.payload.dataset, doc_code: e.payload.doc_code, doc_class: e.payload.doc_class, workflow: e.payload.workflow, by: e.payload.by, reason: e.payload.reason }, matched: e.matched.map((m) => ({ workflow: m.workflow, reasons: m.reasons, note: m.note })), runs: e.runs.map((r) => ({ workflow: r.workflow, status: r.status, run: r.run, published: r.published })) }));
-  const ds = (code) => flow.find((e) => e.type === "dataset.committed" && e.payload.dataset === code);
+  const ds = (srcName) => flow.find((e) => e.type === "dataset.committed" && e.payload.dataset === (CODE[srcName] ?? srcName));
   const wfOf = (e) => (e?.matched ?? []).map((m) => m.workflow).filter(Boolean).sort();
-  ok("7790 → 포용금융 워크플로우", wfOf(ds("PROVISION_BY_PRODUCT")).includes("wf_inclusive_risk"), wfOf(ds("PROVISION_BY_PRODUCT")).join(", "));
-  ok("등급별 모니터링 → 모형 모니터링", wfOf(ds("MODEL_MONITORING_GRADE")).includes("wf_model_monitoring"), wfOf(ds("MODEL_MONITORING_GRADE")).join(", "));
-  ok("기업 · 소매 · 득점 → 영업점", ["OBLG_GRD_DEF", "RETAIL_EXPOSURE", "BRANCH_KPI_SCORE"].every((c) => wfOf(ds(c)).includes("wf_branch_kpi")), ["OBLG_GRD_DEF", "RETAIL_EXPOSURE", "BRANCH_KPI_SCORE"].map((c) => `${c}: ${wfOf(ds(c)).join("+")}`).join(" · "));
-  ok("관련 없는 워크플로우는 실행 안 함(7790 → 종기부 X)", !wfOf(ds("PROVISION_BY_PRODUCT")).includes("wf_hq_goal_review"), wfOf(ds("PROVISION_BY_PRODUCT")).join(", "));
+  const P7790 = "상품별 충당금(7790)";
+  const BR = ["기업여신 차주 등급", "소매여신 차주 익스포저", "영업점 업적평가 득점 현황"];
+  ok("7790 → 포용금융 워크플로우", wfOf(ds(P7790)).includes("wf_inclusive_risk"), wfOf(ds(P7790)).join(", "));
+  ok("등급별 모니터링 → 모형 모니터링", wfOf(ds("신용평가모형 등급별 집계")).includes("wf_model_monitoring"), wfOf(ds("신용평가모형 등급별 집계")).join(", "));
+  ok("기업 · 소매 · 득점 → 영업점", BR.every((c) => wfOf(ds(c)).includes("wf_branch_kpi")), BR.map((c) => `${c}: ${wfOf(ds(c)).join("+")}`).join(" · "));
+  ok("관련 없는 워크플로우는 실행 안 함(7790 → 종기부 X)", !wfOf(ds(P7790)).includes("wf_hq_goal_review"), wfOf(ds(P7790)).join(", "));
 
   const runs = (await get("/admin/monitor/runs?limit=60")).filter((r) => new Date(r.startedAt).getTime() >= t0 - 5000);
   const byWf = {};

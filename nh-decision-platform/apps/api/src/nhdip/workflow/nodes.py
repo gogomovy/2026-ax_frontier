@@ -869,23 +869,26 @@ def oc_scale(ctx: RunContext, code: str) -> float:
 # ═════════════════════════ 구분 표시명 · 분석 탭 (F.18 · 5.6) ═════════════════════════
 @node_impl("apply_segment_labels", "부도율 추이 구분 표시명 — 설정 risk.segment_labels → 데이터 구분명(segment_label) 순 (개인 풀 코드 확정 시 설정만 교체)")
 def n_segment_labels(ctx: RunContext, node: WorkflowNode) -> NodeResult:
+    # 산출물 · 설정 · 자료는 노드 설정(config)으로만 받는다 — 코드에 기본 자료 코드를 두지 않는다 (Phase O · BIZ-08)
     cfg = node.config or {}
-    art_key = cfg.get("artifact", "default_rate_trend")
+    art_key = cfg.get("artifact")
     arts = ctx.load_artifacts()
-    payload = arts.get(art_key)
+    payload = arts.get(art_key) if art_key else None
     if not isinstance(payload, dict):
-        return NodeResult({"skipped": "산출물 없음"}, "degraded")
-    overrides = _setting(ctx.session, cfg.get("setting", "risk.segment_labels"), {}) or {}
+        return NodeResult({"skipped": "산출물 없음(config.artifact)"}, "degraded")
+    overrides = (_setting(ctx.session, cfg["setting"], {}) if cfg.get("setting") else {}) or {}
     data_labels: dict[str, str] = {}
-    try:
-        _, rows, _ = ctx.eval.dataset(cfg.get("dataset", "DEFAULT_RATE_MONTHLY"))
-        for r in sorted(rows, key=lambda r: str(r.get("ym") or "")):
-            if r.get("segment_key") and r.get("segment_label"):
-                data_labels[r["segment_key"]] = r["segment_label"]
-    except (ResolveError, KeyError, ValueError):
-        pass
+    key_col, label_col, order_col = cfg.get("key_col", "segment_key"), cfg.get("label_col", "segment_label"), cfg.get("order_col", "ym")
+    if cfg.get("dataset"):
+        try:
+            _, rows, _ = ctx.eval.dataset(cfg["dataset"])
+            for r in sorted(rows, key=lambda r: str(r.get(order_col) or "")):
+                if r.get(key_col) and r.get(label_col):
+                    data_labels[r[key_col]] = r[label_col]
+        except (ResolveError, KeyError, ValueError):
+            pass
     changed = []
-    for list_key in cfg.get("lists", ["corpSegments", "retailPools"]):
+    for list_key in cfg.get("lists") or []:
         for series in payload.get(list_key) or []:
             key, old = series.get("key"), series.get("label")
             new = overrides.get(key) or data_labels.get(key) or old
@@ -896,7 +899,7 @@ def n_segment_labels(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                 if isinstance(fig.get("label"), str) and old and old in fig["label"] and fig is not series:
                     fig["label"] = fig["label"].replace(old, new)
             changed.append({"key": key, "from": old, "to": new})
-    note = _setting(ctx.session, cfg.get("note_setting", "risk.retail_pool_note"), "")
+    note = _setting(ctx.session, cfg["note_setting"], "") if cfg.get("note_setting") else ""
     if note and payload.get("retailNote") != note:
         payload["retailNote"] = note
         changed.append({"note": True})

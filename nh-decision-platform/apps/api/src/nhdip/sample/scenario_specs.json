@@ -1,0 +1,216 @@
+{
+ "BRANCH_BIZ_BALANCE": {
+  "key_columns": [
+   "office_cd",
+   "ym",
+   "segment_cd"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "amount": "num"
+  }
+ },
+ "BRANCH_KPI_SCHEME": {
+  "key_columns": [
+   "period",
+   "item_cd"
+  ],
+  "as_of_column": null,
+  "numeric": {
+   "level": "int",
+   "max_points": "num"
+  }
+ },
+ "BRANCH_KPI_SCORE": {
+  "key_columns": [
+   "office_cd",
+   "period",
+   "item_cd"
+  ],
+  "as_of_column": "as_of",
+  "numeric": {
+   "level": "int",
+   "score": "num",
+   "actual_value": "num",
+   "target_value": "num"
+  }
+ },
+ "BRANCH_OFFICE_MASTER": {
+  "key_columns": [
+   "office_cd"
+  ],
+  "as_of_column": null,
+  "numeric": {}
+ },
+ "CAPITAL_CONSTRAINT": {
+  "key_columns": [
+   "ym",
+   "item_code"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "value": "num"
+  }
+ },
+ "CORP_PROSPECT": {
+  "key_columns": [
+   "biz_no"
+  ],
+  "as_of_column": null,
+  "numeric": {
+   "tot_asset": "num",
+   "tot_liab": "num",
+   "tot_equity": "num",
+   "sales": "num",
+   "op_income": "num",
+   "net_income": "num"
+  }
+ },
+ "DEFAULT_RATE_MONTHLY": {
+  "key_columns": [
+   "ym",
+   "segment_key"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "default_count": "int",
+   "obs_count": "int"
+  }
+ },
+ "HQ_PLAN_KPI": {
+  "key_columns": [
+   "ym",
+   "item_code"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "value": "num"
+  }
+ },
+ "INCLUSIVE_PRODUCTS": {
+  "key_columns": [
+   "product_code"
+  ],
+  "as_of_column": null,
+  "numeric": {}
+ },
+ "LOAN_BALANCE_MONTHLY": {
+  "key_columns": [
+   "ym",
+   "account_code"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "balance": "num"
+  }
+ },
+ "MODEL_MONITORING_GRADE": {
+  "key_columns": [
+   "as_of",
+   "model_code",
+   "grade"
+  ],
+  "as_of_column": "as_of",
+  "numeric": {
+   "grade_seq": "int",
+   "obs_count": "int",
+   "default_count": "int",
+   "obs_share": "num",
+   "ks": "num",
+   "sdr_rank": "int",
+   "exposure_amt": "num"
+  }
+ },
+ "OBLG_GRD_DEF": {
+  "key_columns": [
+   "std_ym",
+   "brwr_no"
+  ],
+  "as_of_column": "std_ym",
+  "numeric": {
+   "Ls_nics_GRDC": "int",
+   "ln_bac": "num",
+   "onlycard": "int",
+   "default": "int"
+  }
+ },
+ "PD_MASTER_SCALE": {
+  "key_columns": [
+   "model_code",
+   "grade"
+  ],
+  "as_of_column": null,
+  "numeric": {
+   "pd_min": "num",
+   "pd_mid": "num",
+   "pd_max": "num"
+  }
+ },
+ "PEER_BANK_STATS": {
+  "key_columns": [
+   "ym",
+   "stat_code"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "value": "num"
+  }
+ },
+ "PL_PRODUCT_SEGMENT": {
+  "key_columns": [
+   "ym",
+   "item_code"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "amount": "num"
+  }
+ },
+ "PROVISION_BY_PRODUCT": {
+  "key_columns": [
+   "ym",
+   "product_code"
+  ],
+  "as_of_column": "ym",
+  "numeric": {
+   "provision": "num"
+  }
+ },
+ "RETAIL_EXPOSURE": {
+  "key_columns": [
+   "std_ym",
+   "brwr_id",
+   "pool_id"
+  ],
+  "as_of_column": "std_ym",
+  "numeric": {
+   "exp_amt": "num",
+   "cb_grade": "int",
+   "dlq_yn": "int"
+  }
+ },
+ "RETAIL_POOL_MASTER": {
+  "key_columns": [
+   "pool_id"
+  ],
+  "as_of_column": null,
+  "numeric": {
+   "pd_pct": "num",
+   "lgd_pct": "num",
+   "prov_rate_pct": "num"
+  }
+ },
+ "RETAIL_POOL_SUMMARY": {
+  "key_columns": [
+   "std_ym",
+   "pool_id"
+  ],
+  "as_of_column": "std_ym",
+  "numeric": {
+   "exposure_cnt": "int",
+   "exposure_amt": "num",
+   "avg_cb_grade": "num",
+   "new_amt_ytd": "num"
+  }
+ }
+}

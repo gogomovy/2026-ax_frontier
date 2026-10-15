@@ -1,0 +1,793 @@
+[
+ {
+  "table_code": "BRANCH_S01",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_S02",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_S02",
+  "column_name": "TARGET_BRC",
+  "expected_text": "001068",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_S03",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_S03",
+  "column_name": "OFFICE_CD",
+  "expected_text": "001068",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T01",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T01",
+  "column_name": "BRC",
+  "expected_text": "001068",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T01",
+  "column_name": "ROW_KIND_CD",
+  "expected_text": "KPI / BIZ",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T01",
+  "column_name": "BRC_NM",
+  "expected_text": "수원영통지점",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T01",
+  "column_name": "EVAL_HALF",
+  "expected_text": "H2",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T02",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T02",
+  "column_name": "BRC",
+  "expected_text": "001068",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T02",
+  "column_name": "GROUP_KIND_CD",
+  "expected_text": "규모/등급/규모×등급/전체",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T02",
+  "column_name": "MODEL_SEGMENT_CD",
+  "expected_text": "15",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T02",
+  "column_name": "GRADE_CD",
+  "expected_text": "6B",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T03",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T03",
+  "column_name": "BRC",
+  "expected_text": "001068",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T03",
+  "column_name": "ANNUAL_BORROWER_LIMIT_AMT",
+  "expected_text": "35000000",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "BRANCH_T03",
+  "column_name": "INTERNAL_HQ_DOC_EXPOSE_YN",
+  "expected_text": "N",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T01",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T01",
+  "column_name": "ACTUAL_DEFAULT_RT",
+  "expected_text": "7.929% (소기업 6B)",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T01",
+  "column_name": "PRED_PD_RT",
+  "expected_text": "7.733% (소기업 6B)",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T01",
+  "column_name": "PRED_PD_MAX_RT",
+  "expected_text": "8.933% (소기업 6B)",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T01",
+  "column_name": "EXCEED_GRADE_CNT",
+  "expected_text": "1",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T02",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T02",
+  "column_name": "GRADE_CD",
+  "expected_text": "6B",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T02",
+  "column_name": "PD_GAP_PP",
+  "expected_text": "0.196%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T03",
+  "column_name": "BASE_YM",
+  "expected_text": "202608",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T03",
+  "column_name": "PRODUCT_CD",
+  "expected_text": "2001108220001",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T03",
+  "column_name": "COMPARISON_BASE_YM",
+  "expected_text": "202601",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "RISK_T03",
+  "column_name": "YEAR_END_BASE_YM",
+  "expected_text": "202512",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "BASE_YM",
+  "expected_text": "2026년 화면 기준",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "BIZ_DIV_CD",
+  "expected_text": "여신",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "BIZ_DIV_NM",
+  "expected_text": "여신",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "TOTAL_ASSET_GROWTH_TARGET_RT",
+  "expected_text": "7.4%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "TOTAL_ASSET_GROWTH_LIMIT_RT",
+  "expected_text": "8.2%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "TOTAL_ASSET_GROWTH_MARGIN_RT",
+  "expected_text": "+0.8%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_CREDIT_RWA_USED_AMT",
+  "expected_text": "6.59조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_CREDIT_RWA_LIMIT_AMT",
+  "expected_text": "8.60조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_CREDIT_RWA_USAGE_RT",
+  "expected_text": "76.6%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_NIM_CURRENT_AMT",
+  "expected_text": "2.19조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_NIM_ANNUAL_TARGET_AMT",
+  "expected_text": "3.30조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_NIM_PROGRESS_RT",
+  "expected_text": "66.3%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_NIM_INCOME_AMT",
+  "expected_text": "21,865억원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "PY_LOAN_NIM_INCOME_AMT",
+  "expected_text": "21,129억원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_NIM_YOY_RT",
+  "expected_text": "+3.49%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_INCOME_SHARE_RT",
+  "expected_text": "45.90%",
+  "expected": "45.44%",
+  "expected_note": "Q16 추천안: 정의서 화면값은 1년 밀린 값(45.90%=2025.08, 46.53%=2024.08) → 계산값 기준으로 대조"
+ },
+ {
+  "table_code": "T01",
+  "column_name": "PY_LOAN_INCOME_SHARE_RT",
+  "expected_text": "46.53%",
+  "expected": "45.90%",
+  "expected_note": "Q16 추천안: 정의서 화면값은 1년 밀린 값(45.90%=2025.08, 46.53%=2024.08) → 계산값 기준으로 대조"
+ },
+ {
+  "table_code": "T01",
+  "column_name": "LOAN_INCOME_SHARE_YOY_DIFF",
+  "expected_text": "목업 표기 -0.46%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "CORP_LOAN_BAL_AMT",
+  "expected_text": "115.34조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "CORP_LOAN_YOY_RT",
+  "expected_text": "화면 병기값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_BAL_AMT",
+  "expected_text": "99.24조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_YOY_RT",
+  "expected_text": "화면 병기값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "Q3_LOAN_INCOME_AMT",
+  "expected_text": "1.21조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "Q3_LOAN_INCOME_TARGET_AMT",
+  "expected_text": "1.75조원 이상",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "Q3_LOAN_INCOME_GAP_AMT",
+  "expected_text": "-0.54조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "CORP_LOAN_GROWTH_RT",
+  "expected_text": "+4.04%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "CORP_LOAN_GROWTH_TARGET_RT",
+  "expected_text": "+7.0% 이상",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "CORP_LOAN_GROWTH_GAP_RT",
+  "expected_text": "-2.96%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_GROWTH_RT",
+  "expected_text": "+6.50%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_GROWTH_LIMIT_RT",
+  "expected_text": "+4.0% 이하",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_GROWTH_EXCESS_RT",
+  "expected_text": "+2.50%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_BAL_LIMIT_AMT",
+  "expected_text": "100.00조원 이하",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "HH_LOAN_BAL_REMAIN_AMT",
+  "expected_text": "0.76조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "GRADE_5C_PLUS_BORROWER_RT",
+  "expected_text": "61.4%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "GRADE_5C_PLUS_TARGET_RT",
+  "expected_text": "62%대 유지",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "GRADE_5C_PLUS_GAP_RT",
+  "expected_text": "-0.6%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T01",
+  "column_name": "AGENT_SUMMARY_TEXT",
+  "expected_text": "화면 Agent 요약 문구",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_NIM_INCOME_AMT",
+  "expected_text": "21,865억원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "PY_LOAN_NIM_INCOME_AMT",
+  "expected_text": "21,129억원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_NIM_YOY_RT",
+  "expected_text": "+3.49%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_INCOME_SHARE_RT",
+  "expected_text": "45.90%",
+  "expected": "45.44%",
+  "expected_note": "Q16 추천안: 정의서 화면값은 1년 밀린 값(45.90%=2025.08, 46.53%=2024.08) → 계산값 기준으로 대조"
+ },
+ {
+  "table_code": "T02",
+  "column_name": "PY_LOAN_INCOME_SHARE_RT",
+  "expected_text": "46.53%",
+  "expected": "45.90%",
+  "expected_note": "Q16 추천안: 정의서 화면값은 1년 밀린 값(45.90%=2025.08, 46.53%=2024.08) → 계산값 기준으로 대조"
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_INCOME_SHARE_DIFF_RT",
+  "expected_text": "목업 -0.46%p 병기",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "CORP_INTEREST_INCOME_AMT",
+  "expected_text": "목업 표시값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "HH_INTEREST_INCOME_AMT",
+  "expected_text": "목업 표시값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_SHARE_Y1_RT",
+  "expected_text": "목업 3개년 추세값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_SHARE_Y2_RT",
+  "expected_text": "목업 3개년 추세값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "LOAN_SHARE_Y3_RT",
+  "expected_text": "목업 3개년 추세값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "CORP_LOAN_BAL_AMT",
+  "expected_text": "115.34조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "HH_LOAN_BAL_AMT",
+  "expected_text": "99.24조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "CORP_LOAN_SHARE_RT",
+  "expected_text": "목업 표시값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "HH_LOAN_SHARE_RT",
+  "expected_text": "목업 표시값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "CORP_LOAN_GROWTH_RT",
+  "expected_text": "+4.04%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "HH_LOAN_GROWTH_RT",
+  "expected_text": "+6.50%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "CORP_INTEREST_YIELD_RT",
+  "expected_text": "0.945%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "HH_INTEREST_YIELD_RT",
+  "expected_text": "0.917%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "INTEREST_YIELD_DIFF_RT",
+  "expected_text": "+0.028%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T02",
+  "column_name": "AGENT_ANALYSIS_TEXT",
+  "expected_text": "화면 Agent 분석 문구",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "BASE_YM",
+  "expected_text": "2026년",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "Q3_LOAN_INCOME_CURRENT_AMT",
+  "expected_text": "1.21조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "Q3_LOAN_INCOME_TARGET_AMT",
+  "expected_text": "1.75조원 이상",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "Q3_LOAN_INCOME_GAP_AMT",
+  "expected_text": "-0.54조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "LOAN_NIM_CURRENT_AMT",
+  "expected_text": "2.19조원/21,865억원 계열",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "LOAN_NIM_TARGET_AMT",
+  "expected_text": "3.30조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "LOAN_NIM_PROGRESS_RT",
+  "expected_text": "66.3%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "CORP_LOAN_GROWTH_CURRENT_RT",
+  "expected_text": "+4.04%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "CORP_LOAN_GROWTH_TARGET_RT",
+  "expected_text": "+7.0% 이상",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "CORP_LOAN_GROWTH_GAP_RT",
+  "expected_text": "-2.96%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_LOAN_GROWTH_CURRENT_RT",
+  "expected_text": "+6.50%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_LOAN_GROWTH_LIMIT_RT",
+  "expected_text": "+4.0% 이하",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_LOAN_GROWTH_EXCESS_RT",
+  "expected_text": "+2.50%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_LOAN_BAL_CURRENT_AMT",
+  "expected_text": "99.24조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_LOAN_BAL_LIMIT_AMT",
+  "expected_text": "100.00조원 이하",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_LOAN_BAL_REMAIN_AMT",
+  "expected_text": "0.76조원",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "GRADE_5C_PLUS_CURRENT_RT",
+  "expected_text": "61.4%",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "GRADE_5C_PLUS_TARGET_RT",
+  "expected_text": "62%대 유지",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "GRADE_5C_PLUS_GAP_RT",
+  "expected_text": "-0.6%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "TOTAL_ASSET_GROWTH_LIMIT_RT",
+  "expected_text": "8.2% 계열",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "CORP_RWA_USAGE_RT",
+  "expected_text": "목업 표시값",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "CORP_RWA_MARGIN_RT",
+  "expected_text": "13.6%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "HH_RWA_MARGIN_INCL_INCLUSIVE_RT",
+  "expected_text": "3.8%p",
+  "expected": null,
+  "expected_note": null
+ },
+ {
+  "table_code": "T03",
+  "column_name": "AGENT_TARGET_COMMENT_TEXT",
+  "expected_text": "화면 Agent 제안해설",
+  "expected": null,
+  "expected_note": null
+ }
+]

@@ -148,8 +148,8 @@ interface Ds {
   versions: Version[];
   /** 사용/중지 (Phase M · DOB-09) — 중지하면 업로드 대상 · 매칭에서 빠진다 */
   active?: boolean;
-  /** 시드(업무 화면 연결 정의)로 들어온 정의인지 */
-  seedDefined?: boolean;
+  /** 이 정의로 이어진 업무 구성의 자료 이름 (Phase O · BIZ-03) — 비면 업무 화면과 이어지지 않은 자료 */
+  sources?: string[];
   /** 지우면 끊기는 것 — 비어 있어야 삭제할 수 있다 */
   references?: string[];
 }
@@ -351,7 +351,12 @@ function Datasets() {
                 <C>
                   <span className="font-bold text-ink-deep">{d.name}</span>
                   {d.active === false ? <Badge tone="neutral" className="ml-1">중지</Badge> : null}
-                  {d.seedDefined ? <Badge tone="info" className="ml-1">업무 화면 연결 정의</Badge> : null}
+                  {d.sources?.length ? (
+                    <Badge tone="info" className="ml-1">
+                      업무 구성 자료 · {d.sources[0]}
+                      {d.sources.length > 1 ? ` 외 ${d.sources.length - 1}` : ""}
+                    </Badge>
+                  ) : null}
                   <p className="font-mono text-[10.5px] text-stone">{d.code}</p>
                 </C>
                 <C>{d.kind === "master" ? "마스터" : "사실"}</C>
@@ -534,10 +539,10 @@ function DefinitionManage({ ds, reload }: { ds: Ds; reload: () => Promise<void> 
   const refs = ds.references ?? [];
   const active = ds.active !== false;
   return (
-    <Card title="정의 관리" actions={ds.seedDefined ? <Badge tone="info">업무 화면 연결 정의</Badge> : <Badge tone="neutral">등록한 정의</Badge>}>
+    <Card title="정의 관리" actions={ds.sources?.length ? <Badge tone="info">업무 구성 자료</Badge> : <Badge tone="neutral">등록한 정의</Badge>}>
       <p className="mb-md text-[12.5px] text-steel">
-        {ds.seedDefined
-          ? "정의는 파일 형식(열 · 키 · 기준일)과 업무 화면 연결만 담고 업무 자료는 없습니다. 같은 형식의 파일을 올리면 이 정의로 읽혀 업무 화면 수치가 계산됩니다. 쓰지 않으면 '중지'하세요 — 업로드 대상 · 파일 매칭에서 빠지고 정의는 남습니다. 지우면 다시 시드되지 않습니다(설정 seed.suppressed_datasets)."
+        {ds.sources?.length
+          ? `올린 파일에서 만든 정의이고, 업무 구성의 자료(${ds.sources.join(", ")})로 이어져 업무 화면 지표가 이 자료로 계산됩니다. 중지 · 삭제하면 그 자료는 '자료 대기'가 되고, 같은 열 구성의 파일이 올라오면 다시 자동으로 이어집니다.`
           : "자료 등록 · 파일로 만든 정의입니다. 중지하면 업로드 대상 · 파일 매칭에서 빠집니다."}
       </p>
       <div className="flex flex-wrap items-center gap-xs">

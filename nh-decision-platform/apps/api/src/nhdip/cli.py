@@ -89,6 +89,8 @@ def main(argv: list[str] | None = None) -> int:
     ap_rd.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 지운다(되돌릴 수 없음)")
     ap_rd.add_argument("--force", action="store_true", help="실행 중인 작업이 있어도 진행")
     ap_rd.add_argument("--keep-external", action="store_true", help="Elasticsearch · Neo4j 는 건드리지 않음(다음 동기화 · 재투영이 정리)")
+    ap_rs = sub.add_parser("remove-seed-structure", help="예전 시드가 넣은 업무 구조(지표 · 업무 흐름 · 화면 연결 · 규칙 · 화면 · 조직 · 정의서 …) 정리 — 기본은 미리보기 (Phase O)")
+    ap_rs.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 지운다(먼저 make backup)")
     ap_pw = sub.add_parser("admin-password")
     ap_pw.add_argument("emp_no")
     ap_run = sub.add_parser("run")
@@ -174,6 +176,21 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 2
+        return 0
+    if args.cmd == "remove-seed-structure":
+        import json as _json
+
+        from nhdip.bizconfig import cleanup
+
+        with SessionLocal() as s:
+            if not args.yes:
+                p = cleanup.plan(s)
+                print(_json.dumps({"preview": True, "counts": cleanup.summary(p), "orgs": p["orgs"], "workflows": p["workflows"], "rules": p["rules"], "screens": p["screens"],
+                                   "settings": p["settings"], "emptyDatasets": p["emptyDatasets"], "ontology": p["ontology"], "hint": "지우려면 --yes (먼저 make backup)"}, ensure_ascii=False, indent=1))
+                return 0
+            out = cleanup.execute(s, "cli")
+            s.commit()
+            print(_json.dumps({"removed": out}, ensure_ascii=False, indent=1))
         return 0
     if args.cmd == "reset-data":
         from nhdip.data import reset as R

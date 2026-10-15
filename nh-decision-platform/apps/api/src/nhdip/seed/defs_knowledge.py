@@ -1,7 +1,7 @@
 """질문하기 통합 지식 색인 시드 (요구사항 §21 · 설계 §21.3 · §21.10) — 컬렉션 정의와 설정.
 
+공통 컬렉션만(Phase O) — 부서 문서 · 분석 결과 컬렉션은 업무 구성 파일 [지식컬렉션]으로 올린다.
 모두 최초 1회만 넣고(이미 있으면 건드리지 않음) 이후에는 관리자 화면 · 관리자 API 에서 바꾼다.
-조직 코드: D100 종합기획부 · D200 신용리스크관리부 · D300/D400/D500 지역본부(영업점은 그 아래라 조직 경로에 포함).
 """
 from __future__ import annotations
 
@@ -11,25 +11,8 @@ from typing import Any
 # 포함 규칙(sources): doc_classes(문서 분류, '*' = 다른 컬렉션이 가져가지 않은 나머지) · artifact_keys(정확히 일치) · artifact_prefixes
 #                     · spaces(분석 공간) · personas(P1 종합기획부 · P2 신용리스크 · P3 영업점) · screens(현재 화면 경로 접두어 — 가산점)
 COLLECTIONS: list[dict[str, Any]] = [
-    dict(code="doc.gov_policy", label="정부정책 DB", kind="document", description="금융당국 · 정부 정책 문서 (전행 공개)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
-         sources={"doc_classes": ["gov_policy"]}, sort=10),
-    dict(code="doc.mgmt_decision", label="경영 의사결정 DB", kind="document", description="지주 · 행내 경영 의사결정 문서 (문서별 부서한정 등급은 그대로 적용)", owner_orgs=["D100"], shared_orgs=[], required_resources=[], audience="all",
-         sources={"doc_classes": ["mgmt_decision"]}, sort=11),
-    dict(code="doc.model_method", label="모형 · 방법론", kind="document", description="신용평가모형 · 통계 방법론 문서 — 신용리스크 담당, 종합기획부 공유 (시뮬레이션 가정 · Q117)", owner_orgs=["D200"], shared_orgs=["D100"], required_resources=[], audience="restricted",
-         sources={"doc_classes": ["model_method"]}, sort=12),
-    dict(code="doc.branch_ref", label="영업점 기준 · 공문", kind="document", description="업적평가 세부기준 · 영업점 공문 — 영업 조직 담당, 종합기획부 · 신용리스크 공유 (시뮬레이션 가정 · Q117)", owner_orgs=["D300", "D400", "D500"], shared_orgs=["D100", "D200"], required_resources=[], audience="restricted",
-         sources={"doc_classes": ["branch_ref"]}, sort=13),
     dict(code="doc.reference", label="기타 문서", kind="document", description="참고 자료와 위 컬렉션에 없는 문서 분류", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
          sources={"doc_classes": ["reference", "*"]}, sort=19),
-    dict(code="analysis.hq", label="종합기획부 분석 결과", kind="analysis", description="은행 대시보드 · 여신 분석 · 자본 · 수익성 · 경영목표 · 제안 · 요청", owner_orgs=["D100"], shared_orgs=[], required_resources=[], audience="restricted",
-         sources={"spaces": ["hq"], "personas": ["P1"], "screens": ["/hq"],
-                  "artifact_keys": ["hq_dashboard", "loan_overview", "comparison_view", "capital_view", "profitability", "goals", "proposals", "attentions", "report_requests", "review_queue", "cascade"]}, sort=20),
-    dict(code="analysis.risk", label="신용리스크 분석 결과", kind="analysis", description="모형 모니터링 · 포용금융 · 부도율 추이 · 인사이트 · 수행방안", owner_orgs=["D200"], shared_orgs=[], required_resources=[], audience="restricted",
-         sources={"spaces": ["risk"], "personas": ["P2"], "screens": ["/risk"],
-                  "artifact_keys": ["risk_dashboard", "analysis_tabs", "inclusive", "default_rate_trend", "insights", "action_plans", "report.model-monitoring", "report.inclusive-risk"]}, sort=21),
-    dict(code="analysis.branch", label="영업점 분석 결과", kind="analysis", description="영업점 업적평가 · 영업 가이드 · 본부 전파 목표 (지점 범위 유지)", owner_orgs=["D300", "D400", "D500"], shared_orgs=[], required_resources=[], audience="restricted",
-         sources={"spaces": ["branch"], "personas": ["P3"], "screens": ["/branch"],
-                  "artifact_keys": ["branch_dashboard", "branch_tabs", "branch_targets"], "artifact_prefixes": ["report.branch-"]}, sort=22),
     dict(code="glossary", label="용어집", kind="glossary", description="통계 · 리스크 용어 정의 (전행 공개)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
          sources={"artifact_keys": ["terms"]}, sort=30),
     dict(code="catalog.data", label="데이터 목록", kind="catalog", description="올라와 있는 데이터셋 파일 · 기준월 · 품질 (데이터베이스 화면 권한)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="restricted",

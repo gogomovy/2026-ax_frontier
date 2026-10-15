@@ -126,7 +126,11 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     seen_before = (last.detail or {}).get("seen", {}) if last else {}
     seen: dict[str, Any] = {}
     row_pct = Decimal(str((pol.get("data") or {}).get("row_change_pct", 1.0)))
-    for code, (vs, rows, ds) in ctx.eval.rows.items():
+    # 계산이 읽은 자료 — 자료 이름(업무 구성)으로 읽어도 데이터셋 코드 하나로 본다(Phase O · 같은 자료를 이름 여럿으로 읽어도 한 번)
+    by_code: dict[str, Any] = {}
+    for _ref, (vs, rows, ds) in ctx.eval.rows.items():
+        by_code.setdefault(ds.code, (vs, rows, ds))
+    for code, (vs, rows, ds) in by_code.items():
         ids = sorted(v.id for v in getattr(vs, "versions", []) or [vs])
         seen[code] = {"versions": ids, "rows": len(rows)}
         prev = seen_before.get(code)
