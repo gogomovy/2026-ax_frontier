@@ -685,6 +685,10 @@ def test_trusted_proxy_names_resolve_in_background(monkeypatch):
         time.sleep(2.5)
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("172.19.0.9", 0))]
 
+    for _ in range(100):  # 앞 시험(요청)이 띄운 해석이 끝날 때까지 — 옛 결과가 이 시험 상태에 섞이지 않게
+        if not deps._NETS.get("refreshing"):
+            break
+        time.sleep(0.1)
     monkeypatch.setattr(get_settings(), "trusted_proxies", "127.0.0.1/32,web")
     monkeypatch.setattr(socket, "getaddrinfo", slow)
     deps._NETS.clear()

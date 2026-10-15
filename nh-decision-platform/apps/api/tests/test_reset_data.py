@@ -55,7 +55,10 @@ def test_reset_data_returns_to_definitions_only(db):
             arts = s.execute(select(ViewArtifact.key, ViewArtifact.generation, ViewArtifact.produced_by)).all()
             assert arts and len(arts) == rep.artifacts and {p for _, _, p in arts} == {"seed"}
             assert all(g == 1 or g == 0 for _, g, _ in arts) and len({k for k, _, _ in arts}) == len(arts)
-            assert _count(s, KbChunk) > 0  # 틀의 분석 결과 색인(새 DB 와 같음)
+            assert _count(s, KbChunk) == 0  # 자료가 없으면 분석 결과 색인(벡터)도 비어 있다(M.21 · Q207)
+            from nhdip.graph.projection import has_uploaded_data
+
+            assert not has_uploaded_data(s)
             # 정의 · 사용자 · 설정은 그대로, 감사 기록은 하나 더, 그래프 재투영 이벤트만 남는다
             assert {m.__name__: _count(s, m) for m in (AppUser, Dataset, Metric, Workflow, ViewBinding, Rule)} == keep
             assert _count(s, AuditLog) == audits + 1
@@ -240,3 +243,20 @@ def test_gate_keeps_text_only_artifacts():
     assert gate("report.text-only", text_only) == text_only
     blank = {"title": "틀", "asOf": None, "figures": {"a": {"id": "a", "label": "A", "unit": "PCT", "value": None}}}
     assert gate("report.blank", blank) is None
+
+
+def test_empty_platform_projects_empty_graph(monkeypatch):
+    """올린 자료가 없으면 그래프 투영은 정의도 넣지 않고 관리 노드를 모두 지운다(M.21 · Q207)."""
+    from types import SimpleNamespace
+
+    from nhdip.graph import projection as P
+
+    calls: list[str] = []
+    monkeypatch.setattr(P, "run", lambda cypher, **kw: calls.append(cypher) or [])
+    monkeypatch.setattr(P, "active_schema", lambda s: SimpleNamespace(version=9, classes=[{"label": "Dataset"}, {"label": "Metric"}], relations=[{"type": "FEEDS"}]))
+    monkeypatch.setattr(P, "has_uploaded_data", lambda s: False)
+    monkeypatch.setattr(P, "collect_graph", lambda *a, **k: (_ for _ in ()).throw(AssertionError("자료가 없으면 수집하지 않는다")))
+    out = P.project_all(object())
+    assert out["nodes"] == 0 and out["relationships"] == 0 and "skipped" in out
+    assert not any("MERGE" in c for c in calls)
+    assert any("DETACH DELETE n" in c for c in calls) and any("DELETE r" in c for c in calls)

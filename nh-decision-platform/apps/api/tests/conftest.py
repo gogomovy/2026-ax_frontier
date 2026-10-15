@@ -92,6 +92,12 @@ def computed(db):
     """업로드 이벤트로 걸린 워크플로를 모두 돌린 상태 — 화면 산출물이 자료로 계산돼 있다(실제 업로드 뒤와 같음).
     계산 전 값 없는 틀은 화면 · 색인에서 걸러지므로(M.19 · Q204) 분석 결과를 전제로 하는 시험은 이 fixture 를 쓴다."""
     drain_workflows(db)
+    # 워커의 주기 대조(run_maintenance → reconcile)와 같이 — 자료가 생겨 색인 지문이 바뀌면 전체를 다시 색인한다(M.21 · Q207)
+    from nhdip.knowledge.maintenance import reconcile
+
+    with db() as s:
+        reconcile(s)
+        s.commit()
     return db
 
 

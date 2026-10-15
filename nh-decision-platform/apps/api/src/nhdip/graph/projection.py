@@ -113,13 +113,32 @@ def ensure_constraints(labels: Iterable[str]) -> None:
         run(f"CREATE CONSTRAINT {safe_name(lbl).lower()}_key IF NOT EXISTS FOR (n:{safe_name(lbl)}) REQUIRE n.key IS UNIQUE")
 
 
+def has_uploaded_data(session: Session) -> bool:
+    """올린 업무 자료(현재 데이터셋 버전 또는 현재 문서)가 하나라도 있는지 — 없으면 그래프 · 분석 결과 색인을 비워 둔다 (M.21 · Q207)."""
+    from nhdip.models import source
+
+    for o in ("bank", "ext"):
+        t = source(o)
+        if session.execute(select(t.version.id).where(t.version.is_current).limit(1)).first():
+            return True
+        if session.execute(select(t.document.id).where(t.document.is_current).limit(1)).first():
+            return True
+    return False
+
+
 def project_all(session: Session) -> dict[str, Any]:
-    """원장 → Neo4j. 수집(collect_graph)은 관리자 [온톨로지] 구성 지도와 같은 코드다(Q128 — 지도와 그래프가 다르지 않게)."""
+    """원장 → Neo4j. 수집(collect_graph)은 관리자 [온톨로지] 구성 지도와 같은 코드다(Q128 — 지도와 그래프가 다르지 않게).
+    올린 자료가 하나도 없으면 정의(지표 · 데이터셋 · 워크플로)도 투영하지 않고 관리 노드를 모두 지운다(M.21 · Q207 — 빈 플랫폼 = 빈 그래프).
+    관리자 [온톨로지] 구성 지도는 Neo4j 가 아니라 원장에서 그리므로 그대로 보인다."""
     schema = active_schema(session)
     if not schema:
         raise RuntimeError("활성 온톨로지 스키마가 없습니다")
     labels = {c["label"] for c in schema.classes}
     ensure_constraints(labels)
+    if not has_uploaded_data(session):
+        empty = Batch(schema.version, int(time.time() * 1000), labels, {r["type"] for r in schema.relations})
+        stats = empty.flush()  # 이번 세대에 아무것도 없으니 관리 노드 · 관계가 모두 정리된다
+        return {**stats, "artifact_mentions": 0, "documents": 0, "generation": empty.gen, "schema_version": schema.version, "rejected": [], "skipped": "올린 자료 없음 — 그래프를 비워 둠"}
     b = collect_graph(session, schema)
     stats = b.flush()
     return {**stats, "artifact_mentions": b.counts.get("artifact_mentions", 0), "documents": b.counts.get("documents", 0), "generation": b.gen, "schema_version": schema.version, "rejected": sorted(set(b.rejected))[:50]}

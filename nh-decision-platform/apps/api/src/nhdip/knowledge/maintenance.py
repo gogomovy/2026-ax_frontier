@@ -45,6 +45,12 @@ def set_state(session: Session, **updates: Any) -> dict[str, Any]:
     return st
 
 
+def _has_data(session: Session) -> bool:
+    from nhdip.graph.projection import has_uploaded_data
+
+    return has_uploaded_data(session)
+
+
 def config_fingerprint(session: Session) -> str:
     """청크에 저장되는 값(컬렉션 배정 · 리소스 · 주소 · 분할 설정)에 영향을 주는 설정의 지문.
     담당/공유 팀 · 공개 범위는 검색 때 읽으므로 포함하지 않는다(바꿔도 재색인 불필요)."""
@@ -57,6 +63,8 @@ def config_fingerprint(session: Session) -> str:
         "index": setting_dict(session, "knowledge.index", INDEX_DEFAULT),
         # 분석 공간의 열람 리소스 · 화면 주소는 맞춤 분석 보고서(report.an-*) 청크에 저장된다 — 바뀌면 재색인
         "spaces": {k: [sp.get("resource"), sp.get("path")] for k, sp in sorted(analysis_spaces(session).items())},
+        # 올린 자료가 처음 생기거나 모두 사라지면 전체를 다시 색인한다 — 자료가 없을 때 비워 둔 산출물이 다시 들어오게 (M.21 · Q207)
+        "hasData": _has_data(session),
     }
     return hashlib.sha1(json.dumps(blob, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()[:20]
 

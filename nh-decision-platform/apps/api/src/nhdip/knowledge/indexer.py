@@ -95,6 +95,9 @@ def index_artifacts(session: Session, keys: Iterable[str] | None = None) -> Inde
     exclude = set(cfg.get("exclude_keys") or [])
     tagger = ConceptTagger(session)
     org_by_name = _org_codes_by_name(session)
+    from nhdip.graph.projection import has_uploaded_data
+
+    has_data = has_uploaded_data(session)
 
     # 키 순서로 잠근다 — 게시(정렬된 키)와 같은 순서라 교착이 생기지 않는다
     q = select(ViewArtifact.key, ViewArtifact.generation, ViewArtifact.payload).where(ViewArtifact.is_current).order_by(ViewArtifact.key)
@@ -109,7 +112,7 @@ def index_artifacts(session: Session, keys: Iterable[str] | None = None) -> Inde
         stats.keys += 1
         try:
             with session.begin_nested():
-                _index_one(session, key, gen, payload, cfg, cols, resources, persona_res, routes, tagger, org_by_name, stats)
+                _index_one(session, key, gen, payload, cfg, cols, resources, persona_res, routes, tagger, org_by_name, stats, has_data)
         except Exception as exc:  # noqa: BLE001 — 한 산출물의 실패가 나머지를 막지 않는다(대조가 다시 시도)
             log.warning("지식 색인 실패 key=%s: %s", key, exc, exc_info=True)
             stats.errors.append(f"{key}: {type(exc).__name__}: {str(exc)[:200]}")
@@ -136,7 +139,7 @@ def _office_scoped(bkey: str) -> bool:
 
 
 def _index_one(session: Session, key: str, gen: int, payload: Any, cfg: dict[str, Any], cols: list[CollectionInfo], resources: dict[str, Any], persona_res: dict[str, Any],
-               routes: dict[str, str], tagger: ConceptTagger, org_by_name: dict[str, str], stats: IndexStats) -> None:
+               routes: dict[str, str], tagger: ConceptTagger, org_by_name: dict[str, str], stats: IndexStats, has_data: bool = True) -> None:
     lock(session, f"kb:{key}")
     # 잠금을 잡은 뒤 다시 읽는다 — 기다리는 사이 게시가 끝났으면 새 세대로 색인한다(오래된 세대로 덮어쓰지 않음)
     cur = session.execute(select(ViewArtifact.generation, ViewArtifact.payload).where(ViewArtifact.key == key, ViewArtifact.is_current)).first()
@@ -144,10 +147,14 @@ def _index_one(session: Session, key: str, gen: int, payload: Any, cfg: dict[str
         gen, payload = cur
     bkey = base_key(key)
     scope_val = key.partition("@")[2]
-    # 화면과 같은 기준 — 아직 자료로 계산되지 않은 시연 서술 · 보고서 틀은 색인하지 않는다 (M.19 · Q204)
-    from nhdip.views.readiness import gate
+    # 화면과 같은 기준 — 아직 자료로 계산되지 않은 시연 서술 · 보고서 틀은 색인하지 않는다 (M.19 · Q204).
+    # 올린 자료가 하나도 없으면 아무것도, 자료가 있어도 수치 자리가 있는데 하나도 계산되지 않은 산출물은 색인하지 않는다 (M.21 · Q207)
+    from nhdip.views.readiness import computed, gate, has_figure, session_lookup
 
-    shown = gate(key, payload, flag=False)
+    if not has_data or (has_figure(payload) and not computed(payload)):
+        shown = None
+    else:
+        shown = gate(key, payload, session_lookup(session), flag=False)
     rendered = render_artifact(key, shown if shown is not None else ({} if isinstance(payload, dict) else []), cfg)
     office_code = scope_val or str((rendered.office or {}).get("code") or "")
     scope_key = f"office:{office_code}" if office_code else None

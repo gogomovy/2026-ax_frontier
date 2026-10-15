@@ -62,7 +62,12 @@ def _resolve_names(cidrs: list[Any], names: list[str]) -> None:
                 pass
     finally:
         with _NETS_LOCK:
-            _NETS.update(resolved=resolved, nets=[*cidrs, *resolved], at=time.monotonic(), refreshing=False, resolved_once=True)
+            cur_cidrs, cur_names = _split_proxies()
+            if sorted(cur_names) != sorted(names):
+                # 해석하는 사이 설정(TRUSTED_PROXIES)이 바뀌었다 — 옛 설정의 결과로 덮지 않고 다음 요청이 새로 해석하게
+                _NETS.update(at=0.0, refreshing=False)
+            else:
+                _NETS.update(resolved=resolved, nets=[*cur_cidrs, *resolved], at=time.monotonic(), refreshing=False, resolved_once=True)
 
 
 def _trusted_nets():
