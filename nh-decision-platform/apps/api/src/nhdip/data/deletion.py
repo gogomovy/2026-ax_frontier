@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from nhdip.config import get_settings
 from nhdip.data import scrub
 from nhdip.events import audit, emit
-from nhdip.models import Dataset, ExtractionIssue, PurgeTask, UploadRequest, source, utcnow
+from nhdip.models import Dataset, ExtractionIssue, KbChunk, PurgeTask, UploadRequest, source, utcnow
 
 log = logging.getLogger(__name__)
 DELETED = "deleted"
@@ -155,6 +155,15 @@ def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor
         ev = emit(session, "dataset.deleted", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "promoted_version": promoted["version"] if promoted else None, "rows": int(n_rows)}, actor)
         session.flush()
         res.purge_ids, res.event_id = [task.id, hist.id], ev.id
+        # 자료가 하나도 남지 않으면 그 자료의 설명 카드(질문하기 색인 · Elasticsearch 분석 결과 색인)도 바로 지운다 — 워커 주기를 기다리지 않게
+        if not session.execute(select(t.version.id).where(t.version.dataset_code == ds.code, t.version.is_current).limit(1)).first():
+            card_ids = [str(i) for i in session.execute(select(KbChunk.id).where(KbChunk.source_key == f"dataset:{ds.code}")).scalars()]
+            if card_ids:
+                session.execute(delete(KbChunk).where(KbChunk.source_key == f"dataset:{ds.code}"))
+                es_task = _task(session, "es", "dataset_card", f"{ref}#card", {"index": "kb", "ids": card_ids}, actor)
+                session.flush()
+                res.purge_ids.append(es_task.id)
+                res.removed["cards"] = len(card_ids)
     audit(session, actor, "admin.dataset.version_delete", "dataset", ds.code, {"version": v.version, "as_of": v.as_of.isoformat() if v.as_of else None, "was_current": was_current, "promoted": promoted, "rows": int(n_rows), "file": v.file_name, "reason": why, "via": via}, ip)
     return res
 

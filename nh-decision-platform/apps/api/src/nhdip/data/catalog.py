@@ -54,6 +54,9 @@ def index_dataset_cards(session: Session, codes: list[str] | None = None) -> dic
     """카드 맞추기 — 바뀐 카드만 다시 쓰고(같은 본문이면 그대로 · 임베딩 재사용), 지워졌거나 버전이 없는 데이터셋의 카드는 지운다."""
     out = {"inserted": 0, "kept": 0, "deleted": 0}
     if not _enabled(session) or session.get(KbCollection, COLLECTION) is None:
+        # 카드를 끄거나 컬렉션이 없으면 남은 카드도 지운다(예전에는 그대로 남아 PG · Elasticsearch 에 계속 있었다) — ES 는 다음 대조가 지운다
+        out["deleted"] = session.execute(delete(KbChunk).where(KbChunk.source_kind == KIND)).rowcount or 0
+        session.flush()
         return out
     q = select(Dataset).where(Dataset.active)
     if codes:

@@ -984,7 +984,8 @@ def status(session: Session) -> dict[str, Any]:
         out["es_docs"] = _count(index_name())
         pg = int(session.execute(text("SELECT count(*) FROM app.kb_chunk")).scalar() or 0)
         out["pg_chunks"] = pg
-        out["lag"] = None if out.get("es_docs") is None else max(0, pg - int(out["es_docs"]))
+        # 차이 = 덜 올라간 것 + PG 에서 지웠는데 ES 에 남은 것(예전에는 남은 쪽을 0 으로 잘라 '정상'으로 보였다)
+        out["lag"] = None if out.get("es_docs") is None else abs(pg - int(out["es_docs"]))
         d = out["documents"]
         d["es_docs"] = _count(doc_index_name())
         dpg = sum(int(session.execute(text(f"SELECT count(*) FROM {o}.chunk c JOIN {o}.document d ON d.id = c.document_id WHERE d.is_current")).scalar() or 0) for o in ORIGINS)
@@ -1022,7 +1023,7 @@ def healthy(st: dict[str, Any]) -> tuple[bool, list[str]]:
         if not s.get("synced_at"):
             probs.append(f"{name} 색인 동기화 전")
         elif part.get("lag"):
-            probs.append(f"{name} 색인 뒤처짐 {part.get('es_docs')}/{part.get('pg_chunks')}")
+            probs.append(f"{name} 색인이 원장과 다름 — ES {part.get('es_docs')} / PG {part.get('pg_chunks')}(덜 올라갔거나 지운 것이 남음 · kb-es --sync)")
         if s.get("analyzer") == "standard":
             probs.append(f"{name} 색인 nori 없음(standard)")
     return not probs, probs

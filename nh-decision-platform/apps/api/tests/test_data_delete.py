@@ -257,6 +257,49 @@ def test_purge_runner_es_and_neo4j(db, monkeypatch):
         elastic.reset_breaker()
 
 
+def test_last_version_delete_removes_dataset_card_from_pg_and_es(db, monkeypatch):
+    """자료의 마지막 버전을 지우면 설명 카드(질문하기 색인 · 벡터)를 PG 에서 바로 지우고, Elasticsearch 분석 결과 색인 삭제 작업을 낸다."""
+    from nhdip.data import deletion
+    from nhdip.data.catalog import index_dataset_cards
+    from nhdip.data.datasets import ingest_rows, quality_check
+    from nhdip.knowledge import elastic
+    from nhdip.models import Dataset, KbChunk, PurgeTask
+
+    sent: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        sent.append(req.content.decode())
+        lines = [json.loads(x) for x in req.content.decode().splitlines() if x]
+        return httpx.Response(200, json={"items": [{"delete": {"_id": ln["delete"]["_id"], "status": 200}} for ln in lines]})
+
+    code = "TEST_CARD_DEL"
+    monkeypatch.setattr(elastic, "configured", lambda: True)
+    elastic.reset_breaker()
+    elastic.set_client(httpx.Client(base_url="http://es.test", transport=httpx.MockTransport(handler)))
+    try:
+        with db() as s:
+            ds = Dataset(code=code, name="카드 삭제 시험", origin="bank", kind="fact", columns=[{"name": "k", "label": "키", "type": "str", "required": True}, {"name": "v", "label": "값", "type": "num"}],
+                         key_columns=["k"], quality_rules=[], mapping={}, parser={})
+            s.add(ds)
+            s.flush()
+            rows = [{"k": "a", "v": 1}, {"k": "b", "v": 2}]
+            v = ingest_rows(s, ds, rows, quality=quality_check(ds, rows, []), file_name="card.csv", data_origin="simulated", actor="test", note="시험", force=True)
+            s.flush()
+            assert index_dataset_cards(s, [code])["inserted"] == 1
+            card = [str(i) for i in s.execute(select(KbChunk.id).where(KbChunk.source_key == f"dataset:{code}")).scalars()]
+            res = deletion.delete_dataset_version(s, ds, v.id, "test", "카드 삭제 시험")
+            assert res.removed["cards"] == 1 and not s.execute(select(KbChunk.id).where(KbChunk.source_key == f"dataset:{code}")).first()
+            es = next(t for t in s.execute(select(PurgeTask).where(PurgeTask.id.in_(res.purge_ids))).scalars() if t.store == "es")
+            assert es.payload == {"index": "kb", "ids": card}
+            ds.active = False  # 뒤 시험의 자료 찾기에 섞이지 않게
+            s.commit()
+            assert deletion.run_purge_tasks(s, ids=[es.id])["done"] == 1
+        assert any(f'"_id": "{card[0]}"' in b and elastic.index_name() in b for b in sent)
+    finally:
+        elastic.set_client(None)
+        elastic.reset_breaker()
+
+
 def test_purge_runner_keeps_pending_when_store_down(db, monkeypatch):
     from nhdip.data import deletion
     from nhdip.graph.neo4j_client import GraphUnavailable

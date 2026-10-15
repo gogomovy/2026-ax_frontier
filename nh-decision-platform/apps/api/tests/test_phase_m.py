@@ -385,6 +385,8 @@ def test_dataset_cards_reconcile_in_maintenance(db):
         assert again["inserted"] == 0 and again["kept"] >= 1
         s.add(Setting(key="knowledge.dataset_cards", value=False, description="시험"))
         s.flush()
+        off = index_dataset_cards(s)  # 끄면 남은 카드도 지운다(PG → ES 대조가 ES 에서도 지움)
+        assert off["inserted"] == 0 and off["kept"] == 0 and off["deleted"] >= 1
         assert index_dataset_cards(s) == {"inserted": 0, "kept": 0, "deleted": 0}
         s.rollback()
 
