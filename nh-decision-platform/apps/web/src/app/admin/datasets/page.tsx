@@ -190,6 +190,9 @@ function Datasets() {
   // 맞는 데이터셋이 없는 새 종류 파일 — 파일에서 추론한 정의를 확인해 데이터셋을 만들고 첫 버전으로 올린다 (DEF-02)
   const [creating, setCreating] = useState(false);
   const { run: runCreate } = useAction();
+  // 목록에서 바로 정의 삭제(M.22 후속) — 데이터 관리자만. 연결(지표 · 바인딩 · 트리거)이 있으면 미리보기에서 함께 정리
+  const isDataAdmin = useIsDataAdmin();
+  const del = useDataDelete();
   const detailRef = useRef<HTMLDivElement>(null);
   const all = data.data ?? [];
   const cur = all.find((d) => d.code === sel) ?? null;
@@ -319,6 +322,10 @@ function Datasets() {
           </>
         }
       >
+        <p className="mb-md text-[12.5px] text-steel" data-dataset-list-note>
+          이 목록은 업무 자료가 아니라 <strong className="text-ink-deep">데이터셋 정의</strong>(파일 형식 · 열 · 키 · 기준일과 업무 화면 연결)입니다. 올라온 자료는 [현재 버전]에 보이고, 비어 있으면 자료가 없는 정의입니다.
+          &apos;업무 화면 연결 정의&apos;는 같은 형식의 파일을 올리면 업무 화면 수치로 이어지는 그릇이라, 그 파일을 올릴 계획이면 지우지 마세요.
+        </p>
         {data.data && !list.length ? <EmptyState compact title="맞는 데이터셋이 없습니다" description="찾는 말이나 출처를 바꿔 보세요." /> : null}
         <Table head={["출처", "데이터셋", "종류", "저장", "현재 버전", "사용 지표", ""]}>
           {list.map((d) => {
@@ -337,6 +344,7 @@ function Datasets() {
                 <C>{d.kind === "master" ? "마스터" : "사실"}</C>
                 <C mono>{d.storage}</C>
                 <C className="text-[11.5px]">
+                  {!curV.length ? <span className="text-stone">자료 없음</span> : null}
                   {curV.map((v) => (
                     <span key={v.id} className="mr-1 inline-flex items-center gap-1">
                       v{v.version}
@@ -346,9 +354,28 @@ function Datasets() {
                 </C>
                 <C right>{d.usedByMetrics.length}</C>
                 <C>
-                  <Button size="sm" variant={sel === d.code ? "primary" : "quiet"} onClick={() => (sel === d.code ? setSel(null) : open(d.code, drop))} aria-label={`${d.name} ${sel === d.code ? "닫기" : "열기"}`}>
-                    {sel === d.code ? "닫기" : "열기"}
-                  </Button>
+                  <span className="inline-flex items-center gap-1">
+                    <Button size="sm" variant={sel === d.code ? "primary" : "quiet"} onClick={() => (sel === d.code ? setSel(null) : open(d.code, drop))} aria-label={`${d.name} ${sel === d.code ? "닫기" : "열기"}`}>
+                      {sel === d.code ? "닫기" : "열기"}
+                    </Button>
+                    {isDataAdmin ? (
+                      <Button
+                        size="sm"
+                        variant="quiet"
+                        disabled={del.busy}
+                        onClick={() =>
+                          del.deleteDefinition(d, async () => {
+                            if (sel === d.code) setSel(null);
+                            await data.reload();
+                          })
+                        }
+                        aria-label={`${d.name} 정의 삭제`}
+                        data-dataset-row-delete={d.code}
+                      >
+                        삭제
+                      </Button>
+                    ) : null}
+                  </span>
                 </C>
               </tr>
             );

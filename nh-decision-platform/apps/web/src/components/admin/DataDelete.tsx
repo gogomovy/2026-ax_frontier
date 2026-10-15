@@ -187,10 +187,11 @@ export function useDataDelete() {
       await confirm({ title: "지금은 지울 수 없습니다", body: <p className="text-[12.5px]">{p.blocked}</p>, confirmLabel: "확인", tone: "default" });
       return;
     }
+    const linked = p.versions.length + p.metrics.length + p.bindings.length + p.triggers.length > 0;
     const reason = await confirm({
-      title: `${ds.name} 정의를 연결까지 지울까요?`,
+      title: linked ? `${ds.name} 정의를 연결까지 지울까요?` : `${ds.name} 정의를 지울까요?`,
       tone: "danger",
-      confirmLabel: "연결까지 정의 삭제",
+      confirmLabel: linked ? "연결까지 정의 삭제" : "정의 삭제",
       body: <DefinitionPreviewBody p={p} />,
       input: { label: "삭제 사유", placeholder: "예: 쓰지 않는 시연용 정의 정리", validate: reasonRule },
     });
