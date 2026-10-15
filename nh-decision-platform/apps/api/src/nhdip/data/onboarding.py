@@ -34,6 +34,9 @@ def match_datasets(session: Session, filename: str, headers: list[str]) -> list[
     """기존 정의 후보 — 파일 이름 규칙(0.6) + 머리글 겹침(정의 열의 이름 · 라벨 · 별칭 대비 최대 0.4). 점수 높은 순 3개."""
     from .datasets import _norm, header_candidates
 
+    from .sources import Resolver
+
+    res = Resolver(session)
     hs = {_norm(h) for h in headers if h}
     out = []
     for d in session.execute(select(Dataset).where(Dataset.active)).scalars():
@@ -60,6 +63,12 @@ def match_datasets(session: Session, filename: str, headers: list[str]) -> list[
                 score += 0.3
                 why.append("열 구성이 같음")
         if score > 0:
+            # 업무 구성이 찾는 자료 모양(필요한 열)을 이 파일은 갖췄는데 이 정의는 못 갖췄다 — 여기 넣으면 업무 화면이 자료를 못 읽는다(예전 시드 정의 등).
+            # 자동 연결 점수 밑으로 내려 새 정의를 만들게 한다(후보 목록에는 남겨 사람이 고를 수는 있게)
+            sp = res.breaks_spec(d, headers)
+            if sp is not None:
+                score = min(score, 0.3)
+                why.append(f"업무 구성 자료 '{sp.name}' 모양과 다름 — 새 정의 권장")
             out.append({"code": d.code, "name": d.name, "origin": d.origin, "score": round(score, 3), "why": why})
     return sorted(out, key=lambda x: -x["score"])[:3]
 
@@ -100,6 +109,10 @@ def analyze_structured(session: Session, filename: str, content: bytes, *, origi
                     "quality": chk["quality"], "rows": chk["rows"], "sample": chk["sample"][:5], "columns": chk["columns"], "notes": [str(exc)]}
         raise
     definition = {k: draft[k] for k in ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "columns", "key_columns", "as_of_column", "quality_rules", "parser") if k in draft}
+    # 같은 코드의 정의가 이미 있으면(예전 정의가 업무 구성 모양과 달라 새 정의를 만드는 경우 등) 뒤에 번호를 붙인다 — 반영 때 코드 충돌로 막히지 않게
+    base, n = definition.get("code") or "", 2
+    while base and session.get(Dataset, definition["code"]) is not None:
+        definition["code"], n = f"{base}_{n}"[:60], n + 1
     tmp = SimpleNamespace(**{**definition, "mapping": {}, "materialize": False, "active": True})
     rows, _errs = map_rows(Dataset(**{**definition, "mapping": {}}), raw)
     prof = profile_rows(tmp, rows)
@@ -120,7 +133,12 @@ def analyze_structured(session: Session, filename: str, content: bytes, *, origi
                     label, _ = clean_reason(c.get("label"), 40)
                     meaning, _ = clean_reason(c.get("meaning"), 40)
                     if label:
-                        by_name[c["name"]]["label"] = label
+                        col = by_name[c["name"]]
+                        orig = col.get("label")
+                        if orig and orig != label and orig not in (col.get("aliases") or []):
+                            # 원래 머리글은 별칭으로 남긴다 — 다음 달 같은 파일의 머리글 대응 · 업무 구성의 필요한 열 찾기가 라벨 변경에 흔들리지 않게
+                            col["aliases"] = [*(col.get("aliases") or []), orig]
+                        col["label"] = label
                     if meaning:
                         sem_cols[c["name"]] = {"meaning": meaning, "entity": None}
             name, _ = clean_reason(data.get("name"), 60)

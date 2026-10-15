@@ -99,13 +99,31 @@ class Resolver:
         return self.specs.get(norm(ref))
 
     def _cols(self, d: Dataset) -> set[str]:
-        return {norm(c.get("name")) for c in d.columns or []} | {norm(c.get("label")) for c in d.columns or [] if c.get("label")}
+        # 이름 · 라벨 · 별칭(에이전트가 라벨을 업무 이름으로 바꿔도 원래 머리글은 별칭에 남는다)
+        out = {norm(c.get("name")) for c in d.columns or []} | {norm(c.get("label")) for c in d.columns or [] if c.get("label")}
+        for c in d.columns or []:
+            out |= {norm(a) for a in c.get("aliases") or [] if a}
+        return out
 
     def candidates(self, sp: SourceSpec) -> list[Dataset]:
         need = {norm(c) for c in sp.columns}
         if not need:
             return [d for d in self.datasets if norm(d.name) == norm(sp.name)]
         return [d for d in self.datasets if need <= self._cols(d)]
+
+    def specs_fitting(self, headers: list[str]) -> list[SourceSpec]:
+        """올릴 파일의 머리글이 필요한 열을 모두 가진 자료 정의 — 이 파일은 그 자료로 쓰일 모양이다."""
+        hs = {norm(h) for h in headers if h}
+        return [sp for sp in self.specs.values() if sp.columns and {norm(c) for c in sp.columns} <= hs]
+
+    def breaks_spec(self, d: Dataset, headers: list[str]) -> SourceSpec | None:
+        """이 파일을 정의 d 의 새 판으로 넣으면 업무 구성이 못 찾는 경우 — 파일은 자료 정의 모양인데 d 는 아니다(예전 시드 · 다른 양식으로 만든 정의).
+        그때는 d 에 넣지 않고 파일에서 새 정의를 만들어야 업무 화면 지표 · 흐름이 이 자료를 읽는다."""
+        cols = self._cols(d)
+        for sp in self.specs_fitting(headers):
+            if not {norm(c) for c in sp.columns} <= cols:
+                return sp
+        return None
 
     def _score(self, sp: SourceSpec, d: Dataset) -> tuple[int, int, str]:
         hay = norm(d.name) + " " + norm(d.code) + " " + norm(getattr(d, "file_pattern", "") or "")
