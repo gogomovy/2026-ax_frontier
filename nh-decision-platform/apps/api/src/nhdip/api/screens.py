@@ -268,12 +268,16 @@ def _documents(session: Session, user: AppUser | None = None) -> list[dict[str, 
     labels_s = session.get(Setting, "doc_class.labels")
     labels = labels_s.value if labels_s else {}
     out = []
+    oc: dict[str, Any] = {}
     for origin in ("bank", "ext"):
         t = source(origin)
         for d in session.execute(select(t.document).where(t.document.is_current).order_by(t.document.created_at)).scalars():
             m = dict(d.meta or {})
             if not doc_visible(session, user, d.doc_code, m)[0]:
                 continue  # 부서한정 문서 — 소유 부서 밖 사용자에게 목록 미노출 (8.4.2)
+            ok, owner, mine = _owner_view(session, user, d.owner_org, oc)
+            if not ok:
+                continue  # 다른 영업점이 올린 문서
             n_chunks = session.execute(select(func.count()).select_from(t.chunk).where(t.chunk.document_id == d.id)).scalar() or 0
             ex = d.extraction or {}
             out.append(
@@ -299,6 +303,8 @@ def _documents(session: Session, user: AppUser | None = None) -> list[dict[str, 
                     "version": d.version,
                     "chunks": n_chunks,
                     "extractedBy": ex.get("by"),
+                    "owner": owner,
+                    "mine": mine,
                 }
             )
     return out
@@ -310,13 +316,33 @@ def documents(db_class: str | None = Query(None, alias="dbClass"), session: Sess
     return [d for d in docs if not db_class or d["dbClass"] == db_class]
 
 
+def _owner_view(session: Session, user: AppUser | None, owner_org: str | None, cache: dict[str, Any]) -> tuple[bool, dict[str, Any] | None, bool]:
+    """(보여도 되는가, 소유 조직 표시, 내 팀 자료인가) — 다른 영업점이 올린 자료는 그 영업점 · 상위 조직 · 관리자만 (§33 OWN)."""
+    from nhdip.orgs import can_view_office, is_branch, org_chain, owner_json
+
+    own = owner_json(session, owner_org, cache)
+    if user is None or not owner_org:
+        return True, own, False
+    key = f"__chain:{user.org_code}"
+    if key not in cache:
+        cache[key] = {o.code for o in org_chain(session, user.org_code)}
+    mine = owner_org in cache[key]
+    if is_branch(session, owner_org) and not mine and not can_view_office(session, user, owner_org):
+        return False, own, False
+    return True, own, mine
+
+
 @router.get("/datasets")
-def datasets(session: Session = Depends(get_session), _: AppUser = Depends(require_resource("datasets"))):
-    """DatasetMeta[] — 확정된 현재 버전(기준일 구획별)."""
+def datasets(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("datasets"))):
+    """DatasetMeta[] — 확정된 현재 버전(기준일 · 소유 구획별). 소유 조직(올린 팀 · 영업점)과 내 팀 자료 표시."""
     out = []
+    oc: dict[str, Any] = {}
     for ds in session.execute(select(Dataset).where(Dataset.active).order_by(Dataset.origin, Dataset.code)).scalars():
         t = source(ds.origin)
         for v in session.execute(select(t.version).where(t.version.dataset_code == ds.code, t.version.is_current).order_by(t.version.as_of.desc().nullslast())).scalars():
+            ok, owner, mine = _owner_view(session, user, v.owner_org, oc)
+            if not ok:
+                continue
             q = v.quality or {}
             bad = [c for c in q.get("checks", []) if not c.get("passed")]
             out.append(
@@ -335,6 +361,8 @@ def datasets(session: Session = Depends(get_session), _: AppUser = Depends(requi
                     "datasetName": ds.name,
                     "version": v.version,
                     "dataOrigin": v.data_origin,
+                    "owner": owner,
+                    "mine": mine,
                 }
             )
     return out

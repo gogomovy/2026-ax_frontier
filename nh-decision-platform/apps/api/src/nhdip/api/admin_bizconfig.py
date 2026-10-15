@@ -133,17 +133,21 @@ async def dataset_auto_upload(
     data_origin: str = Form("actual"),
     note: str | None = Form(None),
     force: bool = Form(False),
+    owner_org: str | None = Form(None),
     session: Session = Depends(get_session),
     admin: AppUser = Depends(require_admin),
 ):
-    """대상 없이 올리기 — 맞는 정의(파일 이름 규칙 · 열 구성)가 있으면 그 자료의 새 버전, 없으면 파일에서 정의를 만들어 첫 버전(한 트랜잭션)."""
+    """대상 없이 올리기 — 맞는 정의(파일 이름 규칙 · 열 구성)가 있으면 그 자료의 새 버전, 없으면 파일에서 정의를 만들어 첫 버전(한 트랜잭션).
+    owner_org = 자료를 둘 팀 · 영업점(빈 값 = 전행 공통)."""
     from nhdip.data.datasets import IngestError, ingest_file
     from nhdip.data.infer import infer_definition, validate_definition
 
+    from .admin_data import owner_of
     from .db_uploads import auto_target
 
     if data_origin not in ("actual", "simulated") or origin not in ("bank", "ext"):
         raise HTTPException(422, "origin 은 bank | ext, data_origin 은 actual | simulated")
+    owner = owner_of(session, admin, owner_org)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     d, matches = auto_target(session, name, content)
     created = False
@@ -165,7 +169,7 @@ async def dataset_auto_upload(
         session.flush()
         created = True
     try:
-        v = ingest_file(session, d, name, content, data_origin=data_origin, actor=admin.emp_no, note=note, force=force)
+        v = ingest_file(session, d, name, content, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner)
     except (IngestError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, f"올릴 수 없습니다 — {exc}") from exc
@@ -186,4 +190,4 @@ async def dataset_auto_upload(
         except Exception:  # noqa: BLE001
             session.rollback()
     return {"dataset": d.code, "name": d.name, "created": created, "version": v.version, "id": v.id, "status": v.status, "quality": v.quality, "rows": v.row_count,
-            "isCurrent": v.is_current, "matches": matches[:3]}
+            "isCurrent": v.is_current, "matches": matches[:3], "ownerOrg": owner}

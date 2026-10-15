@@ -468,7 +468,8 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
                 emit(session, "config.changed", {"kind": "dataset", "code": d.code}, actor.emp_no)
                 audit(session, actor.emp_no, "db.dataset.create_by_request", "dataset", d.code, {"request": r.id, "columns": len(d.columns), "keys": d.key_columns, "via": via}, ip)
                 created = True
-            v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=actor.emp_no, note=note, force=bool(body.force))
+            v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=actor.emp_no, note=note, force=bool(body.force),
+                            owner_org=r.requested_org)  # 소유 = 요청한 사람의 소속 팀(승인한 사람이 아니라)
             result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current, **({"createdDataset": d.code} if created else {})}
             if v.status != "committed":
                 raise IngestError(f"품질 검사 실패로 확정되지 않았습니다(v{v.version}) — 필요하면 '품질 실패여도 확정' 으로 승인")
@@ -479,6 +480,7 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
                 session, origin=r.origin, doc_code=code, title=title, doc_class=r.target, filename=r.file_name, content=content,
                 issuer=meta.get("issuer"), published_at=meta.get("publishedAt"),
                 meta={"docType": "업무 등록 문서", "isOfficial": r.origin == "ext", "requestedBy": r.requested_by, "uploadRequest": r.id}, actor=actor.emp_no,
+                owner_org=r.requested_org,
             )
             result = {"documentId": doc.id, "docCode": doc.doc_code, "version": doc.version, "origin": r.origin}
         sp.commit()

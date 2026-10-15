@@ -288,6 +288,16 @@ def _ds(session: Session, code: str) -> Dataset:
     return d
 
 
+def owner_of(session: Session, user: AppUser, requested: str | None) -> str | None:
+    """자료 소유 조직(팀 · 영업점) — 관리자는 고른 조직, 빈 값이면 전행 공통 (§33 OWN)."""
+    from nhdip.orgs import OwnerError, resolve_owner
+
+    try:
+        return resolve_owner(session, user, requested)
+    except OwnerError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 def _ds_json(session: Session, d: Dataset, with_versions: bool = True, resolver: Any = None) -> dict[str, Any]:
     from nhdip.data.sources import Resolver
     from nhdip.graph.projection import _datasets_in_args
@@ -306,9 +316,12 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True, resolver:
         # 최근 30개 밖으로 밀린 현재 버전도 항상 포함 (되돌리기 · 정정이 쌓여도 기준일별 현재 버전이 보이도록)
         have = {v.id for v in vs}
         vs = [*vs, *[v for v in session.execute(select(t.version).where(t.version.dataset_code == d.code, t.version.is_current)).scalars() if v.id not in have]]
+        from nhdip.orgs import owner_json
+
+        oc: dict[str, Any] = {}
         out["versions"] = [
             {"id": v.id, "version": v.version, "asOf": _iso(v.as_of), "status": v.status, "isCurrent": v.is_current, "dataOrigin": v.data_origin, "fileName": v.file_name, "sha256": v.file_sha256, "rows": v.row_count, "quality": v.quality, "uploadedBy": v.uploaded_by, "createdAt": _iso(v.created_at), "committedAt": _iso(v.committed_at), "note": v.note,
-             "deletedAt": _iso(v.deleted_at), "deletedBy": v.deleted_by, "deleteReason": v.delete_reason}
+             "owner": owner_json(session, v.owner_org, oc), "deletedAt": _iso(v.deleted_at), "deletedBy": v.deleted_by, "deleteReason": v.delete_reason}
             for v in vs
         ]
     return out
@@ -543,6 +556,7 @@ async def dataset_upload(
     as_of: str | None = Form(None),
     note: str | None = Form(None),
     force: bool = Form(False),
+    owner_org: str | None = Form(None),
     session: Session = Depends(get_session),
     admin: AppUser = Depends(require_admin),
 ):
@@ -552,9 +566,10 @@ async def dataset_upload(
         raise HTTPException(422, f"이 데이터셋은 {'당행' if d.origin == 'bank' else '외부'} 데이터입니다. 출처 구분을 확인하세요.")
     if data_origin not in ("actual", "simulated"):
         raise HTTPException(422, "data_origin 은 actual | simulated")
+    owner = owner_of(session, admin, owner_org)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     try:
-        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, force=force)
+        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner)
     except (IngestError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc
@@ -571,6 +586,7 @@ async def dataset_create_upload(
     data_origin: str = Form("actual"),
     as_of: str | None = Form(None),
     note: str | None = Form(None),
+    owner_org: str | None = Form(None),
     session: Session = Depends(get_session),
     admin: AppUser = Depends(require_admin),
 ):
@@ -594,12 +610,13 @@ async def dataset_create_upload(
     problems = validate_definition(body.model_dump())
     if problems:
         raise HTTPException(422, " · ".join(problems[:6]))
+    owner = owner_of(session, admin, owner_org)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     d = Dataset(**body.model_dump())
     session.add(d)
     session.flush()
     try:
-        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note)
+        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, owner_org=owner)
     except (IngestError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, f"이 정의로 파일을 읽을 수 없습니다 — {exc}") from exc
@@ -718,7 +735,10 @@ def purge_tasks_run(request: Request, session: Session = Depends(get_session), a
 # ═════════════════════════ 문서 ═════════════════════════
 @router.get("/documents")
 def admin_documents(include_deleted: bool = False, session: Session = Depends(get_session)):
+    from nhdip.orgs import owner_json
+
     out = []
+    oc: dict[str, Any] = {}
     for origin in ("bank", "ext"):
         t = source(origin)
         q = select(t.document).order_by(t.document.created_at.desc())
@@ -729,7 +749,7 @@ def admin_documents(include_deleted: bool = False, session: Session = Depends(ge
             issues = session.execute(select(func.count()).select_from(ExtractionIssue).where(ExtractionIssue.origin == origin, ExtractionIssue.document_id == d.id, ExtractionIssue.status == "open")).scalar()
             ex = d.extraction or {}
             out.append({"origin": origin, "id": d.id, "docCode": d.doc_code, "version": d.version, "isCurrent": d.is_current, "title": d.title, "docClass": d.doc_class, "issuer": d.issuer, "publishedAt": _iso(d.published_at), "fileName": d.file_name, "status": d.status, "chunks": chunks[0], "embedded": chunks[1], "extraction": {"by": ex.get("by"), "entities": len(ex.get("entities") or []), "relations": len(ex.get("relations") or []), "issues": ex.get("issues"), "fallbackReason": ex.get("fallback_reason")}, "openIssues": issues, "uploadedBy": d.uploaded_by, "createdAt": _iso(d.created_at),
-                        "deletedAt": _iso(d.deleted_at), "deletedBy": d.deleted_by, "deleteReason": d.delete_reason})
+                        "owner": owner_json(session, d.owner_org, oc), "deletedAt": _iso(d.deleted_at), "deletedBy": d.deleted_by, "deleteReason": d.delete_reason})
     return out
 
 
@@ -745,11 +765,13 @@ async def document_upload(
     text: str | None = Form(None),
     meta: str | None = Form(None),
     file: UploadFile | None = File(None),
+    owner_org: str | None = Form(None),
     session: Session = Depends(get_session),
     admin: AppUser = Depends(require_admin),
 ):
     if origin not in ("bank", "ext"):
         raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
+    owner = owner_of(session, admin, owner_org)
     import json
     import re
 
@@ -764,7 +786,7 @@ async def document_upload(
         raise HTTPException(422, str(exc) if isinstance(exc, DocumentError) else "meta 는 JSON 객체여야 합니다") from exc
     name, content = await _read(file, "document", session, request, admin.emp_no) if file else (None, None)
     try:
-        doc = ingest_document(session, origin=origin, doc_code=code, title=title, doc_class=doc_class, text=text, filename=name, content=content, issuer=issuer, published_at=published_at or doc_meta.get("effectiveDate") or None, meta=doc_meta, actor=admin.emp_no)
+        doc = ingest_document(session, origin=origin, doc_code=code, title=title, doc_class=doc_class, text=text, filename=name, content=content, issuer=issuer, published_at=published_at or doc_meta.get("effectiveDate") or None, meta=doc_meta, actor=admin.emp_no, owner_org=owner)
     except (DocumentError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc

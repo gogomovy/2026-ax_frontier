@@ -86,8 +86,10 @@ def _task(session: Session, store: str, kind: str, ref: str, payload: dict[str, 
 
 # ═════════════════════════ 데이터셋 버전 ═════════════════════════
 def _promote_candidate(session: Session, ds: Dataset, v: Any) -> Any | None:
+    from nhdip.data.datasets import partition_clause
+
     t = source(ds.origin)
-    same = t.version.as_of == v.as_of if v.as_of else t.version.as_of.is_(None)
+    same = partition_clause(session, t, v.as_of, v.owner_org)  # 같은 기준일 · 소유 구획(영업점별)의 이전 판
     return (
         session.execute(
             select(t.version)

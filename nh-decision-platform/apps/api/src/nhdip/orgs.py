@@ -149,3 +149,46 @@ def can_view_office(session: Session, user: Any, office_code: str) -> bool:
         return False
     mine = {o.code for o in chain}
     return any(o.code in mine for o in org_chain(session, target.code)[1:])
+
+
+# ═════════════════════════ 자료 소유 조직 (요구사항 §33 OWN) ═════════════════════════
+class OwnerError(ValueError):
+    pass
+
+
+def resolve_owner(session: Session, user: Any, requested: str | None = None) -> str | None:
+    """올린 자료의 소유 조직 — 관리자는 고른 팀 · 영업점(빈 값 = 전행 공통), 그 밖의 사용자는 자기 소속(회원가입 때 정한 팀).
+    관리자가 아닌 사용자가 다른 조직을 고르면 거절한다."""
+    want = (requested or "").strip() or None
+    if user is None:
+        return want
+    if getattr(user, "role", None) != "admin":
+        if want and want != user.org_code:
+            raise OwnerError("자료 소유 조직은 관리자만 고를 수 있습니다 — 내 소속으로 올라갑니다")
+        return user.org_code
+    if want is None:
+        return None
+    org = session.get(OrgUnit, want)
+    if org is None or not org.active:
+        raise OwnerError(f"없는 조직이거나 쓰지 않는 조직입니다: {want}")
+    return org.code
+
+
+def is_branch(session: Session, org_code: str | None) -> bool:
+    if not org_code:
+        return False
+    o = session.get(OrgUnit, org_code)
+    return o is not None and o.unit_type == "BRANCH"
+
+
+def owner_json(session: Session, org_code: str | None, cache: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """목록 표시용 — {code, name, unitType}. 없으면 None(전행 공통)."""
+    if not org_code:
+        return None
+    if cache is not None and org_code in cache:
+        return cache[org_code]
+    o = session.get(OrgUnit, org_code)
+    out = {"code": org_code, "name": o.name if o else org_code, "unitType": o.unit_type if o else None}
+    if cache is not None:
+        cache[org_code] = out
+    return out

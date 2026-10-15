@@ -748,6 +748,9 @@ export interface DatasetMeta {
   origin?: "bank" | "ext";
   version?: number;
   dataOrigin?: string;
+  /** 자료 소유 조직(올린 팀 · 영업점) — 없으면 전행 공통 · mine = 내 소속 조직 자료 (§33 OWN) */
+  owner?: { code: string; name: string; unitType?: string | null } | null;
+  mine?: boolean;
 }
 
 /* ── 대시보드 ─────────────────────────────────────────────── */

@@ -15,12 +15,24 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import Session
 
 from nhdip.config import get_settings
 from nhdip.events import audit, emit
-from nhdip.models import Dataset, source, utcnow
+from nhdip.models import Dataset, OrgUnit, source, utcnow
+
+
+def partition_clause(session: Session, t: Any, as_of: Any, owner_org: str | None):
+    """현재 버전 구획 — 같은 기준일이면서 같은 소유 구획. 영업점이 올린 자료는 영업점마다 따로(다른 영업점 자료를 밀어내지 않게),
+    그 밖(팀 · 부서 · 전행 공통)은 기준일 하나에 현재 버전 하나 — 다른 팀이 같은 자료를 다시 올리면 바꾼다."""
+    from nhdip.orgs import is_branch
+
+    same = t.version.as_of == as_of if as_of else t.version.as_of.is_(None)
+    if is_branch(session, owner_org):
+        return and_(same, t.version.owner_org == owner_org)
+    branches = select(OrgUnit.code).where(OrgUnit.unit_type == "BRANCH")
+    return and_(same, or_(t.version.owner_org.is_(None), t.version.owner_org.not_in(branches)))
 
 
 class IngestError(ValueError):
@@ -413,8 +425,9 @@ def ingest_rows(
     actor: str | None = None,
     note: str | None = None,
     force: bool = False,
+    owner_org: str | None = None,
 ):
-    """버전 생성 → (품질 통과 시) 확정 + 현재 버전 교체 + 아웃박스 이벤트 — 한 트랜잭션."""
+    """버전 생성 → (품질 통과 시) 확정 + 현재 버전 교체 + 아웃박스 이벤트 — 한 트랜잭션. owner_org = 자료 소유 조직(없으면 전행 공통)."""
     from nhdip.locks import lock
 
     t = source(ds.origin)
@@ -442,6 +455,7 @@ def ingest_rows(
         quality=quality,
         note=note,
         uploaded_by=actor,
+        owner_org=owner_org,
         committed_at=utcnow() if commit else None,
     )
     session.add(v)
@@ -459,17 +473,17 @@ def ingest_rows(
             )
         )
     if commit:
-        # 같은 기준일 구획(partition)의 이전 현재 버전만 교체 — 다른 기준일 데이터는 유지
-        same = t.version.as_of == v.as_of if v.as_of else t.version.as_of.is_(None)
+        # 같은 기준일 · 소유 구획(partition)의 이전 현재 버전만 교체 — 다른 기준일 · 다른 영업점 자료는 유지
+        same = partition_clause(session, t, v.as_of, owner_org)
         session.execute(update(t.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, same).values(is_current=False))
         v.is_current = True
         emit(
             session,
             "dataset.committed",
-            {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "rows": len(rows)},
+            {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "rows": len(rows), **({"owner_org": owner_org} if owner_org else {})},
             actor,
         )
-    audit(session, actor, "dataset.upload", "dataset", ds.code, {"version": v.version, "status": v.status, "quality": quality["status"], "file": file_name})
+    audit(session, actor, "dataset.upload", "dataset", ds.code, {"version": v.version, "status": v.status, "quality": quality["status"], "file": file_name, "owner": owner_org})
     return v
 
 
@@ -539,7 +553,7 @@ def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
     target = session.get(t.version, version_id)
     if not target or target.dataset_code != ds.code or target.status not in ("committed", "rolled_back"):
         raise IngestError("되돌릴 수 있는 버전이 아닙니다")
-    same = t.version.as_of == target.as_of if target.as_of else t.version.as_of.is_(None)
+    same = partition_clause(session, t, target.as_of, target.owner_org)
     for cur in session.execute(select(t.version).where(t.version.dataset_code == ds.code, t.version.is_current, same)).scalars():
         cur.is_current = False
         if cur.version > target.version:

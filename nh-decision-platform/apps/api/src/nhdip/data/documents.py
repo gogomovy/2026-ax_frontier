@@ -187,7 +187,9 @@ def ingest_document(
     meta: dict[str, Any] | None = None,
     actor: str | None = None,
     emit_event: bool = True,
+    owner_org: str | None = None,
 ):
+    """문서 적재 — owner_org = 자료 소유 조직(올린 팀 · 영업점, 없으면 전행 공통)."""
     t = source(origin)
     sha = path = mime = None
     meta = dict(meta or {})
@@ -228,6 +230,7 @@ def ingest_document(
         meta=meta,
         status="ingested",
         uploaded_by=actor,
+        owner_org=owner_org,
     )
     session.add(doc)
     session.flush()

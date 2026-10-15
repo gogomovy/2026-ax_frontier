@@ -38,6 +38,8 @@ def _make(schema: str, prefix: str):
             "quality": Column(JSONB, default=dict, nullable=False),
             "note": Column(Text),
             "uploaded_by": Column(String(40)),
+            # 자료 소유 조직(팀 · 영업점) — 올린 사람의 소속, 관리자는 올릴 때 고른다. 없으면 전행 공통 (요구사항 §33 OWN)
+            "owner_org": Column(String(32), index=True),
             "created_at": _ts(default=utcnow, nullable=False),
             "committed_at": _ts(nullable=True),
             # 삭제 표시 (Phase J · Q145) — 행 · 원본 파일은 지우고 메타만 남긴다(status=deleted, 버전 번호 재사용 방지)
@@ -85,6 +87,7 @@ def _make(schema: str, prefix: str):
             "status": Column(String(12), default="ingested", nullable=False),  # ingested|extracted|partial|failed|deleted
             "extraction": Column(JSONB, default=dict, nullable=False),
             "uploaded_by": Column(String(40)),
+            "owner_org": Column(String(32), index=True),  # 자료 소유 조직(팀 · 영업점) — 없으면 전행 공통
             "created_at": _ts(default=utcnow, nullable=False),
             # 삭제 표시 (Phase J · Q145) — 본문 · 청크 · 추출 · 원본 파일은 지우고 메타만 남긴다(status=deleted)
             "deleted_at": _ts(nullable=True),

@@ -36,8 +36,25 @@ def scope_values(session: Session, spec: dict[str, Any], *, limit: bool = True) 
     primary = body.get(spec["key"])
     primary = str(primary) if primary not in (None, "") else None
     values = [str(v) for v in (body.get(spec.get("list", "")) or []) if v not in (None, "") and SCOPE_VALUE.match(str(v))]
+    if spec.get("name") == "office" and spec.get("from_owners", True):
+        values += owner_offices(session)  # 관리자가 영업점을 골라 올린 자료가 있으면 그 영업점도 계산한다(§33 OWN — 규칙에 지점을 더하지 않아도)
     extras = [v for v in dict.fromkeys(values) if v != primary]
     return primary, (extras[: scope_cap(spec)] if limit else extras)
+
+
+def owner_offices(session: Session) -> list[str]:
+    """현재 판 자료(데이터셋 · 문서)를 가진 영업점의 사무소 코드 — 소유 조직이 영업점(BRANCH)인 것."""
+    from nhdip.models import OrgUnit, source
+    from nhdip.orgs import office_code_of
+
+    codes: set[str] = set()
+    for origin in ("bank", "ext"):
+        t = source(origin)
+        codes |= {c for c in session.execute(select(t.version.owner_org).where(t.version.is_current, t.version.owner_org.is_not(None)).distinct()).scalars()}
+    if not codes:
+        return []
+    branches = session.execute(select(OrgUnit.code).where(OrgUnit.code.in_(codes), OrgUnit.unit_type == "BRANCH").order_by(OrgUnit.sort, OrgUnit.code)).scalars()
+    return [o for o in (office_code_of(session, c) for c in branches) if SCOPE_VALUE.match(o)]
 
 
 def llm_scopes(session: Session, workflow_code: str, values: list[str], limit: Any) -> list[str]:

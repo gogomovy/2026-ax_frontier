@@ -99,6 +99,30 @@ class _Searcher:
         self.cache: dict[str, list[dict[str, Any]]] = {}
         self.notes: list[str] = []
         self.calls = 0
+        self.office = self._office()
+        self.branch_owner: dict[str, bool] = {}
+
+    def _office(self) -> str | None:
+        """이 실행의 영업점(영업점 범위 흐름만) — 추가 범위면 범위 값, 아니면 기본 지점."""
+        from nhdip.scopes import office_scope, scope_spec
+
+        spec = scope_spec(self.ctx.session, self.ctx.workflow.code)
+        if not spec or spec.get("name") != "office":
+            return None
+        sfx = getattr(self.ctx.eval, "scope_suffix", "") or ""
+        return sfx.lstrip("@") or office_scope(self.ctx.session)[0]
+
+    def allowed(self, doc: Any) -> bool:
+        from nhdip.orgs import is_branch, office_code_of
+
+        owner = getattr(doc, "owner_org", None)
+        if not owner:
+            return True
+        if owner not in self.branch_owner:
+            self.branch_owner[owner] = is_branch(self.ctx.session, owner)
+        if not self.branch_owner[owner]:
+            return True
+        return self.office is not None and office_code_of(self.ctx.session, owner) == self.office
 
     def find(self, q: str, k: int) -> list[dict[str, Any]]:
         key = f"{k}|{q}"
@@ -122,9 +146,11 @@ class _Searcher:
         need = min(int(self.cfg.get("min_terms", 2)), max(1, len(query_terms(q))))
         max_dist = float(self.cfg.get("max_distance", 0.5))
         cand = [h for h in cand if float((h.get("signals") or {}).get("keyword_score") or 0) >= need or float((h.get("signals") or {}).get("cosine_distance") or 9) <= max_dist]
+        docs = _doc_meta(self.ctx, cand)
+        # 영업점이 올린 문서는 그 영업점 화면에만 근거로 붙인다(§33 OWN)
+        cand = [h for h in cand if self.allowed(docs.get((h["origin"], h["document_id"])))]
         ranked = rank_evidence(self.ctx.session, cand, k=k, as_of=self.as_of, doc_classes=classes, query_terms=len(query_terms(q)))
         hits = ranked["hits"]
-        docs = _doc_meta(self.ctx, hits)
         terms = query_terms(q)
         out = [_item(h, docs.get((h["origin"], h["document_id"])), terms) for h in hits]
         self.cache[key] = out

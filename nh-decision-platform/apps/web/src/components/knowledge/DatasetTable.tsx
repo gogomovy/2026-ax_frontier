@@ -23,16 +23,27 @@ export function useCanUpload() {
 export function DatasetTable({ datasets }: { datasets: DatasetMeta[] }) {
   const canUpload = useCanUpload();
   const [q, setQ] = useState("");
+  const [mineOnly, setMineOnly] = useState(false);
+  const hasMine = datasets.some((d) => d.mine);
   const list = useMemo(() => {
     const low = q.trim().toLowerCase();
-    if (!low) return datasets;
-    return datasets.filter((d) => `${d.fileName} ${d.reportCode} ${d.datasetName ?? ""} ${d.dataset ?? ""} ${d.usedBy.join(" ")}`.toLowerCase().includes(low));
-  }, [datasets, q]);
+    const base = mineOnly ? datasets.filter((d) => d.mine) : datasets;
+    if (!low) return base;
+    return base.filter((d) => `${d.fileName} ${d.reportCode} ${d.datasetName ?? ""} ${d.dataset ?? ""} ${d.owner?.name ?? "전행 공통"} ${d.usedBy.join(" ")}`.toLowerCase().includes(low));
+  }, [datasets, q, mineOnly]);
   const showAction = canUpload && datasets.some((d) => d.dataset);
 
   return (
     <div className="flex flex-col gap-sm">
-      <input className="input !h-9 w-full max-w-[360px] text-[13px]" placeholder="파일 · 리포트코드 · 사용 화면으로 찾기" aria-label="정형 데이터 찾기" value={q} onChange={(e) => setQ(e.target.value)} data-dataset-search />
+      <div className="flex flex-wrap items-center gap-md">
+        <input className="input !h-9 w-full max-w-[360px] text-[13px]" placeholder="파일 · 리포트코드 · 소유 팀 · 사용 화면으로 찾기" aria-label="정형 데이터 찾기" value={q} onChange={(e) => setQ(e.target.value)} data-dataset-search />
+        {hasMine ? (
+          <label className="inline-flex items-center gap-1.5 text-[12.5px] text-charcoal">
+            <input type="checkbox" checked={mineOnly} onChange={(e) => setMineOnly(e.target.checked)} data-dataset-mine />
+            우리 팀 자료만
+          </label>
+        ) : null}
+      </div>
       {q.trim() ? (
         <p className="text-[11.5px] text-steel" aria-live="polite">
           {datasets.length}개 중 {list.length}개
@@ -45,6 +56,7 @@ export function DatasetTable({ datasets }: { datasets: DatasetMeta[] }) {
             { key: "file", label: "파일" },
             { key: "code", label: "리포트코드", align: "center" },
             { key: "ym", label: "기준연월", align: "center" },
+            { key: "owner", label: "소유 팀" },
             { key: "rows", label: "행", align: "right" },
             { key: "unit", label: "단위", align: "center" },
             { key: "quality", label: "품질" },
@@ -53,13 +65,16 @@ export function DatasetTable({ datasets }: { datasets: DatasetMeta[] }) {
           ]}
         >
           {list.map((d) => (
-            <tr key={`${d.dataset ?? ""}-${d.fileName}`}>
+            <tr key={`${d.dataset ?? ""}-${d.fileName}-${d.owner?.code ?? ""}`}>
               <Td strong>
                 {d.fileName}
                 {d.datasetName ? <span className="block text-[11px] font-medium text-stone">{d.datasetName}</span> : null}
               </Td>
               <Td align="center">{d.reportCode}</Td>
               <Td align="center">{d.asOfYm}</Td>
+              <Td>
+                {d.owner ? <Badge tone={d.mine ? "info" : "neutral"}>{d.owner.name}</Badge> : <span className="text-[11px] text-stone">전행 공통</span>}
+              </Td>
               <Td align="right">{d.rows.toLocaleString("ko-KR")}</Td>
               <Td align="center">{d.unit}</Td>
               <Td>

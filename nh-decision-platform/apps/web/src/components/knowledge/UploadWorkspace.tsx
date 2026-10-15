@@ -4,6 +4,7 @@ import clsx from "clsx";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NewDatasetPanel, definitionPayload, type PanelSubmit } from "@/components/knowledge/NewDatasetPanel";
+import { useApiSession } from "@/components/providers/SessionProvider";
 import { useUi } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
 import { Advanced, EmptyState, KeyValueList, Notice } from "@/components/ui/Layout";
@@ -238,6 +239,7 @@ function DatasetOption({ d, on, onPick, suggestion }: { d: DatasetOpt; on: boole
 
 export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadable; initialTarget?: string }) {
   const { showToast } = useUi();
+  const me = useApiSession().user;
   const opts = initial;
   const preset = initialTarget && opts.datasets.some((d) => d.code === initialTarget) ? initialTarget : "";
   const [mine, setMine] = useState<UploadReq[] | null>(null);
@@ -653,6 +655,11 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
             <p className="mb-md text-[12.5px] leading-relaxed text-steel">
               보내면 바로 보안 · 형식 · 품질 검사를 합니다. 품질 검사에 실패한 자료는 요청되지 않습니다. {APPROVER_TEXT}가 승인해야 화면 수치와 분석에 반영됩니다.
             </p>
+            {me ? (
+              <p className="mb-md text-[12.5px] text-charcoal" data-upload-owner>
+                이 자료는 <b>{me.org.name}</b> 자료로 등록됩니다(소속 팀 기준 — 데이터베이스 목록에 소유 팀으로 표시).
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-md">
               <Button variant="confirm" disabled={!ready || busy} onClick={submit} aria-describedby={blocker ? "up-blocker" : undefined} data-upload-submit>
                 {busy ? "검사 중…" : "검사하고 승인 요청"}

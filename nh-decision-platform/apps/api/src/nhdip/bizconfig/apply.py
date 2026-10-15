@@ -542,8 +542,14 @@ def _apply_agents(session: Session, agents: list[dict[str, Any]], actor: str) ->
         session.flush()
         system = a.get("system") or ""
         last = session.execute(select(Prompt).where(Prompt.agent_code == a["code"]).order_by(Prompt.version.desc()).limit(1)).scalar()
-        if system and (last is None or last.system != system or (last.user_template or "") != (a.get("user_template") or "")):
-            session.add(Prompt(agent_code=a["code"], version=(last.version + 1) if last else 1, system=system, user_template=a.get("user_template") or "", note="업무 구성", created_by=actor))
+        # 관리자가 [에이전트]에서 고친 프롬프트(최신 판이 업무 구성 · 시드 판이 아님)는 덮어쓰지 않는다
+        ours = last is None or last.note == "업무 구성" or last.created_by == "seed"
+        if system and ours and (last is None or last.system != system or (last.user_template or "") != (a.get("user_template") or "")):
+            nv = (last.version + 1) if last else 1
+            session.add(Prompt(agent_code=a["code"], version=nv, system=system, user_template=a.get("user_template") or "", note="업무 구성", created_by=actor))
+            agent = session.get(Agent, a["code"])
+            if agent is not None and agent.prompt_version in (None, last.version if last else None):
+                agent.prompt_version = nv  # 판을 고정해 두지 않았으면 새 판을 쓴다
     session.flush()
     return _tally(res)
 

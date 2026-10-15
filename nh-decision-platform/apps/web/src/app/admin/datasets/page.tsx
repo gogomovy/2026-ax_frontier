@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, OriginBadge, Select, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { PurgeStatus, useDataDelete, useIsDataAdmin } from "@/components/admin/DataDelete";
 import { ValueView } from "@/components/admin/ValueView";
+import { OwnerBadge, OwnerOrgSelect, type OwnerOrg } from "@/components/admin/OwnerOrg";
 import { useConfirm } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
 import { IntakeWizard } from "@/components/knowledge/IntakeWizard";
@@ -122,6 +123,7 @@ interface Version {
   rows: number;
   quality: { status?: string; checks?: { rule: string; passed: boolean; detail: string; severity: string }[] };
   uploadedBy: string | null;
+  owner?: OwnerOrg | null;
   createdAt: string;
   note: string | null;
   /** 삭제 표시 (Phase J · DEL-06) — 행 · 원본 파일은 지워지고 기록만 남음 */
@@ -156,6 +158,7 @@ interface Ds {
 interface Doc {
   origin: "bank" | "ext";
   id: number;
+  owner?: OwnerOrg | null;
   docCode: string;
   version: number;
   isCurrent: boolean;
@@ -200,6 +203,7 @@ function Datasets() {
   const [stamp, setStamp] = useState(0);
   // 맞는 데이터셋이 없는 새 종류 파일 — 파일에서 추론한 정의를 확인해 데이터셋을 만들고 첫 버전으로 올린다 (DEF-02)
   const [creating, setCreating] = useState(false);
+  const [createOwner, setCreateOwner] = useState("");
   const { run: runCreate } = useAction();
   // 목록에서 바로 정의 삭제(M.22 후속) — 데이터 관리자만. 연결(지표 · 바인딩 · 트리거)이 있으면 미리보기에서 함께 정리
   const isDataAdmin = useIsDataAdmin();
@@ -233,6 +237,7 @@ function Datasets() {
         fd.append("definition", JSON.stringify(definitionPayload(definition)));
         fd.append("data_origin", dataOrigin);
         if (note) fd.append("note", note);
+        if (createOwner) fd.append("owner_org", createOwner);
         return api<UploadResult>("/admin/datasets/create-upload", { method: "POST", body: fd });
       },
       "데이터셋을 만들고 이 파일을 첫 버전으로 올렸습니다 — 관련 구조 파악 · 그래프 반영이 이어서 실행됩니다",
@@ -314,6 +319,9 @@ function Datasets() {
         </div>
         {drop && creating ? (
           <div className="mt-md">
+            <div className="mb-md max-w-[420px]">
+              <OwnerOrgSelect value={createOwner} onChange={setCreateOwner} />
+            </div>
             <NewDatasetPanel
               file={drop}
               inferPath="/admin/datasets/infer"
@@ -599,6 +607,8 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
   const [dataOrigin, setDataOrigin] = useState("actual");
   const [asOf, setAsOf] = useState("");
   const [force, setForce] = useState(false);
+  // 자료를 둘 팀 · 영업점 — 기본은 현재 버전의 소유 조직(같은 팀이 새 판을 올리는 경우가 대부분)
+  const [owner, setOwner] = useState<string>(ds.versions.find((v) => v.isCurrent)?.owner?.code ?? "");
   const [preview, setPreview] = useState<UploadResult | null>(null);
   const [rows, setRows] = useState<{ columns: string[]; rows: Record<string, unknown>[] } | null>(null);
 
@@ -609,6 +619,7 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
     fd.append("data_origin", dataOrigin);
     if (asOf) fd.append("as_of", asOf);
     fd.append("force", String(force));
+    if (owner) fd.append("owner_org", owner);
     return fd;
   };
 
@@ -636,6 +647,10 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
             <div className="flex items-end">
               <Check label="품질 실패 시에도 확정" checked={force} onChange={setForce} />
             </div>
+          </div>
+          <div className="max-w-[420px]">
+            <OwnerOrgSelect value={owner} onChange={setOwner} />
+            <p className="mt-1 text-[11px] text-stone">영업점을 고르면 그 영업점 화면에서 계산되고, 다른 영업점 자료를 밀어내지 않습니다.</p>
           </div>
           <div className="flex flex-wrap items-center gap-xs">
             <Button size="sm" variant="quiet" disabled={busy || !file} onClick={() => run(() => api<UploadResult>(`/admin/datasets/${ds.code}/preview`, { method: "POST", body: form() }), undefined).then((r) => r && setPreview(r))}>
@@ -679,7 +694,7 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
       <DefinitionManage ds={ds} reload={reload} />
 
       <Card title="버전">
-        <Table head={["버전", "기준일", "상태", "성격", "파일", "행", "품질", "업로드", ""]}>
+        <Table head={["버전", "기준일", "상태", "성격", "소유", "파일", "행", "품질", "업로드", ""]}>
           {ds.versions.map((v) => (
             <tr key={v.id} className={v.isCurrent ? "bg-success-faint" : v.status === "deleted" ? "bg-surface-soft" : ""} data-version-status={v.status}>
               <C>
@@ -696,6 +711,9 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
                 ) : null}
               </C>
               <C>{v.dataOrigin === "actual" ? "실데이터" : "시뮬레이션"}</C>
+              <C>
+                <OwnerBadge owner={v.owner} />
+              </C>
               <C className="max-w-[260px] text-[11.5px]">
                 {v.fileName}
                 <p className="font-mono text-[10px] text-stone">{v.sha256?.slice(0, 16)}</p>
@@ -790,6 +808,7 @@ function Documents() {
   const isDataAdmin = useIsDataAdmin();
   const del = useDataDelete();
   const [f, setF] = useState({ origin: "ext", doc_class: "gov_policy", title: "", issuer: "", published_at: "", text: "" });
+  const [owner, setOwner] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [detail, setDetail] = useState<unknown>(null);
 
@@ -797,6 +816,7 @@ function Documents() {
     const fd = new FormData();
     Object.entries(f).forEach(([k, v]) => v && fd.append(k, v));
     if (file) fd.append("file", file);
+    if (owner) fd.append("owner_org", owner);
     const r = await run(() => api("/admin/documents/upload", { method: "POST", body: fd }), "문서를 등록했습니다 — 임베딩·구조화·관련 워크플로우가 이어서 실행됩니다", docs.reload);
     if (r !== null) {
       setFile(null);
@@ -813,6 +833,9 @@ function Documents() {
           <TextInput label="제목" value={f.title} onChange={(v) => setF({ ...f, title: v })} className="md:col-span-2" />
           <TextInput label="발행 기관" value={f.issuer} onChange={(v) => setF({ ...f, issuer: v })} />
           <TextInput label="시행일" type="date" value={f.published_at} onChange={(v) => setF({ ...f, published_at: v })} />
+        </div>
+        <div className="mt-md max-w-[420px]">
+          <OwnerOrgSelect value={owner} onChange={setOwner} label="문서를 둘 팀 · 영업점" />
         </div>
         <div className="mt-md grid grid-cols-1 gap-md md:grid-cols-2">
           <FileDrop
@@ -842,7 +865,7 @@ function Documents() {
       </Card>
       <Card title="문서" actions={<Check label="삭제된 문서 보기" checked={showDeleted} onChange={setShowDeleted} />}>
         <Loading error={docs.error} loading={!docs.data && docs.loading} />
-        <Table head={["출처", "문서", "분류", "상태", "청크 · 임베딩", "구조화", "검토 대기", ""]}>
+        <Table head={["출처", "문서", "분류", "소유", "상태", "청크 · 임베딩", "구조화", "검토 대기", ""]}>
           {(docs.data ?? []).map((d) => (
             <tr key={`${d.origin}-${d.id}`} className={d.isCurrent ? "" : "opacity-50"} data-doc-status={d.status}>
               <C>
@@ -856,6 +879,9 @@ function Documents() {
               </C>
               <C>
                 <Badge>{d.docClass}</Badge>
+              </C>
+              <C>
+                <OwnerBadge owner={d.owner} />
               </C>
               <C>
                 <StatusBadge status={d.status} />
