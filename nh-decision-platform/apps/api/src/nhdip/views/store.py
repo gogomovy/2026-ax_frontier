@@ -177,27 +177,33 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
             patch_figures(v, figs, changes, key)
 
 
-def patch_insight(obj: Any, insight_id: str, fields: dict[str, Any]) -> int:
+def _has_field(o: dict[str, Any], field: str) -> bool:
+    return field in o or f"{field}Tpl" in o
+
+
+def patch_insight(obj: Any, insight_id: str, fields: dict[str, Any], field: str = "statement") -> int:
+    """id 가 같고 `field`(또는 그 서식 문구)를 가진 객체를 모두 고친다 — 같은 의견이 여러 산출물에 실려 있다."""
     n = 0
     if isinstance(obj, dict):
-        if obj.get("id") == insight_id and "statement" in obj:
+        if obj.get("id") == insight_id and _has_field(obj, field):
             obj.update(fields)
             n += 1
         for v in obj.values():
-            n += patch_insight(v, insight_id, fields)
+            n += patch_insight(v, insight_id, fields, field)
     elif isinstance(obj, list):
         for v in obj:
-            n += patch_insight(v, insight_id, fields)
+            n += patch_insight(v, insight_id, fields, field)
     return n
 
 
-def find_insight(artifacts: dict[str, Any], insight_id: str) -> dict[str, Any] | None:
+def find_insight(artifacts: dict[str, Any], insight_id: str, field: str = "statement") -> dict[str, Any] | None:
+    """id 가 같고 `field`(서술 대상 필드 — statement · judgement · body · guideline)를 가진 첫 객체."""
     for payload in artifacts.values():
         stack = [payload]
         while stack:
             o = stack.pop()
             if isinstance(o, dict):
-                if o.get("id") == insight_id and "statement" in o:
+                if o.get("id") == insight_id and _has_field(o, field):
                     return o
                 stack.extend(o.values())
             elif isinstance(o, list):

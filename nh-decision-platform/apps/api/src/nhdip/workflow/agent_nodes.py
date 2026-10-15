@@ -30,7 +30,7 @@ from nhdip.views.store import find_insight
 
 from .engine import NodeResult, RunContext, node_impl
 from .llm_judge import ask_json, clean_reason
-from .nodes import _rule_body, _setting
+from .nodes import _rule_body, _setting, target_field, target_figures, target_key
 
 DETECTOR, PLANNER = "change_detector", "planner"
 LEVELS = ("major", "minor", "ignore")
@@ -236,7 +236,7 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         record(ctx, node.agent_code or PLANNER, "plan", "서술 노드 없음", ctx.state["plan"])
         return NodeResult(ctx.state["plan"])
     targets_cfg = (nar.config or {}).get("targets", [])
-    targets = [t["insight_id"] for t in targets_cfg]
+    targets = [target_key(t) for t in targets_cfg]
     types = [str(c.get("type", "")) for c in ctx.causes if isinstance(c, dict)]
     full = [t for t in types if t in set(pol.get("full_refresh_on") or ["manual", "rule.changed", "config.changed"])]
     forced_types = [t for t in types if t in set(pol.get("force_on") or ["manual"])]
@@ -253,10 +253,11 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     # 1) 규칙 계획(기준안 · 대체 경로)
     rule_choice, rule_skip, why, info = [], {}, {}, []
     for t in targets_cfg:
-        tid = t["insight_id"]
-        ins = find_insight(arts, tid) or {}
-        hit = sorted(set(ins.get("figures") or {}) & changed_figs)
-        info.append({"id": tid, "title": ins.get("title"), "severity": ins.get("severity"), "figures": [f.get("label") for f in (ins.get("figures") or {}).values()][:12],
+        tid = target_key(t)
+        ins = find_insight(arts, t["insight_id"], target_field(t)) or {}
+        tfigs = target_figures(arts, ins) if ins else {}
+        hit = sorted(set(tfigs) & changed_figs)
+        info.append({"id": tid, "field": target_field(t), "title": ins.get("title") or ins.get("label"), "severity": ins.get("severity"), "figures": [f.get("label") for f in tfigs.values()][:12],
                      "changedFigures": hit, "narratedBefore": f"{tid}{sfx}" in narrated, "instruction": t.get("instruction")})
         if full:
             why[tid] = f"전체 갱신({', '.join(sorted(set(full)))})"

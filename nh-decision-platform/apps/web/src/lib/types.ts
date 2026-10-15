@@ -681,7 +681,8 @@ export interface Term {
   formula?: string;
   judgement?: string;
   example?: string;
-  src: { title: string; page: number; fileName: string };
+  /** 근거 문서 — 기본 용어집에는 없다(올린 문서에서 찾은 경우만) */
+  src?: { title: string; page?: number | null; fileName?: string | null } | null;
   relatedTerms: string[];
 }
 

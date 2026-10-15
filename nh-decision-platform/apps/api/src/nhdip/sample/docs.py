@@ -22,26 +22,10 @@ def catalog() -> list[dict[str, Any]]:
 
 
 def collect_snippets() -> dict[str, list[dict[str, Any]]]:
-    """시연 업무 구성의 화면 틀이 인용한 문서 근거(doc + snippet)를 문서 제목별로 — 같은 (제목, 인용문)은 한 번."""
-    out: dict[str, list[dict[str, Any]]] = {}
-    seen: set[tuple[str, str]] = set()
-    from nhdip.seed.pack import load_pack
-
-    arts = sorted(load_pack().get("artifacts") or [], key=lambda a: a["key"])
-    for a in arts:
-        stack = [a["payload"]]
-        while stack:
-            o = stack.pop()
-            if isinstance(o, dict):
-                d = o.get("doc")
-                if isinstance(d, dict) and o.get("snippet") and d.get("title"):
-                    key = (d["title"], o["snippet"])
-                    if key not in seen:
-                        seen.add(key)
-                        out.setdefault(d["title"], []).append({"snippet": o["snippet"], "sectionPath": d.get("sectionPath"), "page": int(d.get("page") or 1)})
-                stack.extend(o.values())
-            elif isinstance(o, list):
-                stack.extend(o)
+    """시연 문서에 실을 인용문(문서 제목별 — 면 · 절 · 인용문). 시연 자료 꾸러미의 일부(doc_quotes.json)이고 제품 화면 틀에는 없다 —
+    플랫폼은 올라온 문서에서 근거를 찾아 붙인다(attach_evidence)."""
+    with open(os.path.join(HERE, "doc_quotes.json"), encoding="utf-8") as fh:
+        out: dict[str, list[dict[str, Any]]] = json.load(fh)
     for v in out.values():
         v.sort(key=lambda x: (x["page"], x.get("sectionPath") or "", x["snippet"]))
     return out

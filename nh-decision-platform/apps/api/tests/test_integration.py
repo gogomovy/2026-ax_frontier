@@ -677,10 +677,8 @@ def test_document_viewer_excerpt_and_file(db):
     """F.12 — 화면 근거 문서(시연 자료 패키지 PDF, Phase I)와 업로드 PDF 모두 면별 본문 + 인용 하이라이트 + 원본 파일."""
     c = _client()
     _login(c, "00000001", "Admin1234!")
-    # 화면 근거 하나를 골라 뷰어로 연다 (파일명 · 면 · 인용문) — 화면 틀은 업무 구성 파일(Phase O)
-    from nhdip.sample.build import business_config
-
-    stack, ev = [next(a["payload"] for a in business_config()["artifacts"] if a["key"] == "risk_dashboard")], None
+    # 화면 근거 하나를 골라 뷰어로 연다 (파일명 · 면 · 인용문) — 기본 구성에는 문서 인용이 없고, 실행이 올라온 문서에서 붙인다(attach_evidence)
+    stack, ev = [c.get("/screens/risk-dashboard").json()], None
     while stack and not ev:
         o = stack.pop()
         if isinstance(o, dict):
@@ -1286,11 +1284,14 @@ def test_branch_multi_office_scope(db):
         tx = admin.get("/screens/branch/tabs", params={"office": x}).json()
         assert [t["tabKey"] for t in tx["current"]] == ["prime-corp", "seomin"]
         rx = admin.get("/screens/branch/reports/prime-corp", params={"office": x})
-        assert rx.status_code == 200 and "다음 서술 실행(LLM) 후 표시" in rx.text
+        # 서술 — LLM 서술 전에는 그 지점 수치 · 지점 이름으로 렌더한 규칙 문장(기본 지점 문장을 옮기지 않는다)
+        op_x = rx.json()["opinions"][0]
+        assert rx.status_code == 200 and "가상지점" in op_x["statement"] and "[[fig:br_avg_grade]]" in op_x["statement"] and not op_x.get("statementBy")
+        assert "가상지점" in rx.json()["subtitle"]
         assert rx.json()["figures"]["br_prospect_cnt"]["calc"]["formulaId"] == "PROSPECT_SELECT"
         e = admin.get("/reports/branch-prime-corp/export", params={"format": "html", "office": x})
-        assert e.status_code == 200 and "다음 서술 실행(LLM) 후 표시" in e.text  # 지점 x 산출물(서술 전 안내 문구)로 만든 보고서
-        assert "다음 서술 실행(LLM) 후 표시" not in admin.get("/reports/branch-prime-corp/export", params={"format": "html"}).text
+        assert e.status_code == 200 and "가상지점" in e.text  # 지점 x 산출물로 만든 보고서
+        assert "가상지점" not in admin.get("/reports/branch-prime-corp/export", params={"format": "html"}).text
         offs = admin.get("/screens/branch/offices").json()
         assert [(o["code"], o["available"], o["primary"]) for o in offs["offices"]] == [("001068", True, True), (x, True, False), ("009999", False, False)]
         assert offs["default"] == "001068"

@@ -53,10 +53,13 @@ export function TermText({
           {term.formula ? (
             <span className="mt-1.5 block font-mono text-[10.5px] leading-snug text-steel">{term.formula}</span>
           ) : null}
-          <span className="mt-1.5 block text-[10.5px] text-stone">
-            근거 · {term.src.title} p.{term.src.page}
-          </span>
-          <span className="mt-1 block text-[10.5px] font-bold text-primary">클릭 — 판단방법·예시·근거문서 보기</span>
+          {term.src ? (
+            <span className="mt-1.5 block text-[10.5px] text-stone">
+              근거 · {term.src.title}
+              {term.src.page ? ` p.${term.src.page}` : ""}
+            </span>
+          ) : null}
+          <span className="mt-1 block text-[10.5px] font-bold text-primary">클릭 — 판단방법 · 근거 보기</span>
         </span>
       ) : null}
     </span>

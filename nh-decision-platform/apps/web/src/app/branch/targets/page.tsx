@@ -55,7 +55,9 @@ export default async function BranchTargetsPage() {
                   <BandProgress value={target.progress} band="targetProgress" label={`진행률 ${target.progress}%`} />
                 ) : null}
 
-                <p className="rounded-xl bg-surface-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-charcoal">{target.guideline}</p>
+                {target.guideline ? (
+                  <p className="rounded-xl bg-surface-soft px-3 py-2.5 text-[12.5px] leading-relaxed text-charcoal">{target.guideline}</p>
+                ) : null}
 
                 <p className="text-[11.5px] leading-snug text-stone">
                   {target.sourceGoalTitle}

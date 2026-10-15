@@ -161,7 +161,10 @@ def _scope_template(payload: Any, placeholder: str) -> Any:
     while stack:
         cur = stack.pop()
         if isinstance(cur, dict):
-            if str(cur.get("id", "")).startswith("ins-") and "statement" in cur:
+            # 기본 범위의 에이전트 문장은 이 범위 것이 아니다 — 표시를 떼서 이 범위 수치로 규칙 문장(서식 문구)이 다시 렌더되게
+            for k in [k for k in cur if k.endswith("By") and cur[k] == "llm"]:
+                del cur[k]
+            if str(cur.get("id", "")).startswith("ins-") and "statement" in cur and "statementTpl" not in cur:
                 cur["statement"] = placeholder
             stack.extend(cur.values())
         elif isinstance(cur, list):

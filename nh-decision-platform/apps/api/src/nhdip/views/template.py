@@ -9,7 +9,12 @@
   [[fig:ID|abs]]        절댓값                [[fig:ID|unit]]  단위만
   [[ym:데이터셋:토큰|형식]]  현재 행의 기간(`$latest` · `$latest-12` · `$earliest` …) — dot(2026.08) · month(8월) · year(2026) · ym · date(2026.08.31) · kor(2026년 8월)
   [[rule:코드.경로|형식]]   규칙 값 — d0~d3(소수 자릿수) · +d1(부호) · pct0(0.95 → 95%) · 기간 형식(dot · month …) 또는 그대로
+  [[if:A>B|참 문구|거짓 문구]]  수치 비교로 문구를 고른다 — A · B 는 수치 id 또는 숫자, 비교 > < >= <= = != (값이 없으면 빈 문구)
+  [[at:경로]]            같은 산출물의 값(예: office.name — 바인딩이 채운 영업점 이름)
 수치는 산출물들에 이미 반영된 Figure 값(id 별)으로 렌더한다 — 다른 워크플로가 계산한 수치도 쓸 수 있다.
+
+서술 필드(statement · judgement · summary)는 [[fig:ID]] 표식을 그대로 둔다 — 화면이 수치 칩으로 그리고, 검증(critic)이 표식으로 수치 출처를 확인한다.
+에이전트가 쓴 문장(`<필드>By: "llm"`)은 그 문장이 기대는 수치가 바뀌기 전까지 규칙 문장으로 되돌리지 않는다(`refresh`).
 """
 from __future__ import annotations
 
@@ -26,6 +31,13 @@ FIG_DROP = ("calc", "sourceRef", "dataOrigin", "stale", "staleReason", "verdict"
 DEMO_ARTIFACTS: dict[str, Any] = {"report_requests": [], "review_queue": []}
 DEMO_FIELDS: dict[str, list[str]] = {"hq_dashboard": ["requests"]}
 TOKEN = re.compile(r"\[\[(fig|ym|rule):([^\]|]+)(?:\|([a-z0-9+]+))?\]\]")
+IF_TOKEN = re.compile(r"\[\[if:([^\]|]+)\|([^\]|]*)\|([^\]|]*)\]\]")
+AT_TOKEN = re.compile(r"\[\[at:([A-Za-z0-9_.]+)\]\]")
+IF_EXPR = re.compile(r"^\s*([A-Za-z0-9_.\-]+)\s*(>=|<=|!=|>|<|=)\s*([A-Za-z0-9_.\-]+)\s*$")
+# 화면이 [[fig:ID]] 를 수치 칩으로 그리는 서술 필드 — 서식 문구를 렌더할 때 수치 표식은 남긴다
+KEEP_FIG_FIELDS = frozenset({"statement", "judgement", "summary"})
+BY = "By"  # `<필드>By` = 그 필드를 쓴 주체(llm) — 규칙 문장(서식 문구)이 덮어쓰지 않게
+DOC_EVIDENCE_KEYS = ("doc",)  # 문서 인용 근거(실행 때 올라온 문서에서 붙인다) — 화면 틀에는 두지 않는다
 UNIT_LABELS = {"KRW_MN": "백만원", "KRW_BN": "억원", "KRW_TN": "조원", "PCT": "%", "PP": "%p", "CNT": "건", "RATIO": "", "NONE": ""}
 
 
@@ -147,6 +159,17 @@ def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ())
             d[k[:-6]] = None  # 지표 표시값으로 채우는 숫자 필드
         if "gapVerdict" in d:
             d["gapVerdict"] = None  # 목표 판정은 실적 수치로 서버가 계산한다 (views.goal_verdict) — 틀에는 두지 않는다
+        # 실행 때 생기는 것 — 문서 인용 근거(attach_evidence) · 검증 결과(critic) · 근거 문서(basisDoc) · 배치 확인 문서 · 에이전트 문장 표시
+        if isinstance(d.get("evidence"), list):
+            d["evidence"] = [e for e in d["evidence"] if not (isinstance(e, dict) and any(k in e for k in DOC_EVIDENCE_KEYS))]
+        if isinstance(d.get("verifications"), list):
+            d["verifications"] = []
+        if "basisDoc" in d:
+            d["basisDoc"] = None
+        if isinstance(d.get("alignment"), dict) and isinstance(d["alignment"].get("matched"), list):
+            d["alignment"]["matched"] = []
+        for k in [k for k in d if k.endswith(BY) and len(k) > len(BY) and k[: -len(BY)] in d and d[k] == "llm"]:
+            del d[k]
         if d.get("mode") in ("range", "point") and "unit" in d and any(k in d for k in ("low", "high", "value")):
             # 경영목표 추천값(제안의 recommendation) — 계산 커널이 채운다(recommend_goals). 자료가 없을 때 시드의 고정 숫자가 '추천'처럼 보이지 않게
             for k in ("low", "high", "value", "currentValue"):
@@ -174,7 +197,7 @@ def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ())
                 continue
             cur = obj.get(fld) if isinstance(obj, dict) else None
             obj[fld] = "" if fld == "note" else ([] if isinstance(cur, list) or cur is None else ({} if isinstance(cur, dict) else None))
-    render_templates(p, {}, None)
+    render_templates(p, {}, None, protect=False)
     return p
 
 
@@ -283,32 +306,102 @@ def _rule(ctx: Any, arg: str, mode: str | None) -> str:
     return DASH if v is None else str(v)
 
 
-def render_text(tpl: str, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None) -> str:
+def _operand(tok: str, idx: dict[str, dict[str, Any]]) -> float | None:
+    try:
+        return float(tok)
+    except ValueError:
+        pass
+    f = idx.get(tok)
+    v = f.get("value") if isinstance(f, dict) else None
+    return None if v is None or isinstance(v, bool) else float(v)
+
+
+def eval_condition(expr: str, idx: dict[str, dict[str, Any]]) -> bool | None:
+    """'A>B' — 수치 id 또는 숫자 비교. 값이 없거나 식이 틀리면 None."""
+    m = IF_EXPR.match(expr)
+    if not m:
+        return None
+    a, op, b = _operand(m.group(1), idx), m.group(2), _operand(m.group(3), idx)
+    if a is None or b is None:
+        return None
+    return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b, "=": a == b, "!=": a != b}[op]
+
+
+def _at(root: Any, path: str) -> str:
+    obj = root
+    for p in path.split("."):
+        if isinstance(obj, dict):
+            obj = obj.get(p)
+        elif isinstance(obj, list) and p.isdigit() and int(p) < len(obj):
+            obj = obj[int(p)]
+        else:
+            return DASH
+    return DASH if obj in (None, "") or isinstance(obj, (dict, list)) else str(obj)
+
+
+def render_text(tpl: str, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None, *, keep_fig: bool = False, root: Any = None) -> str:
     units = units or UNIT_LABELS
+
+    def pick(m: re.Match) -> str:
+        ok = eval_condition(m.group(1), idx)
+        return "" if ok is None else (m.group(2) if ok else m.group(3))
 
     def rep(m: re.Match) -> str:
         kind, arg, mode = m.group(1), m.group(2), m.group(3)
         if kind == "fig":
-            return fmt_figure(idx.get(arg.strip()), mode, units)
+            # 화면은 꾸밈 없는 [[fig:ID]] 만 수치 칩으로 그린다 — 꾸밈(signed · verdict …)이 붙은 표식은 서버가 글로 렌더한다
+            return m.group(0) if keep_fig and not mode else fmt_figure(idx.get(arg.strip()), mode, units)
         if kind == "ym":
             return _period(ctx, arg, mode)
         return _rule(ctx, arg, mode)
 
-    return TOKEN.sub(rep, tpl)
+    out = IF_TOKEN.sub(pick, tpl)
+    out = AT_TOKEN.sub(lambda m: _at(root, m.group(1)), out)
+    return TOKEN.sub(rep, out)
 
 
-def render_templates(payload: Any, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None) -> bool:
-    """`xxxTpl`(문자열 · 문자열 목록) → `xxx`. 바뀐 것이 있으면 True."""
+def template_figure_ids(d: dict[str, Any]) -> set[str]:
+    """이 객체가 기대는 수치 id — 품은 Figure · figures 사전 · 서식 문구의 [[fig:ID]] · [[if:..]] 피연산자."""
+    out: set[str] = set()
+
+    def add(o: dict[str, Any]) -> None:
+        if is_figure(o):
+            out.add(o["id"])
+        for k, v in o.items():
+            if k.endswith(TPL) and isinstance(v, (str, list)):
+                for s in ([v] if isinstance(v, str) else [x for x in v if isinstance(x, str)]):
+                    out.update(x.strip() for x in re.findall(r"\[\[fig:([^\]|]+)", s))
+                    for e in re.findall(r"\[\[if:([^\]|]+)\|", s):
+                        m = IF_EXPR.match(e)
+                        if m:
+                            out.update(t for t in (m.group(1), m.group(3)) if not re.fullmatch(r"-?[0-9.]+", t))
+
+    _walk(d, add)
+    return out
+
+
+def render_templates(payload: Any, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None, *,
+                     protect: bool = True, refresh: set[str] | None = None) -> bool:
+    """`xxxTpl`(문자열 · 문자열 목록) → `xxx`. 바뀐 것이 있으면 True.
+
+    protect — 에이전트가 쓴 필드(`xxxBy: "llm"`)는 건너뛴다. 단 그 객체 id 가 `refresh`(이번 실행에 기대는 수치가 바뀐 객체)에 있으면
+    표시를 떼고 규칙 문장으로 되돌린다(바뀐 수치에 맞지 않을 수 있는 옛 서술을 남기지 않게 — 이어지는 서술 단계가 다시 쓴다)."""
     changed = False
 
     def fix(d: dict[str, Any]) -> None:
         nonlocal changed
         for k in [k for k in d if k.endswith(TPL) and len(k) > len(TPL)]:
             tpl, fld = d[k], k[: -len(TPL)]
+            if d.get(fld + BY) == "llm":
+                if protect and not (refresh and d.get("id") in refresh):
+                    continue
+                del d[fld + BY]
+                changed = True
+            keep = fld in KEEP_FIG_FIELDS
             if isinstance(tpl, str):
-                new: Any = render_text(tpl, idx, ctx, units)
+                new: Any = render_text(tpl, idx, ctx, units, keep_fig=keep, root=payload)
             elif isinstance(tpl, list) and all(isinstance(x, str) for x in tpl):
-                new = [render_text(x, idx, ctx, units) for x in tpl]
+                new = [render_text(x, idx, ctx, units, keep_fig=keep, root=payload) for x in tpl]
             else:
                 continue
             if d.get(fld) != new:

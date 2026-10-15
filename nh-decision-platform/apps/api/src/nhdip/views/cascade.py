@@ -35,15 +35,35 @@ def build_tree(
     goal_state: dict[str, Any],
     in_progress: list[dict[str, Any]],
     unit_labels: dict[str, str] | None = None,
+    targets: list[dict[str, Any]] | None = None,
+    plans: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     units = unit_labels or DEFAULT_UNIT_LABELS
     overrides = goal_state.get("overrides") or {}
     by_goal = {g["id"]: g for g in goals}
+    by_target = {t["id"]: t for t in (targets or []) if isinstance(t, dict) and t.get("id")}
+    by_plan = {p["id"]: p for p in (plans or []) if isinstance(p, dict) and p.get("id")}
+
+    def derived(n: dict[str, Any]) -> None:
+        """설명이 비어 있으면 연결된 항목에서 채운다 — 목표(부서 · 기간 · 판), 수행방안(본문 첫 문장), 영업점 목표(가이드)."""
+        for c in n.get("children") or []:
+            derived(c)
+        if n.get("detail"):
+            return
+        g, t, p = by_goal.get(n["id"]), by_target.get(n["id"]), by_plan.get(n["id"])
+        if n.get("kind") == "goal" and g:
+            n["detail"] = " · ".join(x for x in (n.get("org"), g.get("periodLabel"), f"v{g['version']}" if g.get("version") else None) if x)
+        elif n.get("kind") == "plan" and p and p.get("body"):
+            first = str(p["body"]).split(". ")[0].strip()
+            n["detail"] = first[:90] + ("…" if len(first) > 90 else "")
+        elif n.get("kind") == "branch_target" and t and t.get("guideline"):
+            n["detail"] = f"가이드: {str(t['guideline'])[:90]}"
 
     # 1) 목표 노드 라벨을 현재 목표값으로 갱신
     nodes: list[dict[str, Any]] = []
     for node in base:
         n = copy.deepcopy(node)
+        derived(n)
         goal = by_goal.get(n["id"])
         ov = overrides.get(n["id"]) or {}
         tv = ov.get("targetValue")
@@ -122,13 +142,15 @@ def current_tree(session: Session) -> list[dict[str, Any]]:
     from nhdip.views import user_state as S
 
     units = session.get(Setting, "format.unit_labels")
-    plans = [p for p in S.merged_plans(session) if p.get("status") == "in_progress"]
+    merged = S.merged_plans(session)
     return build_tree(
         get_current(session, "cascade") or [],
         get_current(session, "goals") or [],
         S.goal_state(session),
-        plans,
+        [p for p in merged if p.get("status") == "in_progress"],
         units.value if units else None,
+        targets=get_current(session, "branch_targets") or [],
+        plans=merged,
     )
 
 

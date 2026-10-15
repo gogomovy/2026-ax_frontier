@@ -1,7 +1,7 @@
 {
  "format": "nhdip.business-config/v1",
- "name": "시연 업무 구성",
- "description": "NH 경영 의사결정 플랫폼 시연 — 종합기획부 · 신용리스크관리부 · 영업점 업무 화면의 지표 · 업무 흐름 · 화면 연결 · 규칙 · 조직 · 화면. 시연자료_202608 의 자료 27개와 함께 올린다(예전 시드 값을 파일로 옮김 · Phase O).",
+ "name": "기본 업무 구성",
+ "description": "NH 경영 의사결정 플랫폼 기본 업무 구성 — 종합기획부 · 신용리스크관리부 · 영업점 업무 화면의 화면 틀 · 지표 산식 · 업무 흐름 · 화면 연결 · 규칙 · 조직 · 화면 권한. 값 · 문서 인용 · 의견 문장은 없다 — 올린 원천 자료를 계산 커널이 계산하고, 에이전트가 근거를 붙이고 서술한다.",
  "orgs": [
   {
    "code": "H100",
@@ -1152,7 +1152,6 @@
    "description": "Q44 추천안 — 영업점 워크플로우가 계산할 사무소 · 업적평가 기간. office_code 는 기본 지점(기존 산출물 키), office_codes 에 지점을 더하면 같은 정의로 지점마다 계산해 '<산출물>@<지점>' 으로 게시한다(B.47 · 설정 workflow.scopes — 그 지점의 사무소 · 득점 자료가 있어야 계산)",
    "body": {
     "period": "2026H2",
-    "as_of_label": "2026.08.31 (하반기 2개월 경과)",
     "office_code": "001068",
     "prev_period": "2026H1",
     "office_codes": [
@@ -1747,6 +1746,20 @@
      }
     },
     {
+     "key": "attach",
+     "name": "문서 근거 붙이기",
+     "impl": "attach_evidence",
+     "agent_code": null,
+     "enabled": true,
+     "config": {
+      "k": 3,
+      "queries": {
+       "default_rate_trend": "부도율 통계방법론 등급"
+      },
+      "optional": true
+     }
+    },
+    {
      "key": "narrate",
      "name": "의견 서술(LLM)",
      "impl": "narrate",
@@ -1756,7 +1769,17 @@
       "targets": [
        {
         "insight_id": "ins-model-6b",
-        "instruction": "6B 등급의 대표값 초과·최대값 이내 여부와 카이제곱 검정 결과를 포함한다."
+        "instruction": "6B 등급 실제부도율의 대표값 · 최대값 대비 위치와 카이제곱 검정 결과를 쓴다."
+       },
+       {
+        "insight_id": "plan-micro-recalibration",
+        "field": "body",
+        "instruction": "6B 등급 대표값 · 최대값 대비 실제부도율과 다음 모니터링에서 확인할 점을 실행 항목으로 쓴다."
+       },
+       {
+        "insight_id": "plan-as-model-redev",
+        "field": "body",
+        "instruction": "AS모형 AR 하락률 판정 구간에 맞춘 점검 · 재개발 검토 항목을 쓴다."
        }
       ],
       "optional": true
@@ -2003,6 +2026,17 @@
      }
     },
     {
+     "key": "attach",
+     "name": "문서 근거 붙이기",
+     "impl": "attach_evidence",
+     "agent_code": null,
+     "enabled": true,
+     "config": {
+      "k": 3,
+      "optional": true
+     }
+    },
+    {
      "key": "narrate",
      "name": "의견 서술(LLM)",
      "impl": "narrate",
@@ -2013,6 +2047,15 @@
        {
         "insight_id": "ins-inclusive-provision",
         "instruction": "충당금 비중 변화, 익스포저 건수 증가, 평균 신용등급 비교를 포함하고 모니터링 필요성을 제시한다."
+       },
+       {
+        "insight_id": "att-inclusive-provision",
+        "instruction": "충당금 비중 변화와 익스포저 건수 · 평균 등급 비교를 쓰고, 경영진이 주목할 점을 한 문장으로 맺는다."
+       },
+       {
+        "insight_id": "plan-inclusive-risk",
+        "field": "body",
+        "instruction": "충당금 비중 증감과 해당 풀 연체 점검 · 보고 조건을 실행 항목으로 쓴다."
        }
       ],
       "optional": true
@@ -2250,6 +2293,20 @@
      }
     },
     {
+     "key": "attach",
+     "name": "문서 근거 붙이기",
+     "impl": "attach_evidence",
+     "agent_code": null,
+     "enabled": true,
+     "config": {
+      "k": 3,
+      "queries": {
+       "capital_view": "RWA 한도 총자산 성장률 자본비율"
+      },
+      "optional": true
+     }
+    },
+    {
      "key": "narrate",
      "name": "의견 서술(LLM)",
      "impl": "narrate",
@@ -2260,6 +2317,33 @@
        {
         "insight_id": "ins-divergence",
         "instruction": "기업여신과 가계여신의 목표 대비 이탈 방향 차이를 서술한다."
+       },
+       {
+        "insight_id": "att-corp-gap",
+        "instruction": "기업여신 증가율과 목표의 차이, 구성비 변화를 쓰고 상위 기조 문서와 같은 방향인지 확인할 점을 쓴다."
+       },
+       {
+        "insight_id": "att-hh-limit",
+        "instruction": "가계여신 잔액 한도 소진율 · 증가율 관리목표 대비 · 신용RWA 소진율을 쓴다."
+       },
+       {
+        "insight_id": "att-nim-share",
+        "instruction": "여신 이자마진 비중 변화와 전체 수익 · 이자마진 수익 증가율 차이를 쓴다."
+       },
+       {
+        "insight_id": "prop-corp-growth",
+        "field": "judgement",
+        "instruction": "기업여신 목표 상향 검토가 필요한지 판단 근거를 쓴다."
+       },
+       {
+        "insight_id": "prop-hh-control",
+        "field": "judgement",
+        "instruction": "가계여신 관리목표 강화 검토가 필요한지 판단 근거를 쓴다."
+       },
+       {
+        "insight_id": "prop-inclusive-new",
+        "field": "judgement",
+        "instruction": "포용금융 공급 관리목표 신설 검토가 필요한지 판단 근거를 쓴다."
        }
       ],
       "optional": true
@@ -2496,6 +2580,20 @@
        "branch_ref",
        "gov_policy"
       ]
+     }
+    },
+    {
+     "key": "attach",
+     "name": "문서 근거 붙이기",
+     "impl": "attach_evidence",
+     "agent_code": null,
+     "enabled": true,
+     "config": {
+      "k": 3,
+      "queries": {
+       "branch_dashboard": "업적평가 배점표 리테일 영업점 평가기준"
+      },
+      "optional": true
      }
     },
     {
@@ -17704,11 +17802,11 @@
    "payload": [
     {
      "id": "plan-inclusive-risk",
-     "body": "포용금융 대상 상품 풀의 익스포저 건수가 증가하고 평균 건전성이 소매 익스포저 평균 대비 낮으므로, 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링한다. 충당금 비중이 설정 임계(–%p)를 추가 초과하는 경우 중점관리사항으로 상향 보고한다.",
+     "body": "",
      "title": "포용금융 확대에 따른 신용리스크 중점관리방안",
      "origin": "agent",
      "status": "proposed",
-     "bodyTpl": "포용금융 대상 상품 풀의 익스포저 건수가 증가하고 평균 건전성이 소매 익스포저 평균 대비 낮으므로, 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링한다. 충당금 비중이 설정 임계([[rule:INC_PROVISION_SHARE_TREND.bands.1.max|+d1]]%p)를 추가 초과하는 경우 중점관리사항으로 상향 보고한다.",
+     "bodyTpl": "포용금융 상품 충당금 비중 증감([[fig:share_delta_pp|signed]])과 해당 풀 익스포저 건수 변화([[fig:inc_exposure_cnt_growth|signed]])를 월 단위로 점검한다. 충당금 비중 증감이 설정 임계([[rule:INC_PROVISION_SHARE_TREND.bands.1.max|+d1]]%p)를 넘으면 중점관리사항으로 상향 보고한다.",
      "evidence": [
       {
        "id": "ev-inc-data",
@@ -17720,68 +17818,12 @@
        "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
        "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-inc-products",
-       "doc": {
-        "page": 2,
-        "title": "포용금융 대상 상품 운영기준",
-        "issuer": "여신정책협의회",
-        "dbClass": "mgmt_decision",
-        "fileName": "포용금융 대상 상품 운영기준.pdf",
-        "sectionPath": "2. 대상 상품 및 상품코드",
-        "effectiveDate": "2026-01-22"
-       },
-       "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-       "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-inc-perfeval",
-       "doc": {
-        "page": 5,
-        "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-        "issuer": "NH농협금융지주 기획조정부",
-        "dbClass": "mgmt_decision",
-        "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-        "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-        "effectiveDate": "2026-03-01"
-       },
-       "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-       "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-inc-policy",
-       "doc": {
-        "page": 3,
-        "title": "포용금융 확대방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_포용금융 확대방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-        "effectiveDate": "2026-01-15"
-       },
-       "label": "포용금융 확대방안(금융위원회)",
-       "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "ownerOrg": "신용리스크관리부",
      "alignment": {
-      "matched": [
-       "정부정책 DB — 포용금융 확대방안",
-       "경영 의사결정 DB — 포용금융 대상 상품 운영기준 / 지주 성과평가 방안",
-       "종합기획부 경영계획 — 포용금융 확대"
-      ],
-      "verdict": "aligned",
+      "matched": [],
+      "verdict": "unknown",
       "conflicts": []
      },
      "guideRuleId": "GUIDE_RETAIL_POOL_WATCH",
@@ -17801,7 +17843,7 @@
     },
     {
      "id": "plan-micro-recalibration",
-     "body": "6B 등급의 실제부도율이 예측부도율 대표값을 초과(최대값 이내)한 상태이므로, 해당 등급 표본 구성과 최근 신규 취급 구성을 점검한다. 차기 모니터링에서 초과가 지속되면 등급계량화 재산출을 모형위원회에 상정한다.",
+     "body": "",
      "title": "소기업 모형 6B 등급 등급계량화 재검토",
      "origin": "agent",
      "status": "proposed",
@@ -17826,49 +17868,12 @@
        "tableRef": "md.model_grade(CORP_MICRO, 6B)",
        "snippetTpl": "최소 [[fig:pd_min_6b]] / 대표값 [[fig:pd_mid_6b]] / 최대 [[fig:pd_max_6b]]",
        "sourceKind": "metric_value"
-      },
-      {
-       "id": "ev-6b-report",
-       "doc": {
-        "page": 12,
-        "title": "2025_일반기업모형 모니터링 보고서",
-        "issuer": "신용리스크관리부",
-        "dbClass": "model_method",
-        "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf",
-        "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
-        "effectiveDate": "2025-11-28"
-       },
-       "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
-       "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-6b-stat",
-       "doc": {
-        "page": 2,
-        "title": "붙임. 통계방법론 및 용어 해설",
-        "issuer": "신용리스크관리부",
-        "dbClass": "model_method",
-        "fileName": "붙임. 통계방법론 및 용어 해설.pdf",
-        "sectionPath": "가. 등급계량화 검증",
-        "effectiveDate": "2025-11-28"
-       },
-       "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
-       "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "ownerOrg": "신용리스크관리부",
      "alignment": {
-      "matched": [
-       "경영 의사결정 DB — 2026년 하반기 경영전략회의(건전성 관리 강화)",
-       "종합기획부 경영계획 — 5C 이상 차주 비중 유지"
-      ],
-      "verdict": "aligned",
+      "matched": [],
+      "verdict": "unknown",
       "conflicts": []
      },
      "guideRuleId": "GUIDE_RECALIBRATION",
@@ -17884,34 +17889,17 @@
       "소기업 모형 PSI"
      ],
      "linkedAnalysisLabel": "① 소기업 6B 등급 부도율 특이사항",
-     "relatedGoalTitleTpl": "신용등급 5C 이상 차주 비중 [[fig:grade_5c_target]]대 유지"
+     "relatedGoalTitleTpl": "신용등급 5C 이상 차주 비중 [[fig:grade_5c_target]]대 유지",
+     "bodyTpl": "6B 등급 실제부도율([[fig:dr_6b]])과 예측부도율 대표값([[fig:pd_mid_6b]]) · 최대값([[fig:pd_max_6b]])의 차이를 차기 모니터링에서 다시 확인한다. 대표값 초과가 이어지면 해당 등급 표본 구성과 신규 취급 구성을 점검하고 등급계량화 재산출 필요성을 검토한다."
     },
     {
      "id": "plan-as-model-redev",
-     "body": "AS모형 AR 하락률이 –로 큰 하락 구간에 해당한다. 대체 변수 발굴 및 재개발 필요성을 검토하고, 재개발 이전에는 스코어 컷오프 운영 기준을 보수적으로 적용한다.",
+     "body": "",
      "title": "개인여신 저신용자 AS모형 재개발 검토",
      "origin": "agent",
      "status": "proposed",
-     "bodyTpl": "AS모형 AR 하락률이 [[fig:ard_as]]로 큰 하락 구간에 해당한다. 대체 변수 발굴 및 재개발 필요성을 검토하고, 재개발 이전에는 스코어 컷오프 운영 기준을 보수적으로 적용한다.",
-     "evidence": [
-      {
-       "id": "ev-as-report",
-       "doc": {
-        "page": 17,
-        "title": "'25년 3분기 소매여신모형 모니터링 결과 보고서",
-        "issuer": "소매모형팀",
-        "dbClass": "model_method",
-        "fileName": "'25년 3분기 소매여신모형 모니터링 결과 보고서.pdf",
-        "sectionPath": "나. 개인여신 저신용자 AS모형 / 라. 개인여신 BS모형",
-        "effectiveDate": "2025-10-24"
-       },
-       "label": "'25년 3분기 소매여신모형 모니터링 결과 보고서",
-       "snippet": "개인여신 저신용자 AS모형 AR 35.52%, 개발시점 대비 AR 하락률 34.7%로 비교적 큼.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      }
-     ],
+     "bodyTpl": "AS모형 AR 하락률([[fig:ard_as]] · 판정 [[fig:ard_band_as|verdict]])을 분기마다 점검한다. 큰 하락 구간이 이어지면 대체 변수 발굴과 재개발 필요성을 검토하고, 재개발 전에는 스코어 컷오프 운영 기준을 점검한다.",
+     "evidence": [],
      "ownerOrg": "신용리스크관리부",
      "alignment": {
       "matched": [],
@@ -17935,38 +17923,27 @@
    "payload": {
     "current": [
      {
-      "asOf": "2026-08-31",
+      "asOf": null,
       "label": "① 소기업 6B 등급 부도율 특이사항",
       "tabKey": "model-monitoring",
       "severity": "watch",
       "insightId": "ins-model-6b",
       "generation": "current",
       "reportKind": "model_monitoring",
-      "generatedAt": "2026-08-31T06:22:00+09:00"
+      "generatedAt": null
      },
      {
-      "asOf": "2026-08-31",
+      "asOf": null,
       "label": "② 포용금융 확대 관련 신용리스크",
       "tabKey": "inclusive-risk",
       "severity": "caution",
       "insightId": "ins-inclusive-provision",
       "generation": "current",
       "reportKind": "inclusive_risk",
-      "generatedAt": "2026-08-31T06:22:00+09:00"
+      "generatedAt": null
      }
     ],
-    "previous": [
-     {
-      "asOf": "2026-08-30",
-      "label": "소기업 모형 PSI 관찰 구간 진입",
-      "tabKey": "model-monitoring-prev",
-      "severity": "watch",
-      "insightId": "ins-model-psi-prev",
-      "generation": "previous",
-      "reportKind": "model_monitoring",
-      "generatedAt": "2026-08-31T06:20:00+09:00"
-     }
-    ]
+    "previous": []
    }
   },
   {
@@ -17976,7 +17953,7 @@
      "id": "att-corp-gap",
      "asOf": null,
      "kind": "attention",
-     "title": "기업여신 증가율이 현재 경영목표를 하회하고 있습니다",
+     "title": "",
      "figures": {
       "corp_gap": {
        "id": "corp_gap",
@@ -18019,77 +17996,25 @@
        "tableRef": "calc.calc_run(GROWTH_RATE, SHARE)",
        "snippetTpl": "증가율 [[fig:corp_growth]] · 목표 [[fig:corp_goal]] · 이탈 [[fig:corp_gap]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-att-corp-policy",
-       "doc": {
-        "page": 5,
-        "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅲ. 기업여신 공급 확대",
-        "effectiveDate": "2026-02-20"
-       },
-       "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-att-corp-mgmt",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 결과",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "caution",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "기업여신 증가율은 [[fig:corp_growth]]로 현재 경영목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 기업여신 구성비도 2024년 8월 대비 [[fig:corp_share_delta]] 낮아져, 정부 정책과 내부 의사결정에서 확인되는 기업여신 확대 기조와 다른 방향으로 운영되고 있는 점이 주요 변화로 확인됩니다.",
+     "statement": "",
      "subDomain": "corporate",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "relatedGoalId": "goal-corp-growth",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "기업여신 증가율이 현재 경영목표를 [[if:corp_growth<corp_goal|하회하고 있습니다|상회하고 있습니다]]",
+     "statementTpl": "기업여신 증가율은 [[fig:corp_growth]]로 현재 경영목표 [[fig:corp_goal]] 대비 [[fig:corp_gap]] [[if:corp_growth<corp_goal|하회|상회]]하고 있습니다. 기업여신 구성비는 비교 시점 대비 [[fig:corp_share_delta]] [[if:corp_share_delta<0|낮아졌습니다|높아졌습니다]]."
     },
     {
      "id": "att-hh-limit",
      "asOf": null,
      "kind": "attention",
-     "title": "가계여신 잔액이 관리목표 상단에 근접했습니다",
+     "title": "",
      "figures": {
       "hh_bal": {
        "id": "hh_bal",
@@ -18153,77 +18078,25 @@
        "tableRef": "calc.calc_run(GROWTH_RATE, CAP_HEADROOM)",
        "snippetTpl": "잔액 [[fig:hh_bal]] / 한도 [[fig:hh_bal_limit]] · 증가율 [[fig:hh_growth]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-att-hh-policy",
-       "doc": {
-        "page": 2,
-        "title": "가계부채 관리방안(2026년)",
-        "issuer": "금융위원회·금융감독원",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_2026년 가계부채 관리방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
-        "effectiveDate": "2026-03-05"
-       },
-       "label": "가계부채 관리방안(2026년)",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-att-hh-mgmt",
-       "doc": {
-        "page": 11,
-        "title": "2026년 사업계획(여신 부문)",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 사업계획(여신 부문).pdf",
-        "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-        "effectiveDate": "2025-12-27"
-       },
-       "label": "2026년 사업계획(여신 부문)",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "watch",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "가계여신 잔액은 [[fig:hh_bal]]으로 관리 한도 [[fig:hh_bal_limit]]의 [[fig:hh_bal_usage]]를 소진했습니다. 증가율도 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과한 수준입니다. 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]로 자본 여력 관점의 여유도 축소되고 있습니다.",
+     "statement": "",
      "subDomain": "household",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "relatedGoalId": "goal-hh-balance",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "가계여신 잔액이 관리 한도의 [[fig:hh_bal_usage]]에 이르렀습니다",
+     "statementTpl": "가계여신 잔액은 [[fig:hh_bal]]으로 관리 한도 [[fig:hh_bal_limit]]의 [[fig:hh_bal_usage]]를 소진했습니다. 증가율은 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하 기준 대비 [[fig:hh_gap]] [[if:hh_growth>hh_goal|초과한|이내인]] 수준입니다. 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]입니다."
     },
     {
      "id": "att-nim-share",
      "asOf": null,
      "kind": "attention",
-     "title": "여신 이자마진 비중이 3개년 연속 축소되고 있습니다",
+     "title": "",
      "figures": {
       "nim_2025": {
        "id": "nim_2025",
@@ -18301,60 +18174,25 @@
        "tableRef": "calc.calc_run(SHARE, GROWTH_RATE)",
        "snippetTpl": "비중 [[fig:nim_share_2024]] → [[fig:nim_share_2025]] → [[fig:nim_share_2026]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-att-nim-plan",
-       "doc": {
-        "page": 11,
-        "title": "2026년 사업계획(여신 부문)",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 사업계획(여신 부문).pdf",
-        "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-        "effectiveDate": "2025-12-27"
-       },
-       "label": "2026년 사업계획(여신 부문) — 수익 목표",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "watch",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "전체 수익 중 여신(일반)부문 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] 낮아졌습니다. 전체 수익은 [[fig:total_rev_growth]] 증가한 반면 여신 이자마진 수익은 [[fig:nim_growth]] 증가하여 증가 속도 차이가 유지되고 있습니다.",
+     "statement": "",
      "subDomain": "revenue",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "relatedGoalId": "goal-annual-revenue",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "여신 이자마진 비중이 전년 동기 대비 [[if:nim_share_delta<0|축소되었습니다|확대되었습니다]]",
+     "statementTpl": "전체 수익 중 여신(일반)부문 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] [[if:nim_share_delta<0|낮아졌습니다|높아졌습니다]]. 전체 수익 증가율은 [[fig:total_rev_growth]], 여신 이자마진 수익 증가율은 [[fig:nim_growth]]입니다."
     },
     {
      "id": "att-inclusive-provision",
      "asOf": null,
      "kind": "attention",
-     "title": "포용금융 확대에 따라 충당금 비중이 상승하고 있습니다",
+     "title": "",
      "tabKey": "inclusive-risk",
      "figures": {
       "share_now": {
@@ -18471,91 +18309,20 @@
        "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
        "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-inc-products",
-       "doc": {
-        "page": 2,
-        "title": "포용금융 대상 상품 운영기준",
-        "issuer": "여신정책협의회",
-        "dbClass": "mgmt_decision",
-        "fileName": "포용금융 대상 상품 운영기준.pdf",
-        "sectionPath": "2. 대상 상품 및 상품코드",
-        "effectiveDate": "2026-01-22"
-       },
-       "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-       "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-inc-perfeval",
-       "doc": {
-        "page": 5,
-        "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-        "issuer": "NH농협금융지주 기획조정부",
-        "dbClass": "mgmt_decision",
-        "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-        "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-        "effectiveDate": "2026-03-01"
-       },
-       "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-       "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-inc-policy",
-       "doc": {
-        "page": 3,
-        "title": "포용금융 확대방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_포용금융 확대방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-        "effectiveDate": "2026-01-15"
-       },
-       "label": "포용금융 확대방안(금융위원회)",
-       "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "caution",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
+     "statement": "",
      "subDomain": "inclusive_finance",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "reportKind": "inclusive_risk",
      "reportAnchor": "i3-share",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "포용금융 상품 충당금 비중이 기준시점보다 [[if:share_delta_pp>0|높아졌습니다|높아지지 않았습니다]]",
+     "statementTpl": "포용금융 상품 충당금 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] [[if:share_delta_pp>0|상승|하락]]했습니다(증감률 [[fig:share_delta_pct]]). 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 변했고, 평균 신용등급은 [[fig:inc_avg_grade]](소매 익스포저 평균 [[fig:retail_avg_grade]])입니다."
     }
    ]
   },
@@ -18739,95 +18506,7 @@
       "decimals": 0
      }
     },
-    "evidence": [
-     {
-      "id": "ev-br-h2-scheme",
-      "doc": {
-       "page": 13,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 가. 배점표 > 리테일",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 영업점 배점표(리테일) (13p)",
-      "snippet": "리테일 영업점 배점표: 고객KPI 200 · 사업KPI 500(핵심사업 220 · 전략사업 160 · 생산적·포용금융 120) · 재무KPI 300. 상반기 대비 우량기업여신 · 서민금융 항목 신설.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h2-prime",
-      "doc": {
-       "page": 84,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 우량기업여신",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 핵심사업 > 우량기업여신 (84~91p)",
-      "snippet": "신규 · 증액 유치한 기업여신은 차주 신용등급 구간별 가중치(1~3B 150% · 4A~4B 120% · 5A~5C 100% · 6A~6C 70% · 7A 이하 50%)를 적용한 금액을 실적으로 인정한다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h2-seomin",
-      "doc": {
-       "page": 126,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 생산적·포용금융 > ① 서민금융",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 생산적·포용금융 > ① 서민금융 (126p)",
-      "snippet": "NH새희망홀씨대출(용도코드 1031 · 1032)을 신규 유치한 경우 유치 건수에 따라 배점을 부여하며, 해당 차주는 건전성평가 중 연체평가에서 제외한다. 동일차주 연간 최고 대출한도는 35백만원.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-gov-corp",
-      "doc": {
-       "page": 5,
-       "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-       "issuer": "금융위원회",
-       "dbClass": "gov_policy",
-       "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-       "isOfficial": true,
-       "sectionPath": "Ⅲ. 기업여신 공급 확대",
-       "effectiveDate": "2026-02-20"
-      },
-      "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안 (금융위원회)",
-      "snippet": "기업여신 공급 확대 기조를 유지하고 생산적 부문에 대한 자금공급을 확대한다는 정책 방향이 제시됨.",
-      "category": "external_policy",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-gov-inclusive",
-      "doc": {
-       "page": 3,
-       "title": "포용금융 확대방안",
-       "issuer": "금융위원회",
-       "dbClass": "gov_policy",
-       "fileName": "금융위원회_포용금융 확대방안.pdf",
-       "isOfficial": true,
-       "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-       "effectiveDate": "2026-01-15"
-      },
-      "label": "포용금융 확대방안 (금융위원회)",
-      "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-      "category": "external_policy",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     }
-    ],
+    "evidence": [],
     "segments": [
      {
       "sub": [
@@ -18916,7 +18595,7 @@
       "domainCode": "card"
      }
     ],
-    "asOfLabel": "2026.08.31 (하반기 2개월 경과)",
+    "asOfLabel": "",
     "scorecard": {
      "max": {
       "id": "br_kpi_max",
@@ -18955,9 +18634,10 @@
       "decimals": 1
      }
     },
-    "dataOrigin": "simulated",
+    "dataOrigin": null,
     "generatedAt": null,
-    "periodLabel": "2026년 하반기"
+    "periodLabel": "2026년 하반기",
+    "asOfLabelTpl": "[[ym:영업점 업적평가 득점 현황:$latest|date]] 기준"
    }
   },
   {
@@ -18966,7 +18646,7 @@
     "office": [],
     "current": [
      {
-      "asOf": "2026-08-31",
+      "asOf": null,
       "label": "핵심사업 · 우량기업여신",
       "tabKey": "prime-corp",
       "severity": "watch",
@@ -18974,10 +18654,10 @@
       "reportKey": "report.branch-prime-corp",
       "generation": "current",
       "reportKind": "branch_prime_corp",
-      "generatedAt": "2026-08-31T06:22:00+09:00"
+      "generatedAt": null
      },
      {
-      "asOf": "2026-08-31",
+      "asOf": null,
       "label": "생산적·포용금융 · 서민금융",
       "tabKey": "seomin",
       "severity": "watch",
@@ -18985,7 +18665,7 @@
       "reportKey": "report.branch-seomin",
       "generation": "current",
       "reportKind": "branch_seomin",
-      "generatedAt": "2026-08-31T06:22:00+09:00"
+      "generatedAt": null
      }
     ],
     "previous": []
@@ -19016,7 +18696,7 @@
      "orgName": "수도권1지역본부",
      "progress": null,
      "titleTpl": "기업여신 신규 취급 [[fig:bt1_target]]",
-     "guideline": "5C 이상 차주 중심 취급, 정책자금 연계 상품 우선. 6B 이하 신규 취급은 본부 사전 협의.",
+     "guideline": "",
      "metricLabel": "기업여신 신규 취급액",
      "periodLabel": "2026 하반기",
      "progressMetric": "d300_corp_new_progress",
@@ -19044,10 +18724,10 @@
      "orgName": "수도권1지역본부",
      "progress": null,
      "titleTpl": "가계여신 월 취급 한도 [[fig:bt2_target]]",
-     "guideline": "잔액 관리 한도 소진율 – — 월 한도 내 취급, 초과 시 사전승인 필수.",
+     "guideline": "",
      "metricLabel": "가계여신 월 취급액",
      "periodLabel": "2026.08",
-     "guidelineTpl": "잔액 관리 한도 소진율 [[fig:hh_bal_usage]] — 월 한도 내 취급, 초과 시 사전승인 필수.",
+     "guidelineTpl": "잔액 관리 한도 소진율 [[fig:hh_bal_usage]] — 월 취급 한도 [[fig:bt2_target]] 안에서 취급합니다.",
      "progressMetric": "d300_hh_new_usage",
      "sourceGoalTitle": "가계여신 전년 대비 – 이하 관리",
      "sourcePlanTitle": "가계여신 증가율 관리 강화방안",
@@ -19074,7 +18754,7 @@
      "orgCode": "R001",
      "orgName": "수도권1지역본부",
      "progress": null,
-     "guideline": "새희망홀씨·햇살론·사잇돌 취급 후 3·6개월 초기 연체 점검 결과를 월별 보고.",
+     "guideline": "",
      "metricLabel": "초기 연체 점검 이행률",
      "periodLabel": "2026 하반기",
      "progressMetric": "d300_inc_check_progress",
@@ -19087,59 +18767,7 @@
    "key": "capital_view",
    "payload": {
     "asOf": null,
-    "evidence": [
-     {
-      "id": "ev-cap-limit",
-      "doc": {
-       "page": 1,
-       "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
-       "issuer": "NH농협금융지주",
-       "dbClass": "mgmt_decision",
-       "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf",
-       "sectionPath": "2. 자회사별 총자산 최대 성장률",
-       "effectiveDate": "2025-12-18"
-      },
-      "label": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
-      "snippet": "은행 총자산 최대 증가율 8.2% 이내에서 자회사가 목표를 설정한다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-cap-plan",
-      "doc": {
-       "page": 2,
-       "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
-       "issuer": "NH농협금융지주",
-       "dbClass": "mgmt_decision",
-       "fileName": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf",
-       "sectionPath": "3. 자회사별 RWA 순증 관리목표",
-       "effectiveDate": "2026-01-09"
-      },
-      "label": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 요청",
-      "snippet": "은행 RWA 순증 관리목표 12.4조원, 이행계획 수립 요청.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-cap-dept",
-      "doc": {
-       "page": 2,
-       "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
-       "issuer": "종합기획부",
-       "dbClass": "mgmt_decision",
-       "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf",
-       "sectionPath": "별표1. 부서별 신용RWA 한도",
-       "effectiveDate": "2026-06-26"
-      },
-      "label": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
-      "snippet": "여신 부문 신용RWA 한도 합계 8.6조원(기업 4.9 / 가계 3.1 / 기타 0.6).",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     }
-    ],
+    "evidence": [],
     "proxyNote": "여신 부문 RWA 소진율은 기업·가계자금대출금 잔액을 대리지표로 환산한 값입니다. RWA 미확보로 여신금액 기준 대체 산출했습니다.",
     "bankTarget": {
      "label": "은행 목표 총자산 증가율",
@@ -19185,15 +18813,7 @@
     "constraints": [
      {
       "id": "cap-asset-growth",
-      "doc": {
-       "page": 1,
-       "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
-       "issuer": "NH농협금융지주",
-       "dbClass": "mgmt_decision",
-       "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf",
-       "sectionPath": "2. 자회사별 총자산 최대 성장률",
-       "effectiveDate": "2025-12-18"
-      },
+      "doc": null,
       "kind": "total_asset_growth_cap",
       "label": "자회사별 총자산 최대 증가율(은행)",
       "scope": "은행",
@@ -19209,15 +18829,7 @@
      },
      {
       "id": "cap-rwa-net",
-      "doc": {
-       "page": 2,
-       "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
-       "issuer": "NH농협금융지주",
-       "dbClass": "mgmt_decision",
-       "fileName": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf",
-       "sectionPath": "3. 자회사별 RWA 순증 관리목표",
-       "effectiveDate": "2026-01-09"
-      },
+      "doc": null,
       "kind": "rwa_net_increase_cap",
       "label": "RWA 순증 관리목표(은행)",
       "scope": "은행",
@@ -19233,15 +18845,7 @@
      },
      {
       "id": "cap-rwa-dept",
-      "doc": {
-       "page": 2,
-       "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
-       "issuer": "종합기획부",
-       "dbClass": "mgmt_decision",
-       "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf",
-       "sectionPath": "별표1. 부서별 신용RWA 한도",
-       "effectiveDate": "2026-06-26"
-      },
+      "doc": null,
       "kind": "rwa_dept_allocation",
       "label": "부서별 신용RWA 한도 배분 합계",
       "scope": "여신 부문",
@@ -19379,28 +18983,22 @@
      "org": "종합기획부",
      "kind": "goal",
      "label": "기업여신 전년 대비 – 이상 확대",
-     "detail": "종합기획부 · 2026 연간 · v3",
+     "detail": "",
      "children": [
       {
        "id": "plan-corp-expand",
        "org": "여신관리부",
        "kind": "plan",
        "label": "기업여신 확대 실행방안(하반기)",
-       "detail": "우량 중소기업 신규 발굴, 정책자금 연계 취급 확대",
+       "detail": "",
        "children": [
         {
          "id": "bt-corp-metro1",
          "org": "수도권1지역본부",
          "kind": "branch_target",
          "label": "수도권1지역본부 — 기업여신 신규 취급 –",
-         "detail": "가이드: 5C 이상 차주 중심, 정책자금 연계 우선",
+         "detail": "",
          "labelTpl": "수도권1지역본부 — 기업여신 신규 취급 [[fig:bt1_target]]"
-        },
-        {
-         "id": "bt-corp-central",
-         "org": "중부지역본부",
-         "kind": "branch_target",
-         "label": "중부지역본부 — 기업여신 신규 취급 0.86조원"
         }
        ]
       }
@@ -19412,23 +19010,22 @@
      "org": "종합기획부",
      "kind": "goal",
      "label": "가계여신 전년 대비 – 이하 관리",
-     "detail": "종합기획부 · 2026 연간 · v2",
+     "detail": "",
      "children": [
       {
        "id": "plan-hh-control",
        "org": "여신관리부",
        "kind": "plan",
        "label": "가계여신 증가율 관리 강화방안",
-       "detail": "월별 취급 한도 배분, 고DSR 구간 취급 기준 강화",
+       "detail": "",
        "children": [
         {
          "id": "bt-hh-metro1",
          "org": "수도권1지역본부",
          "kind": "branch_target",
          "label": "수도권1지역본부 — 가계여신 월 취급 한도 –",
-         "detail": "가이드: 잔액 한도 소진율 – — 신규 취급 사전승인",
-         "labelTpl": "수도권1지역본부 — 가계여신 월 취급 한도 [[fig:bt2_target]]",
-         "detailTpl": "가이드: 잔액 한도 소진율 [[fig:hh_bal_usage]] — 신규 취급 사전승인"
+         "detail": "",
+         "labelTpl": "수도권1지역본부 — 가계여신 월 취급 한도 [[fig:bt2_target]]"
         }
        ]
       }
@@ -19447,13 +19044,14 @@
        "org": "신용리스크관리부",
        "kind": "plan",
        "label": "포용금융 확대에 따른 신용리스크 중점관리방안",
-       "detail": "충당금 비중 상승 국면 — 해당 풀 연체 발생·연체율 모니터링",
+       "detail": "",
        "children": [
         {
          "id": "bt-inclusive-metro1",
          "org": "수도권1지역본부",
          "kind": "branch_target",
-         "label": "수도권1지역본부 — 포용금융 상품 취급 후 3개월 연체 모니터링"
+         "label": "수도권1지역본부 — 포용금융 상품 취급 후 3개월 연체 모니터링",
+         "detail": ""
         }
        ]
       }
@@ -19470,7 +19068,7 @@
      "id": "ins-divergence",
      "asOf": null,
      "kind": "analysis_result",
-     "title": "기조와 실제 운영의 괴리 — 가계 확대 · 기업 축소 방향",
+     "title": "",
      "figures": {
       "ros_hh": {
        "id": "ros_hh",
@@ -19543,88 +19141,19 @@
        "tableRef": "calc.calc_run(RETURN_ON_SCALE, SHARE, GROWTH_RATE)",
        "snippetTpl": "기업 [[fig:corp_growth|signed]] / 가계 [[fig:hh_growth|signed]], 기업 구성비 [[fig:corp_share_2024]] → [[fig:corp_share_2026]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-div-policy-corp",
-       "doc": {
-        "page": 5,
-        "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅲ. 기업여신 공급 확대",
-        "effectiveDate": "2026-02-20"
-       },
-       "label": "생산적 금융 공급 확대 방안 — 기업여신 확대",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-div-policy-hh",
-       "doc": {
-        "page": 2,
-        "title": "가계부채 관리방안(2026년)",
-        "issuer": "금융위원회·금융감독원",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_2026년 가계부채 관리방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
-        "effectiveDate": "2026-03-05"
-       },
-       "label": "가계부채 관리방안(2026년) — 증가율 관리",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-div-mgmt",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 결과 — 기업 확대 · 가계 관리",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "caution",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "정부정책 DB와 경영 의사결정 DB에서 확인되는 현재 기조는 기업여신 확대 · 가계여신 증가율 관리입니다. 그러나 실제 운영은 기업여신 [[fig:corp_growth]], 가계여신 [[fig:hh_growth]]으로 가계가 더 빠르게 증가하고 있으며, 기업여신 구성비는 2024년 8월 [[fig:corp_share_2024]]에서 2026년 8월 [[fig:corp_share_2026]]로 [[fig:corp_share_delta]] 낮아졌습니다. 규모 대비 수익률은 기업 [[fig:ros_corp]] · 가계 [[fig:ros_hh]]로 기업이 [[fig:ros_gap]] 우위이므로, 수익성 관점에서도 현재 운영 방향과 기조 간 괴리가 확인됩니다.",
+     "statement": "",
      "subDomain": "portfolio",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "relatedGoalId": "goal-corp-growth",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "기조와 실제 운영 비교 — 기업여신 [[fig:corp_growth|signed]] · 가계여신 [[fig:hh_growth|signed]]",
+     "statementTpl": "실제 운영은 기업여신 증가율 [[fig:corp_growth]], 가계여신 증가율 [[fig:hh_growth]]으로 [[if:hh_growth>corp_growth|가계가 더 빠르게 증가하고 있습니다|기업이 더 빠르게 증가하고 있습니다]]. 기업여신 구성비는 [[fig:corp_share_2024]]에서 [[fig:corp_share_2026]]로 [[fig:corp_share_delta]] 변했고, 규모 대비 수익률은 기업 [[fig:ros_corp]] · 가계 [[fig:ros_hh]]입니다. 정책 · 경영 의사결정 문서의 기조와 같은 방향인지는 근거 문서와 함께 확인합니다."
     },
     "balanceRows": [
      {
@@ -19802,116 +19331,7 @@
   },
   {
    "key": "dataset_meta",
-   "payload": [
-    {
-     "rows": 428,
-     "unit": "백만원",
-     "asOfYm": "202608",
-     "usedBy": [
-      "여신 종합수익",
-      "수익성 트래킹",
-      "기업·가계 이자수익 비교"
-     ],
-     "quality": "passed",
-     "fileName": "(202608)2633_상품부문별손익계산서.xlsx",
-     "reportCode": "2633",
-     "qualityNote": "합계 검증 통과(오차 0.02%), 과목 매핑률 100%",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 424,
-     "unit": "백만원",
-     "asOfYm": "202508",
-     "usedBy": [
-      "전년 동기 비교"
-     ],
-     "quality": "passed",
-     "fileName": "(202508)2633_상품부문별손익계산서.xlsx",
-     "reportCode": "2633",
-     "qualityNote": "합계 검증 통과",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 421,
-     "unit": "백만원",
-     "asOfYm": "202408",
-     "usedBy": [
-      "3개년 추세"
-     ],
-     "quality": "passed",
-     "fileName": "(202408)2633_상품부문별손익계산서.xlsx",
-     "reportCode": "2633",
-     "qualityNote": "합계 검증 통과",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 41,
-     "unit": "백만원",
-     "asOfYm": "202608",
-     "usedBy": [
-      "기업여신",
-      "가계여신",
-      "규모·비중·추이 비교"
-     ],
-     "quality": "passed",
-     "fileName": "(202608)2020 과목별 월별 여신현황.xlsx",
-     "reportCode": "2020",
-     "qualityNote": "종합계 vs 세부 합 일치, 조회사무소 005161",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 41,
-     "unit": "백만원",
-     "asOfYm": "202508",
-     "usedBy": [
-      "전년 동기 비교"
-     ],
-     "quality": "passed",
-     "fileName": "(202508)2020 과목별 월별 여신현황.xlsx",
-     "reportCode": "2020",
-     "qualityNote": "종합계 vs 세부 합 일치",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 41,
-     "unit": "백만원",
-     "asOfYm": "202408",
-     "usedBy": [
-      "3개년 추세"
-     ],
-     "quality": "passed",
-     "fileName": "(202408)2020 과목별 월별 여신현황.xlsx",
-     "reportCode": "2020",
-     "qualityNote": "종합계 vs 세부 합 일치",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 312,
-     "unit": "백만원",
-     "asOfYm": "202601",
-     "usedBy": [
-      "포용금융 충당금 비중(기준시점)"
-     ],
-     "quality": "passed",
-     "fileName": "(202601)7790_상품별_충당금.xlsx",
-     "reportCode": "7790",
-     "qualityNote": "포용금융 상품코드 21건 전건 매칭",
-     "registeredAt": "2026-09-03"
-    },
-    {
-     "rows": 316,
-     "unit": "백만원",
-     "asOfYm": "202608",
-     "usedBy": [
-      "포용금융 충당금 비중(비교시점)"
-     ],
-     "quality": "warning",
-     "fileName": "(202608)7790_상품별_충당금.xlsx",
-     "reportCode": "7790",
-     "qualityNote": "신규 상품 2건 마스터 미등록(충당금 영향 0.03%) — 마스터 등록 필요",
-     "registeredAt": "2026-09-03"
-    }
-   ]
+   "payload": []
   },
   {
    "key": "default_rate_trend",
@@ -19927,22 +19347,6 @@
       "figureId": "dr_corp_micro_latest",
       "tableRef": "calc.calc_run(DEFAULT_RATE)",
       "sourceKind": "calc_run"
-     },
-     {
-      "id": "ev-dr-method",
-      "doc": {
-       "page": 2,
-       "title": "붙임. 통계방법론 및 용어 해설",
-       "issuer": "신용리스크관리부",
-       "dbClass": "model_method",
-       "fileName": "붙임. 통계방법론 및 용어 해설.pdf",
-       "sectionPath": "가. 등급계량화 검증",
-       "effectiveDate": "2025-11-28"
-      },
-      "label": "신용평가모형 모니터링 기준(부도율 산출)",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
      }
     ],
     "retailNote": "개인 풀 5종은 확정 전 임시 구분입니다. 풀 정의가 확정되면 동일 화면 구조에 코드만 교체해 반영합니다.",
@@ -20120,7 +19524,6 @@
      },
      {
       "key": "corp_micro",
-      "note": "6B 등급 특이사항 발생 구간",
       "label": "소기업",
       "latest": {
        "id": "dr_corp_micro_latest",
@@ -20599,7 +20002,7 @@
       "id": "att-corp-gap",
       "asOf": null,
       "kind": "attention",
-      "title": "기업여신 증가율이 현재 경영목표를 하회하고 있습니다",
+      "title": "",
       "figures": {
        "corp_gap": {
         "id": "corp_gap",
@@ -20642,77 +20045,25 @@
         "tableRef": "calc.calc_run(GROWTH_RATE, SHARE)",
         "snippetTpl": "증가율 [[fig:corp_growth]] · 목표 [[fig:corp_goal]] · 이탈 [[fig:corp_gap]]",
         "sourceKind": "calc_run"
-       },
-       {
-        "id": "ev-att-corp-policy",
-        "doc": {
-         "page": 5,
-         "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-         "issuer": "금융위원회",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅲ. 기업여신 공급 확대",
-         "effectiveDate": "2026-02-20"
-        },
-        "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-att-corp-mgmt",
-        "doc": {
-         "page": 4,
-         "title": "2026년 하반기 경영전략회의 결과",
-         "issuer": "경영전략회의",
-         "dbClass": "mgmt_decision",
-         "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-         "sectionPath": "3. 여신 부문 운영방향",
-         "effectiveDate": "2026-07-03"
-        },
-        "label": "2026년 하반기 경영전략회의 결과",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "caution",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "기업여신 증가율은 [[fig:corp_growth]]로 현재 경영목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 기업여신 구성비도 2024년 8월 대비 [[fig:corp_share_delta]] 낮아져, 정부 정책과 내부 의사결정에서 확인되는 기업여신 확대 기조와 다른 방향으로 운영되고 있는 점이 주요 변화로 확인됩니다.",
+      "statement": "",
       "subDomain": "corporate",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "relatedGoalId": "goal-corp-growth",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "titleTpl": "기업여신 증가율이 현재 경영목표를 [[if:corp_growth<corp_goal|하회하고 있습니다|상회하고 있습니다]]",
+      "statementTpl": "기업여신 증가율은 [[fig:corp_growth]]로 현재 경영목표 [[fig:corp_goal]] 대비 [[fig:corp_gap]] [[if:corp_growth<corp_goal|하회|상회]]하고 있습니다. 기업여신 구성비는 비교 시점 대비 [[fig:corp_share_delta]] [[if:corp_share_delta<0|낮아졌습니다|높아졌습니다]]."
      },
      {
       "id": "att-hh-limit",
       "asOf": null,
       "kind": "attention",
-      "title": "가계여신 잔액이 관리목표 상단에 근접했습니다",
+      "title": "",
       "figures": {
        "hh_bal": {
         "id": "hh_bal",
@@ -20776,77 +20127,25 @@
         "tableRef": "calc.calc_run(GROWTH_RATE, CAP_HEADROOM)",
         "snippetTpl": "잔액 [[fig:hh_bal]] / 한도 [[fig:hh_bal_limit]] · 증가율 [[fig:hh_growth]]",
         "sourceKind": "calc_run"
-       },
-       {
-        "id": "ev-att-hh-policy",
-        "doc": {
-         "page": 2,
-         "title": "가계부채 관리방안(2026년)",
-         "issuer": "금융위원회·금융감독원",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_2026년 가계부채 관리방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
-         "effectiveDate": "2026-03-05"
-        },
-        "label": "가계부채 관리방안(2026년)",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-att-hh-mgmt",
-        "doc": {
-         "page": 11,
-         "title": "2026년 사업계획(여신 부문)",
-         "issuer": "종합기획부",
-         "dbClass": "mgmt_decision",
-         "fileName": "2026년 사업계획(여신 부문).pdf",
-         "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-         "effectiveDate": "2025-12-27"
-        },
-        "label": "2026년 사업계획(여신 부문)",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "watch",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "가계여신 잔액은 [[fig:hh_bal]]으로 관리 한도 [[fig:hh_bal_limit]]의 [[fig:hh_bal_usage]]를 소진했습니다. 증가율도 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과한 수준입니다. 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]로 자본 여력 관점의 여유도 축소되고 있습니다.",
+      "statement": "",
       "subDomain": "household",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "relatedGoalId": "goal-hh-balance",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "titleTpl": "가계여신 잔액이 관리 한도의 [[fig:hh_bal_usage]]에 이르렀습니다",
+      "statementTpl": "가계여신 잔액은 [[fig:hh_bal]]으로 관리 한도 [[fig:hh_bal_limit]]의 [[fig:hh_bal_usage]]를 소진했습니다. 증가율은 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하 기준 대비 [[fig:hh_gap]] [[if:hh_growth>hh_goal|초과한|이내인]] 수준입니다. 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]입니다."
      },
      {
       "id": "att-nim-share",
       "asOf": null,
       "kind": "attention",
-      "title": "여신 이자마진 비중이 3개년 연속 축소되고 있습니다",
+      "title": "",
       "figures": {
        "nim_2025": {
         "id": "nim_2025",
@@ -20924,60 +20223,25 @@
         "tableRef": "calc.calc_run(SHARE, GROWTH_RATE)",
         "snippetTpl": "비중 [[fig:nim_share_2024]] → [[fig:nim_share_2025]] → [[fig:nim_share_2026]]",
         "sourceKind": "calc_run"
-       },
-       {
-        "id": "ev-att-nim-plan",
-        "doc": {
-         "page": 11,
-         "title": "2026년 사업계획(여신 부문)",
-         "issuer": "종합기획부",
-         "dbClass": "mgmt_decision",
-         "fileName": "2026년 사업계획(여신 부문).pdf",
-         "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-         "effectiveDate": "2025-12-27"
-        },
-        "label": "2026년 사업계획(여신 부문) — 수익 목표",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "watch",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "전체 수익 중 여신(일반)부문 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] 낮아졌습니다. 전체 수익은 [[fig:total_rev_growth]] 증가한 반면 여신 이자마진 수익은 [[fig:nim_growth]] 증가하여 증가 속도 차이가 유지되고 있습니다.",
+      "statement": "",
       "subDomain": "revenue",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "relatedGoalId": "goal-annual-revenue",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "titleTpl": "여신 이자마진 비중이 전년 동기 대비 [[if:nim_share_delta<0|축소되었습니다|확대되었습니다]]",
+      "statementTpl": "전체 수익 중 여신(일반)부문 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] [[if:nim_share_delta<0|낮아졌습니다|높아졌습니다]]. 전체 수익 증가율은 [[fig:total_rev_growth]], 여신 이자마진 수익 증가율은 [[fig:nim_growth]]입니다."
      },
      {
       "id": "att-inclusive-provision",
       "asOf": null,
       "kind": "attention",
-      "title": "포용금융 확대에 따라 충당금 비중이 상승하고 있습니다",
+      "title": "",
       "tabKey": "inclusive-risk",
       "figures": {
        "share_now": {
@@ -21094,94 +20358,23 @@
         "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
         "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
         "sourceKind": "calc_run"
-       },
-       {
-        "id": "ev-inc-products",
-        "doc": {
-         "page": 2,
-         "title": "포용금융 대상 상품 운영기준",
-         "issuer": "여신정책협의회",
-         "dbClass": "mgmt_decision",
-         "fileName": "포용금융 대상 상품 운영기준.pdf",
-         "sectionPath": "2. 대상 상품 및 상품코드",
-         "effectiveDate": "2026-01-22"
-        },
-        "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-        "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-inc-perfeval",
-        "doc": {
-         "page": 5,
-         "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-         "issuer": "NH농협금융지주 기획조정부",
-         "dbClass": "mgmt_decision",
-         "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-         "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-         "effectiveDate": "2026-03-01"
-        },
-        "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-        "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-inc-policy",
-        "doc": {
-         "page": 3,
-         "title": "포용금융 확대방안",
-         "issuer": "금융위원회",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_포용금융 확대방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-         "effectiveDate": "2026-01-15"
-        },
-        "label": "포용금융 확대방안(금융위원회)",
-        "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "caution",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
+      "statement": "",
       "subDomain": "inclusive_finance",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "inclusive_risk",
       "reportAnchor": "i3-share",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "titleTpl": "포용금융 상품 충당금 비중이 기준시점보다 [[if:share_delta_pp>0|높아졌습니다|높아지지 않았습니다]]",
+      "statementTpl": "포용금융 상품 충당금 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] [[if:share_delta_pp>0|상승|하락]]했습니다(증감률 [[fig:share_delta_pct]]). 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 변했고, 평균 신용등급은 [[fig:inc_avg_grade]](소매 익스포저 평균 [[fig:retail_avg_grade]])입니다."
      }
     ],
-    "batchLabel": "일배치 precompute_p1_dashboard / precompute_p2_risk",
+    "batchLabel": "",
     "refFigures": {
      "nim_share_2024": {
       "id": "nim_share_2024",
@@ -21199,10 +20392,7 @@
      }
     },
     "generatedAt": null,
-    "degradedSources": [
-     "graph",
-     "vector"
-    ]
+    "degradedSources": []
    }
   },
   {
@@ -21337,10 +20527,7 @@
      }
     },
     "verdictTpl": "[[fig:share_band|verdict]]",
-    "limitations": [
-     "해당 풀의 연체율 데이터가 제공되지 않아 산출하지 않았습니다(추정치 생성 금지).",
-     "부도율 영향 분석은 익스포저 단위 부도여부 데이터 확보 후 수행 예정입니다."
-    ],
+    "limitations": [],
     "severityTpl": "[[fig:share_band|severity]]",
     "groupSummary": [],
     "shareDeltaPP": {
@@ -21381,7 +20568,7 @@
      "id": "ins-model-6b",
      "asOf": null,
      "kind": "analysis_result",
-     "title": "소기업 6B 등급 부도율 특이사항",
+     "title": "",
      "tabKey": "model-monitoring",
      "figures": {
       "dr_6b": {
@@ -21442,73 +20629,20 @@
        "tableRef": "md.model_grade(CORP_MICRO, 6B)",
        "snippetTpl": "최소 [[fig:pd_min_6b]] / 대표값 [[fig:pd_mid_6b]] / 최대 [[fig:pd_max_6b]]",
        "sourceKind": "metric_value"
-      },
-      {
-       "id": "ev-6b-report",
-       "doc": {
-        "page": 12,
-        "title": "2025_일반기업모형 모니터링 보고서",
-        "issuer": "신용리스크관리부",
-        "dbClass": "model_method",
-        "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf",
-        "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
-        "effectiveDate": "2025-11-28"
-       },
-       "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
-       "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-6b-stat",
-       "doc": {
-        "page": 2,
-        "title": "붙임. 통계방법론 및 용어 해설",
-        "issuer": "신용리스크관리부",
-        "dbClass": "model_method",
-        "fileName": "붙임. 통계방법론 및 용어 해설.pdf",
-        "sectionPath": "가. 등급계량화 검증",
-        "effectiveDate": "2025-11-28"
-       },
-       "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
-       "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "watch",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "소기업 6B 등급은 실제부도율([[fig:dr_6b]])이 예측부도율 대표값([[fig:pd_mid_6b]])을 [[fig:breach_gap_6b]] 초과하나, 최대값([[fig:pd_max_6b]]) 이내 관리 중입니다. 해당 등급 익스포저는 [[fig:exposure_6b]] 규모이며, 동시적 {{term:CHI_SQUARE|카이제곱 검정}}에서는 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다.",
+     "statement": "",
      "subDomain": "model_risk",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "reportKind": "model_monitoring",
      "reportAnchor": "s4-calibration",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "소기업 6B 등급 실제부도율 — 예측 대표값 [[if:dr_6b>pd_mid_6b|초과|이내]]",
+     "statementTpl": "소기업 6B 등급 실제부도율은 [[fig:dr_6b]]로 예측부도율 대표값 [[fig:pd_mid_6b]] 대비 [[fig:breach_gap_6b]] [[if:dr_6b>pd_mid_6b|높고|낮고]], 최대값([[fig:pd_max_6b]])[[if:dr_6b>pd_max_6b|을 넘었습니다| 이내입니다]]. 해당 등급 익스포저는 [[fig:exposure_6b]]입니다. 전체 등급 {{term:CHI_SQUARE|카이제곱 검정}}은 검정통계량이 임계값을 [[if:chi_stat>chi_critical|넘어 예측부도율과 실제부도율이 같다는 귀무가설이 기각되었습니다|넘지 않아 예측부도율과 실제부도율이 같다는 귀무가설이 채택되었습니다]]."
     },
     {
      "id": "ins-inclusive-provision",
@@ -21631,97 +20765,25 @@
        "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
        "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-inc-products",
-       "doc": {
-        "page": 2,
-        "title": "포용금융 대상 상품 운영기준",
-        "issuer": "여신정책협의회",
-        "dbClass": "mgmt_decision",
-        "fileName": "포용금융 대상 상품 운영기준.pdf",
-        "sectionPath": "2. 대상 상품 및 상품코드",
-        "effectiveDate": "2026-01-22"
-       },
-       "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-       "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-inc-perfeval",
-       "doc": {
-        "page": 5,
-        "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-        "issuer": "NH농협금융지주 기획조정부",
-        "dbClass": "mgmt_decision",
-        "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-        "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-        "effectiveDate": "2026-03-01"
-       },
-       "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-       "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-inc-policy",
-       "doc": {
-        "page": 3,
-        "title": "포용금융 확대방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_포용금융 확대방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-        "effectiveDate": "2026-01-15"
-       },
-       "label": "포용금융 확대방안(금융위원회)",
-       "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "caution",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
+     "statement": "",
      "subDomain": "inclusive_finance",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "reportKind": "inclusive_risk",
      "reportAnchor": "i3-share",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "statementTpl": "포용금융 상품 충당금 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] [[if:share_delta_pp>0|상승|하락]]했습니다(증감률 [[fig:share_delta_pct]]). 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 변했고, 평균 신용등급은 [[fig:inc_avg_grade]](소매 익스포저 평균 [[fig:retail_avg_grade]])입니다."
     },
     {
      "id": "ins-divergence",
      "asOf": null,
      "kind": "analysis_result",
-     "title": "기조와 실제 운영의 괴리 — 가계 확대 · 기업 축소 방향",
+     "title": "",
      "figures": {
       "ros_hh": {
        "id": "ros_hh",
@@ -21792,88 +20854,19 @@
        "tableRef": "calc.calc_run(RETURN_ON_SCALE, SHARE, GROWTH_RATE)",
        "snippetTpl": "기업 [[fig:corp_growth|signed]] / 가계 [[fig:hh_growth|signed]], 기업 구성비 [[fig:corp_share_2024]] → [[fig:corp_share_2026]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-div-policy-corp",
-       "doc": {
-        "page": 5,
-        "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅲ. 기업여신 공급 확대",
-        "effectiveDate": "2026-02-20"
-       },
-       "label": "생산적 금융 공급 확대 방안 — 기업여신 확대",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-div-policy-hh",
-       "doc": {
-        "page": 2,
-        "title": "가계부채 관리방안(2026년)",
-        "issuer": "금융위원회·금융감독원",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_2026년 가계부채 관리방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
-        "effectiveDate": "2026-03-05"
-       },
-       "label": "가계부채 관리방안(2026년) — 증가율 관리",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-div-mgmt",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 결과 — 기업 확대 · 가계 관리",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "severity": "caution",
      "rankBasis": null,
      "rankScore": null,
-     "statement": "정부정책 DB와 경영 의사결정 DB에서 확인되는 현재 기조는 기업여신 확대 · 가계여신 증가율 관리입니다. 그러나 실제 운영은 기업여신 [[fig:corp_growth]], 가계여신 [[fig:hh_growth]]으로 가계가 더 빠르게 증가하고 있으며, 기업여신 구성비는 2024년 8월 [[fig:corp_share_2024]]에서 2026년 8월 [[fig:corp_share_2026]]로 [[fig:corp_share_delta]] 낮아졌습니다. 규모 대비 수익률은 기업 [[fig:ros_corp]] · 가계 [[fig:ros_hh]]로 기업이 [[fig:ros_gap]] 우위이므로, 수익성 관점에서도 현재 운영 방향과 기조 간 괴리가 확인됩니다.",
+     "statement": "",
      "subDomain": "portfolio",
-     "dataOrigin": "simulated",
+     "dataOrigin": null,
      "domainCode": "loan",
      "relatedGoalId": "goal-corp-growth",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ]
+     "verifications": [],
+     "titleTpl": "기조와 실제 운영 비교 — 기업여신 [[fig:corp_growth|signed]] · 가계여신 [[fig:hh_growth|signed]]",
+     "statementTpl": "실제 운영은 기업여신 증가율 [[fig:corp_growth]], 가계여신 증가율 [[fig:hh_growth]]으로 [[if:hh_growth>corp_growth|가계가 더 빠르게 증가하고 있습니다|기업이 더 빠르게 증가하고 있습니다]]. 기업여신 구성비는 [[fig:corp_share_2024]]에서 [[fig:corp_share_2026]]로 [[fig:corp_share_delta]] 변했고, 규모 대비 수익률은 기업 [[fig:ros_corp]] · 가계 [[fig:ros_hh]]입니다. 정책 · 경영 의사결정 문서의 기조와 같은 방향인지는 근거 문서와 함께 확인합니다."
     }
    ]
   },
@@ -22043,23 +21036,6 @@
        "tableRef": "fact.pl_product_segment",
        "snippetTpl": "전체 수익 [[fig:total_rev_2026]] · 여신(일반)부문 이자마진 [[fig:nim_2026]] · 비중 [[fig:nim_share_2026]]",
        "sourceKind": "metric_value"
-      },
-      {
-       "id": "ev-rev-plan",
-       "doc": {
-        "page": 11,
-        "title": "2026년 사업계획(여신 부문)",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 사업계획(여신 부문).pdf",
-        "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-        "effectiveDate": "2025-12-27"
-       },
-       "label": "2026년 사업계획(여신 부문) — 수익 목표",
-       "snippet": "여신(일반)부문 이자마진 수익 연간 3.30조원 이상 달성을 목표로 한다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "nimShare": {
@@ -22069,8 +21045,8 @@
       "value": null,
       "decimals": 2
      },
-     "narrative": "2026년 – 누계 전체 수익은 –으로 전년 동기 대비 – 증가했습니다. 같은 기간 여신(일반)부문 이자마진 수익은 –으로 – 증가하여 전체 수익 증가율을 하회했습니다. 이에 따라 전체 수익 중 여신 이자마진 비중은 –로 전년 동기 – 대비 – 낮아졌습니다. 3개년 연속 비중이 축소되는 흐름이 현재 데이터상 확인되는 주요 변화입니다.",
-     "narrativeTpl": "2026년 [[ym:과목별 월별 여신현황(2020):$latest|month]] 누계 전체 수익은 [[fig:total_rev_2026]]으로 전년 동기 대비 [[fig:total_rev_growth]] 증가했습니다. 같은 기간 여신(일반)부문 이자마진 수익은 [[fig:nim_2026]]으로 [[fig:nim_growth]] 증가하여 전체 수익 증가율을 하회했습니다. 이에 따라 전체 수익 중 여신 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] 낮아졌습니다. 3개년 연속 비중이 축소되는 흐름이 현재 데이터상 확인되는 주요 변화입니다.",
+     "narrative": "",
+     "narrativeTpl": "[[ym:과목별 월별 여신현황(2020):$latest|kor]] 누계 전체 수익은 [[fig:total_rev_2026]]으로 전년 동기 대비 [[fig:total_rev_growth]] 변했습니다. 같은 기간 여신(일반)부문 이자마진 수익은 [[fig:nim_2026]](증가율 [[fig:nim_growth]])으로 전체 수익 증가율을 [[if:nim_growth<total_rev_growth|하회했습니다|상회했습니다]]. 전체 수익 중 여신 이자마진 비중은 [[fig:nim_share_2026]]로 전년 동기 [[fig:nim_share_2025]] 대비 [[fig:nim_share_delta]] [[if:nim_share_delta<0|낮아졌습니다|높아졌습니다]].",
      "nimShareTrend": [],
      "narrativeFigures": {
       "nim_2025": {
@@ -22184,41 +21160,6 @@
        "tableRef": "fact.loan_balance_monthly (2020 과목별 월별 여신현황)",
        "snippetTpl": "기업자금대출금 [[fig:corp_bal]] · 전년 동기 [[fig:cmp_corp_bal_prior]] · 증가율 [[fig:corp_growth]]",
        "sourceKind": "metric_value"
-      },
-      {
-       "id": "ev-corp-policy",
-       "doc": {
-        "page": 5,
-        "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅲ. 기업여신 공급 확대",
-        "effectiveDate": "2026-02-20"
-       },
-       "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-       "snippet": "기업여신 공급 확대 기조를 유지하고 생산적 부문에 대한 자금공급을 확대한다는 정책 방향이 제시됨.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-corp-mgmt",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 결과 — 여신 부문 운영방향",
-       "snippet": "기업여신은 확대, 가계여신은 증가율 관리 기조를 하반기에도 유지하기로 결정.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "goalLabel": "기업여신 전년 대비 – 이상 확대",
@@ -22229,10 +21170,10 @@
       "value": null,
       "decimals": 1
      },
-     "narrative": "기업여신은 2026년 –말 –으로 전년 동기 대비 – 증가하며 증가세를 유지하고 있습니다. 다만 현재 설정된 성장목표 –을 – 하회하고 있습니다. 같은 기간 기업자금대출금이자는 –으로, 규모 기준으로는 가계 대비 우위를 유지하고 있습니다.",
+     "narrative": "",
      "gapVerdict": null,
      "goalLabelTpl": "기업여신 전년 대비 [[fig:corp_goal|signed]] 이상 확대",
-     "narrativeTpl": "기업여신은 2026년 [[ym:과목별 월별 여신현황(2020):$latest|month]]말 [[fig:corp_bal]]으로 전년 동기 대비 [[fig:corp_growth]] 증가하며 증가세를 유지하고 있습니다. 다만 현재 설정된 성장목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 같은 기간 기업자금대출금이자는 [[fig:corp_int_rev]]으로, 규모 기준으로는 가계 대비 우위를 유지하고 있습니다.",
+     "narrativeTpl": "기업여신은 [[ym:과목별 월별 여신현황(2020):$latest|kor]]말 [[fig:corp_bal]]으로 전년 동기 대비 [[fig:corp_growth]] 변했습니다. 성장목표 [[fig:corp_goal]] 대비 [[fig:corp_gap]] [[if:corp_growth<corp_goal|하회|상회]]하고 있습니다. 같은 기간 기업자금대출금이자는 [[fig:corp_int_rev]]입니다.",
      "interestRevenue": {
       "id": "corp_int_rev",
       "unit": "KRW_BN",
@@ -22288,41 +21229,6 @@
        "tableRef": "fact.loan_balance_monthly (2020 과목별 월별 여신현황)",
        "snippetTpl": "가계자금대출금 [[fig:hh_bal]] · 전년 동기 [[fig:cmp_hh_bal_prior]] · 증가율 [[fig:hh_growth]]",
        "sourceKind": "metric_value"
-      },
-      {
-       "id": "ev-hh-policy",
-       "doc": {
-        "page": 2,
-        "title": "가계부채 관리방안(2026년)",
-        "issuer": "금융위원회·금융감독원",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_2026년 가계부채 관리방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
-        "effectiveDate": "2026-03-05"
-       },
-       "label": "가계부채 관리방안(2026년)",
-       "snippet": "가계대출 증가율을 명목 성장률 이내로 관리하는 기조를 제시.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-hh-mgmt",
-       "doc": {
-        "page": 11,
-        "title": "2026년 사업계획(여신 부문)",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 사업계획(여신 부문).pdf",
-        "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-        "effectiveDate": "2025-12-27"
-       },
-       "label": "2026년 사업계획(여신 부문) — 가계여신 관리목표",
-       "snippet": "가계여신은 전년 대비 +4.0% 이하, 잔액 100조원 이하로 관리한다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "goalLabel": "가계여신 전년 대비 – 이하 관리",
@@ -22333,10 +21239,10 @@
       "value": null,
       "decimals": 1
      },
-     "narrative": "가계여신은 2026년 –말 –으로 전년 동기 대비 – 증가했습니다. 현재 관리목표 – 이하를 – 초과한 수준이며, 잔액 관리목표 – 대비 소진율은 –입니다. 가계자금대출금이자는 –으로 증가율 측면에서는 기업 대비 빠른 흐름이 확인됩니다.",
+     "narrative": "",
      "gapVerdict": null,
      "goalLabelTpl": "가계여신 전년 대비 [[fig:hh_goal|signed]] 이하 관리",
-     "narrativeTpl": "가계여신은 2026년 [[ym:과목별 월별 여신현황(2020):$latest|month]]말 [[fig:hh_bal]]으로 전년 동기 대비 [[fig:hh_growth]] 증가했습니다. 현재 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과한 수준이며, 잔액 관리목표 [[fig:cc_hh_ceiling]] 대비 소진율은 [[fig:hh_bal_usage]]입니다. 가계자금대출금이자는 [[fig:hh_int_rev]]으로 증가율 측면에서는 기업 대비 빠른 흐름이 확인됩니다.",
+     "narrativeTpl": "가계여신은 [[ym:과목별 월별 여신현황(2020):$latest|kor]]말 [[fig:hh_bal]]으로 전년 동기 대비 [[fig:hh_growth]] 변했습니다. 관리목표 [[fig:hh_goal]] 이하 기준 대비 [[fig:hh_gap]] [[if:hh_growth>hh_goal|초과|이내]]이며, 잔액 관리목표 [[fig:cc_hh_ceiling]] 대비 소진율은 [[fig:hh_bal_usage]]입니다. 가계자금대출금이자는 [[fig:hh_int_rev]]입니다.",
      "interestRevenue": {
       "id": "hh_int_rev",
       "unit": "KRW_BN",
@@ -22346,7 +21252,7 @@
      },
      "narrativeFigures": {}
     },
-    "dataOrigin": "simulated",
+    "dataOrigin": null,
     "generatedAt": null
    }
   },
@@ -22354,7 +21260,7 @@
    "key": "meta",
    "payload": {
     "asOf": null,
-    "batchLabel": "일배치 precompute_p1_dashboard / precompute_p2_risk",
+    "batchLabel": "",
     "generatedAt": null
    }
   },
@@ -22378,7 +21284,7 @@
       "value": null,
       "labelTpl": "이자수익([[ym:과목별 월별 여신현황(2020):$latest|month]] 누계)"
      },
-     "verdict": "수익 기여 상위 · 규모 확대 유리",
+     "verdict": "",
      "assetClass": "기업자금대출금",
      "returnOnScale": {
       "id": "ros_corp",
@@ -22405,7 +21311,7 @@
       "value": null,
       "labelTpl": "이자수익([[ym:과목별 월별 여신현황(2020):$latest|month]] 누계)"
      },
-     "verdict": "기여 유지 · 관리목표 상한 근접",
+     "verdict": "",
      "assetClass": "가계자금대출금",
      "returnOnScale": {
       "id": "ros_hh",
@@ -22432,7 +21338,7 @@
       "value": null,
       "labelTpl": "이자수익([[ym:과목별 월별 여신현황(2020):$latest|month]] 누계)"
      },
-     "verdict": "수익률 개선 흐름",
+     "verdict": "",
      "assetClass": "기타가계자금대출",
      "returnOnScale": {
       "id": "ros_etc_hh",
@@ -22459,7 +21365,7 @@
       "value": null,
       "labelTpl": "이자수익([[ym:과목별 월별 여신현황(2020):$latest|month]] 누계)"
      },
-     "verdict": "규모 대비 수익률 하락 흐름",
+     "verdict": "",
      "assetClass": "주택자금대출",
      "returnOnScale": {
       "id": "ros_house",
@@ -22486,7 +21392,7 @@
       "value": null,
       "labelTpl": "이자수익([[ym:과목별 월별 여신현황(2020):$latest|month]] 누계)"
      },
-     "verdict": "저수익 자산군 · 규모 확대 후순위",
+     "verdict": "",
      "assetClass": "공공및기타자금대출",
      "returnOnScale": {
       "id": "ros_public",
@@ -22503,7 +21409,7 @@
    "payload": [
     {
      "id": "prop-corp-growth",
-     "asOf": "2026-08-31",
+     "asOf": null,
      "kind": "goal_modify",
      "title": "기업여신 확대 목표 상향 검토",
      "ruleId": "GOAL_RANGE_REC / POLICY_ALIGNED_EXPANSION v1",
@@ -22555,141 +21461,37 @@
        "tableRef": "calc.calc_run(GROWTH_RATE, SHARE, RETURN_ON_SCALE)",
        "snippetTpl": "증가율 [[fig:corp_growth]] · 구성비 [[fig:corp_share]](2024년 대비 [[fig:corp_share_delta]]) · 규모 대비 수익률 [[fig:ros_corp]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-prop-corp-policy",
-       "doc": {
-        "page": 5,
-        "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅲ. 기업여신 공급 확대",
-        "effectiveDate": "2026-02-20"
-       },
-       "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-       "snippet": "생산적 부문에 대한 기업여신 공급 확대를 지속 추진한다는 정책 방향.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-prop-corp-mgmt",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 결과",
-       "snippet": "기업여신 확대 기조 유지, 하반기 취급 목표 상향 검토 지시.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-prop-corp-limit",
-       "doc": {
-        "page": 1,
-        "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
-        "issuer": "NH농협금융지주",
-        "dbClass": "mgmt_decision",
-        "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf",
-        "sectionPath": "2. 자회사별 총자산 최대 성장률",
-        "effectiveDate": "2025-12-18"
-       },
-       "label": "지주 총자산 최대 증가율 한도",
-       "snippet": "은행 총자산 최대 증가율 8.2% — 목표는 한도 이내에서 설정한다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "alignment": {
-      "matched": [
-       "정부정책 DB — 생산적 금융 공급 확대 방안(기업여신 확대)",
-       "경영 의사결정 DB — 2026년 하반기 경영전략회의(기업여신 확대)",
-       "종합기획부 경영계획 — 2026년 사업계획(여신 부문)"
-      ],
-      "verdict": "aligned",
+      "matched": [],
+      "verdict": "unknown",
       "conflicts": []
      },
-     "judgement": "기업여신은 현재 [[fig:corp_growth]]로 목표 [[fig:corp_goal]]을 [[fig:corp_gap]] 하회하고 있습니다. 동시에 정부 정책과 내부 경영 의사결정은 모두 기업여신 확대 기조를 유지·강화하는 방향이며, 규모 대비 수익률도 기업이 가계보다 [[fig:ros_gap]] 우위입니다. 기업여신 구성비가 3개년 연속 축소([[fig:corp_share_delta]])된 점을 함께 고려하면, 목표 수준 자체를 상향하고 실행 강도를 높이는 검토가 필요합니다.",
+     "judgement": "",
      "domainCode": "loan",
      "ruleInputs": [
       {
-       "label": "① 지주 총자산 최대 증가율",
-       "value": "8.2%",
-       "source": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf p.1"
-      },
-      {
-       "label": "① 안전 마진(설정값)",
-       "value": "0.2%p",
-       "source": "rule_engine.settings.safety_margin"
-      },
-      {
-       "label": "① 환산 상한(ceiling)",
-       "value": "8.0%",
-       "source": "calc-corp-ceiling"
+       "label": "① 지주 총자산 증가율 환산 상한",
+       "valueTpl": "[[fig:cc_corp_ceiling]]",
+       "source": "지표 · 지주 총자산 최대 증가율(규칙)",
+       "value": ""
       },
       {
        "label": "② 규모 대비 수익률 격차(기업−가계)",
-       "value": "+0.028%p",
-       "source": "calc-ros-corp / calc-ros-hh"
-      },
-      {
-       "label": "③ 기조(정책·의사결정)",
-       "value": "기업여신 확대(expand)",
-       "source": "know.policy_theme(corp_loan_expansion).stance"
+       "valueTpl": "[[fig:ros_gap|signed]]",
+       "source": "지표 · 규모 대비 수익률",
+       "value": ""
       },
       {
        "label": "④ 기존 목표",
-       "value": "+7.0%",
-       "source": "goal.goal_version(goal-corp-growth, v3)"
-      },
-      {
-       "label": "④ 기조 강화 시 상향 폭(설정값)",
-       "value": "+0.5 ~ +1.0%p",
-       "source": "rule_engine.rules.POLICY_ALIGNED_EXPANSION.delta"
-      },
-      {
-       "label": "⑤ 최종 추천범위",
-       "value": "+7.5% ~ +8.0% (상한 clamp 적용)",
-       "source": "calc-goal-range-corp"
+       "valueTpl": "[[fig:corp_goal|signed]]",
+       "source": "경영목표 goal-corp-growth",
+       "value": ""
       }
      ],
      "targetGoalId": "goal-corp-growth",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "다른 활성 목표·상위 제약과 충돌 없음",
-       "passed": true,
-       "checkCode": "goal_consistency"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ],
+     "verifications": [],
      "recommendation": {
       "low": null,
       "high": null,
@@ -22710,15 +21512,7 @@
         "value": null,
         "decimals": 1
        },
-       "basisDoc": {
-        "page": 1,
-        "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
-        "issuer": "NH농협금융지주",
-        "dbClass": "mgmt_decision",
-        "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf",
-        "sectionPath": "2. 자회사별 총자산 최대 성장률",
-        "effectiveDate": "2025-12-18"
-       },
+       "basisDoc": null,
        "headroom": {
         "id": "cc_corp_headroom",
         "unit": "PP",
@@ -22744,15 +21538,7 @@
         "value": null,
         "decimals": 1
        },
-       "basisDoc": {
-        "page": 2,
-        "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf",
-        "sectionPath": "별표1. 부서별 신용RWA 한도",
-        "effectiveDate": "2026-06-26"
-       },
+       "basisDoc": null,
        "headroom": {
         "id": "cc_rwa_corp_headroom",
         "unit": "PP",
@@ -22768,11 +21554,12 @@
         "decimals": 1
        }
       }
-     ]
+     ],
+     "judgementTpl": "기업여신 증가율은 [[fig:corp_growth]]로 목표 [[fig:corp_goal]] 대비 [[fig:corp_gap]] [[if:corp_growth<corp_goal|하회|상회]]하고 있습니다. 규모 대비 수익률은 기업이 가계보다 [[fig:ros_gap]] [[if:ros_gap>0|높고|낮고]], 기업여신 구성비는 비교 시점 대비 [[fig:corp_share_delta]] [[if:corp_share_delta<0|낮아졌습니다|높아졌습니다]]. 상위 기조(정책 · 경영 의사결정 문서)와 지주 총자산 증가율 상한 안에서 목표 조정 범위를 검토합니다."
     },
     {
      "id": "prop-hh-control",
-     "asOf": "2026-08-31",
+     "asOf": null,
      "kind": "goal_modify",
      "title": "가계여신 관리목표 강화 검토",
      "ruleId": "GOAL_RANGE_REC / HOUSEHOLD_CONTROL_TIGHTEN v1",
@@ -22804,6 +21591,27 @@
        "label": "가계여신 증가율(전년 동기 대비)",
        "value": null,
        "decimals": 2
+      },
+      "cc_hh_ceiling": {
+       "id": "cc_hh_ceiling",
+       "unit": "KRW_TN",
+       "label": "관리 한도",
+       "value": null,
+       "decimals": 2
+      },
+      "hh_bal_usage": {
+       "id": "hh_bal_usage",
+       "unit": "PCT",
+       "label": "가계여신 잔액 관리 한도 소진율",
+       "value": null,
+       "decimals": 1
+      },
+      "rwa_hh_usage": {
+       "id": "rwa_hh_usage",
+       "unit": "PCT",
+       "label": "가계 부문 신용RWA 소진율",
+       "value": null,
+       "decimals": 1
       }
      },
      "evidence": [
@@ -22816,125 +21624,50 @@
        "tableRef": "calc.calc_run(GROWTH_RATE, CAP_HEADROOM)",
        "snippetTpl": "증가율 [[fig:hh_growth]] · 잔액 [[fig:cmp_hh_bal_cur]](한도 대비 [[fig:hh_bal_usage]]) · 가계 RWA 소진율 [[fig:rwa_hh_usage]]",
        "sourceKind": "calc_run"
-      },
-      {
-       "id": "ev-prop-hh-policy",
-       "doc": {
-        "page": 2,
-        "title": "가계부채 관리방안(2026년)",
-        "issuer": "금융위원회·금융감독원",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_2026년 가계부채 관리방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅰ. 가계대출 증가율 관리 기조",
-        "effectiveDate": "2026-03-05"
-       },
-       "label": "가계부채 관리방안(2026년)",
-       "snippet": "가계대출 증가율을 명목 성장률 이내로 관리하도록 요구.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-prop-hh-mgmt",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 결과",
-       "snippet": "가계여신은 증가율 관리 기조를 유지하고 취급 기준을 재점검한다.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "alignment": {
-      "matched": [
-       "정부정책 DB — 가계부채 관리방안(2026년)",
-       "경영 의사결정 DB — 2026년 하반기 경영전략회의",
-       "종합기획부 경영계획 — 잔액 – 이하 관리"
-      ],
-      "verdict": "aligned",
-      "conflicts": [],
-      "matchedTpl": [
-       "정부정책 DB — 가계부채 관리방안(2026년)",
-       "경영 의사결정 DB — 2026년 하반기 경영전략회의",
-       "종합기획부 경영계획 — 잔액 [[fig:hh_bal_limit]] 이하 관리"
-      ]
+      "matched": [],
+      "verdict": "unknown",
+      "conflicts": []
      },
-     "judgement": "가계여신 증가율은 –로 관리목표 – 이하를 – 초과했습니다. 잔액 기준으로도 관리 한도 –의 –를 소진했고, 가계 부문 신용RWA 소진율은 –입니다. 정부 가계부채 관리 기조와 내부 경영 의사결정 모두 증가율 관리 방향이므로, 관리목표 수준을 낮추고 월별 취급 한도 관리를 강화하는 검토가 필요합니다.",
+     "judgement": "",
      "domainCode": "loan",
      "ruleInputs": [
       {
        "label": "① 잔액 관리 한도",
-       "value": "100.00조원",
-       "source": "2026년 사업계획(여신 부문).pdf p.11"
+       "valueTpl": "[[fig:cc_hh_ceiling]]",
+       "source": "경영목표 · 잔액 관리 한도",
+       "value": ""
       },
       {
        "label": "① 현재 잔액 / 소진율",
-       "value": "99.24조원 / 99.2%",
-       "source": "(202608)2020 과목별 월별 여신현황.xlsx"
+       "valueTpl": "[[fig:hh_bal]] / [[fig:hh_bal_usage]]",
+       "source": "지표 · 가계자금대출금 잔액",
+       "value": ""
       },
       {
        "label": "① 가계 신용RWA 소진율",
-       "value": "92.3%",
-       "source": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf p.2"
+       "valueTpl": "[[fig:rwa_hh_usage]]",
+       "source": "지표 · 신용RWA 소진율",
+       "value": ""
       },
       {
        "label": "② 규모 대비 수익률",
-       "value": "0.917%(기업 대비 −0.028%p)",
-       "source": "calc-ros-hh"
-      },
-      {
-       "label": "③ 기조(정책·의사결정)",
-       "value": "가계여신 증가율 관리(control)",
-       "source": "know.policy_theme(household_loan_control).stance"
+       "valueTpl": "[[fig:ros_hh]]",
+       "source": "지표 · 규모 대비 수익률",
+       "value": ""
       },
       {
        "label": "④ 기존 목표",
-       "value": "+4.0% 이하",
-       "source": "goal.goal_version(goal-hh-control, v2)"
-      },
-      {
-       "label": "⑤ 최종 추천범위",
-       "value": "+3.0% ~ +3.5% 이하",
-       "source": "calc-goal-range-hh"
+       "valueTpl": "[[fig:hh_goal|signed]] 이하",
+       "source": "경영목표 goal-hh-control",
+       "value": ""
       }
      ],
-     "judgementTpl": "가계여신 증가율은 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하를 [[fig:hh_gap]] 초과했습니다. 잔액 기준으로도 관리 한도 [[fig:cc_hh_ceiling]]의 [[fig:hh_bal_usage]]를 소진했고, 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]입니다. 정부 가계부채 관리 기조와 내부 경영 의사결정 모두 증가율 관리 방향이므로, 관리목표 수준을 낮추고 월별 취급 한도 관리를 강화하는 검토가 필요합니다.",
+     "judgementTpl": "가계여신 증가율은 [[fig:hh_growth]]로 관리목표 [[fig:hh_goal]] 이하 기준 대비 [[fig:hh_gap]] [[if:hh_growth>hh_goal|초과|이내]]입니다. 잔액은 관리 한도 [[fig:cc_hh_ceiling]]의 [[fig:hh_bal_usage]]를 소진했고, 가계 부문 신용RWA 소진율은 [[fig:rwa_hh_usage]]입니다. 상위 기조와 한도 소진 수준을 함께 보고 관리목표 조정 범위를 검토합니다.",
      "targetGoalId": "goal-hh-control",
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "기업여신 확대 목표와 상충하지 않음(부문 분리)",
-       "passed": true,
-       "checkCode": "goal_consistency"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ],
+     "verifications": [],
      "recommendation": {
       "low": null,
       "high": null,
@@ -22955,15 +21688,7 @@
         "value": null,
         "decimals": 2
        },
-       "basisDoc": {
-        "page": 11,
-        "title": "2026년 사업계획(여신 부문)",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 사업계획(여신 부문).pdf",
-        "sectionPath": "Ⅱ. 부문별 계획 > 1. 여신",
-        "effectiveDate": "2025-12-27"
-       },
+       "basisDoc": null,
        "headroom": {
         "id": "cc_hh_headroom",
         "unit": "KRW_TN",
@@ -22989,15 +21714,7 @@
         "value": null,
         "decimals": 1
        },
-       "basisDoc": {
-        "page": 2,
-        "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf",
-        "sectionPath": "별표1. 부서별 신용RWA 한도",
-        "effectiveDate": "2026-06-26"
-       },
+       "basisDoc": null,
        "headroom": {
         "id": "cc_rwa_hh_headroom",
         "unit": "PP",
@@ -23017,7 +21734,7 @@
     },
     {
      "id": "prop-inclusive-new",
-     "asOf": "2026-08-31",
+     "asOf": null,
      "kind": "goal_new",
      "title": "신규 경영목표 제안 — 포용금융 공급 확대",
      "ruleId": "INCLUSIVE_SUPPLY_BASELINE v1",
@@ -23062,151 +21779,30 @@
        "tableRef": "fact.provision_by_product / 개인여신 등급 분포",
        "snippetTpl": "공급액 [[fig:mid_low_supply]]([[ym:과목별 월별 여신현황(2020):$latest|month]] 누계, [[fig:mid_low_growth|signed]]) · 개인여신 중 비중 [[fig:mid_low_share]] · 타행 평균 [[fig:peer_share]](참고)",
        "sourceKind": "metric_value"
-      },
-      {
-       "id": "ev-prop-inc-policy",
-       "doc": {
-        "page": 3,
-        "title": "포용금융 확대방안",
-        "issuer": "금융위원회",
-        "dbClass": "gov_policy",
-        "fileName": "금융위원회_포용금융 확대방안.pdf",
-        "isOfficial": true,
-        "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-        "effectiveDate": "2026-01-15"
-       },
-       "label": "포용금융 확대방안(금융위원회)",
-       "snippet": "서민·취약계층에 대한 금융공급 확대와 공급 목표의 명시적 설정을 요구.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-prop-inc-news",
-       "doc": {
-        "title": "금융당국, 서민금융 공급 목표 상향 주문",
-        "issuer": "연합뉴스",
-        "dbClass": "external_web",
-        "fileName": "외부 기사",
-        "isOfficial": false,
-        "effectiveDate": "2026-08-12"
-       },
-       "label": "금융당국, 서민금융 공급 목표 상향 주문(보조자료)",
-       "snippet": "공식 자료를 보조하는 참고 기사. 판단의 주된 근거로는 사용하지 않았습니다.",
-       "category": "external_policy",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-prop-inc-mgmt",
-       "doc": {
-        "page": 5,
-        "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-        "issuer": "NH농협금융지주 기획조정부",
-        "dbClass": "mgmt_decision",
-        "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-        "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-        "effectiveDate": "2026-03-01"
-       },
-       "label": "지주 성과평가 방안 — 포용금융 배점 및 실적 인정 기준",
-       "snippet": "포용금융 추진 배점 1.3점, 은행 해당 (취약계층) 상품 기준으로 실적을 인정.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
-      },
-      {
-       "id": "ev-prop-inc-strat",
-       "doc": {
-        "page": 4,
-        "title": "2026년 하반기 경영전략회의 결과",
-        "issuer": "경영전략회의",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 경영전략회의 결과.pdf",
-        "sectionPath": "3. 여신 부문 운영방향",
-        "effectiveDate": "2026-07-03"
-       },
-       "label": "2026년 하반기 경영전략회의 — 포용금융 확대",
-       "snippet": "포용금융 대상 상품 적극 추진을 하반기 과제로 포함.",
-       "category": "internal_direction",
-       "relevance": null,
-       "sourceKind": "doc_chunk"
       }
      ],
      "alignment": {
-      "matched": [
-       "정부정책 DB — 포용금융 확대방안",
-       "경영 의사결정 DB — 포용금융 대상 상품 운영기준 / 성과평가 방안",
-       "종합기획부 경영계획 — 포용금융 확대"
-      ],
-      "verdict": "aligned",
+      "matched": [],
+      "verdict": "unknown",
       "conflicts": []
      },
-     "judgement": "정부의 포용금융 확대 기조와 지주 성과평가 기준(생산적·포용적 금융 부문 배점 반영)을 고려할 때, 현재 여신 경영목표에는 포용금융 공급에 대한 별도 관리목표가 없습니다. 당행 개인여신 중 중·저신용자 비중은 [[fig:mid_low_share]]로 타행 평균 [[fig:peer_share]] 대비 낮은 수준이며, 중·저신용자 여신 공급액은 [[fig:mid_low_supply]]으로 전년 동기 대비 [[fig:mid_low_growth]] 증가했습니다. 신규 관리목표 설정을 검토할 필요가 있습니다.",
+     "judgement": "",
      "domainCode": "loan",
      "ruleInputs": [
       {
-       "label": "① 8월 누계 공급액",
-       "value": "2.64조원",
-       "source": "fact.provision_by_product / 여신 공급 집계"
+       "label": "① 중·저신용자 여신 공급액",
+       "valueTpl": "[[fig:mid_low_supply]]",
+       "source": "지표 · 중·저신용자 공급",
+       "value": ""
       },
       {
-       "label": "① 연환산(8→12개월)",
-       "value": "3.96조원",
-       "source": "calc-inclusive-annualize"
-      },
-      {
-       "label": "② 전년 실적",
-       "value": "3.02조원",
-       "source": "2025년 실적"
-      },
-      {
-       "label": "③ 지주 성과평가 배점",
-       "value": "포용금융 1.3점(연도말 평가 50%)",
-       "source": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf p.1"
-      },
-      {
-       "label": "④ 추천 하한",
-       "value": "전년 실적 × 1.03 = 3.11조원",
-       "source": "rule_engine.rules.INCLUSIVE_SUPPLY_BASELINE"
-      },
-      {
-       "label": "④ 추천 상한",
-       "value": "전년 실적 × 1.09 = 3.29조원",
-       "source": "rule_engine.rules.INCLUSIVE_SUPPLY_BASELINE"
-      },
-      {
-       "label": "⑤ 리스크 제약",
-       "value": "충당금 비중 상승 국면 → 상한 보수적 적용",
-       "source": "agentic.finding(inclusive-provision-share)"
+       "label": "② 공급액 증가율(전년 동기 대비)",
+       "valueTpl": "[[fig:mid_low_growth|signed]]",
+       "source": "지표 · 중·저신용자 공급",
+       "value": ""
       }
      ],
-     "verifications": [
-      {
-       "detail": "모든 수치가 계산 결과를 참조",
-       "passed": true,
-       "checkCode": "numeric_provenance"
-      },
-      {
-       "detail": "근거 3범주 충족 여부 확인",
-       "passed": true,
-       "checkCode": "evidence_present"
-      },
-      {
-       "detail": "인과 단정 표현 미검출",
-       "passed": true,
-       "checkCode": "causality_language"
-      },
-      {
-       "detail": "가계여신 관리목표와 병행 가능(대상 상품 한정)",
-       "passed": true,
-       "checkCode": "goal_consistency"
-      },
-      {
-       "detail": "상위 기준과 정합",
-       "passed": true,
-       "checkCode": "alignment"
-      }
-     ],
+     "verifications": [],
      "recommendation": {
       "low": null,
       "high": null,
@@ -23226,15 +21822,7 @@
         "value": null,
         "decimals": 1
        },
-       "basisDoc": {
-        "page": 2,
-        "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
-        "issuer": "종합기획부",
-        "dbClass": "mgmt_decision",
-        "fileName": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf",
-        "sectionPath": "별표1. 부서별 신용RWA 한도",
-        "effectiveDate": "2026-06-26"
-       },
+       "basisDoc": null,
        "headroom": {
         "id": "cc_inc_headroom",
         "unit": "PP",
@@ -23250,7 +21838,8 @@
         "decimals": 1
        }
       }
-     ]
+     ],
+     "judgementTpl": "현재 여신 경영목표에는 포용금융 공급에 대한 별도 관리목표가 없습니다. 개인여신 중 중·저신용자 비중은 [[fig:mid_low_share]](타행 평균 [[fig:peer_share]])이고, 중·저신용자 여신 공급액은 [[fig:mid_low_supply]]으로 전년 동기 대비 [[fig:mid_low_growth]] 변했습니다. 상위 기조와 성과평가 기준은 근거 문서로 확인합니다."
     }
    ]
   },
@@ -23523,98 +22112,14 @@
     },
     "evidence": [
      {
-      "id": "ev-br-h2-prime",
-      "doc": {
-       "page": 84,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 우량기업여신",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 핵심사업 > 우량기업여신 (84~91p)",
-      "snippet": "신규 · 증액 유치한 기업여신은 차주 신용등급 구간별 가중치(1~3B 150% · 4A~4B 120% · 5A~5C 100% · 6A~6C 70% · 7A 이하 50%)를 적용한 금액을 실적으로 인정한다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h2-prime-note",
-      "doc": {
-       "page": 91,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 우량기업여신 > 유의사항",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 우량기업여신 실적 산정 유의사항 (91p)",
-      "snippet": "기존 거래 차주의 대환 · 기한연장은 신규 · 증액 실적에서 제외하며, 신용등급은 취급 시점의 최종 신용등급을 적용한다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h1-core",
-      "doc": {
-       "page": 80,
-       "title": "(붙임1) 26년(상) 업적평가 세부기준_최종",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "(붙임1)26년(상) 업적평가 세부기준_최종.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 기업여신 증대",
-       "effectiveDate": "2026-01-02"
-      },
-      "label": "26년(상) 업적평가 세부기준 — 핵심사업 > 기업여신 증대 (80p)",
-      "snippet": "기업여신 증대는 평잔 증가 금액 기준으로 평가하며 차주 신용등급에 따른 가중치는 두지 않는다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h2-scheme",
-      "doc": {
-       "page": 13,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 가. 배점표 > 리테일",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 영업점 배점표(리테일) (13p)",
-      "snippet": "리테일 영업점 배점표: 고객KPI 200 · 사업KPI 500(핵심사업 220 · 전략사업 160 · 생산적·포용금융 120) · 재무KPI 300. 상반기 대비 우량기업여신 · 서민금융 항목 신설.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-notice",
-      "doc": {
-       "page": 1,
-       "title": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내",
-       "issuer": "신용리스크관리부",
-       "dbClass": "branch_ref",
-       "fileName": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내.pdf",
-       "sectionPath": "1. 제공 목적 및 활용 방법",
-       "effectiveDate": "2026-07-15"
-      },
-      "label": "[외감기업 활성화] 여신가망 재무우량 기업명세 제공 안내 (신용리스크관리부)",
-      "snippet": "당행과 여신 미거래 중인 기업 중 재무등급 시산 결과가 우수한 상위규모 기업을 선정하여 붙임1 명세로 제공하니 영업점 마케팅에 활용하기 바람.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
       "id": "ev-br-data-corp",
-      "label": "기업 익스포저 차주별 현황 (Oblg_grd_def 2026.08)",
+      "label": "",
       "snippet": "지점 차주 · 대출잔액 · 규모 · 등급 분포와 전행 비교",
       "category": "bank_data",
       "figureId": "br_avg_grade",
       "tableRef": "기업여신 차주 등급 · 조사자사무소코드 001068 · 카드전용 · 등급 체계 밖 제외",
-      "sourceKind": "metric_value"
+      "sourceKind": "metric_value",
+      "labelTpl": "기업 익스포저 차주별 현황 (Oblg_grd_def [[ym:기업여신 차주 등급:$latest|dot]])"
      },
      {
       "id": "ev-br-data-prospect",
@@ -23622,26 +22127,9 @@
       "snippet": "본사 소재지 · 예상재무등급 · 재무정보로 후보 선정",
       "category": "bank_data",
       "figureId": "br_prospect_cnt",
-      "tableRef": "여신가망 재무우량 기업명세 · 지역 경기 수원시",
-      "sourceKind": "metric_value"
-     },
-     {
-      "id": "ev-br-gov-corp",
-      "doc": {
-       "page": 5,
-       "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-       "issuer": "금융위원회",
-       "dbClass": "gov_policy",
-       "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-       "isOfficial": true,
-       "sectionPath": "Ⅲ. 기업여신 공급 확대",
-       "effectiveDate": "2026-02-20"
-      },
-      "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안 (금융위원회)",
-      "snippet": "기업여신 공급 확대 기조를 유지하고 생산적 부문에 대한 자금공급을 확대한다는 정책 방향이 제시됨.",
-      "category": "external_policy",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
+      "tableRef": "",
+      "sourceKind": "metric_value",
+      "tableRefTpl": "여신가망 재무우량 기업명세 · 지역 [[at:office.region]] [[at:office.sigungu]]"
      }
     ],
     "opinions": [
@@ -23719,64 +22207,14 @@
       "persona": "P3",
       "evidence": [
        {
-        "id": "ev-br-h2-prime",
-        "doc": {
-         "page": 84,
-         "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-         "issuer": "종합기획부 성과관리팀",
-         "dbClass": "branch_ref",
-         "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-         "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 우량기업여신",
-         "effectiveDate": "2026-07-01"
-        },
-        "label": "26년(하) 업적평가 세부기준 — 핵심사업 > 우량기업여신 (84~91p)",
-        "snippet": "신규 · 증액 유치한 기업여신은 차주 신용등급 구간별 가중치(1~3B 150% · 4A~4B 120% · 5A~5C 100% · 6A~6C 70% · 7A 이하 50%)를 적용한 금액을 실적으로 인정한다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-br-h1-core",
-        "doc": {
-         "page": 80,
-         "title": "(붙임1) 26년(상) 업적평가 세부기준_최종",
-         "issuer": "종합기획부 성과관리팀",
-         "dbClass": "branch_ref",
-         "fileName": "(붙임1)26년(상) 업적평가 세부기준_최종.pdf",
-         "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 핵심사업 > 기업여신 증대",
-         "effectiveDate": "2026-01-02"
-        },
-        "label": "26년(상) 업적평가 세부기준 — 핵심사업 > 기업여신 증대 (80p)",
-        "snippet": "기업여신 증대는 평잔 증가 금액 기준으로 평가하며 차주 신용등급에 따른 가중치는 두지 않는다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-br-notice",
-        "doc": {
-         "page": 1,
-         "title": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내",
-         "issuer": "신용리스크관리부",
-         "dbClass": "branch_ref",
-         "fileName": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내.pdf",
-         "sectionPath": "1. 제공 목적 및 활용 방법",
-         "effectiveDate": "2026-07-15"
-        },
-        "label": "[외감기업 활성화] 여신가망 재무우량 기업명세 제공 안내 (신용리스크관리부)",
-        "snippet": "당행과 여신 미거래 중인 기업 중 재무등급 시산 결과가 우수한 상위규모 기업을 선정하여 붙임1 명세로 제공하니 영업점 마케팅에 활용하기 바람.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
         "id": "ev-br-data-corp",
-        "label": "기업 익스포저 차주별 현황 (Oblg_grd_def 2026.08)",
+        "label": "",
         "snippet": "지점 차주 · 대출잔액 · 규모 · 등급 분포와 전행 비교",
         "category": "bank_data",
         "figureId": "br_avg_grade",
         "tableRef": "기업여신 차주 등급 · 조사자사무소코드 001068 · 카드전용 · 등급 체계 밖 제외",
-        "sourceKind": "metric_value"
+        "sourceKind": "metric_value",
+        "labelTpl": "기업 익스포저 차주별 현황 (Oblg_grd_def [[ym:기업여신 차주 등급:$latest|dot]])"
        },
        {
         "id": "ev-br-data-prospect",
@@ -23784,52 +22222,20 @@
         "snippet": "본사 소재지 · 예상재무등급 · 재무정보로 후보 선정",
         "category": "bank_data",
         "figureId": "br_prospect_cnt",
-        "tableRef": "여신가망 재무우량 기업명세 · 지역 경기 수원시",
-        "sourceKind": "metric_value"
-       },
-       {
-        "id": "ev-br-gov-corp",
-        "doc": {
-         "page": 5,
-         "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
-         "issuer": "금융위원회",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_생산적 금융 공급 확대 방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅲ. 기업여신 공급 확대",
-         "effectiveDate": "2026-02-20"
-        },
-        "label": "생산적 금융 공급 확대 및 기업금융 활성화 방안 (금융위원회)",
-        "snippet": "기업여신 공급 확대 기조를 유지하고 생산적 부문에 대한 자금공급을 확대한다는 정책 방향이 제시됨.",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
+        "tableRef": "",
+        "sourceKind": "metric_value",
+        "tableRefTpl": "여신가망 재무우량 기업명세 · 지역 [[at:office.region]] [[at:office.sigungu]]"
        }
       ],
       "severity": "watch",
-      "statement": "하반기 업적평가는 핵심사업에 등급 가중 실적으로 평가하는 우량기업여신([[fig:br_prime_points]]점)을 신설했습니다. 지점은 소기업 비중이 금액 기준 [[fig:br_micro_amt_share]]로 전행 [[fig:bank_micro_amt_share]]보다 높아 평균 신용등급이 [[fig:br_avg_grade]]단계로 전행 [[fig:bank_avg_grade]]단계보다 낮습니다. 본부 추천 재무우량 기업 중 수원시 소재 · 업종 비중복 후보 [[fig:br_prospect_cnt]]개(신규 여신 가정 [[fig:br_prospect_amt]])를 유치하면 평균 등급은 [[fig:br_avg_grade_after]]단계로 개선되고 우량기업여신 득점은 [[fig:br_prime_uplift]]점 오를 것으로 추정됩니다. 건전성 감점을 피하도록 예상재무등급 3B 이내 우량 차주 중심으로 접촉하기를 권합니다.",
+      "statement": "",
       "subDomain": "corporate",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "branch_prime_corp",
       "reportAnchor": "bp-effect",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       }
-      ]
+      "verifications": [],
+      "statementTpl": "업적평가 핵심사업 우량기업여신 배점은 [[fig:br_prime_points]]점입니다. 지점 소기업 비중은 금액 기준 [[fig:br_micro_amt_share]](전행 [[fig:bank_micro_amt_share]])이고, 평균 신용등급은 [[fig:br_avg_grade]]단계로 전행 [[fig:bank_avg_grade]]단계보다 [[if:br_avg_grade>bank_avg_grade|낮습니다|높거나 같습니다]](값이 클수록 위험). 본부 추천 재무우량 기업 중 [[at:office.name]] 영업구역 소재 · 업종 비중복 후보 [[fig:br_prospect_cnt]]개(신규 여신 가정 [[fig:br_prospect_amt]])를 유치하면 평균 등급은 [[fig:br_avg_grade_after]]단계, 우량기업여신 득점은 +[[fig:br_prime_uplift]]점으로 추정됩니다."
      }
     ],
     "sections": [
@@ -23838,15 +22244,16 @@
       "level": 2,
       "blocks": [
        {
-        "text": "2026년 하반기 업적평가 세부기준(84~91p)은 핵심사업에 우량기업여신([[fig:br_prime_points]]점)을 신설했습니다. 신규 · 증액 유치한 기업여신을 차주 신용등급 구간별 가중치로 환산해 실적으로 인정하므로, 같은 금액을 유치해도 우량 차주일수록 득점이 커집니다. 상반기에는 기업여신 증대를 금액 기준으로만 평가했습니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "업적평가 배점표에서 핵심사업 우량기업여신(배점 [[fig:br_prime_points]]점)은 이번 평가 기간에 신설된 항목입니다. 신규 · 증액 유치한 기업여신을 차주 신용등급 구간별 가중치(규칙 BRANCH_PRIME_CORP_POLICY)로 환산해 실적으로 인정하므로, 같은 금액이라도 우량 차주일수록 득점이 커집니다."
        },
        {
         "type": "table",
         "table": {
-         "note": "가중치는 세부기준 원본 수령 전 시뮬레이션 가정(규칙 BRANCH_PRIME_CORP_POLICY).",
+         "note": "",
          "rows": [],
-         "caption": "우량기업여신 신용등급 구간별 가중치 (2026년 하반기 신설)",
+         "caption": "",
          "columns": [
           {
            "key": "band",
@@ -23866,13 +22273,11 @@
            "align": "right",
            "label": "하반기"
           }
-         ]
+         ],
+         "noteTpl": "가중치는 규칙 BRANCH_PRIME_CORP_POLICY 의 값입니다.",
+         "bindKey": "우량기업여신 신용등급 구간별 가중치 (2026년 하반기 신설)",
+         "captionTpl": "우량기업여신 신용등급 구간별 가중치 (이번 평가 기간 신설)"
         }
-       },
-       {
-        "text": "변경 배경(추론) — 정부의 생산적 금융 공급 확대 · 기업금융 활성화 방안이 기업여신 공급 확대를 요구하는 가운데, 확대 과정의 자산 건전성 저하를 막기 위해 우량 차주 유치에 가점을 주는 방식으로 평가 기준을 조정한 것으로 보입니다.",
-        "tone": "info",
-        "type": "callout"
        }
       ],
       "heading": "1. 업적평가 기준 변경 — 사업KPI > 핵심사업 > 우량기업여신"
@@ -24162,15 +22567,21 @@
        {
         "type": "ul",
         "items": [
-         "① 지점은 전행 대비 소기업 비중이 높습니다 — 금액 기준 [[fig:br_micro_amt_share]](전행 [[fig:bank_micro_amt_share]]), 건수 기준 [[fig:br_micro_cnt_share]](전행 [[fig:bank_micro_cnt_share]]). 대기업 · 외감 · 비외감 비중은 금액 기준 [[fig:br_upper_amt_share]]로 전행 [[fig:bank_upper_amt_share]]보다 낮습니다.",
-         "② 전행 기준 소기업 차주의 평균 신용등급은 [[fig:bank_micro_avg_grade]]단계로, 대기업 · 외감 · 비외감 차주 평균 [[fig:bank_upper_avg_grade]]단계보다 낮습니다(값이 클수록 위험).",
-         "③ 그 결과 지점 익스포저의 평균 신용등급은 [[fig:br_avg_grade]]단계로 전행 [[fig:bank_avg_grade]]단계보다 [[fig:br_avg_grade_gap]]단계 낮은 수준입니다."
+         "",
+         "",
+         ""
+        ],
+        "itemsTpl": [
+         "① 지점 소기업 비중은 금액 기준 [[fig:br_micro_amt_share]](전행 [[fig:bank_micro_amt_share]]), 건수 기준 [[fig:br_micro_cnt_share]](전행 [[fig:bank_micro_cnt_share]])로 전행보다 [[if:br_micro_amt_share>bank_micro_amt_share|높습니다|낮거나 같습니다]]. 대기업 · 외감 · 비외감 비중은 금액 기준 [[fig:br_upper_amt_share]](전행 [[fig:bank_upper_amt_share]])입니다.",
+         "② 전행 기준 소기업 차주 평균 신용등급은 [[fig:bank_micro_avg_grade]]단계, 대기업 · 외감 · 비외감 차주 평균은 [[fig:bank_upper_avg_grade]]단계입니다(값이 클수록 위험).",
+         "③ 지점 익스포저 평균 신용등급은 [[fig:br_avg_grade]]단계로 전행 [[fig:bank_avg_grade]]단계와 [[fig:br_avg_grade_gap]]단계 차이가 있습니다."
         ]
        },
        {
-        "text": "등급 가중치가 적용되는 하반기에는 지금의 포트폴리오 구성만으로는 우량기업여신 득점이 [[fig:br_prime_score_now]]점(배점 [[fig:br_prime_points]]점)에 머뭅니다.",
+        "text": "",
         "tone": "attention",
-        "type": "callout"
+        "type": "callout",
+        "textTpl": "현재 포트폴리오 기준 우량기업여신 득점은 [[fig:br_prime_score_now]]점(배점 [[fig:br_prime_points]]점)입니다."
        }
       ],
       "heading": "3. 분석 결과 — 우량기업여신 실적 수준"
@@ -24180,8 +22591,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "신용리스크관리부가 공유한 여신가망 재무우량 기업명세(당행 여신 미거래 · 재무등급 시산 우수 상위규모 기업)에서 본사 소재지가 지점 영업구역(경기 수원시)인 기업을 찾고, 지점 포트폴리오와 업종이 겹치지 않으면서 재무구성 · 예상재무등급이 우수한 기업을 추렸습니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "본부가 공유한 여신가망 재무우량 기업명세에서 본사 소재지가 지점 영업구역([[at:office.region]] [[at:office.sigungu]])인 기업을 찾고, 지점 포트폴리오와 업종이 겹치지 않으면서 재무구성 · 예상재무등급이 우수한 기업을 규칙(BRANCH_PROSPECT_POLICY)으로 추렸습니다."
        },
        {
         "type": "table",
@@ -24291,23 +22703,27 @@
        {
         "type": "ul",
         "items": [
-         "사업KPI 가점을 위해 기업여신을 늘리더라도 등급이 낮은 차주가 늘면 충당금 전입이 늘어 재무KPI 건전성 항목에서 감점될 수 있습니다 — 예상재무등급 3B 이내 우량 차주 중심으로 유치합니다.",
+         "",
+         "",
+         "",
+         ""
+        ],
+        "itemsTpl": [
+         "사업KPI 가점을 위해 기업여신을 늘리더라도 등급이 낮은 차주가 늘면 충당금 전입이 늘어 재무KPI 건전성 항목에서 감점될 수 있습니다 — 예상재무등급 [[rule:BRANCH_PROSPECT_POLICY.max_grade]] 이내 우량 차주 중심으로 유치합니다.",
          "후보의 등급은 재무등급 시산 결과입니다. 실제 취급은 신용평가 · 담보 · 한도 심사를 거쳐 확정합니다.",
-         "기존 거래 차주의 대환 · 기한연장은 신규 · 증액 실적에서 제외됩니다(세부기준 91p).",
-         "음식점 · 도매 · 부동산 임대 등 지점 집중 업종은 후보에서 제외했습니다. 신규 유치 시에도 업종 분산을 유지합니다."
+         "기존 거래 차주의 대환 · 기한연장은 신규 · 증액 실적에서 제외됩니다.",
+         "지점 포트폴리오에 이미 비중이 큰 업종은 후보에서 제외했습니다. 신규 유치 시에도 업종 분산을 유지합니다."
         ]
        }
       ],
       "heading": "6. 영업 시 유의사항"
      }
     ],
-    "subtitle": "수원영통지점 · 2026년 하반기 업적평가 세부기준 변경 대응 · 기준일 2026.08.31",
-    "dataOrigin": "simulated",
+    "subtitle": "",
+    "dataOrigin": null,
     "generatedAt": null,
-    "limitations": [
-     "업적평가 세부기준(상 · 하반기) 원본을 받기 전이라 배점 · 가중치 · 목표는 시뮬레이션 가정입니다.",
-     "기업 익스포저 · 가망기업 명세는 컬럼 정의서 구조에 맞춘 시뮬레이션 데이터입니다. 실제 파일을 올리면 같은 정의로 다시 계산됩니다."
-    ]
+    "limitations": [],
+    "subtitleTpl": "[[at:office.name]] · 업적평가 세부기준 변경 대응 · 기준일 [[ym:기업여신 차주 등급:$latest|date]]"
    }
   },
   {
@@ -24613,82 +23029,14 @@
     },
     "evidence": [
      {
-      "id": "ev-br-h2-seomin",
-      "doc": {
-       "page": 126,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 생산적·포용금융 > ① 서민금융",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 생산적·포용금융 > ① 서민금융 (126p)",
-      "snippet": "NH새희망홀씨대출(용도코드 1031 · 1032)을 신규 유치한 경우 유치 건수에 따라 배점을 부여하며, 해당 차주는 건전성평가 중 연체평가에서 제외한다. 동일차주 연간 최고 대출한도는 35백만원.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h2-soundness",
-      "doc": {
-       "page": 118,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 다. 재무KPI > 건전성",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 재무KPI > 건전성 (118p)",
-      "snippet": "건전성은 연체평가와 충당금 전입액 증감으로 평가한다. 신규 취급 여신의 부실 발생 시 충당금 전입이 늘어 득점이 낮아질 수 있다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-br-h2-scheme",
-      "doc": {
-       "page": 13,
-       "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-       "issuer": "종합기획부 성과관리팀",
-       "dbClass": "branch_ref",
-       "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-       "sectionPath": "2. 영업본부/영업점 평가기준 > 가. 배점표 > 리테일",
-       "effectiveDate": "2026-07-01"
-      },
-      "label": "26년(하) 업적평가 세부기준 — 영업점 배점표(리테일) (13p)",
-      "snippet": "리테일 영업점 배점표: 고객KPI 200 · 사업KPI 500(핵심사업 220 · 전략사업 160 · 생산적·포용금융 120) · 재무KPI 300. 상반기 대비 우량기업여신 · 서민금융 항목 신설.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
       "id": "ev-br-data-retail",
-      "label": "소매여신 익스포저 월별 현황 (TB_JC_PM_C_LA 2026.08)",
+      "label": "",
       "snippet": "지점 · 전행 Pool별 익스포저와 서민금융 비중",
       "category": "bank_data",
       "figureId": "br_seomin_share",
       "tableRef": "소매여신 차주 익스포저 · 사무소코드 001068 · Pool 정의(서민금융 인정)",
-      "sourceKind": "metric_value"
-     },
-     {
-      "id": "ev-br-gov-inclusive",
-      "doc": {
-       "page": 3,
-       "title": "포용금융 확대방안",
-       "issuer": "금융위원회",
-       "dbClass": "gov_policy",
-       "fileName": "금융위원회_포용금융 확대방안.pdf",
-       "isOfficial": true,
-       "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-       "effectiveDate": "2026-01-15"
-      },
-      "label": "포용금융 확대방안 (금융위원회)",
-      "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-      "category": "external_policy",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
+      "sourceKind": "metric_value",
+      "labelTpl": "소매여신 익스포저 월별 현황 (TB_JC_PM_C_LA [[ym:소매여신 차주 익스포저:$latest|dot]])"
      }
     ],
     "opinions": [
@@ -24766,91 +23114,25 @@
       "persona": "P3",
       "evidence": [
        {
-        "id": "ev-br-h2-seomin",
-        "doc": {
-         "page": 126,
-         "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-         "issuer": "종합기획부 성과관리팀",
-         "dbClass": "branch_ref",
-         "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-         "sectionPath": "2. 영업본부/영업점 평가기준 > 나. 사업KPI > 생산적·포용금융 > ① 서민금융",
-         "effectiveDate": "2026-07-01"
-        },
-        "label": "26년(하) 업적평가 세부기준 — 생산적·포용금융 > ① 서민금융 (126p)",
-        "snippet": "NH새희망홀씨대출(용도코드 1031 · 1032)을 신규 유치한 경우 유치 건수에 따라 배점을 부여하며, 해당 차주는 건전성평가 중 연체평가에서 제외한다. 동일차주 연간 최고 대출한도는 35백만원.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-br-h2-soundness",
-        "doc": {
-         "page": 118,
-         "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
-         "issuer": "종합기획부 성과관리팀",
-         "dbClass": "branch_ref",
-         "fileName": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
-         "sectionPath": "2. 영업본부/영업점 평가기준 > 다. 재무KPI > 건전성",
-         "effectiveDate": "2026-07-01"
-        },
-        "label": "26년(하) 업적평가 세부기준 — 재무KPI > 건전성 (118p)",
-        "snippet": "건전성은 연체평가와 충당금 전입액 증감으로 평가한다. 신규 취급 여신의 부실 발생 시 충당금 전입이 늘어 득점이 낮아질 수 있다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
         "id": "ev-br-data-retail",
-        "label": "소매여신 익스포저 월별 현황 (TB_JC_PM_C_LA 2026.08)",
+        "label": "",
         "snippet": "지점 · 전행 Pool별 익스포저와 서민금융 비중",
         "category": "bank_data",
         "figureId": "br_seomin_share",
         "tableRef": "소매여신 차주 익스포저 · 사무소코드 001068 · Pool 정의(서민금융 인정)",
-        "sourceKind": "metric_value"
-       },
-       {
-        "id": "ev-br-gov-inclusive",
-        "doc": {
-         "page": 3,
-         "title": "포용금융 확대방안",
-         "issuer": "금융위원회",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_포용금융 확대방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-         "effectiveDate": "2026-01-15"
-        },
-        "label": "포용금융 확대방안 (금융위원회)",
-        "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
+        "sourceKind": "metric_value",
+        "labelTpl": "소매여신 익스포저 월별 현황 (TB_JC_PM_C_LA [[ym:소매여신 차주 익스포저:$latest|dot]])"
        }
       ],
       "severity": "watch",
-      "statement": "하반기 업적평가는 생산적·포용금융에 NH새희망홀씨 신규 유치 건수로 평가하는 서민금융([[fig:br_seomin_points]]점)을 신설하고 해당 차주를 연체평가에서 제외했습니다. 지점 서민금융 비중은 [[fig:br_seomin_share]]로 전행 [[fig:bank_seomin_share]]보다 낮습니다. 전행 수준 도달에는 [[fig:br_seomin_gap_amt]]이 필요하지만 충당금 증가 허용 범위를 함께 고려해 [[fig:br_seomin_rec_cnt]] · [[fig:br_seomin_rec_amt]] 신규 유치를 권하며, 이 경우 서민금융 득점은 [[fig:br_seomin_uplift]]점 오를 것으로 추정됩니다. 동일차주 연간 최고 한도([[fig:br_seomin_limit]])를 지키고, 업적평가의 연체평가 예외와 별개로 실제 충당금이 [[fig:br_seomin_add_prov]] 늘 수 있음을 감안해 분할 유치와 사후관리를 병행하기 바랍니다.",
+      "statement": "",
       "subDomain": "retail",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "branch_seomin",
       "reportAnchor": "bs-effect",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       }
-      ]
+      "verifications": [],
+      "statementTpl": "업적평가 생산적·포용금융 서민금융 배점은 [[fig:br_seomin_points]]점입니다. 지점 서민금융 비중은 [[fig:br_seomin_share]]로 전행 [[fig:bank_seomin_share]]보다 [[if:br_seomin_share<bank_seomin_share|낮고, 전행 수준 도달에 필요한 금액은|높거나 같고, 전행 수준과의 차이는]] [[fig:br_seomin_gap_amt]]입니다. 충당금 증가 허용 범위를 함께 고려한 권고 신규 유치는 [[fig:br_seomin_rec_cnt]] · [[fig:br_seomin_rec_amt]]이며, 이 경우 서민금융 득점은 +[[fig:br_seomin_uplift]]점, 예상 추가 충당금은 [[fig:br_seomin_add_prov]]입니다. 동일차주 연간 최고 한도는 [[fig:br_seomin_limit]]입니다."
      }
     ],
     "sections": [
@@ -24859,8 +23141,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "2026년 하반기 업적평가 세부기준(126p)은 생산적·포용금융에 서민금융([[fig:br_seomin_points]]점)을 신설했습니다. NH새희망홀씨대출을 신규 유치하면 건수에 따라 득점을 인정하고, 해당 차주는 상대적으로 건전성이 낮을 수 있어 건전성평가 중 연체평가에서 제외합니다. 상반기에는 이 항목이 없었습니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "업적평가 배점표에서 생산적·포용금융 서민금융(배점 [[fig:br_seomin_points]]점)은 이번 평가 기간에 신설된 항목입니다. 대상 상품을 신규 유치하면 건수에 따라 득점을 인정하고, 해당 차주는 건전성평가 중 연체평가에서 제외합니다."
        },
        {
         "kv": [
@@ -24882,11 +23165,6 @@
          }
         ],
         "type": "kv"
-       },
-       {
-        "text": "신설 배경(외부 정책) — 금융위원회 포용금융 확대방안은 서민 · 취약계층 금융공급 확대 기조를 제시했습니다. 영업점 단위 서민금융 공급 실적을 평가에 넣고 연체평가에서 예외로 두어, 연체 부담으로 공급이 위축되지 않도록 한 것으로 보입니다.",
-        "tone": "info",
-        "type": "callout"
        }
       ],
       "heading": "1. 업적평가 기준 신설 — 사업KPI > 생산적·포용금융 > ① 서민금융"
@@ -24924,7 +23202,7 @@
        {
         "type": "table",
         "table": {
-         "note": "Pool 정의(서민금융 인정 · 저신용 · 충당금률 = PD × LGD)는 시뮬레이션 가정 — 실제 Pool 체계 수령 시 마스터만 교체.",
+         "note": "",
          "rows": [],
          "caption": "소매여신 Pool별 익스포저 — 지점 vs 전행",
          "columns": [
@@ -24976,7 +23254,8 @@
           }
          ],
          "highlightRowKey": "pool",
-         "highlightRowValue": "P07"
+         "highlightRowValue": "P07",
+         "noteTpl": "Pool 정의(서민금융 인정 · 저신용 · 충당금률 = PD × LGD)는 소매여신 상품 Pool 정의 자료를 따릅니다."
         }
        }
       ],
@@ -24989,9 +23268,14 @@
        {
         "type": "ul",
         "items": [
+         "",
+         "",
+         ""
+        ],
+        "itemsTpl": [
          "지점 서민금융(업적평가 인정 Pool) 익스포저는 [[fig:br_seomin_amt]] · [[fig:br_seomin_cnt]]입니다.",
-         "금액 비중 [[fig:br_seomin_share]]로 전행 [[fig:bank_seomin_share]]보다 [[fig:br_seomin_share_gap]] 낮고, 건수 비중도 [[fig:br_seomin_cnt_share]](전행 [[fig:bank_seomin_cnt_share]])로 낮습니다.",
-         "하반기 서민금융 신규 실적은 [[fig:br_seomin_actual]]이며 현재 득점은 [[fig:br_seomin_score_now]]점입니다."
+         "금액 비중은 [[fig:br_seomin_share]](전행 [[fig:bank_seomin_share]], 차이 [[fig:br_seomin_share_gap]]), 건수 비중은 [[fig:br_seomin_cnt_share]](전행 [[fig:bank_seomin_cnt_share]])입니다.",
+         "이번 평가 기간 서민금융 신규 실적은 [[fig:br_seomin_actual]]이며 현재 득점은 [[fig:br_seomin_score_now]]점입니다."
         ]
        }
       ],
@@ -25046,11 +23330,13 @@
          },
          {
           "label": "충당금 증가 허용액",
-          "value": "[[fig:br_seomin_prov_limit]] (시뮬레이션 가정)"
+          "value": "",
+          "valueTpl": "[[fig:br_seomin_prov_limit]] (규칙 BRANCH_SEOMIN_POLICY)"
          },
          {
           "label": "반기 신규 가능 건수",
-          "value": "[[fig:br_seomin_max_cnt]] (시뮬레이션 가정)"
+          "value": "",
+          "valueTpl": "[[fig:br_seomin_max_cnt]] (규칙 BRANCH_SEOMIN_POLICY)"
          }
         ],
         "type": "kv"
@@ -25107,14 +23393,11 @@
       "heading": "6. 유의사항"
      }
     ],
-    "subtitle": "수원영통지점 · 2026년 하반기 업적평가 세부기준 신설 대응 · 기준일 2026.08.31",
-    "dataOrigin": "simulated",
+    "subtitle": "",
+    "dataOrigin": null,
     "generatedAt": null,
-    "limitations": [
-     "업적평가 세부기준 원본을 받기 전이라 배점 · 목표 건수 · 용도코드는 시뮬레이션 가정입니다.",
-     "TB_JC_PM_C_LA 상세 컬럼명이 확정되지 않아 컬럼명은 가정이며 한글 별칭으로도 받습니다.",
-     "충당금률 · 충당금 증가 허용액 · 신규 가능 건수는 규칙(BRANCH_SEOMIN_POLICY)의 시뮬레이션 가정입니다."
-    ]
+    "limitations": [],
+    "subtitleTpl": "[[at:office.name]] · 업적평가 세부기준 신설 대응 · 기준일 [[ym:소매여신 차주 익스포저:$latest|date]]"
    }
   },
   {
@@ -25303,58 +23586,6 @@
       "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
       "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
       "sourceKind": "calc_run"
-     },
-     {
-      "id": "ev-inc-products",
-      "doc": {
-       "page": 2,
-       "title": "포용금융 대상 상품 운영기준",
-       "issuer": "여신정책협의회",
-       "dbClass": "mgmt_decision",
-       "fileName": "포용금융 대상 상품 운영기준.pdf",
-       "sectionPath": "2. 대상 상품 및 상품코드",
-       "effectiveDate": "2026-01-22"
-      },
-      "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-      "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-inc-perfeval",
-      "doc": {
-       "page": 5,
-       "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-       "issuer": "NH농협금융지주 기획조정부",
-       "dbClass": "mgmt_decision",
-       "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-       "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-       "effectiveDate": "2026-03-01"
-      },
-      "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-      "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-inc-policy",
-      "doc": {
-       "page": 3,
-       "title": "포용금융 확대방안",
-       "issuer": "금융위원회",
-       "dbClass": "gov_policy",
-       "fileName": "금융위원회_포용금융 확대방안.pdf",
-       "isOfficial": true,
-       "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-       "effectiveDate": "2026-01-15"
-      },
-      "label": "포용금융 확대방안(금융위원회)",
-      "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-      "category": "external_policy",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
      }
     ],
     "opinions": [
@@ -25479,91 +23710,19 @@
         "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
         "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
         "sourceKind": "calc_run"
-       },
-       {
-        "id": "ev-inc-products",
-        "doc": {
-         "page": 2,
-         "title": "포용금융 대상 상품 운영기준",
-         "issuer": "여신정책협의회",
-         "dbClass": "mgmt_decision",
-         "fileName": "포용금융 대상 상품 운영기준.pdf",
-         "sectionPath": "2. 대상 상품 및 상품코드",
-         "effectiveDate": "2026-01-22"
-        },
-        "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-        "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-inc-perfeval",
-        "doc": {
-         "page": 5,
-         "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-         "issuer": "NH농협금융지주 기획조정부",
-         "dbClass": "mgmt_decision",
-         "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-         "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-         "effectiveDate": "2026-03-01"
-        },
-        "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-        "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-inc-policy",
-        "doc": {
-         "page": 3,
-         "title": "포용금융 확대방안",
-         "issuer": "금융위원회",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_포용금융 확대방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-         "effectiveDate": "2026-01-15"
-        },
-        "label": "포용금융 확대방안(금융위원회)",
-        "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "caution",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
+      "statement": "",
       "subDomain": "inclusive_finance",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "inclusive_risk",
       "reportAnchor": "i3-share",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "statementTpl": "포용금융 상품 충당금 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] [[if:share_delta_pp>0|상승|하락]]했습니다(증감률 [[fig:share_delta_pct]]). 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 변했고, 평균 신용등급은 [[fig:inc_avg_grade]](소매 익스포저 평균 [[fig:retail_avg_grade]])입니다."
      }
     ],
     "sections": [
@@ -25572,8 +23731,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "포용금융 대상은 「포용금융 대상 상품 대상자」로 규정하고, 경영 의사결정 DB의 포용금융 대상 상품 운영기준과 지주 성과평가 방안 5p 실적 인정 기준(은행 해당 취약계층 상품)을 근거로 상품코드 [[fig:inc_product_cnt]]을 식별했습니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "포용금융 대상 상품은 상품 마스터의 포용금융 구분으로 식별했습니다 — 대상 상품코드 [[fig:inc_product_cnt]]. 대상 기준의 근거 문서는 근거 목록에서 확인합니다."
        },
        {
         "type": "table",
@@ -25647,10 +23807,10 @@
         "type": "kv"
        },
        {
-        "text": "2026년 – 이후 포용금융 확대 정부기조를 반영한 당행 운영 이후의 변화를 보기 위해 1월을 기준시점으로 설정했습니다.",
+        "text": "",
         "tone": "info",
         "type": "callout",
-        "textTpl": "2026년 [[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] 이후 포용금융 확대 정부기조를 반영한 당행 운영 이후의 변화를 보기 위해 1월을 기준시점으로 설정했습니다."
+        "textTpl": "기준시점은 규칙(INC_PROVISION_SHARE_TREND)의 기준월 [[rule:INC_PROVISION_SHARE_TREND.base_ym|kor]]입니다."
        }
       ],
       "heading": "2. 데이터 및 산출 기준"
@@ -25660,8 +23820,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "포용금융 상품 충당금은 [[fig:prov_inclusive_base]] → [[fig:prov_inclusive_now]]으로 증가했고, 전체 충당금은 [[fig:prov_total_base]] → [[fig:prov_total_now]]입니다. 이에 따라 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승했습니다(증가율 [[fig:share_delta_pct]]).",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "포용금융 상품 충당금은 [[fig:prov_inclusive_base]] → [[fig:prov_inclusive_now]]으로 [[if:prov_inclusive_now>prov_inclusive_base|증가|감소]]했고, 전체 충당금은 [[fig:prov_total_base]] → [[fig:prov_total_now]]입니다. 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] [[if:share_delta_pp>0|상승|하락]]했습니다(증감률 [[fig:share_delta_pct]])."
        },
        {
         "type": "chart",
@@ -25695,9 +23856,9 @@
         }
        },
        {
-        "text": "상품군별 비중 상승 기여: 햇살론 – · 새희망홀씨대출 – · 사잇돌 –. 상품별 기여는 아래 표(상위 10건)에서 확인합니다.",
+        "text": "",
         "type": "p",
-        "textTpl": "상품군별 비중 상승 기여: 햇살론 [[fig:inc_grp_sunshine_delta|signed]] · 새희망홀씨대출 [[fig:inc_grp_saehope_delta|signed]] · 사잇돌 [[fig:inc_grp_saitdol_delta|signed]]. 상품별 기여는 아래 표(상위 10건)에서 확인합니다."
+        "textTpl": "상품군별 비중 증감 기여: 햇살론 [[fig:inc_grp_sunshine_delta|signed]] · 새희망홀씨대출 [[fig:inc_grp_saehope_delta|signed]] · 사잇돌 [[fig:inc_grp_saitdol_delta|signed]]. 상품별 기여는 아래 표(상위 10건)에서 확인합니다."
        }
       ],
       "heading": "3.1 상품군별 분해"
@@ -25758,13 +23919,15 @@
       "level": 2,
       "blocks": [
        {
-        "text": "해당 풀 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 증가했고, 규모는 [[fig:inc_exposure_amt_now]]입니다. 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 전체 평균 [[fig:retail_avg_grade]] 대비 낮은 수준입니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "해당 풀 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 변했고, 규모는 [[fig:inc_exposure_amt_now]]입니다. 평균 신용등급은 [[fig:inc_avg_grade]](소매 익스포저 전체 평균 [[fig:retail_avg_grade]])입니다."
        },
        {
-        "text": "해당 풀의 연체율은 [[fig:inc_delinquency]] 상태로, 데이터 확보 후 연체 발생 및 연체율 증가 여부를 확인할 필요가 있습니다.",
+        "text": "",
         "tone": "attention",
-        "type": "callout"
+        "type": "callout",
+        "textTpl": "해당 풀의 연체율은 [[fig:inc_delinquency]]입니다."
        }
       ],
       "heading": "4. 익스포저 및 건전성"
@@ -25774,8 +23937,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "충당금 비중이 상승하고 있으므로 주의를 요합니다. 익스포저 건수가 증가하고 해당 풀의 평균 건전성이 소매 익스포저 평균 대비 낮으므로, 해당 풀에서의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링하는 방안을 제시합니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "충당금 비중 판정은 [[fig:share_band|verdict]]입니다. 해당 풀의 연체 발생 · 연체율 추이를 소매모형 관점에서 점검하는 관리 항목은 다음과 같습니다."
        },
        {
         "type": "ul",
@@ -25791,21 +23955,19 @@
         ]
        },
        {
-        "text": "본 관리방안은 정부정책 DB(포용금융 확대방안) · 경영 의사결정 DB(포용금융 대상 상품 운영기준, 성과평가 방안) · 종합기획부 경영계획(포용금융 확대)과 배치되지 않으며, 반영한 기준을 근거로 제시했습니다. 공급 축소를 함의하는 방향은 제안하지 않았습니다.",
+        "text": "",
         "tone": "info",
-        "type": "callout"
+        "type": "callout",
+        "textTpl": "관리방안과 상위 기준(정책 · 경영 의사결정 문서)의 배치는 근거 문서와 함께 확인합니다."
        }
       ],
       "heading": "5. 의견 및 관리방안"
      }
     ],
     "subtitle": "– 대비 – 충당금 변화 · 대상 상품코드 –",
-    "dataOrigin": "simulated",
+    "dataOrigin": null,
     "generatedAt": null,
-    "limitations": [
-     "해당 풀의 연체율 데이터가 제공되지 않아 산출하지 않았습니다(추정치 생성 금지).",
-     "부도율 영향 분석은 익스포저 단위 부도여부 데이터 확보 후 수행 예정입니다."
-    ],
+    "limitations": [],
     "subtitleTpl": "[[rule:INC_PROVISION_SHARE_TREND.base_ym|dot]] 대비 [[ym:상품별 충당금(7790):$latest|dot]] 충당금 변화 · 대상 상품코드 [[fig:inc_product_cnt]]"
    }
   },
@@ -26044,40 +24206,6 @@
       "tableRef": "md.model_grade(CORP_MICRO, 6B)",
       "snippetTpl": "최소 [[fig:pd_min_6b]] / 대표값 [[fig:pd_mid_6b]] / 최대 [[fig:pd_max_6b]]",
       "sourceKind": "metric_value"
-     },
-     {
-      "id": "ev-6b-report",
-      "doc": {
-       "page": 12,
-       "title": "2025_일반기업모형 모니터링 보고서",
-       "issuer": "신용리스크관리부",
-       "dbClass": "model_method",
-       "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf",
-       "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
-       "effectiveDate": "2025-11-28"
-      },
-      "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
-      "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
-     },
-     {
-      "id": "ev-6b-stat",
-      "doc": {
-       "page": 2,
-       "title": "붙임. 통계방법론 및 용어 해설",
-       "issuer": "신용리스크관리부",
-       "dbClass": "model_method",
-       "fileName": "붙임. 통계방법론 및 용어 해설.pdf",
-       "sectionPath": "가. 등급계량화 검증",
-       "effectiveDate": "2025-11-28"
-      },
-      "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
-      "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
-      "category": "internal_direction",
-      "relevance": null,
-      "sourceKind": "doc_chunk"
      }
     ],
     "opinions": [
@@ -26085,7 +24213,7 @@
       "id": "ins-model-6b",
       "asOf": null,
       "kind": "analysis_result",
-      "title": "소기업 6B 등급 부도율 특이사항",
+      "title": "",
       "tabKey": "model-monitoring",
       "figures": {
        "dr_6b": {
@@ -26146,73 +24274,20 @@
         "tableRef": "md.model_grade(CORP_MICRO, 6B)",
         "snippetTpl": "최소 [[fig:pd_min_6b]] / 대표값 [[fig:pd_mid_6b]] / 최대 [[fig:pd_max_6b]]",
         "sourceKind": "metric_value"
-       },
-       {
-        "id": "ev-6b-report",
-        "doc": {
-         "page": 12,
-         "title": "2025_일반기업모형 모니터링 보고서",
-         "issuer": "신용리스크관리부",
-         "dbClass": "model_method",
-         "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf",
-         "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
-         "effectiveDate": "2025-11-28"
-        },
-        "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
-        "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-6b-stat",
-        "doc": {
-         "page": 2,
-         "title": "붙임. 통계방법론 및 용어 해설",
-         "issuer": "신용리스크관리부",
-         "dbClass": "model_method",
-         "fileName": "붙임. 통계방법론 및 용어 해설.pdf",
-         "sectionPath": "가. 등급계량화 검증",
-         "effectiveDate": "2025-11-28"
-        },
-        "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
-        "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "watch",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "소기업 6B 등급은 실제부도율([[fig:dr_6b]])이 예측부도율 대표값([[fig:pd_mid_6b]])을 [[fig:breach_gap_6b]] 초과하나, 최대값([[fig:pd_max_6b]]) 이내 관리 중입니다. 해당 등급 익스포저는 [[fig:exposure_6b]] 규모이며, 동시적 {{term:CHI_SQUARE|카이제곱 검정}}에서는 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다.",
+      "statement": "",
       "subDomain": "model_risk",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "model_monitoring",
       "reportAnchor": "s4-calibration",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "titleTpl": "소기업 6B 등급 실제부도율 — 예측 대표값 [[if:dr_6b>pd_mid_6b|초과|이내]]",
+      "statementTpl": "소기업 6B 등급 실제부도율은 [[fig:dr_6b]]로 예측부도율 대표값 [[fig:pd_mid_6b]] 대비 [[fig:breach_gap_6b]] [[if:dr_6b>pd_mid_6b|높고|낮고]], 최대값([[fig:pd_max_6b]])[[if:dr_6b>pd_max_6b|을 넘었습니다| 이내입니다]]. 해당 등급 익스포저는 [[fig:exposure_6b]]입니다. 전체 등급 {{term:CHI_SQUARE|카이제곱 검정}}은 검정통계량이 임계값을 [[if:chi_stat>chi_critical|넘어 예측부도율과 실제부도율이 같다는 귀무가설이 기각되었습니다|넘지 않아 예측부도율과 실제부도율이 같다는 귀무가설이 채택되었습니다]]."
      }
     ],
     "sections": [
@@ -26221,9 +24296,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "본 보고서는 행 내 일반기업 규모별 신용평가모형에 대해 2026년 –말 기준 익스포저의 건수·금액·모형등급·부도여부를 활용하여 {{term:PSI|안정성}}과 {{term:AR|부도예측력}}을 측정하고, 모형 적정성을 점검한 결과입니다. 소기업 모형은 전체 익스포저 –, 전체 실제부도율 – 수준입니다.",
+        "text": "",
         "type": "p",
-        "textTpl": "본 보고서는 행 내 일반기업 규모별 신용평가모형에 대해 2026년 [[ym:신용평가모형 등급별 집계:$latest|month]]말 기준 익스포저의 건수·금액·모형등급·부도여부를 활용하여 {{term:PSI|안정성}}과 {{term:AR|부도예측력}}을 측정하고, 모형 적정성을 점검한 결과입니다. 소기업 모형은 전체 익스포저 [[fig:total_obs]], 전체 실제부도율 [[fig:total_dr]] 수준입니다."
+        "textTpl": "본 보고서는 행 내 일반기업 규모별 신용평가모형에 대해 [[ym:신용평가모형 등급별 집계:$latest|kor]]말 기준 익스포저의 건수·금액·모형등급·부도여부를 활용하여 {{term:PSI|안정성}}과 {{term:AR|부도예측력}}을 측정하고, 모형 적정성을 점검한 결과입니다. 소기업 모형은 전체 익스포저 [[fig:total_obs]], 전체 실제부도율 [[fig:total_dr]] 수준입니다."
        },
        {
         "kv": [
@@ -26261,8 +24336,9 @@
       "level": 2,
       "blocks": [
        {
-        "text": "소기업 모형의 {{term:PSI|PSI}}는 [[fig:psi_micro]]로 관찰 구간입니다. 등급 분포가 상위 등급(3A~4A)에서 하위 등급(5C~6B)으로 이동하는 흐름이 확인되며, 6B 등급 구성비는 기준시점 [[fig:share_6b_base]]에서 [[fig:share_6b_now]]로 상승했습니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "소기업 모형의 {{term:PSI|PSI}}는 [[fig:psi_micro]]로 [[fig:psi_band_micro|verdict]] 구간입니다. 6B 등급 구성비는 기준시점 [[fig:share_6b_base]]에서 [[fig:share_6b_now]]로 [[if:share_6b_now>share_6b_base|상승했습니다|하락했습니다]]. 등급별 분포 변화는 아래 표에서 확인합니다."
        }
       ],
       "heading": "2. 안정성 분석"
@@ -26323,20 +24399,21 @@
       "level": 2,
       "blocks": [
        {
-        "text": "소기업 모형의 {{term:AR|AR}}은 [[fig:ar_micro]]이며 개발시점 대비 {{term:AR_DECLINE|AR 하락률}}은 [[fig:ard_micro]]로 하락 주의 구간입니다. {{term:KS|K-S 통계량}}은 [[fig:ks_micro]], {{term:AUROC|AUROC}}는 [[fig:auroc_micro]] 수준입니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "소기업 모형의 {{term:AR|AR}}은 [[fig:ar_micro]]이며 개발시점 대비 {{term:AR_DECLINE|AR 하락률}}은 [[fig:ard_micro]]로 [[fig:ard_band_micro|verdict]] 구간입니다. {{term:KS|K-S 통계량}}은 [[fig:ks_micro]], {{term:AUROC|AUROC}}는 [[fig:auroc_micro]] 수준입니다."
        },
        {
         "type": "ul",
         "items": [
-         "AR 하락률은 –로 큰 하락 기준(–%)을 넘지 않았습니다.",
-         "K-S 통계량은 –입니다.",
-         "7B·8 등급 구간에서 {{term:SDR|서열화}} 균열 여부를 확인하고 해당 구간 표본 수(– / –)를 함께 점검할 필요가 있습니다."
+         "",
+         "",
+         ""
         ],
         "itemsTpl": [
-         "AR 하락률은 [[fig:ard_micro]]로 큰 하락 기준([[rule:MDL_AR_DECLINE_BANDS.bands.1.max|d0]]%)을 넘지 않았습니다.",
+         "AR 하락률 [[fig:ard_micro]] — 판정 [[fig:ard_band_micro|verdict]](큰 하락 기준 [[rule:MDL_AR_DECLINE_BANDS.bands.1.max|d0]]%).",
          "K-S 통계량은 [[fig:ks_micro]]입니다.",
-         "7B·8 등급 구간에서 {{term:SDR|서열화}} 균열 여부를 확인하고 해당 구간 표본 수([[fig:obs_7b]] / [[fig:obs_8]])를 함께 점검할 필요가 있습니다."
+         "7B·8 등급 실제부도율은 [[fig:dr_7b]] · [[fig:dr_8]]로 {{term:SDR|서열화}}가 [[if:dr_7b>dr_8|역전되어 있습니다|유지되고 있습니다]](표본 수 [[fig:obs_7b]] / [[fig:obs_8]])."
         ]
        }
       ],
@@ -26430,27 +24507,32 @@
       "level": 2,
       "blocks": [
        {
-        "text": "{{term:CALIBRATION|등급계량화}} 적정성은 등급별 실제부도율과 {{term:PD_MASTER_SCALE|PD 추정치}} 비교 및 {{term:CHI_SQUARE|카이제곱 검정}}으로 확인했습니다. 검정통계량은 [[fig:chi_stat]]로 임계값 [[fig:chi_critical]]을 초과하지 않아 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다.",
-        "type": "p"
+        "text": "",
+        "type": "p",
+        "textTpl": "{{term:CALIBRATION|등급계량화}} 적정성은 등급별 실제부도율과 {{term:PD_MASTER_SCALE|PD 추정치}} 비교 및 {{term:CHI_SQUARE|카이제곱 검정}}으로 확인했습니다. 검정통계량은 [[fig:chi_stat]]로 임계값 [[fig:chi_critical]]을 [[if:chi_stat>chi_critical|초과해 예측부도율과 실제부도율이 동일하다는 귀무가설이 기각되었습니다|초과하지 않아 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다]]."
        },
        {
-        "text": "다만 개별 등급 기준으로는 6B 등급의 실제부도율([[fig:dr_6b]])이 예측부도율 대표값([[fig:pd_mid_6b]])을 [[fig:breach_gap_6b]] 초과했습니다. 최대값([[fig:pd_max_6b]]) 이내이므로 관리 범위 내로 판정하되, 재계량화 필요성은 차기 모니터링에서 재확인 대상입니다.",
+        "text": "",
         "tone": "attention",
-        "type": "callout"
+        "type": "callout",
+        "textTpl": "개별 등급 기준으로 6B 등급 실제부도율([[fig:dr_6b]])은 예측부도율 대표값([[fig:pd_mid_6b]]) 대비 [[fig:breach_gap_6b]]이고, 최대값([[fig:pd_max_6b]]) [[if:dr_6b>pd_max_6b|초과입니다 — 재계량화 검토 대상입니다|이내입니다 — 관리 범위 안으로 보고 차기 모니터링에서 다시 확인합니다]]."
        },
        {
         "kv": [
          {
           "label": "[1단계]",
-          "value": "χ² = [[fig:chi_stat]] < 임계값 [[fig:chi_critical]]"
+          "value": "",
+          "valueTpl": "χ² = [[fig:chi_stat]] [[if:chi_stat>chi_critical|>|≤]] 임계값 [[fig:chi_critical]]"
          },
          {
           "label": "[2단계]",
-          "value": "귀무가설 채택"
+          "value": "",
+          "valueTpl": "[[if:chi_stat>chi_critical|귀무가설 기각|귀무가설 채택]]"
          },
          {
           "label": "[3단계]",
-          "value": "예측부도율과 실제부도율은 동일하다고 판단"
+          "value": "",
+          "valueTpl": "[[if:chi_stat>chi_critical|예측부도율과 실제부도율이 다르다고 판단|예측부도율과 실제부도율은 동일하다고 판단]]"
          }
         ],
         "type": "kv"
@@ -26468,30 +24550,37 @@
          "rows": [
           {
            "no": 1,
-           "item": "소기업 6B 등급 실제부도율이 예측부도율 대표값 초과(최대값 이내)",
-           "guide": "해당 등급 표본 구성 점검 및 등급계량화 재검토 필요성 차기 확인",
-           "severity": "주의"
+           "item": "",
+           "itemTpl": "소기업 6B 등급 실제부도율 [[fig:dr_6b]] — 예측 대표값 [[fig:pd_mid_6b]] [[if:dr_6b>pd_mid_6b|초과|이내]]",
+           "severity": "",
+           "severityTpl": "[[if:dr_6b>pd_mid_6b|주의|정상]]",
+           "guide": "",
+           "guideTpl": "[[if:dr_6b>pd_mid_6b|해당 등급 표본 구성 점검 · 등급계량화 재검토 필요성 차기 확인|정기 모니터링 유지]]"
           },
           {
            "no": 2,
-           "item": "소기업 모형 PSI – — 등급 하향 이동 누적",
-           "guide": "분기 점검 주기 유지, 하위 등급 신규 취급 구성 점검",
-           "itemTpl": "소기업 모형 PSI [[fig:psi_micro]] — 등급 하향 이동 누적",
-           "severity": "관찰"
+           "item": "",
+           "itemTpl": "소기업 모형 PSI [[fig:psi_micro]] — [[fig:psi_band_micro|verdict]]",
+           "severity": "",
+           "severityTpl": "[[fig:psi_band_micro|verdict]]",
+           "guide": "등급 분포 이동 추이 점검(하위 등급 신규 취급 구성)"
           },
           {
            "no": 3,
-           "item": "7B·8 등급 서열화 균열(– > –)",
-           "guide": "해당 구간 표본 수 부족 여부 확인 후 등급 병합 검토",
-           "itemTpl": "7B·8 등급 서열화 균열([[fig:dr_7b]] > [[fig:dr_8]])",
-           "severity": "관찰"
+           "item": "",
+           "itemTpl": "7B·8 등급 실제부도율 [[fig:dr_7b]] · [[fig:dr_8]] — 서열 [[if:dr_7b>dr_8|역전|유지]]",
+           "severity": "",
+           "severityTpl": "[[if:dr_7b>dr_8|관찰|정상]]",
+           "guide": "",
+           "guideTpl": "[[if:dr_7b>dr_8|해당 구간 표본 수 확인 후 등급 병합 검토|정기 모니터링 유지]]"
           },
           {
            "no": 4,
-           "item": "소매 AS모형 AR 하락률 – — 큰 하락 구간",
-           "guide": "저신용자 모형 재개발 검토 및 대체 변수 발굴",
-           "itemTpl": "소매 AS모형 AR 하락률 [[fig:ard_as]] — 큰 하락 구간",
-           "severity": "주의"
+           "item": "",
+           "itemTpl": "소매 AS모형 AR 하락률 [[fig:ard_as]] — [[fig:ard_band_as|verdict]]",
+           "severity": "",
+           "severityTpl": "[[fig:ard_band_as|verdict]]",
+           "guide": "판정 구간에 따라 재개발 필요성 검토 · 대체 변수 발굴"
           }
          ],
          "caption": "탐지된 특이사항",
@@ -26516,22 +24605,19 @@
         }
        },
        {
-        "text": "가이드는 정부정책 DB · 경영 의사결정 DB · 종합기획부 경영계획과의 배치 여부를 검증한 결과 충돌이 확인되지 않았습니다. 반영한 기준은 근거로 함께 제시됩니다.",
+        "text": "",
         "tone": "info",
-        "type": "callout"
+        "type": "callout",
+        "textTpl": "가이드와 상위 기준(정책 · 경영 의사결정 문서)의 배치는 근거 문서와 함께 확인합니다."
        }
       ],
       "heading": "5. 특이사항 및 가이드"
      }
     ],
     "subtitle": "소기업 모형 중심 · 분석 기준일 –",
-    "dataOrigin": "simulated",
+    "dataOrigin": null,
     "generatedAt": null,
-    "limitations": [
-     "관련 보고서는 2025년 기준이나, 분석 기준일을 2026년 8월말로 설정한 가상 분석 결과입니다.",
-     "실제 익스포저 단위 데이터 수령 시 동일 스키마로 교체됩니다(코드 변경 없음).",
-     "PSI·AR 하락률 판정 임계값은 행내 확정 전 잠정값입니다."
-    ],
+    "limitations": [],
     "subtitleTpl": "소기업 모형 중심 · 분석 기준일 [[ym:신용평가모형 등급별 집계:$latest|date]]"
    }
   },
@@ -26552,7 +24638,7 @@
       "id": "ins-model-6b",
       "asOf": null,
       "kind": "analysis_result",
-      "title": "소기업 6B 등급 부도율 특이사항",
+      "title": "",
       "tabKey": "model-monitoring",
       "figures": {
        "dr_6b": {
@@ -26613,73 +24699,20 @@
         "tableRef": "md.model_grade(CORP_MICRO, 6B)",
         "snippetTpl": "최소 [[fig:pd_min_6b]] / 대표값 [[fig:pd_mid_6b]] / 최대 [[fig:pd_max_6b]]",
         "sourceKind": "metric_value"
-       },
-       {
-        "id": "ev-6b-report",
-        "doc": {
-         "page": 12,
-         "title": "2025_일반기업모형 모니터링 보고서",
-         "issuer": "신용리스크관리부",
-         "dbClass": "model_method",
-         "fileName": "2025_일반기업모형 모니터링 보고서_F.pdf",
-         "sectionPath": "2. 안정성 분석 / 3. 변별력 분석",
-         "effectiveDate": "2025-11-28"
-        },
-        "label": "2025_일반기업모형 모니터링 보고서 — 지표 체계 및 판정 기준",
-        "snippet": "안정성(PSI)·변별력(AR)·등급계량화 검증 순서로 모형 적정성을 판정한다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-6b-stat",
-        "doc": {
-         "page": 2,
-         "title": "붙임. 통계방법론 및 용어 해설",
-         "issuer": "신용리스크관리부",
-         "dbClass": "model_method",
-         "fileName": "붙임. 통계방법론 및 용어 해설.pdf",
-         "sectionPath": "가. 등급계량화 검증",
-         "effectiveDate": "2025-11-28"
-        },
-        "label": "붙임. 통계방법론 및 용어 해설 — 등급계량화 검증",
-        "snippet": "실제부도율이 대표값을 초과하더라도 최대값 이내이면 관리 범위 내로 본다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "watch",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "소기업 6B 등급은 실제부도율([[fig:dr_6b]])이 예측부도율 대표값([[fig:pd_mid_6b]])을 [[fig:breach_gap_6b]] 초과하나, 최대값([[fig:pd_max_6b]]) 이내 관리 중입니다. 해당 등급 익스포저는 [[fig:exposure_6b]] 규모이며, 동시적 {{term:CHI_SQUARE|카이제곱 검정}}에서는 예측부도율과 실제부도율이 동일하다는 귀무가설이 채택되었습니다.",
+      "statement": "",
       "subDomain": "model_risk",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "model_monitoring",
       "reportAnchor": "s4-calibration",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "titleTpl": "소기업 6B 등급 실제부도율 — 예측 대표값 [[if:dr_6b>pd_mid_6b|초과|이내]]",
+      "statementTpl": "소기업 6B 등급 실제부도율은 [[fig:dr_6b]]로 예측부도율 대표값 [[fig:pd_mid_6b]] 대비 [[fig:breach_gap_6b]] [[if:dr_6b>pd_mid_6b|높고|낮고]], 최대값([[fig:pd_max_6b]])[[if:dr_6b>pd_max_6b|을 넘었습니다| 이내입니다]]. 해당 등급 익스포저는 [[fig:exposure_6b]]입니다. 전체 등급 {{term:CHI_SQUARE|카이제곱 검정}}은 검정통계량이 임계값을 [[if:chi_stat>chi_critical|넘어 예측부도율과 실제부도율이 같다는 귀무가설이 기각되었습니다|넘지 않아 예측부도율과 실제부도율이 같다는 귀무가설이 채택되었습니다]]."
      },
      {
       "id": "ins-inclusive-provision",
@@ -26802,94 +24835,22 @@
         "tableRef": "calc.calc_run(PROVISION_SHARE, SHARE_DELTA_PP)",
         "snippetTpl": "포용금융 [[fig:prov_inclusive_now]] / 전체 [[fig:prov_total_now]] = [[fig:share_now]] ([[rule:INC_PROVISION_SHARE_TREND.base_ym|month]] [[fig:share_base]])",
         "sourceKind": "calc_run"
-       },
-       {
-        "id": "ev-inc-products",
-        "doc": {
-         "page": 2,
-         "title": "포용금융 대상 상품 운영기준",
-         "issuer": "여신정책협의회",
-         "dbClass": "mgmt_decision",
-         "fileName": "포용금융 대상 상품 운영기준.pdf",
-         "sectionPath": "2. 대상 상품 및 상품코드",
-         "effectiveDate": "2026-01-22"
-        },
-        "label": "포용금융 대상 상품 운영기준 — 대상 상품코드 21건",
-        "snippet": "새희망홀씨대출 6건 · 햇살론 13건 · 사잇돌 2건을 포용금융 대상 상품으로 규정.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-inc-perfeval",
-        "doc": {
-         "page": 5,
-         "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
-         "issuer": "NH농협금융지주 기획조정부",
-         "dbClass": "mgmt_decision",
-         "fileName": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
-         "sectionPath": "Ⅱ. 실적 인정 기준 > 은행 해당 (취약계층) 상품",
-         "effectiveDate": "2026-03-01"
-        },
-        "label": "지주 성과평가 방안 5p — 은행 해당 (취약계층) 상품 실적 인정 기준",
-        "snippet": "실적 인정 기준 중 은행에 해당하는 취약계층 상품을 포용금융 대상으로 본다.",
-        "category": "internal_direction",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
-       },
-       {
-        "id": "ev-inc-policy",
-        "doc": {
-         "page": 3,
-         "title": "포용금융 확대방안",
-         "issuer": "금융위원회",
-         "dbClass": "gov_policy",
-         "fileName": "금융위원회_포용금융 확대방안.pdf",
-         "isOfficial": true,
-         "sectionPath": "Ⅱ. 추진 과제 > 1. 서민·취약계층 금융공급 확대",
-         "effectiveDate": "2026-01-15"
-        },
-        "label": "포용금융 확대방안(금융위원회)",
-        "snippet": "2026년 1월 이후 서민·취약계층 금융공급 확대 기조가 제시됨.",
-        "category": "external_policy",
-        "relevance": null,
-        "sourceKind": "doc_chunk"
        }
       ],
       "severity": "caution",
       "rankBasis": null,
       "rankScore": null,
-      "statement": "포용금융 확대 관련 신용리스크 분석 결과 : 충당금 비중이 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] 상승([[fig:share_delta_pct]] 증가)하여 주의가 필요합니다. 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 [[fig:inc_exposure_cnt_growth]] 증가했고, 평균 신용등급은 [[fig:inc_avg_grade]]로 소매 익스포저 평균 [[fig:retail_avg_grade]] 대비 낮습니다. 해당 풀의 연체 발생 및 연체율 증가 여부를 소매모형 관점에서 모니터링할 필요가 있습니다.",
+      "statement": "",
       "subDomain": "inclusive_finance",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "domainCode": "loan",
       "reportKind": "inclusive_risk",
       "reportAnchor": "i3-share",
-      "verifications": [
-       {
-        "detail": "모든 수치가 계산 결과를 참조",
-        "passed": true,
-        "checkCode": "numeric_provenance"
-       },
-       {
-        "detail": "근거 3범주 충족 여부 확인",
-        "passed": true,
-        "checkCode": "evidence_present"
-       },
-       {
-        "detail": "인과 단정 표현 미검출",
-        "passed": true,
-        "checkCode": "causality_language"
-       },
-       {
-        "detail": "상위 기준과 정합",
-        "passed": true,
-        "checkCode": "alignment"
-       }
-      ]
+      "verifications": [],
+      "statementTpl": "포용금융 상품 충당금 비중은 [[fig:share_base]] → [[fig:share_now]]로 [[fig:share_delta_pp]] [[if:share_delta_pp>0|상승|하락]]했습니다(증감률 [[fig:share_delta_pct]]). 해당 풀의 익스포저 건수는 [[fig:inc_exposure_cnt_now]]으로 기준시점 대비 [[fig:inc_exposure_cnt_growth]] 변했고, 평균 신용등급은 [[fig:inc_avg_grade]](소매 익스포저 평균 [[fig:retail_avg_grade]])입니다."
      }
     ],
-    "batchLabel": "일배치 precompute_p1_dashboard / precompute_p2_risk",
+    "batchLabel": "",
     "corpModels": [
      {
       "ar": {
@@ -26955,7 +24916,7 @@
       },
       "modelCode": "CORP_LARGE",
       "portfolio": "corp",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "verdictTpl": "[[fig:verdict_large|verdict]]",
       "verdictBasis": "PSI –(–) · AR 하락률 –(–)",
       "verdictBasisTpl": "PSI [[fig:psi_large]]([[fig:psi_band_large|verdict]]) · AR 하락률 [[fig:ard_large]]([[fig:ard_band_large|verdict]])",
@@ -27026,7 +24987,7 @@
       },
       "modelCode": "CORP_MID",
       "portfolio": "corp",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "verdictTpl": "[[fig:verdict_mid|verdict]]",
       "verdictBasis": "PSI –(–) · AR 하락률 –(–)",
       "verdictBasisTpl": "PSI [[fig:psi_mid]]([[fig:psi_band_mid|verdict]]) · AR 하락률 [[fig:ard_mid]]([[fig:ard_band_mid|verdict]])",
@@ -27097,7 +25058,7 @@
       },
       "modelCode": "CORP_SMALL",
       "portfolio": "corp",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "verdictTpl": "[[fig:verdict_small|verdict]]",
       "verdictBasis": "PSI –(–) · AR 하락률 –(–)",
       "verdictBasisTpl": "PSI [[fig:psi_small]]([[fig:psi_band_small|verdict]]) · AR 하락률 [[fig:ard_small]]([[fig:ard_band_small|verdict]])",
@@ -27168,7 +25129,7 @@
       },
       "modelCode": "CORP_MICRO",
       "portfolio": "corp",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "verdictTpl": "[[fig:verdict_micro|verdict]]",
       "verdictBasis": "PSI –(–) · AR 하락률 –(–)",
       "verdictBasisTpl": "PSI [[fig:psi_micro]]([[fig:psi_band_micro|verdict]]) · AR 하락률 [[fig:ard_micro]]([[fig:ard_band_micro|verdict]])",
@@ -27264,7 +25225,7 @@
       },
       "modelCode": "RETAIL_AS",
       "portfolio": "retail",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "verdictTpl": "[[fig:verdict_as|verdict]]",
       "verdictBasis": "AR – · AR 하락률 –(–)",
       "verdictBasisTpl": "AR [[fig:ar_as]] · AR 하락률 [[fig:ard_as]]([[fig:ard_band_as|verdict]])",
@@ -27321,7 +25282,7 @@
       },
       "modelCode": "RETAIL_BS",
       "portfolio": "retail",
-      "dataOrigin": "simulated",
+      "dataOrigin": null,
       "verdictTpl": "[[fig:verdict_bs|verdict]]",
       "verdictBasis": "AR – · AR 하락률 –(–)",
       "verdictBasisTpl": "AR [[fig:ar_bs]] · AR 하락률 [[fig:ard_bs]]([[fig:ard_band_bs|verdict]])",
@@ -27329,22 +25290,14 @@
       "verdictSeverityTpl": "[[fig:verdict_bs|severity]]"
      }
     ],
-    "degradedSources": [
-     "graph",
-     "vector"
-    ]
+    "degradedSources": []
    }
   },
   {
    "key": "terms",
    "payload": [
     {
-     "src": {
-      "page": 4,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "PSI 0.082 → 관찰 구간. 등급 하향 이동이 누적되고 있는지 점검 필요.",
+     "src": null,
      "formula": "PSI = Σ (aᵢ − eᵢ) × ln(aᵢ / eᵢ)   (a: 비교시점 비중, e: 기준시점 비중)",
      "termCode": "PSI",
      "altLabels": [
@@ -27361,12 +25314,7 @@
      ]
     },
     {
-     "src": {
-      "page": 6,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "AUROC 0.748 → AR 49.62%",
+     "src": null,
      "formula": "AR = 2 × AUROC − 1",
      "termCode": "AR",
      "altLabels": [
@@ -27385,12 +25333,7 @@
      ]
     },
     {
-     "src": {
-      "page": 6,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "개발시점 AR 65.1% → 현재 AR 49.6% 이면 하락률 23.8%",
+     "src": null,
      "formula": "AR 하락률 = (AR_개발시점 − AR_현재) / AR_개발시점 × 100",
      "termCode": "AR_DECLINE",
      "altLabels": [
@@ -27405,12 +25348,7 @@
      ]
     },
     {
-     "src": {
-      "page": 7,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "K-S 27.6% → 보통 수준의 우·불량 구분 성능",
+     "src": null,
      "formula": "K-S = max | F_불량(s) − F_우량(s) | × 100",
      "termCode": "KS",
      "altLabels": [
@@ -27427,11 +25365,7 @@
      ]
     },
     {
-     "src": {
-      "page": 7,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
+     "src": null,
      "formula": "AUROC = (AR + 1) / 2",
      "termCode": "AUROC",
      "altLabels": [
@@ -27447,12 +25381,7 @@
      ]
     },
     {
-     "src": {
-      "page": 8,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "7B 등급 12.660% > 8 등급 11.798% → 서열화 균열 발생",
+     "src": null,
      "termCode": "SDR",
      "altLabels": [
       "Standardized Default Rate",
@@ -27468,12 +25397,7 @@
      ]
     },
     {
-     "src": {
-      "page": 2,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "점수 71~78 → 3A 등급 → PD 추정치 최소 0.18% / 중간 0.24% / 최대 0.30%",
+     "src": null,
      "termCode": "CALIBRATION",
      "altLabels": [
       "등급계량화",
@@ -27489,12 +25413,7 @@
      ]
     },
     {
-     "src": {
-      "page": 2,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
-     "example": "[1단계] χ²=18.42 < 임계값 21.03 → [2단계] 귀무가설 채택 → [3단계] 동일하다고 판단",
+     "src": null,
      "formula": "χ² = Σ (rᵢ − nᵢ·pᵢ)² / ( nᵢ·pᵢ·(1 − pᵢ) )",
      "termCode": "CHI_SQUARE",
      "altLabels": [
@@ -27511,11 +25430,7 @@
      ]
     },
     {
-     "src": {
-      "page": 2,
-      "title": "붙임. 통계방법론 및 용어 해설",
-      "fileName": "붙임. 통계방법론 및 용어 해설.pdf"
-     },
+     "src": null,
      "termCode": "PD_MASTER_SCALE",
      "altLabels": [
       "예측부도율 대표값",
@@ -27531,11 +25446,7 @@
      ]
     },
     {
-     "src": {
-      "page": 1,
-      "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
-      "fileName": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf"
-     },
+     "src": null,
      "termCode": "RWA",
      "altLabels": [
       "위험가중자산",
@@ -27549,11 +25460,7 @@
      ]
     },
     {
-     "src": {
-      "page": 2,
-      "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
-      "fileName": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf"
-     },
+     "src": null,
      "formula": "BIS 총자본비율 = 자기자본 / 위험가중자산(RWA) × 100",
      "termCode": "BIS",
      "altLabels": [
@@ -27569,11 +25476,7 @@
      ]
     },
     {
-     "src": {
-      "page": 1,
-      "title": "7790_상품별_충당금 데이터 정의",
-      "fileName": "(202608)7790_상품별_충당금.xlsx"
-     },
+     "src": null,
      "formula": "충당금 비중 = 대상 상품군 충당금 합계 / 전체 충당금(합계 row) × 100",
      "termCode": "PROVISION_SHARE",
      "altLabels": [

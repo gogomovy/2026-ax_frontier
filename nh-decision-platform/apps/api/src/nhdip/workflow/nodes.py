@@ -203,7 +203,17 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         bind_out.append({"id": b.id, "artifact": b.artifact_key, "builder": b.builder, "targets": len(targets)})
     ctx.changes += changes
     # 기준일 · 서식 문구(Tpl) — 수치 · 기간이 든 평문(캡션 · 근거 · 판정 근거 · 표 머리글 · 라벨)을 계산 결과로 (설계 §25.4)
-    from nhdip.views.template import apply_metric_fields, figure_index, render_templates
+    from nhdip.views.template import apply_metric_fields, figure_index, render_templates, template_figure_ids
+
+    # 에이전트가 쓴 문장 중 기대는 수치가 이번에 바뀐 것 — 규칙 문장으로 되돌리고(서술 단계가 다시 쓴다) 옛 서술이 새 수치 옆에 남지 않게
+    moved = {c["figure"] for c in changes if not c.get("trace_only") and not c.get("stale")}
+    refresh: set[str] = set()
+    if moved:
+        for payload in arts.values():
+            for d in _walk_dicts(payload):
+                if isinstance(d.get("id"), str) and any(k.endswith("By") and d[k] == "llm" for k in d) and template_figure_ids(d) & moved:
+                    refresh.add(d["id"])
+        ctx.state["refreshed"] = sorted(refresh)
 
     _as_of_stamp(ctx, arts, {fid for oc in ctx.eval.outcomes.values() if not oc.error for fid in oc.figure_ids})
     for key, payload in arts.items():
@@ -218,10 +228,11 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     idx = figure_index(arts)
     rendered = 0
     for key, payload in arts.items():
-        if render_templates(payload, idx, ctx.eval, units if isinstance(units, dict) else None):
+        if render_templates(payload, idx, ctx.eval, units if isinstance(units, dict) else None, refresh=refresh):
             ctx.changed.add(key)
             rendered += 1
-    return NodeResult({"figures_patched": len(changes), "figure_changes": changes[:200], "bindings": bind_out, "templates_rendered": rendered, "goal_verdicts": verdicts}, "degraded" if any("error" in x for x in bind_out) else "succeeded")
+    return NodeResult({"figures_patched": len(changes), "figure_changes": changes[:200], "bindings": bind_out, "templates_rendered": rendered, "goal_verdicts": verdicts,
+                       **({"llm_text_refreshed": sorted(refresh)} if refresh else {})}, "degraded" if any("error" in x for x in bind_out) else "succeeded")
 
 
 # ═════════════════════════ 근거 검색 · LLM ═════════════════════════
@@ -324,7 +335,45 @@ def _narrate_call(ctx: RunContext, llm: Any, messages: list[dict[str, Any]]) -> 
     raise ValueError(f"서술 출력 형식 오류(재요청 후에도): {err}")
 
 
-@node_impl("narrate", "LLM 서술 — 확정 수치는 [[fig:ID]] 마커로만 참조 (실패 시 기존 서술 유지 = 템플릿 폴백)")
+def target_field(t: dict[str, Any]) -> str:
+    """서술 대상 필드 — 의견 문장(statement, 기본) · 제안 판단(judgement) · 수행방안 본문(body) · 영업점 가이드(guideline)."""
+    return str(t.get("field") or "statement")
+
+
+def target_key(t: dict[str, Any]) -> str:
+    """계획 · 서술 · 검증이 대상을 부르는 이름 — 의견 문장은 id 그대로, 다른 필드는 'id.필드'."""
+    f = target_field(t)
+    return t["insight_id"] if f == "statement" else f"{t['insight_id']}.{f}"
+
+
+def target_figures(arts: dict[str, Any], obj: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """서술 대상이 쓸 수 있는 수치 — figures 사전 + 품은 수치 + 연결된 의견(sourceInsightId)의 수치."""
+    from nhdip.views.template import is_figure
+
+    out: dict[str, dict[str, Any]] = {}
+    if isinstance(obj.get("figures"), dict):
+        out.update({k: v for k, v in obj["figures"].items() if isinstance(v, dict)})
+    for d in _walk_dicts({k: v for k, v in obj.items() if k not in ("evidence", "figures")}):
+        if is_figure(d):
+            out.setdefault(d["id"], d)
+    src = obj.get("sourceInsightId")
+    if isinstance(src, str):
+        ins = find_insight(arts, src) or {}
+        for k, v in (ins.get("figures") or {}).items():
+            out.setdefault(k, v)
+    return out
+
+
+# 필드별 서술 지침 — 노드 설정의 instruction 앞에 붙는다(관리자가 바꾸는 것은 instruction · 에이전트 프롬프트)
+FIELD_GUIDE = {
+    "statement": "분석 의견 문장 — 수치가 보여 주는 상태와 변화, 판정 결과, 주의할 점을 쓴다.",
+    "judgement": "경영목표 조정 · 신설이 왜 필요한지(또는 필요하지 않은지) 판단 문단 — 실적과 목표의 차이, 상위 기조(근거 문서), 제약을 함께 쓴다. 추천 범위 숫자는 쓰지 않는다(화면이 따로 보여 준다).",
+    "body": "수행방안 본문 — 담당 부서가 할 일을 실행 항목 중심으로 쓴다(점검 대상 · 주기 · 보고 조건). 규칙 가이드가 있으면 그 방향을 따른다.",
+    "guideline": "영업점에 전달할 취급 가이드 한두 문장 — 무엇을 우선 취급하고 무엇을 조심할지. 근거 문서에 없는 기준을 만들지 않는다.",
+}
+
+
+@node_impl("narrate", "LLM 서술 — 의견 · 제안 판단 · 수행방안 본문 · 영업점 가이드. 확정 수치는 [[fig:ID]] 마커로만 참조 (실패 시 규칙 문장 유지)")
 def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     cfg = node.config or {}
     arts = ctx.load_artifacts()
@@ -332,64 +381,70 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     targets = list(cfg.get("targets", []))
     plan = ctx.state.get("plan")
     if plan is not None and cfg.get("respect_plan", True):
-        # 플래너 계획 — 바뀐 것이 있는 인사이트만 서술 (나머지는 기존 서술 유지)
+        # 플래너 계획 — 바뀐 것이 있는 대상만 서술 (나머지는 기존 서술 유지)
         allowed = set(plan.get("candidates") or plan.get("narrate") or [])
-        results = [{"insight": t["insight_id"], "skipped": (plan.get("skip") or {}).get(t["insight_id"], "계획에서 제외")} for t in targets if t["insight_id"] not in allowed]
-        targets = [t for t in targets if t["insight_id"] in allowed]
+        results = [{"insight": target_key(t), "skipped": (plan.get("skip") or {}).get(target_key(t), "계획에서 제외")} for t in targets if target_key(t) not in allowed]
+        targets = [t for t in targets if target_key(t) in allowed]
         if not targets:
             return NodeResult({"plan": "서술 대상 없음 — 기존 서술 유지", "results": results})
     if ctx.llm_off:
         # 범위 서술 상한 밖 지점(B.47 · BRM-07) — 의도한 생략이라 축소가 아님. 기존 문장(또는 안내 문구) 유지
-        return NodeResult({"skipped": ctx.llm_off, "targets": [t["insight_id"] for t in targets], "results": results})
+        return NodeResult({"skipped": ctx.llm_off, "targets": [target_key(t) for t in targets], "results": results})
     try:
         llm = resolve(ctx.session, node.agent_code)
     except LlmUnavailable as exc:
-        return NodeResult({"fallback": "template", "reason": str(exc), "targets": [t["insight_id"] for t in targets], "results": results}, "degraded")
+        return NodeResult({"fallback": "template", "reason": str(exc), "targets": [target_key(t) for t in targets], "results": results}, "degraded")
     degraded = False
     broken: str | None = None  # 첫 LLM 호출 실패 뒤에는 나머지 대상에서 같은 대기 · 재시도를 되풀이하지 않는다(게이트웨이 장애 때 실행이 수십 분 묶이는 것을 막음)
     for target in targets:
+        key, field = target_key(target), target_field(target)
         if broken:
             degraded = True
-            results.append({"insight": target["insight_id"], "fallback": "template", "error": f"앞선 LLM 호출 실패로 건너뜀: {broken}"[:300]})
+            results.append({"insight": key, "fallback": "template", "error": f"앞선 LLM 호출 실패로 건너뜀: {broken}"[:300]})
             continue
-        ins = find_insight(arts, target["insight_id"])
+        ins = find_insight(arts, target["insight_id"], field)
         if not ins:
-            results.append({"insight": target["insight_id"], "error": "인사이트 없음"})
+            results.append({"insight": key, "error": "서술 대상 없음"})
             continue
-        figures = ins.get("figures") or {}
-        # 갱신 실패(stale) 수치는 서술 재료에서 뺀다 — 원자료 삭제 등으로 다시 계산하지 못한 옛 값을 최신 값처럼 서술하지 않도록 (DEL-11)
-        fig_lines = [f"- [[fig:{fid}]] {f.get('label')} = {f.get('value')} {f.get('unit')}" for fid, f in figures.items() if not f.get("stale")]
+        figures = target_figures(arts, ins)
+        # 갱신 실패(stale) · 값 없는 수치는 서술 재료에서 뺀다 — 다시 계산하지 못한 옛 값을 최신 값처럼 서술하지 않도록 (DEL-11)
+        usable = {fid: f for fid, f in figures.items() if not f.get("stale") and f.get("value") is not None}
+        fig_lines = [f"- [[fig:{fid}]] {f.get('label')} = {f.get('value')} {f.get('unit')}" + (f" (판정 {f['verdict']})" if f.get("verdict") else "") for fid, f in usable.items()]
         verdicts = {k: v for k, v in (ctx.state.get("verdicts") or {}).items()}
-        ev = ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]
-        ev_lines = [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ev]
+        # 근거 — 이 대상에 붙인 문서 근거(attach_evidence)를 먼저, 이어서 이번 실행의 근거 검색 결과
+        own = [e for e in (ins.get("evidence") or []) if isinstance(e, dict) and isinstance(e.get("doc"), dict)]
+        ev_lines = [f"- [{e.get('category')}] {e['doc'].get('title')} p.{e['doc'].get('page') or '-'}: {(e.get('snippet') or '')[:300]}" for e in own]
+        ev_lines += [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]]
+        guide = ins.get("guide") if isinstance(ins.get("guide"), dict) else None
+        instruction = " ".join(x for x in (FIELD_GUIDE.get(field, ""), f"규칙 가이드: {guide.get('title')} — {guide.get('text')}" if guide and guide.get("text") else "", target.get("instruction", "")) if x)
         tmpl = llm.user_template or (
-            "다음 확정 수치와 근거로 '{title}' 의견 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다(마커가 단위까지 표시하므로 마커 뒤에 건 · % · 원 같은 단위를 붙이지 않는다). 인과를 단정하지 않는다. 2~4문장.\n\n"
+            "다음 확정 수치와 근거로 '{title}' 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다(마커가 단위까지 표시하므로 마커 뒤에 건 · % · 원 같은 단위를 붙이지 않는다). 인과를 단정하지 않는다. 2~4문장.\n\n"
             "수치:\n{figures}\n\n판정:\n{verdicts}\n\n근거:\n{evidence}\n\n기존 서술(참고):\n{current}\n\n{instruction}\n출력: {{\"statement\": \"...\"}}"
         )
         # 산출물 문장(제목 · 기존 서술)도 자료로 구분자 안에 넣는다 — 편집 가능한 값이 지시문으로 읽히지 않도록 (B.32)
         try:
             user = tmpl.format(
-                title=ins.get("title", ""),
-                figures="\n".join(fig_lines),
+                title=ins.get("title") or ins.get("label") or "",
+                figures="\n".join(fig_lines) or "(값이 있는 수치 없음)",
                 verdicts=json.dumps(verdicts, ensure_ascii=False, default=str),
                 evidence=fence("\n".join(ev_lines) or "(없음)"),
-                current=fence(str(ins.get("statement", "") or "(없음)")),
-                instruction=target.get("instruction", ""),
+                current=fence(str(ins.get(field, "") or "(없음)")),
+                instruction=instruction,
             )
         except (KeyError, IndexError, ValueError) as exc:
-            # 관리자가 편집한 프롬프트 자리표시자 오류 — 이 인사이트만 기존 서술 유지
+            # 관리자가 편집한 프롬프트 자리표시자 오류 — 이 대상만 기존 서술 유지
             degraded = True
-            results.append({"insight": target["insight_id"], "fallback": "template", "error": f"프롬프트 자리표시자 오류: {exc}"})
+            results.append({"insight": key, "fallback": "template", "error": f"프롬프트 자리표시자 오류: {exc}"})
             continue
         messages = [{"role": "system", "content": (llm.system_prompt or "너는 은행 경영 분석 보고서를 쓰는 분석가다. JSON 으로만 답한다.") + "\n\n" + GUARD}, {"role": "user", "content": user}]
         try:
             statement, res = _narrate_call(ctx, llm, messages)
-            ctx.state.setdefault("narratives", {})[target["insight_id"]] = {"statement": statement, "llm_call_id": res.call_id, "figures": list(figures.keys())}
-            results.append({"insight": target["insight_id"], "llm_call_id": res.call_id, "statement": statement})
-            ctx.state["narratives"][target["insight_id"]] |= {"agent": node.agent_code, "why": ((plan or {}).get("why") or {}).get(target["insight_id"])}
+            ctx.state.setdefault("narratives", {})[key] = {"statement": statement, "llm_call_id": res.call_id, "figures": list(usable.keys()), "id": target["insight_id"], "field": field,
+                                                           "agent": node.agent_code, "why": ((plan or {}).get("why") or {}).get(key)}
+            results.append({"insight": key, "llm_call_id": res.call_id, "statement": statement})
         except (LlmError, ValueError, AttributeError) as exc:
             degraded = True
-            results.append({"insight": target["insight_id"], "fallback": "template", "error": str(exc)[:300]})
+            results.append({"insight": key, "fallback": "template", "error": str(exc)[:300]})
             if isinstance(exc, LlmError):  # 모델 · 연결 문제(출력 형식 오류 ValueError 와 구분) — 이번 실행의 나머지 서술은 시도하지 않는다
                 broken = str(exc)[:200]
     return NodeResult({"model": llm.model, "results": results}, "degraded" if degraded else "succeeded")
@@ -416,13 +471,14 @@ def _grounding_policy(session: Session) -> dict[str, Any]:
     return out
 
 
-def _grounded_check(ctx: RunContext, insight_id: str, statement: str, arts: dict[str, Any]) -> dict[str, Any] | None:
+def _grounded_check(ctx: RunContext, insight_id: str, statement: str, arts: dict[str, Any], field: str = "statement") -> dict[str, Any] | None:
     """critic_grounded 한 번 — (verdict · reason · claims · llm_call_id) 또는 None(LLM 없음 · 형식 오류 → 점검 생략, 규칙 점검 결과 그대로)."""
     from .llm_judge import ask_json, clean_reason
 
-    ins = find_insight(arts, insight_id) or {}
-    figs = {fid: f.get("label") for fid, f in (ins.get("figures") or {}).items()}
-    ev = [{"origin": e.get("origin"), "title": e.get("title"), "text": (e.get("text") or "")[:400]} for e in (ctx.state.get("evidence") or [])[:4]]
+    ins = find_insight(arts, insight_id, field) or {}
+    figs = {fid: f.get("label") for fid, f in target_figures(arts, ins).items()}
+    own = [{"origin": "doc", "title": (e.get("doc") or {}).get("title"), "text": (e.get("snippet") or "")[:400]} for e in (ins.get("evidence") or []) if isinstance(e, dict) and isinstance(e.get("doc"), dict)]
+    ev = (own + [{"origin": e.get("origin"), "title": e.get("title"), "text": (e.get("text") or "")[:400]} for e in (ctx.state.get("evidence") or [])])[:4]
     context = {"title": ins.get("title"), "statement": statement, "figures": figs, "verdicts": ctx.state.get("verdicts") or {}, "evidence": ev}
     data, meta = ask_json(ctx.session, "critic_grounded", GROUNDING_TASK, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, shrink=("evidence",))
     if not data or data.get("verdict") not in ("supported", "unsupported", "unknown"):
@@ -455,8 +511,9 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         from .agent_nodes import record
 
         # 근거 일치 점검(critic_grounded · LLM-P05 · Q185) — 규칙 점검을 통과한 문장만, 실행당 상한까지. 기본 권고(막지 않음), block 이면 근거 없음 판정을 반려
+        obj_id, field = nar.get("id") or insight_id, nar.get("field") or "statement"
         if all(c["passed"] for c in checks) and gpol["enabled"] and grounded_n < gpol["max_per_run"] and not ctx.llm_off:
-            g = _grounded_check(ctx, insight_id, st, arts)
+            g = _grounded_check(ctx, obj_id, st, arts, field)
             if g is not None:
                 grounded_n += 1
                 bad = g["verdict"] == "unsupported"
@@ -469,8 +526,16 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         # 범위 실행(다지점 · B.47)은 서술 이력을 범위별로 — 다른 지점 서술 이력 때문에 '최초 1회' 서술을 건너뛰지 않게
         scoped_id = f"{insight_id}{ctx.eval.scope_suffix}"
         if passed:
+            fields: dict[str, Any] = {field: st, f"{field}By": "llm"}  # 규칙 문장(서식 문구)이 기대는 수치가 바뀌기 전까지 덮어쓰지 않는다
+            if field == "statement":
+                # 화면의 검증 표시 — 이번 점검 결과 + 근거 범주(문서 근거 · 데이터 근거)
+                own = (find_insight(arts, obj_id, field) or {}).get("evidence") or []
+                cats = {e.get("category") for e in own if isinstance(e, dict)}
+                ev_ok = bool(cats & {"external_policy", "internal_direction"}) and "bank_data" in cats
+                fields["verifications"] = [{"checkCode": c["checkCode"], "passed": c["passed"], "detail": c["detail"]} for c in checks if c["checkCode"] != "figure_reference"] + [
+                    {"checkCode": "evidence_present", "passed": ev_ok, "detail": "근거 범주(문서 · 데이터) 충족" if ev_ok else "근거 범주 일부 없음 — 관련 문서를 올리면 채워짐"}]
             for key, payload in arts.items():
-                if patch_insight(payload, insight_id, {"statement": st}):
+                if patch_insight(payload, obj_id, fields, field):
                     ctx.changed.add(key)
             record(ctx, nar.get("agent") or "narrator", "narrated", f"{scoped_id} 서술 갱신(검증 통과)", {"insight": scoped_id, "llm_call_id": nar.get("llm_call_id"), "why": nar.get("why"), "statement": st[:600]})
         else:
@@ -1007,3 +1072,5 @@ from . import analysis_nodes as _analysis_nodes  # noqa: E402,F401
 
 # 온톨로지 구축 에이전트 노드(구조 파악 · 객체 유형 · 링크 · 해소 · 품질 · 제안) 등록 — Phase M
 from . import onto_nodes as _onto_nodes  # noqa: E402,F401
+# 문서 근거 붙이기(화면 근거 칸 · 제약 근거 문서를 올라온 문서로) 등록
+from . import evidence_nodes as _evidence_nodes  # noqa: E402,F401

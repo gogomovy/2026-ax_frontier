@@ -198,10 +198,16 @@ function TermBody({ payload }: { payload: Extract<import("@/components/providers
           <IconDoc className="text-steel" />
           <p className="text-[12px] font-bold text-charcoal">근거 문서</p>
         </div>
-        <p className="text-[13px] font-medium text-ink">{term.src.title}</p>
-        <p className="mt-0.5 text-[11.5px] text-steel">
-          {term.src.fileName} · p.{term.src.page}
-        </p>
+        {term.src ? (
+          <>
+            <p className="text-[13px] font-medium text-ink">{term.src.title}</p>
+            <p className="mt-0.5 text-[11.5px] text-steel">
+              {[term.src.fileName, term.src.page ? `p.${term.src.page}` : null].filter(Boolean).join(" · ")}
+            </p>
+          </>
+        ) : (
+          <p className="text-[12.5px] text-steel">연결된 근거 문서 없음 — 관련 문서를 올리면 검색 근거로 이어집니다.</p>
+        )}
         <p className="mt-2 text-[11px] text-stone">
           용어가 온톨로지에 등록되어 있어 보고서 본문에서 정의·수식·판단방법·근거문서로 연결됩니다.
         </p>

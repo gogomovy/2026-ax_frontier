@@ -161,7 +161,19 @@ def test_gate_hides_template_narratives():
     assert shown["capital_view"]["evidence"] == [] and shown["loan_overview"]["revenue"]["narrative"] == ""
     assert shown["comparison_view"]["divergence"] is None and shown["risk_dashboard"]["opinions"] == []
     # 수치가 없는 행의 시연 판정 · 한도 판정 · 출처 문서, 목록 항목의 시연 상태
-    assert all(r["verdict"] == "" for r in shown["profitability"]) and all(r["verdict"] for r in tpl["profitability"])
+    assert all(r["verdict"] == "" for r in shown["profitability"]) and all(r["verdict"] == "" for r in tpl["profitability"])
+    # 기본 구성의 틀에는 문서 인용 · 검증 결과 · 시연 판정이 없다 — 실행이 올라온 문서 · 자료로 채운다(attach_evidence · critic)
+    docs, checks = [], []
+    stack = list(tpl.values())
+    while stack:
+        x = stack.pop()
+        if isinstance(x, dict):
+            docs += [e for e in (x.get("evidence") or []) if isinstance(e, dict) and "doc" in e]
+            checks += list(x.get("verifications") or [])
+            stack.extend(x.values())
+        elif isinstance(x, list):
+            stack.extend(x)
+    assert docs == [] and checks == []
     assert shown["capital_view"]["bankTarget"]["passed"] is None and all(c["doc"] is None for c in shown["capital_view"]["constraints"])
     assert all(x["severity"] is None for x in shown["default_rate_trend"]["corpSegments"])
     # 원본(틀)은 바뀌지 않는다 — 워크플로가 같은 틀을 채운다

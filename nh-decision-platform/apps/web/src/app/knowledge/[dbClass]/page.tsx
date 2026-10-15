@@ -122,9 +122,12 @@ export default async function KnowledgeDbPage(props: { params: Promise<{ dbClass
                       {term.formula}
                     </p>
                   ) : null}
-                  <p className="mt-1.5 text-[10.5px] text-stone">
-                    근거 · {term.src.title} p.{term.src.page}
-                  </p>
+                  {term.src ? (
+                    <p className="mt-1.5 text-[10.5px] text-stone">
+                      근거 · {term.src.title}
+                      {term.src.page ? ` p.${term.src.page}` : ""}
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>
