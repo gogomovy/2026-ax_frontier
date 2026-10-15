@@ -9,7 +9,7 @@
   [[fig:ID|abs]]        절댓값                [[fig:ID|unit]]  단위만
   [[ym:데이터셋:토큰|형식]]  현재 행의 기간(`$latest` · `$latest-12` · `$earliest` …) — dot(2026.08) · month(8월) · year(2026) · ym · date(2026.08.31) · kor(2026년 8월)
   [[rule:코드.경로|형식]]   규칙 값 — d0~d3(소수 자릿수) · +d1(부호) · pct0(0.95 → 95%) · 기간 형식(dot · month …) 또는 그대로
-  [[if:A>B|참 문구|거짓 문구]]  수치 비교로 문구를 고른다 — A · B 는 수치 id 또는 숫자, 비교 > < >= <= = != (값이 없으면 빈 문구)
+  [[if:A>B|참 문구|거짓 문구|값 없음 문구]]  수치 비교로 문구를 고른다 — A · B 는 수치 id 또는 숫자, 비교 > < >= <= = != (값이 없으면 넷째 문구, 없으면 빈 문구)
   [[at:경로]]            같은 산출물의 값(예: office.name — 바인딩이 채운 영업점 이름)
 수치는 산출물들에 이미 반영된 Figure 값(id 별)으로 렌더한다 — 다른 워크플로가 계산한 수치도 쓸 수 있다.
 
@@ -31,7 +31,7 @@ FIG_DROP = ("calc", "sourceRef", "dataOrigin", "stale", "staleReason", "verdict"
 DEMO_ARTIFACTS: dict[str, Any] = {"report_requests": [], "review_queue": []}
 DEMO_FIELDS: dict[str, list[str]] = {"hq_dashboard": ["requests"]}
 TOKEN = re.compile(r"\[\[(fig|ym|rule):([^\]|]+)(?:\|([a-z0-9+]+))?\]\]")
-IF_TOKEN = re.compile(r"\[\[if:([^\]|]+)\|([^\]|]*)\|([^\]|]*)\]\]")
+IF_TOKEN = re.compile(r"\[\[if:([^\]|]+)\|([^\]|]*)\|([^\]|]*)(?:\|([^\]|]*))?\]\]")
 AT_TOKEN = re.compile(r"\[\[at:([A-Za-z0-9_.]+)\]\]")
 IF_EXPR = re.compile(r"^\s*([A-Za-z0-9_.\-]+)\s*(>=|<=|!=|>|<|=)\s*([A-Za-z0-9_.\-]+)\s*$")
 # 화면이 [[fig:ID]] 를 수치 칩으로 그리는 서술 필드 — 서식 문구를 렌더할 때 수치 표식은 남긴다
@@ -344,7 +344,7 @@ def render_text(tpl: str, idx: dict[str, dict[str, Any]], ctx: Any = None, units
 
     def pick(m: re.Match) -> str:
         ok = eval_condition(m.group(1), idx)
-        return "" if ok is None else (m.group(2) if ok else m.group(3))
+        return (m.group(4) or "") if ok is None else (m.group(2) if ok else m.group(3))
 
     def rep(m: re.Match) -> str:
         kind, arg, mode = m.group(1), m.group(2), m.group(3)

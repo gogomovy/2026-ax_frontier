@@ -217,7 +217,8 @@ def _clean_query(q: Any) -> str:
 
 PLAN_TASK = (
     "너는 이번 워크플로우 실행의 계획 에이전트다. 원인 · 판단된 변화 · 인사이트(의견) · 서술 이력을 보고 다음을 결정하라.\n"
-    "1) narrate: 이번에 LLM 서술을 다시 써야 할 인사이트(id 는 insights 에 있는 것만). 바뀐 수치 · 근거와 관련 없는 의견은 기존 서술을 유지한다.\n"
+    "1) narrate: 이번에 LLM 서술을 다시 써야 할 대상(id 는 insights 에 있는 것만 — field 가 statement 가 아닌 'id.field' 대상은 제안 판단(judgement) · 수행방안 본문(body) · 영업점 가이드(guideline)). "
+    "바뀐 수치 · 근거와 관련 없는 대상은 기존 서술을 유지하되, 의견이 바뀌면 그 의견에 기대는 제안 판단 · 수행방안도 함께 고른다. narratedBefore 가 false 인 대상은 최초 서술이 필요하다.\n"
     "2) evidence: 근거 검색을 할지(run)와 이번 변화에 맞춘 추가 검색어(query, 선택 · 짧게).\n"
     "3) followups: 이번 변화가 다른 업무 판단에 영향을 주면 후속 실행할 워크플로우(followupCandidates 의 code 만, 필요할 때만).\n"
     "forced 에 있는 인사이트는 반드시 포함된다. 수치를 계산하거나 새로 만들지 않는다. reason · summary 는 숫자 없이.\n"

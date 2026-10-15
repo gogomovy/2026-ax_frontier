@@ -35,25 +35,46 @@ def _plain(s: Any) -> str:
     return " ".join(t.split())
 
 
+PARTICLE = re.compile(r"(으로|에서|에게|까지|부터|보다|처럼|이며|이고|과|와|은|는|이|가|을|를|의|에|로|도|만)$")
+VERB_END = re.compile(r"(습니다|니다|합니다|입니다|했고|하고|하며|했다|한다|된다|있다|없다|있고|있는|하는|되는|되어|해야|하여|되었|졌습|졌다)$")
+STOP = {"현재", "대비", "기준", "해당", "이번", "수준", "비교", "확인", "검토", "필요", "변화", "결과", "관련", "따른", "위한", "대한", "통한", "경우", "이내", "초과"}
+
+
+def _terms(text: str) -> list[str]:
+    """검색 낱말 — 조사를 떼고 서술 어미 · 흔한 말은 뺀다(검색은 앞부분 일치라 '기업여신' 이 '기업여신은' 도 찾는다)."""
+    out: list[str] = []
+    for w in _plain(text).split():
+        if VERB_END.search(w):
+            continue
+        w = PARTICLE.sub("", w)
+        if len(w) >= 2 and w not in STOP and w not in out:
+            out.append(w)
+    return out
+
+
 def _query(arts: dict[str, Any], d: dict[str, Any], extra: str = "") -> str:
-    """칸의 제목 · 문장 · 수치 이름 → 검색어(앞쪽 질의어가 우선 — 검색은 앞 12개 낱말을 쓴다)."""
+    """칸의 제목 · 수치 이름 · 점검 지표 · 문장 → 검색어(앞쪽이 우선 — 검색은 앞 12개 낱말을 쓴다)."""
     parts = [extra] if extra else []
-    parts += [_plain(d.get(f)) for f in TEXT_FIELDS if isinstance(d.get(f), str)]
-    parts += [_plain(f.get("label")) for f in list(target_figures(arts, d).values())[:8]]
-    parts += [_plain(x) for x in (d.get("monitoringMetrics") or [])[:4] if isinstance(x, str)]
+    parts += [d.get(f) for f in ("title", "label", "heading") if isinstance(d.get(f), str)]
+    parts += [f.get("label") for f in list(target_figures(arts, d).values())[:6] if isinstance(f.get("label"), str)]
+    parts += [x for x in (d.get("monitoringMetrics") or [])[:4] if isinstance(x, str)]
+    parts += [d.get(f) for f in TEXT_FIELDS[3:] if isinstance(d.get(f), str)]
     seen: list[str] = []
-    for w in " ".join(p for p in parts if p).split():
-        if len(w) >= 2 and w not in seen:
-            seen.append(w)
-    return " ".join(seen[:24])
+    for p in parts:
+        for w in _terms(p or ""):
+            if w not in seen:
+                seen.append(w)
+    return " ".join(seen[:16])
 
 
-def _snippet(text: str, terms: list[str], n: int = 220) -> str:
-    """근거 구간에서 질의어가 가장 많이 든 문장(원문 그대로 — 문서 뷰어가 그 글을 찾아 강조한다)."""
-    sents = [s.strip() for s in SENT.split(text or "") if s and s.strip()]
-    if not sents:
-        return (text or "")[:n]
-    best = max(sents, key=lambda s: (sum(1 for t in terms if t in s), -abs(len(s) - 120)))
+def _snippet(text: str, terms: list[str], n: int = 220) -> str | None:
+    """근거 구간에서 질의어가 가장 많이 든 문장(원문 그대로 — 문서 뷰어가 그 글을 찾아 강조한다). 질의어가 든 문장이 없으면 None."""
+    sents = [s.strip() for s in SENT.split(text or "") if s and s.strip() and len(s.strip()) >= 12]
+    scored = [(sum(1 for t in terms if t in s), s) for s in sents]
+    scored = [x for x in scored if x[0] > 0]
+    if not scored:
+        return None
+    best = max(scored, key=lambda x: (x[0], -abs(len(x[1]) - 120)))[1]
     return best[:n]
 
 
@@ -67,7 +88,10 @@ def _doc_meta(ctx: RunContext, hits: list[dict[str, Any]]) -> dict[tuple[str, in
     return out
 
 
-def _item(h: dict[str, Any], doc: Any, terms: list[str]) -> dict[str, Any]:
+def _item(h: dict[str, Any], doc: Any, terms: list[str]) -> dict[str, Any] | None:
+    snippet = _snippet(h.get("text") or "", terms)
+    if snippet is None:
+        return None
     sec = h.get("sectionPath") or h.get("section_path")
     title = doc.title if doc is not None else h.get("title")
     page = h.get("page")
@@ -81,7 +105,7 @@ def _item(h: dict[str, Any], doc: Any, terms: list[str]) -> dict[str, Any]:
                 "effectiveDate": doc.published_at.isoformat() if doc is not None and doc.published_at else None,
                 "isOfficial": bool(((getattr(doc, "meta", None) or {}).get("isOfficial")))},
         "label": label[:160],
-        "snippet": _snippet(h.get("text") or "", terms),
+        "snippet": snippet,
         "category": h.get("category"),
         "relevance": round(float(h.get("priority") or 0), 3),
         "sourceKind": "doc_chunk",
@@ -149,10 +173,21 @@ class _Searcher:
         docs = _doc_meta(self.ctx, cand)
         # 영업점이 올린 문서는 그 영업점 화면에만 근거로 붙인다(§33 OWN)
         cand = [h for h in cand if self.allowed(docs.get((h["origin"], h["document_id"])))]
-        ranked = rank_evidence(self.ctx.session, cand, k=k, as_of=self.as_of, doc_classes=classes, query_terms=len(query_terms(q)))
-        hits = ranked["hits"]
-        terms = query_terms(q)
-        out = [_item(h, docs.get((h["origin"], h["document_id"])), terms) for h in hits]
+        ranked = rank_evidence(self.ctx.session, cand, k=k * 3, as_of=self.as_of, doc_classes=classes, query_terms=len(query_terms(q)))
+        terms = q.split()
+        out: list[dict[str, Any]] = []
+        per_doc: dict[tuple[str, int], int] = {}
+        for h in ranked["hits"]:
+            doc = docs.get((h["origin"], h["document_id"]))
+            it = _item(h, doc, terms)
+            title = (doc.title if doc is not None else h.get("title")) or ""
+            # 질의어가 든 문장이 없는 구간(표지 · 목차) · 제목만 되풀이한 구간은 근거로 쓰지 않는다. 한 문서에서는 한 구간만
+            if it is None or it["snippet"].strip() in (title.strip(), "") or per_doc.get((h["origin"], h["document_id"])):
+                continue
+            per_doc[(h["origin"], h["document_id"])] = 1
+            out.append(it)
+            if len(out) >= k:
+                break
         self.cache[key] = out
         return out
 

@@ -499,7 +499,8 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     gpol = _grounding_policy(ctx.session)
     grounded_n = 0
     for insight_id, nar in (ctx.state.get("narratives") or {}).items():
-        st = nar["statement"]
+        # 꾸밈이 붙은 수치 표식([[fig:ID|signed]])은 화면이 칩으로 그리지 못한다 — 꾸밈을 떼고 같은 수치 표식으로
+        st = re.sub(r"\[\[fig:([A-Za-z0-9_\-]+)\|[a-z0-9+]+\]\]", r"[[fig:\1]]", nar["statement"])
         checks = []
         lits = numguard.literal_numbers(st, extra_num)
         checks.append({"checkCode": "numeric_provenance", "passed": not lits, "detail": "모든 수치가 계산 결과를 참조" if not lits else f"리터럴 숫자: {lits[:5]}"})
