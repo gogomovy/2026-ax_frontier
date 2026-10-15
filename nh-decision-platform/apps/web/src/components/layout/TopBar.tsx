@@ -133,15 +133,15 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
                 업무 화면
               </Link>
             ) : (
-              // 업무 화면이 하나도 없다(업무 구성 전, Phase O) — '/' 는 관리자를 다시 관리자 홈으로 보내므로 업무 구성으로 안내한다
+              // 업무 화면이 하나도 없다(관리자가 모든 업무 화면을 끈 경우) — '/' 는 관리자를 다시 관리자 홈으로 보내므로 화면 권한으로 안내한다
               <Link
-                href="/admin/business-config"
-                title="업무 화면이 아직 없습니다 — [업무 구성]에 업무 구성 파일을 올리면 생깁니다"
+                href="/admin/screens"
+                title="켜진 업무 화면이 없습니다 — [화면 권한]에서 화면을 켜세요"
                 data-no-business-screens
                 className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-attention transition-colors hover:bg-surface-soft"
               >
                 <IconChevronLeft />
-                업무 화면 없음 · 업무 구성 올리기
+                업무 화면 없음
               </Link>
             )}
             <span aria-hidden="true" className="h-5 w-px bg-hairline-soft" />

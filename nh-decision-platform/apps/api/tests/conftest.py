@@ -18,7 +18,7 @@ os.environ["FILESTORE_DIR"] = "/tmp/nhdip-test-files"
 os.environ["LLM_DEFAULT_MODEL"] = ""
 os.environ["LLM_DEFAULT_BASE_URL"] = "http://llm.test:4000"  # 시드 연결 주소(호출은 각 테스트가 가짜로 대체) — 기본값은 비어 있음(B.36)
 os.environ["NHDIP_USE_APP_ROLE"] = "0"  # 테스트 DB 는 소유자 계정으로 (앱 계정 권한은 test_app_role 에서 따로 검증)
-# 시드는 플랫폼만(Phase O) — 시험 DB 는 실제 사용자처럼 시연 업무 구성 파일 + 시연 자료 27개 + 문서를 올린 위에서 돈다.
+# 시드 = 플랫폼 + 기본 업무 구성(값 없음) — 시험 DB 는 실제 사용자처럼 시연 원천 자료 27개 + 문서를 올린 위에서 돈다.
 # CODES: 시나리오 자료 구분(예전 데이터셋 코드) → 파일에서 만들어진 데이터셋 코드
 CODES: dict[str, str] = {}
 
@@ -53,8 +53,8 @@ def db():
     from nhdip.seed.run import run_seed
 
     with SessionLocal() as s:
-        run_seed(s, with_precompute=True)  # 플랫폼만 (Phase O)
-    # 시연 업무 구성 파일 · 시연 자료 패키지(엑셀 · CSV · PDF)를 실제 업로드 엔드포인트로 올린다 (Q137 · Phase O)
+        run_seed(s, with_precompute=True)  # 플랫폼 + 기본 업무 구성
+    # 시연 자료 패키지(엑셀 · CSV · PDF)를 실제 업로드 엔드포인트로 올린다 (Q137)
     from fastapi.testclient import TestClient
 
     from nhdip.main import app
@@ -63,7 +63,7 @@ def db():
 
     pkg = build()
     c = TestClient(app)
-    rep = upload_http("http://testserver", "00000001", "Admin1234!", pkg, client=c, config=True)
+    rep = upload_http("http://testserver", "00000001", "Admin1234!", pkg, client=c)
     assert rep.ok, rep.failed
     CODES.update(rep.codes)
     _contract_expected(SessionLocal)

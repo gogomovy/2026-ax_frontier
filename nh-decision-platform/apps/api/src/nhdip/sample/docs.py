@@ -25,11 +25,11 @@ def collect_snippets() -> dict[str, list[dict[str, Any]]]:
     """시연 업무 구성의 화면 틀이 인용한 문서 근거(doc + snippet)를 문서 제목별로 — 같은 (제목, 인용문)은 한 번."""
     out: dict[str, list[dict[str, Any]]] = {}
     seen: set[tuple[str, str]] = set()
-    with open(os.path.join(HERE, "business_config.json"), encoding="utf-8") as fh:
-        arts = sorted(json.load(fh).get("artifacts") or [], key=lambda a: a["key"])
+    from nhdip.seed.pack import load_pack
+
+    arts = sorted(load_pack().get("artifacts") or [], key=lambda a: a["key"])
     for a in arts:
-        if True:
-            stack = [a["payload"]]
+        stack = [a["payload"]]
         while stack:
             o = stack.pop()
             if isinstance(o, dict):

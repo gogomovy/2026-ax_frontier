@@ -6,8 +6,8 @@
     bad = perturb(pkg)       # 교란 검사용 — 셀마다 다른 비율로 수치만 바꾼 같은 파일들
 
 파일 이름 · 양식은 실무에서 받는 모양(원본 보고서 번호 · 시스템 테이블명 · 공문 붙임)을 따른다.
-플랫폼에는 미리 정한 정의가 없다(Phase O) — 파일을 올리면 파일 모양에서 정의가 만들어지고, 함께 만드는 업무 구성 파일(업무구성_YYYYMM.xlsx)이
-지표 · 업무 흐름 · 화면 연결을 자료 이름 · 열 이름으로 그 자료에 잇는다. manifest 의 dataset 값은 시나리오 안의 자료 구분일 뿐 플랫폼 코드가 아니다.
+데이터셋 정의는 미리 없다 — 파일을 올리면 파일 모양에서 정의가 만들어지고, 제품의 기본 업무 구성(seed/business_pack.json)이
+지표 산식 · 업무 흐름 · 화면 연결을 자료 이름 · 열 이름으로 그 자료에 잇는다. manifest 의 dataset 값은 시나리오 안의 자료 구분일 뿐 플랫폼 코드가 아니다.
 """
 from __future__ import annotations
 
@@ -370,9 +370,10 @@ def _specs() -> dict[str, Any]:
 
 
 def business_config() -> dict[str, Any]:
-    """시연 업무 구성(예전 시드 값을 시연 파일에서 만든 자료 구조에 맞게 옮긴 것 — Phase O · BIZ-07). 플랫폼은 자동으로 넣지 않는다."""
-    with open(os.path.join(os.path.dirname(__file__), "business_config.json"), encoding="utf-8") as fh:
-        return json.load(fh)
+    """제품의 기본 업무 구성(seed/business_pack.json — 지표 산식 · 흐름 · 화면 연결 · 화면 · 조직, 값 없음). 시연 자료는 이 구성의 자료 이름 · 열에 맞춘다."""
+    from nhdip.seed.pack import load_pack
+
+    return load_pack()
 
 
 def _perturb_rows(ds_code: str, rows: list[dict[str, Any]], seed: int) -> list[dict[str, Any]]:
@@ -441,8 +442,5 @@ def build(ym: str = "202608", *, documents: bool = True, perturb_seed: int | Non
             f.origin = "ext"
     if documents:
         files += _docs()
-    # 업무 구성 파일(지표 · 업무 흐름 · 화면 연결 · 규칙 · 조직 · 화면) — 먼저 올린다(자료가 오면 자료 이름으로 이어져 계산)
-    from nhdip.bizconfig.bundle import write_bundle
-
-    cfg = SampleFile(f"업무구성_{ym}.xlsx", "config", write_bundle(business_config()), note="시연 업무 구성 — 관리자 [업무 구성]에서 올린다")
-    return Package(ym, [cfg, *files], variant="base" if perturb_seed is None else f"perturb-{perturb_seed}")
+    # 업무 구성(지표 산식 · 흐름 · 화면)은 제품에 들어 있다(seed/business_pack.json) — 패키지는 원천 자료 · 문서만
+    return Package(ym, files, variant="base" if perturb_seed is None else f"perturb-{perturb_seed}")

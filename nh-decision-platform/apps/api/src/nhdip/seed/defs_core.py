@@ -42,8 +42,6 @@ SCREENS = [
     dict(code="ADMIN_ORGS", path="/admin/orgs", label="조직", section="사용자와 권한", kind="admin", sort=111, admin_only=True),
     dict(code="ADMIN_SCREENS", path="/admin/screens", label="화면 권한", section="사용자와 권한", kind="admin", sort=112, admin_only=True),
     dict(code="ADMIN_AUDIT", path="/admin/audit", label="감사 로그", section="사용자와 권한", kind="admin", sort=113, admin_only=True),
-    # Phase O · BIZ-02 — 업무 구성 파일(지표 · 규칙 · 화면 연결 · 조직 · 화면) 올리기 · 미리보기 · 반영 · 삭제
-    dict(code="ADMIN_BUSINESS_CONFIG", path="/admin/business-config", label="업무 구성", section="데이터와 지식", kind="admin", sort=119, admin_only=True),
     dict(code="ADMIN_UPLOADS", path="/admin/uploads", label="자료 승인", section="데이터와 지식", kind="admin", sort=120, admin_only=True, count_key="adminUploads"),
     dict(code="ADMIN_DATASETS", path="/admin/datasets", label="데이터셋·문서", section="데이터와 지식", kind="admin", sort=121, admin_only=True),
     dict(code="ADMIN_CONTRACTS", path="/admin/contracts", label="컬럼 정의서", section="데이터와 지식", kind="admin", sort=122, admin_only=True),

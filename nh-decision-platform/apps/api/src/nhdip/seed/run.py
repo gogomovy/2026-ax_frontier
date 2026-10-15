@@ -1,9 +1,9 @@
-"""시드 실행 — 플랫폼만(Phase O · BIZ-01). 멱등. 이미 있는 행은 덮어쓰지 않는다(관리자 화면 수정 보존).
+"""시드 실행 — 멱등. 이미 있는 행은 덮어쓰지 않는다(관리자 화면 수정 보존). 업무 자료 · 값은 넣지 않는다.
 
 넣는 것: 관리자 계정 · 관리 조직 · 관리/공통 화면 · 플랫폼 설정 · 공통 규칙 · 시스템 온톨로지 · LLM 연결 · 에이전트 그룹 · 플랫폼 에이전트 ·
-공통 흐름(그래프 투영 · 온톨로지 구축) · 공통 지식 컬렉션.
-넣지 않는 것: 데이터셋 정의 · 컬럼 정의서 · 지표 · 업무 흐름 · 화면 연결 · 업무 규칙 · 조직(본부 · 지역 · 영업점) · 업무 화면 · 화면 틀 —
-관리자가 업무 구성 파일로 올린다(`nhdip.bizconfig`, 시연 구성은 `python -m nhdip.sample build` 의 업무구성 파일).
+공통 흐름(그래프 투영 · 온톨로지 구축) · 공통 지식 컬렉션, 그리고 기본 업무 구성(seed/pack.py — 3개 부서 화면 · 업무 흐름 · 지표 산식 ·
+화면 연결 · 업무 규칙 · 조직 · 화면 권한 · 값 없는 화면 틀).
+넣지 않는 것: 데이터셋 정의 · 업무 자료 · 문서 · 계산값 — 원천 자료를 올리면 계산 커널이 지표 산식으로 계산한다.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import logging
 import os
 from typing import Any
 
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -415,6 +416,16 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:  # no
     rename_upgrades(s, out)
     admin_counts_upgrade(s, out)
     data_admin_upgrade(s, out)
+    s.flush()
+    # 기본 업무 구성(3개 부서 화면 · 흐름 · 지표 산식 · 화면 연결 · 조직 · 화면 권한 — 값 없음). 값은 올린 원천 자료로 계산한다
+    from .pack import seed_business_pack
+
+    seed_business_pack(s, out)
+    # 업무 구성 파일 올리기 화면은 없앴다(구성은 제품에 포함) — 예전 DB 의 메뉴 항목을 지운다
+    old = s.get(Screen, "ADMIN_BUSINESS_CONFIG")
+    if old is not None:
+        s.execute(sql_delete(ScreenGrant).where(ScreenGrant.screen_code == old.code))
+        s.delete(old)
     s.flush()
     seed_knowledge(s, out)
     s.flush()

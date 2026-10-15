@@ -101,10 +101,6 @@ export default function PipelineAdmin() {
             ·{" "}
             <Link href="/admin/contracts" className="font-bold text-primary-text">
               컬럼 정의서
-            </Link>{" "}
-            ·{" "}
-            <Link href="/admin/business-config" className="font-bold text-primary-text">
-              업무 구성(자료 연결 · 자료 대기)
             </Link>
           </p>
         </>
