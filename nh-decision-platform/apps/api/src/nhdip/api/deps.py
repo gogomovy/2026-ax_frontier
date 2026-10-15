@@ -6,6 +6,7 @@ API 는 화면이 쓰는 리소스 키(setting 'screen.resources') 단위로 같
 """
 from __future__ import annotations
 
+import threading
 from datetime import timedelta
 from typing import Any
 
@@ -23,33 +24,68 @@ COMMON_RESOURCES = {"terms", "meta", "menu", "assist"}  # assist 는 답변 안�
 
 
 _NETS: dict[str, Any] = {"at": 0.0, "nets": []}
+_NETS_LOCK = threading.Lock()
+NETS_TTL_SEC = 60
+RESOLVE_WAIT_SEC = 1.0  # 처음 한 번만 이름 해석을 이만큼 기다린다(compose 의 web 은 바로 풀린다)
 
 
-def _trusted_nets():
-    """신뢰 프록시 목록 — CIDR 또는 호스트 이름(예: compose 의 web). 이름은 60초마다 다시 해석한다."""
+def _split_proxies() -> tuple[list[Any], list[str]]:
     import ipaddress
-    import socket
-    import time
 
-    if time.monotonic() - _NETS["at"] < 60 and _NETS["nets"]:
-        return _NETS["nets"]
     from nhdip.config import get_settings
 
-    out = []
+    cidrs, names = [], []
     for x in get_settings().trusted_proxies.split(","):
         x = x.strip()
         if not x:
             continue
         try:
-            out.append(ipaddress.ip_network(x, strict=False))
+            cidrs.append(ipaddress.ip_network(x, strict=False))
         except ValueError:
+            names.append(x)
+    return cidrs, names
+
+
+def _resolve_names(cidrs: list[Any], names: list[str]) -> None:
+    """호스트 이름 해석(뒤에서) — DNS 가 없는 망에서는 이름 하나에 10초 넘게 걸린다(사내 PC 에서 'web' 12초). 결과를 다음 요청부터 쓴다."""
+    import ipaddress
+    import socket
+    import time
+
+    resolved = []
+    try:
+        for x in names:
             try:
                 for ai in socket.getaddrinfo(x, None):
-                    out.append(ipaddress.ip_network(ai[4][0].split("%", 1)[0]))
+                    resolved.append(ipaddress.ip_network(ai[4][0].split("%", 1)[0]))
             except OSError:
                 pass
-    _NETS.update(at=time.monotonic(), nets=out)
-    return out
+    finally:
+        with _NETS_LOCK:
+            _NETS.update(resolved=resolved, nets=[*cidrs, *resolved], at=time.monotonic(), refreshing=False, resolved_once=True)
+
+
+def _trusted_nets():
+    """신뢰 프록시 목록 — CIDR 또는 호스트 이름(예: compose 의 web). 60초마다 다시 만든다.
+
+    이름 해석은 요청 경로에서 하지 않는다(Phase M 점검 — 해석이 안 되는 망에서 1분마다 요청 하나가 12초 멈췄다):
+    뒤에서 해석하고 그동안은 지난 해석 결과(처음이면 CIDR 만)를 쓴다. 맨 처음 한 번만 최대 1초 기다린다."""
+    import time
+
+    worker = None
+    with _NETS_LOCK:
+        if time.monotonic() - _NETS["at"] < NETS_TTL_SEC and _NETS["nets"]:
+            return _NETS["nets"]
+        cidrs, names = _split_proxies()
+        _NETS.update(at=time.monotonic(), nets=[*cidrs, *(_NETS.get("resolved") or [])] if names else cidrs)
+        if names and not _NETS.get("refreshing"):
+            _NETS["refreshing"] = True
+            worker = threading.Thread(target=_resolve_names, args=(cidrs, names), daemon=True, name="trusted-proxy-dns")
+            worker.start()
+        first = not _NETS.get("resolved_once")
+    if worker is not None and first:
+        worker.join(timeout=RESOLVE_WAIT_SEC)
+    return _NETS["nets"]
 
 
 def client_ip(request: Request) -> str | None:

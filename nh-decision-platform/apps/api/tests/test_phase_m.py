@@ -282,6 +282,10 @@ def test_intake_new_structured_steward_applies_and_triggers_ontology_build(db, i
         assert not any(v in card[0].text for v in ("106", "207", "306", "307"))  # 설명만, 값(금액) 없음
     mine = stw.get("/db/intake/mine").json()
     assert any(x["id"] == rid and x["mode"] == "new" for x in mine["items"]) and mine["applyMode"] == "apply"
+    # DOB-10 — 반영한 새 자료는 [분석 에이전트 만들기] 카탈로그에 바로 나온다(열 업무 이름 그대로)
+    cat = iw["admin"].get("/analysis-agents/catalog").json()
+    got = next((d for d in cat["datasets"] if d["code"] == code), None)
+    assert got is not None and got["name"] == "농업 지원 실적(시험)" and {c["label"] for c in got["columns"]} >= {"지원금액"}
 
 
 def test_intake_existing_dataset_by_plain_user_goes_to_steward(db, iw):
@@ -667,3 +671,108 @@ def test_kernel_records_library_input_errors_instead_of_failing_the_run(db):
         run2, res2, _ = run_and_record(s, "AUROC_GRADED", {"defaults": [1, 2], "obs": [10]}, metric_code="auroc_test")
         assert res2 is None and "등급 수" in run2.error
         s.rollback()
+
+
+def test_trusted_proxy_names_resolve_in_background(monkeypatch):
+    """신뢰 프록시 이름(compose 의 web) 해석이 느린 망 — 요청이 해석을 기다리지 않는다(처음 한 번만 최대 1초). 해석이 끝나면 다음 요청부터 쓴다."""
+    import socket
+    import time
+
+    from nhdip.api import deps
+    from nhdip.config import get_settings
+
+    def slow(host, *a, **kw):
+        time.sleep(2.5)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("172.19.0.9", 0))]
+
+    monkeypatch.setattr(get_settings(), "trusted_proxies", "127.0.0.1/32,web")
+    monkeypatch.setattr(socket, "getaddrinfo", slow)
+    deps._NETS.clear()
+    deps._NETS.update(at=0.0, nets=[])
+    t = time.monotonic()
+    first = deps._trusted_nets()
+    assert time.monotonic() - t < 1.6 and [str(n) for n in first] == ["127.0.0.1/32"]
+    deps._NETS["at"] = 0.0  # 60초가 지난 것처럼 — 해석 중에는 다시 기다리지 않는다
+    t = time.monotonic()
+    deps._trusted_nets()
+    assert time.monotonic() - t < 0.2
+    for _ in range(40):
+        if deps._NETS.get("resolved_once"):
+            break
+        time.sleep(0.1)
+    deps._NETS["at"] = 0.0
+    assert "172.19.0.9/32" in [str(n) for n in deps._trusted_nets()]
+    for _ in range(40):  # 마지막 호출이 띄운 해석이 끝날 때까지 — 뒤 시험에 상태가 새지 않게
+        if not deps._NETS.get("refreshing"):
+            break
+        time.sleep(0.1)
+    deps._NETS.clear()
+    deps._NETS.update(at=0.0, nets=[])
+
+
+def test_object_type_names_drop_table_words():
+    from nhdip.graph.links import type_ko, type_name
+
+    assert type_name("BRANCH_OFFICE_MASTER") == "BranchOffice" and type_name("PD_MASTER_SCALE") == "PdMasterScale"
+    assert type_name("PRODUCT_MST") == "Product" and type_name("MASTER") == "Master" and type_name("CORP_PROSPECT") == "CorpProspect"
+    assert type_ko("영업점 사무소 마스터") == "영업점 사무소" and type_ko("상품 기준정보") == "상품" and type_ko("마스터") == "마스터"
+
+
+def test_rejected_agent_ops_are_not_proposed_again_until_reopened(db):
+    from nhdip.graph.proposals import create_proposal, decide, reopen
+    from nhdip.models import OntologyProposal
+
+    op = [{"op": "add_alias", "label": "ProductGroup", "key": "햇살론", "aliases": ["반려 시험 별칭"]}]
+    with db() as s:
+        p = create_proposal(s, op, title="에이전트 제안", source="agent", with_impact=False)
+        assert p is not None
+        decide(s, p, approve=False, actor="00000001", note="같은 대상 아님")
+        s.flush()
+        assert create_proposal(s, op, title="다시", source="agent", with_impact=False) is None  # 반려한 연산은 에이전트가 다시 제안하지 않는다
+        assert create_proposal(s, op, title="관리자", source="admin", with_impact=False) is not None  # 관리자가 직접 만드는 제안은 막지 않는다
+        s.rollback()
+    c = _admin()
+    with db() as s:
+        p = create_proposal(s, op, title="에이전트 제안 2", source="agent", with_impact=False)
+        decide(s, p, approve=False, actor="00000001", note="반려")
+        s.commit()
+        pid = p.id
+    r = c.post(f"/admin/ontology/proposals/{pid}/reopen")
+    assert r.status_code == 200 and r.json()["status"] == "pending" and "반려" in r.json()["proposal"]["note"]
+    assert c.post(f"/admin/ontology/proposals/{pid}/reopen").status_code == 409  # 대기 중은 다시 열 수 없음
+    assert c.post(f"/admin/ontology/proposals/{pid}/decide", json={"approve": False, "note": "정리"}).json()["status"] == "rejected"
+    with db() as s:
+        assert s.get(OntologyProposal, pid).status == "rejected"
+        assert reopen(s, s.get(OntologyProposal, pid), actor="x")["ok"] is True
+        s.rollback()
+
+
+def test_dataset_connect_helper_suggests_workflows_and_connects(db):
+    """연결 도우미(DOB-11 · Q201) — 시드 자료는 '연결됨' · 지표, 새 자료는 열이 겹치는 워크플로를 추천하고 트리거를 더하면 연결됨으로 바뀐다."""
+    from nhdip.models import WorkflowTrigger
+
+    c = _admin()
+    seeded = c.get("/admin/datasets/PROVISION_BY_PRODUCT/connect").json()
+    assert any(w["workflow"] == "wf_inclusive_risk" for w in seeded["connected"]) and seeded["metrics"]
+    assert all(s["workflow"] not in ("wf_graph_projection", "wf_ontology_build") for s in seeded["suggestions"])
+    # 상품별 충당금과 같은 열(상품코드 · 상품명 · 충당금)을 가진 새 자료 → 포용금융 워크플로가 추천된다
+    new = {"code": "PHASE_M_CONNECT", "name": "연결 시험 충당금", "origin": "bank", "kind": "fact", "description": "",
+           "columns": [{"name": "ym", "label": "기준월", "type": "str", "required": True}, {"name": "product_code", "label": "상품코드", "type": "str", "required": True},
+                       {"name": "product_name", "label": "상품명", "type": "str"}, {"name": "provision", "label": "충당금", "type": "num"}],
+           "key_columns": ["ym", "product_code"], "as_of_column": "ym"}
+    assert c.post("/admin/datasets", json=new).status_code in (200, 201)
+    try:
+        s = c.get("/admin/datasets/PHASE_M_CONNECT/connect").json()
+        assert s["connected"] == [] and s["metrics"] == [] and s["builderHref"] == "/analysis/builder?dataset=PHASE_M_CONNECT"
+        top = s["suggestions"][0]
+        assert top["workflow"] == "wf_inclusive_risk" and top["score"] >= 0.5 and any("열" in w for w in top["why"]), s["suggestions"]
+        assert c.post(f"/admin/workflows/{top['workflow']}/triggers", json={"kind": s["triggerKind"], "target": "PHASE_M_CONNECT"}).status_code == 201
+        s2 = c.get("/admin/datasets/PHASE_M_CONNECT/connect").json()
+        assert any(w["workflow"] == "wf_inclusive_risk" for w in s2["connected"]) and all(x["workflow"] != "wf_inclusive_risk" for x in s2["suggestions"])
+        assert c.get("/admin/datasets/NO_SUCH/connect").status_code == 404
+    finally:
+        with db() as ss:
+            for t in ss.execute(select(WorkflowTrigger).where(WorkflowTrigger.target == "PHASE_M_CONNECT")).scalars():
+                ss.delete(t)
+            ss.commit()
+        assert c.delete("/admin/datasets/PHASE_M_CONNECT").status_code == 200

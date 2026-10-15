@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, OriginBadge, Select, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { PurgeStatus, useDataDelete, useIsDataAdmin } from "@/components/admin/DataDelete";
@@ -418,6 +419,72 @@ function NewColumnsFinder({ ds, file, reload }: { ds: Ds; file: File; reload: ()
   );
 }
 
+interface Connect {
+  dataset: string;
+  triggerKind: "dataset" | "master";
+  connected: { workflow: string; name: string }[];
+  metrics: string[];
+  suggestions: { workflow: string; name: string; score: number; why: string[]; via: string }[];
+  ontology: { label: string; ko: string }[];
+  builderHref: string;
+}
+
+/** 연결 도우미(DOB-11 · Q201) — 이 자료를 읽는 워크플로 · 지표, 이을 만한 워크플로(열 겹침 · 온톨로지 객체 · 키), 이 자료로 분석 에이전트 만들기 */
+function ConnectHelper({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) {
+  const data = useApiData<Connect>(`/admin/datasets/${ds.code}/connect`);
+  const { run, busy } = useAction();
+  const c = data.data;
+  const after = async () => {
+    await Promise.all([data.reload(), reload()]);
+  };
+  return (
+    <Card title="연결 도우미" actions={<Link href={c?.builderHref ?? `/analysis/builder?dataset=${ds.code}`} className="text-[12.5px] font-bold text-primary">이 자료로 분석 에이전트 만들기</Link>}>
+      <p className="mb-md text-[12.5px] text-steel">
+        새 자료는 온톨로지 구축 · AI 어시스턴트 검색 · 분석 카탈로그에는 바로 들어갑니다. 업무 화면 수치로 이으려면 이 자료가 바뀔 때 다시 계산할 워크플로에 연결하거나(트리거 추가), 분석 에이전트를 만들어 승인합니다. 추천은 열 겹침 · 같은 온톨로지 객체 · 같은 키로 정합니다.
+      </p>
+      <Loading error={data.error} loading={!c && data.loading} />
+      {c ? (
+        <div className="flex flex-col gap-md text-[12.5px]">
+          <p className="text-charcoal">
+            <b>연결된 워크플로</b> {c.connected.length ? c.connected.map((w) => w.name).join(" · ") : "없음"}
+            <span className="mx-1.5 text-stone" aria-hidden="true">|</span>
+            <b>이 자료로 계산하는 지표</b> {c.metrics.length ? `${c.metrics.length}개 (${c.metrics.slice(0, 4).join(", ")}${c.metrics.length > 4 ? " 등" : ""})` : "없음"}
+            {c.ontology.length ? (
+              <>
+                <span className="mx-1.5 text-stone" aria-hidden="true">|</span>
+                <b>온톨로지 객체</b> {c.ontology.map((o) => o.ko).join(" · ")}
+              </>
+            ) : null}
+          </p>
+          {c.suggestions.length ? (
+            <ul className="flex flex-col gap-xs" aria-label="연결 추천 워크플로">
+              {c.suggestions.map((s) => (
+                <li key={s.workflow} className="flex flex-wrap items-center gap-xs rounded-xl border border-hairline-soft px-md py-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-bold text-ink-deep">{s.name}</span> <code className="font-mono text-[10.5px] text-stone">{s.workflow}</code>
+                    <span className="ml-1.5 text-[11.5px] text-steel tnum">추천 {Math.round(s.score * 100)}점</span>
+                    <span className="block text-[11.5px] text-steel">{s.why.join(" · ")}</span>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="quiet"
+                    disabled={busy}
+                    onClick={() => run(() => apiPost(`/admin/workflows/${s.workflow}/triggers`, { kind: c.triggerKind, target: ds.code }), `${s.name} 에 연결했습니다 — 이 자료가 바뀌면 다시 계산합니다`, after)}
+                  >
+                    워크플로에 연결
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-steel">이을 만한 기존 워크플로를 찾지 못했습니다 — 이 자료로 분석 에이전트를 만들면 부서 분석 화면에 탭으로 나타납니다.</p>
+          )}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
 /** 정의 관리(Phase M · DOB-09 · Q194) — 사용/중지 · 삭제(참조가 남아 있으면 이유를 보이고 막는다). 지운 시드 정의는 다시 시드되지 않는다 */
 function DefinitionManage({ ds, reload }: { ds: Ds; reload: () => Promise<void> }) {
   const { run, busy } = useAction();
@@ -550,6 +617,7 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
         {file ? <NewColumnsFinder ds={ds} file={file} reload={reload} /> : null}
       </Card>
 
+      <ConnectHelper ds={ds} reload={reload} />
       <DefinitionManage ds={ds} reload={reload} />
 
       <Card title="버전">

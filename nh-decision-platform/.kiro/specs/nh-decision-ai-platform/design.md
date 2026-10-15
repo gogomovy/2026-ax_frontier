@@ -3524,6 +3524,13 @@ dataset.committed(* 모든 데이터셋) · config.changed(dataset) · cron 07�
 - `data/catalog.index_dataset_cards(session, codes?)`: 확정 버전이 있는 사용 중 데이터셋마다 카드 1개(`app.kb_chunk`, collection `catalog.data`, `source_kind=dataset`, `required_resource=datasets`) — 이름 · 설명 · 출처 · 종류 · 행 대상 · 열 업무 이름(의미) · 기준일. **값 없음**. 본문 지문이 같으면 그대로(임베딩 재사용), 없어진 데이터셋 카드는 지움. `knowledge.dataset_cards=false` 면 끔. 호출: 워커 `run_maintenance`(실패 격리) · 정형 반영 직후(`do_approve`). 산출물 대조(`stale_keys` · 사라진 키)는 `source_kind=artifact` 만 본다.
 - `data_aggregate`: 데이터셋 화면 권한(datasets) 또는 관리자만. 현재 버전 행에서 같음 조건 · 그룹(30개 상한) → 합계 · 평균은 커널 `SUM` · `RATIO`, 건수 · 최소 · 최대. 정의에 없는 열 · 숫자가 아닌 측정 열 · 화면 가림 열 · 개인정보 형식 값이 보이는 열(그룹 · 조건)은 거절. 행 원문은 돌려주지 않는다.
 
+### 31.5 후속 — 연결 도우미 · 반려 기억 · 이름 · 프록시 해석 (DOB-11 · ONB-12 · ONB-13 · OPS-01 · Q201 · Q202)
+- `data/connect.connect_suggestions(code)` → `{connected[], metrics[], suggestions[{workflow, score, why[], via}], ontology[], builderHref, triggerKind}`. 워크플로마다 트리거 데이터셋과 견줘 가장 높은 점수 하나: 열 겹침(`column_keys` — 이름 · 업무 이름 · 별칭 정규화, 기준일 열 · `GENERIC` 제외, 작은 쪽 열 수로 나눔) × 0.6 + 같은 온톨로지 객체(원천 · 링크 원천의 양 끝) 0.3 + 같은 키 열 0.1. 기반 워크플로 제외. API `GET /admin/datasets/{code}/connect`. 화면: 데이터셋 상세 [연결 도우미](연결됨 · 지표 · 온톨로지 객체 · 추천 + [워크플로에 연결] = 트리거 추가 · [이 자료로 분석 에이전트 만들기] = `/analysis/builder?dataset=` — 빌더가 그 자료를 골라 둔다).
+- `graph/proposals.rejected_keys` · `create_proposal(source="agent")` 가 반려 연산을 뺀다, `reopen` · `POST /admin/ontology/proposals/{id}/reopen`(반려 기록은 note 로 남김) · [변경 제안] 카드 [다시 검토]. 판 되돌리기로 스키마에서 빠진 연산은(적용 기록이 있어도) 다시 제안된다.
+- `graph/links.type_name` · `type_ko` — 표 종류 낱말 제거, 같은 실행에서 이름이 겹치지 않게 `labels` 갱신.
+- `api/deps._trusted_nets` — CIDR 는 바로, 이름은 데몬 스레드 `_resolve_names` 로(60초마다, 해석 중이면 다시 띄우지 않음), 처음 한 번 `RESOLVE_WAIT_SEC`(1초)만 기다림.
+- Neo4j 확인(2026-10-15): WSL 에 Neo4j 5.26.22 community(compose 와 같은 판)를 두고 재투영 → 노드 655 · 관계 1,538, 구축 제안 승인 → 새 객체 유형 투영(CorpProspect 72 · BranchOfficeMaster 1 = 자료 행 수) → 판 되돌리기 → 재제안(이름 `BranchOffice`) 까지 확인. [그래프 관계(Neo4j)] 탭의 보조 라벨(BankDocument · ExternalDocument)에 업무 이름 · 색(`mapMath.SUB_LABELS`).
+
 ### 31.4 정의 관리 (DOB-09 · Q194)
 - `dataset_references(code)`: 남은 버전(삭제 표시 제외) · 지표 · 화면 바인딩 · 트리거(dataset · master) · 온톨로지 원천 · 처리 중 등록/요청. `DELETE /admin/datasets/{code}` 는 참조가 있으면 409(이유 나열), 없으면 정의 · 삭제 표시 버전 기록 · 구조 파악 결과를 지우고 `seed.suppressed_datasets` 에 올린 뒤 `config.changed`.
 - 시드: `seed_dataset_defs(s)` — `SEED_DATASET_DEFS=0|false|no` 면 넣지 않음, 억제 목록은 넣지 않음, 없는 정의만. `_ds_json` 에 `seedDefined`(업무 화면 연결 정의) · `references`. 화면: 데이터셋 표 배지(중지 · 업무 화면 연결 정의), 상세 [정의 관리](사용/중지 · 삭제 — 참조 목록이 있으면 막음).

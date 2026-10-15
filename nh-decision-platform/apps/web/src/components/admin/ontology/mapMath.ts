@@ -116,6 +116,12 @@ export const REL_KO: Record<string, string> = {
 };
 export const relKo = (t: string) => REL_KO[t] ?? t;
 
+/** Neo4j 보조 라벨(한 노드에 붙는 두 번째 라벨) → 업무 이름 · 색을 빌릴 주 클래스. 원장 클래스 목록에는 주 라벨만 있다 */
+export const SUB_LABELS: Record<string, { ko: string; parent: string }> = {
+  BankDocument: { ko: "당행 문서", parent: "Document" },
+  ExternalDocument: { ko: "외부 문서", parent: "Document" },
+};
+
 export interface View {
   yaw: number;
   pitch: number;

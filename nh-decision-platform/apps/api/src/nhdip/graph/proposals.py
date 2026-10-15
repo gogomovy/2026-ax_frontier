@@ -96,14 +96,23 @@ def pending_keys(session: Session) -> set[str]:
     return keys
 
 
+def rejected_keys(session: Session) -> set[str]:
+    """관리자가 반려한 제안의 연산 — 구축 에이전트가 같은 연산을 매 실행 다시 제안하지 않게(반려 사유가 남는다).
+    다시 제안받으려면 관리자가 [변경 제안]에서 그 제안을 '다시 검토'(반려 취소)한다."""
+    keys: set[str] = set()
+    for p in session.execute(select(OntologyProposal).where(OntologyProposal.status == "rejected")).scalars():
+        keys |= {op_key(o) for o in p.ops or [] if isinstance(o, dict)}
+    return keys
+
+
 def create_proposal(session: Session, ops: list[dict[str, Any]], *, title: str, summary: str = "", source: str = "agent", agent_code: str | None = None,
                     workflow_run_id: str | None = None, evidence: dict[str, Any] | None = None, actor: str | None = None, with_impact: bool = True) -> OntologyProposal | None:
-    """새 제안 — 대기 중 제안 · 활성 스키마와 겹치는 연산은 뺀다. 남는 연산이 없으면 None."""
+    """새 제안 — 대기 중 제안 · 활성 스키마와 겹치는 연산은 뺀다(에이전트 제안은 반려된 연산도 뺀다). 남는 연산이 없으면 None."""
     sc = active(session)
     if sc is None:
         return None
     base = as_dict(sc)
-    taken = pending_keys(session)
+    taken = pending_keys(session) | (rejected_keys(session) if source == "agent" else set())
     fresh = [o for o in ops if isinstance(o, dict) and op_key(o) not in taken]
     # 이미 반영된 연산(적용해도 바뀌지 않음)은 뺀다
     proposed, applied, skipped = apply_ops(base, fresh)
@@ -146,6 +155,18 @@ def decide(session: Session, p: OntologyProposal, *, approve: bool, actor: str, 
     v = activate_schema(session, proposed, note=f"제안 #{p.id} 적용 — {p.title}"[:200], actor=actor)
     p.status, p.applied_version, p.ops = "applied", v, applied
     return {"ok": True, "status": "applied", "version": v, "applied": len(applied), "skipped": len(skipped), "warnings": check["warnings"]}
+
+
+def reopen(session: Session, p: OntologyProposal, *, actor: str) -> dict[str, Any]:
+    """반려 취소 — 다시 승인 대기로(반려 기록은 note 에 남긴다). 그 사이 같은 연산이 다른 제안으로 대기 중이면 거절."""
+    if p.status != "rejected":
+        return {"ok": False, "error": f"반려된 제안만 다시 검토할 수 있습니다({p.status})"}
+    mine = {op_key(o) for o in p.ops or [] if isinstance(o, dict)}
+    if mine & pending_keys(session):
+        return {"ok": False, "error": "같은 변경이 다른 제안으로 승인 대기 중입니다"}
+    prev = f"반려({p.decided_by} · {p.decided_at.isoformat() if p.decided_at else '-'}): {p.note or ''}"
+    p.status, p.note, p.decided_by, p.decided_at = "pending", f"{prev} → {actor} 가 다시 검토"[:1000], None, None
+    return {"ok": True, "status": "pending"}
 
 
 def auto_apply(session: Session, p: OntologyProposal, policy: dict[str, Any]) -> dict[str, Any] | None:

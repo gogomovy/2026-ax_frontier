@@ -5,7 +5,7 @@ import { AdminPage, C, Card, JsonEditor, JsonView, Loading, Table, Tabs, TextInp
 import { BuildPipeline, ProposalsPanel } from "@/components/admin/ontology/BuildPanels";
 import { OntologyMap } from "@/components/admin/ontology/OntologyMap";
 import { SchemaMap } from "@/components/admin/ontology/SchemaMap";
-import { colorOf, relKo, type MapClass, type OntologyMapData } from "@/components/admin/ontology/mapMath";
+import { SUB_LABELS, colorOf, relKo, type MapClass, type OntologyMapData } from "@/components/admin/ontology/mapMath";
 import { ValueView } from "@/components/admin/ValueView";
 import { BarList } from "@/components/charts/Bars";
 import { Advanced, EmptyState, Notice } from "@/components/ui/Layout";
@@ -195,11 +195,15 @@ export default function OntologyAdmin() {
                 </li>
                 {[...(d.graph.labels ?? [])]
                   .sort((a, b) => b.n - a.n)
-                  .map((l) => (
-                    <li key={l.label}>
-                      <KindChip active={label === l.label} name={classInfo[l.label]?.ko ?? l.label} code={l.label} count={l.n} color={classInfo[l.label] ? colorOf(classInfo[l.label].color) : undefined} onClick={() => setLabel(label === l.label ? "" : l.label)} />
-                    </li>
-                  ))}
+                  .map((l) => {
+                    const sub = SUB_LABELS[l.label];
+                    const info = classInfo[l.label] ?? (sub ? classInfo[sub.parent] : undefined);
+                    return (
+                      <li key={l.label}>
+                        <KindChip active={label === l.label} name={sub?.ko ?? info?.ko ?? l.label} code={l.label} count={l.n} color={info ? colorOf(info.color) : undefined} onClick={() => setLabel(label === l.label ? "" : l.label)} />
+                      </li>
+                    );
+                  })}
               </ul>
             </div>
           ) : (

@@ -22,6 +22,22 @@ def pascal(code: str) -> str:
     return out if out and out[0].isalpha() else f"Obj{out}"
 
 
+# 데이터셋 코드 · 이름 끝의 표 종류 낱말 — 객체 유형 이름은 '행이 가리키는 것'이라 뺀다(BRANCH_OFFICE_MASTER → BranchOffice · '영업점 사무소 마스터' → '영업점 사무소')
+TABLE_SUFFIX = re.compile(r"(?:[_\-\s]+(?:MASTER|MST|MSTR|LIST|INFO|TBL|TABLE|DIM))+$", re.I)
+TABLE_SUFFIX_KO = re.compile(r"\s*(?:마스터|기준\s*정보|목록|정보\s*표)$")
+
+
+def type_name(code: str) -> str:
+    """객체 유형 기본 이름(LLM 이 없을 때) — 표 종류 낱말을 뺀 PascalCase. 빼고 나면 비는 코드는 그대로."""
+    base = TABLE_SUFFIX.sub("", code or "")
+    return pascal(base or code)
+
+
+def type_ko(name: str) -> str:
+    out = TABLE_SUFFIX_KO.sub("", (name or "").strip())
+    return out or (name or "")
+
+
 def class_universes(schema: Any, rows_by_ds: dict[str, list[dict[str, Any]]], resolver: Any) -> dict[str, dict[str, Any]]:
     """{클래스: {keys: set, aliases: {정규화 별칭: 키}, backing: [데이터셋]}} — 링크 대상이 될 수 있는 객체 유형의 키 모음."""
     out: dict[str, dict[str, Any]] = {}
@@ -88,12 +104,14 @@ def object_type_candidates(datasets: list[Any], profiles: dict[str, dict[str, An
         props = {k: k for k, v in cols.items() if k not in (key, title) and v.get("semantic") in ("code", "name", "date", "yearmonth", "flag") and not v.get("pii")}
         props = dict(list(props.items())[:8])
         target = best if best and best_ratio >= float(policy.get("link_min_containment", 0.95)) else None
-        label = target or pascal(ds.code)
+        label = target or type_name(ds.code)
         n = 2
         while not target and label in labels:
-            label, n = f"{pascal(ds.code)}{n}", n + 1
+            label, n = f"{type_name(ds.code)}{n}", n + 1
+        if not target:
+            labels.add(label)  # 같은 실행의 다른 데이터셋이 같은 이름을 받지 않게(PRODUCT_MASTER · PRODUCT_LIST)
         out.append({
-            "dataset": ds.code, "datasetName": ds.name, "existing": bool(target), "label": label, "ko": (CLASS_KO.get(label) if target else None) or ds.name,
+            "dataset": ds.code, "datasetName": ds.name, "existing": bool(target), "label": label, "ko": (CLASS_KO.get(label) if target else None) or type_ko(ds.name),
             "key_col": key, "title_col": title, "props": props, "containment": round(best_ratio, 4) if target else None,
             "properties": [{"name": p, "ko": cols[c].get("label") or p, "base_type": cols[c].get("baseType", "string"), "required": False} for p, c in props.items()],
             "confidence": round(0.95 if target else (0.85 if ds.kind == "master" else 0.7), 2),

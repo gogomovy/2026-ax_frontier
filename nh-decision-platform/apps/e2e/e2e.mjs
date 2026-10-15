@@ -41,7 +41,23 @@ async function newPage(ctx) {
   await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
   page.on("pageerror", (e) => errors.push(`${page.url()} ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !/Failed to load resource/.test(m.text()) && errors.push(`${page.url()} console: ${m.text()}`));
+  // 열린 요청 — networkidle 대기가 끝나지 않을 때 무엇이 남았는지 기록한다
+  const pend = new Map();
+  page.on("request", (r) => pend.set(r, Date.now()));
+  page.on("requestfinished", (r) => pend.delete(r));
+  page.on("requestfailed", (r) => pend.delete(r));
+  page.pendingRequests = () => [...pend.entries()].map(([r, t]) => `${r.method()} ${r.url().replace(BASE, "")} ${Date.now() - t}ms`).slice(0, 8);
   return page;
+}
+/** networkidle0 이 30초 안에 오지 않으면 남은 요청을 errors 에 남기고 networkidle2 로 한 번 더 — 화면 하나의 느린 요청이 전체 시험을 멈추지 않게 */
+async function gotoIdle(page, url) {
+  try {
+    await page.goto(url, { waitUntil: "networkidle0" });
+  } catch (e) {
+    if (!String(e?.message ?? e).includes("timeout")) throw e;
+    errors.push(`goto ${url.replace(BASE, "")} networkidle0 시간 초과 — 남은 요청: ${page.pendingRequests().join(" | ") || "(없음)"}`);
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
+  }
 }
 const text = (p) => p.evaluate(() => document.body.innerText);
 async function pickOrg(page, idx, code) {
@@ -554,7 +570,7 @@ try {
 
   // 9) 관리자 화면
   for (const p of ["/admin", "/admin/orgs", "/admin/screens", "/admin/llm", "/admin/agents", "/admin/workflows", "/admin/metrics", "/admin/contracts", "/admin/ontology", "/admin/knowledge", "/admin/rules", "/admin/settings", "/admin/audit", "/admin/monitor", "/admin/monitor/flow", "/admin/pipeline", "/admin/monitor/calc", "/admin/monitor/trace", "/admin/monitor/evals", "/admin/monitor/alerts", "/admin/uploads", "/admin/analysis-agents", "/admin/agentic"]) {
-    await a.goto(BASE + p, { waitUntil: "networkidle0" });
+    await gotoIdle(a, BASE + p);
     await a.waitForFunction(() => !document.body.innerText.includes("불러오는 중"), { timeout: 15000 }).catch(() => undefined);
     const t = await text(a);
     const fail = t.indexOf("요청 실패");
@@ -618,6 +634,16 @@ try {
     });
     await a.waitForFunction(() => document.body.innerText.includes("버림"), { timeout: 10000 }).catch(() => undefined);
     ok("자료 등록: 버리기(반영 없음)", discarded && (await text(a)).includes("버림"));
+    // 연결 도우미(DOB-11) — 데이터셋 상세: 연결된 워크플로 · 지표 · 분석 에이전트 만들기 주소
+    const conn = await api("/admin/datasets/PROVISION_BY_PRODUCT/connect");
+    ok("연결 도우미: 연결된 워크플로 · 지표 · 분석 주소", conn.status === 200 && (conn.body?.connected ?? []).some((w) => w.workflow === "wf_inclusive_risk") && (conn.body?.metrics ?? []).length > 0 && conn.body?.builderHref === "/analysis/builder?dataset=PROVISION_BY_PRODUCT", JSON.stringify({ c: conn.body?.connected, m: conn.body?.metrics?.length }));
+    await tabClick(a, "정형 데이터셋");
+    // 데이터셋 목록이 그려질 때까지(자료 등록 탭에도 표가 있어 표만으로는 기다리지 않는다)
+    const openBtn = () => [...document.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "").includes("상품별 충당금") && (b.textContent || "").trim() === "열기");
+    await a.waitForFunction(openBtn, { timeout: 15000 }).catch(() => undefined);
+    await a.evaluate(() => [...document.querySelectorAll("button")].find((b) => (b.getAttribute("aria-label") || "").includes("상품별 충당금") && (b.textContent || "").trim() === "열기")?.click());
+    await a.waitForFunction(() => document.body.innerText.includes("연결 도우미"), { timeout: 10000 }).catch(() => undefined);
+    ok("연결 도우미: 데이터셋 상세 카드", (await text(a)).includes("연결 도우미") && (await text(a)).includes("이 자료로 분석 에이전트 만들기"));
   }
 
   // 9-00) 3-way 검색 구성 (Phase H · TW-01~10) — PostgreSQL 원장 · Elasticsearch 키워드/의미 · Neo4j 그래프.

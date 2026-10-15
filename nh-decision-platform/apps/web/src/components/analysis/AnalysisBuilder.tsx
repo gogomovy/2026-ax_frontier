@@ -112,12 +112,13 @@ function Step({ n, title, active, done, children }: { n: number; title: string; 
   );
 }
 
-export function AnalysisBuilder({ catalog, mine: initialMine, editing }: { catalog: Catalog; mine: MyAnalysis[]; editing?: { code: string; text: string; spec: Spec } | null }) {
+export function AnalysisBuilder({ catalog, mine: initialMine, editing, initialDatasets }: { catalog: Catalog; mine: MyAnalysis[]; editing?: { code: string; text: string; spec: Spec } | null; initialDatasets?: string[] }) {
   const { showToast } = useUi();
   const router = useRouter();
   const [space, setSpace] = useState(catalog.space);
   const [text, setText] = useState(editing?.text ?? "");
-  const [hints, setHints] = useState<string[]>([]);
+  // 주소 ?dataset= — 관리자 [데이터셋 › 연결 도우미]에서 이 자료로 분석을 만들러 왔을 때 미리 골라 둔다(카탈로그에 있는 것만 · Phase M DOB-11)
+  const [hints, setHints] = useState<string[]>(() => (initialDatasets ?? []).filter((c) => catalog.datasets.some((d) => d.code === c)));
   const [spec, setSpec] = useState<Spec | null>(editing?.spec ?? null);
   const [validation, setValidation] = useState<Validation | null>(null);
   const [meta, setMeta] = useState<{ by?: string; reason?: string; notes?: string[] } | null>(null);
@@ -247,7 +248,7 @@ export function AnalysisBuilder({ catalog, mine: initialMine, editing }: { catal
                 </button>
               ))}
             </div>
-            <Advanced label={`사용할 자료 지정(선택) ${hints.length ? `· ${hints.length}개` : ""}`} hint="비우면 글에서 찾습니다">
+            <Advanced label={`사용할 자료 지정(선택) ${hints.length ? `· ${hints.length}개` : ""}`} hint="비우면 글에서 찾습니다" defaultOpen={Boolean(initialDatasets?.length)}>
               <input className="input !h-9 mb-xs w-full max-w-[320px] text-[13px]" placeholder="자료 이름 · 코드로 찾기" aria-label="자료 찾기" value={dsQ} onChange={(e) => setDsQ(e.target.value)} />
               <ul className="flex flex-wrap gap-1.5">
                 {datasets.map((d) => {

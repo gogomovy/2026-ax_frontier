@@ -46,6 +46,7 @@ const STAGE_KO: Record<string, string> = {
 const SOURCE_KO: Record<string, string> = { agent: "구축 에이전트", review: "추출 검토 수락", admin: "관리자" };
 const STATUS_KO: Record<string, { label: string; tone: "info" | "success" | "neutral" | "critical" }> = {
   pending: { label: "승인 대기", tone: "info" }, applied: { label: "적용", tone: "success" }, rejected: { label: "반려", tone: "neutral" }, failed: { label: "검증 실패", tone: "critical" },
+  superseded: { label: "이미 반영", tone: "neutral" },
 };
 
 /** [구축 파이프라인] — 최근 실행 단계 · 데이터셋별 구조 파악 · 품질 점검 · 결정 */
@@ -249,7 +250,14 @@ function ProposalCard({ p, reload }: { p: Proposal; reload: () => Promise<void> 
           </Button>
         </div>
       ) : p.decidedAt ? (
-        <p className="mt-md text-[11.5px] text-stone">{p.decidedBy ?? "-"} · {fmtTime(p.decidedAt)}{p.note ? ` · ${p.note}` : ""}</p>
+        <div className="mt-md flex flex-wrap items-center gap-xs">
+          <p className="min-w-0 flex-1 text-[11.5px] text-stone">{p.decidedBy ?? "-"} · {fmtTime(p.decidedAt)}{p.note ? ` · ${p.note}` : ""}</p>
+          {p.status === "rejected" ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => apiPost(`/admin/ontology/proposals/${p.id}/reopen`), `제안 #${p.id} 을 다시 승인 대기로 돌렸습니다`, reload)}>
+              다시 검토
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </Card>
   );

@@ -14,6 +14,7 @@ export default async function AnalysisBuilderPage(props: { searchParams: Promise
   const sp = await props.searchParams;
   const space = typeof sp.space === "string" && /^[a-z][a-z0-9_]{0,30}$/.test(sp.space) ? sp.space : undefined;
   const edit = typeof sp.edit === "string" && /^an_[a-z0-9]{1,20}$/.test(sp.edit) ? sp.edit : undefined;
+  const dataset = typeof sp.dataset === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{1,59}$/.test(sp.dataset) ? sp.dataset : undefined;
   const [catalog, mine, detail] = await Promise.all([
     apiGet<Catalog>(`/analysis-agents/catalog${space ? `?space=${space}` : ""}`),
     apiGet<MyAnalysis[]>("/analysis-agents/mine"),
@@ -30,7 +31,7 @@ export default async function AnalysisBuilderPage(props: { searchParams: Promise
         description="하고 싶은 분석을 글로 적으면 분석 에이전트가 데이터 · 지표 · 보고서 구성으로 정리합니다. 수치는 계산 커널이 계산하고, 관리자 승인 뒤 부서 분석 화면에 탭으로 나타나 자료가 바뀔 때마다 다시 계산됩니다."
       />
       <div className="shell pb-section">
-        <AnalysisBuilder catalog={catalog} mine={mine} editing={editing} />
+        <AnalysisBuilder catalog={catalog} mine={mine} editing={editing} initialDatasets={dataset ? [dataset] : undefined} />
       </div>
     </>
   );

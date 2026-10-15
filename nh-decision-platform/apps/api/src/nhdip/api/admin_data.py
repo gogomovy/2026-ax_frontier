@@ -388,6 +388,16 @@ def dataset_references(session: Session, code: str) -> list[str]:
     return out
 
 
+@router.get("/datasets/{code}/connect")
+def dataset_connect(code: str, session: Session = Depends(get_session)):
+    """연결 도우미(DOB-11 · Q201) — 이 자료를 읽는 워크플로 · 지표, 이을 만한 워크플로 추천(열 겹침 · 온톨로지 객체 · 키), 분석 에이전트 만들기 주소.
+    연결은 관리자가 [워크플로에 연결](= 트리거 추가 POST /admin/workflows/{wf}/triggers)로 한다."""
+    from nhdip.data.connect import connect_suggestions
+
+    _ds(session, code)
+    return connect_suggestions(session, code)
+
+
 @router.delete("/datasets/{code}")
 def dataset_delete(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     """데이터셋 정의 삭제(Phase M · DOB-09 · Q194) — 참조가 남아 있으면 막고 이유를 돌려준다(그때는 '중지' = active=false). 지운 시드 정의는 다시 넣지 않는다."""
@@ -944,6 +954,23 @@ def ontology_proposal_decide(pid: int, body: ProposalDecision, request: Request,
     session.commit()
     if not res.get("ok"):
         raise HTTPException(422, res.get("error") or "적용하지 못했습니다")
+    return {**res, "proposal": proposal_json(p)}
+
+
+@router.post("/ontology/proposals/{pid}/reopen")
+def ontology_proposal_reopen(pid: int, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """반려 취소 — 다시 승인 대기로. 반려된 연산은 구축 에이전트가 다시 제안하지 않으므로, 생각을 바꾸면 여기서 되살린다."""
+    from nhdip.graph.proposals import proposal_json, reopen
+    from nhdip.models import OntologyProposal
+
+    p = session.get(OntologyProposal, pid, with_for_update=True)
+    if p is None:
+        raise HTTPException(404, "제안 없음")
+    res = reopen(session, p, actor=admin.emp_no)
+    if not res.get("ok"):
+        raise HTTPException(409, res.get("error") or "다시 검토할 수 없습니다")
+    audit(session, admin.emp_no, "admin.ontology.proposal_reopen", "ontology_proposal", str(pid), None, client_ip(request))
+    session.commit()
     return {**res, "proposal": proposal_json(p)}
 
 
