@@ -63,7 +63,7 @@ def load_local(session: Any, pkg: Package, *, actor: str = "sample", force: bool
                 rep.uploaded.append({"file": f.name, "config": cfg.name, "version": cfg.version, "status": "committed"})
             elif f.kind == "dataset":
                 name = check_upload(f.name, f.content, "dataset", pol)
-                ds, _ = auto_target(session, name, f.content)
+                ds, _ = auto_target(session, name, f.content, include_common=True)
                 if ds is not None:
                     t = source(ds.origin)
                     if not force and session.execute(select(t.version.id).where(t.version.dataset_code == ds.code, t.version.file_name == f.name, t.version.status == "committed").limit(1)).first():

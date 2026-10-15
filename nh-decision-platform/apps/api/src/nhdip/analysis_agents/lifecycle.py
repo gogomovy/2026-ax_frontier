@@ -37,6 +37,18 @@ class LifecycleError(ValueError):
     pass
 
 
+def upstream_workflows(session: Session, spec: dict[str, Any]) -> list[str]:
+    """명세가 {"kpi": 코드}로 쓰는 다른 흐름 지표의 흐름(상위 부서 흐름) — 순서 유지 · 중복 없음."""
+    out: list[str] = []
+    for m in spec.get("metrics") or []:
+        for ref in (m.get("args") or {}).values():
+            if isinstance(ref, dict) and ref.get("kpi"):
+                km = session.get(Metric, str(ref["kpi"]))
+                if km is not None and km.workflow_code and km.workflow_code not in out:
+                    out.append(km.workflow_code)
+    return out
+
+
 def _metric_rows(spec: dict[str, Any], token: str, workflow: str) -> list[dict[str, Any]]:
     from .spec import figure_id
 
@@ -46,6 +58,9 @@ def _metric_rows(spec: dict[str, Any], token: str, workflow: str) -> list[dict[s
         for name, ref in (m.get("args") or {}).items():
             if "metric" in ref:
                 args[name] = {"metric": metric_code(token, ref["metric"])}
+            elif "kpi" in ref:
+                # 다른 흐름의 지표(상위 부서 KPI) — 그 지표 코드 그대로. 오케스트레이터가 지표 참조로 그 흐름을 상위로 보고 먼저 끝나기를 기다린다
+                args[name] = {"metric": str(ref["kpi"])}
             else:
                 args[name] = copy.deepcopy(ref)
         out.append({
@@ -183,8 +198,18 @@ def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: 
         session.add(WorkflowNode(workflow_code=wf_code, seq=seq * 10, key=key, name=name, impl=impl, agent_code=agent, enabled=True, config=cfg))
     sch = spec.get("schedule") or {}
     if sch.get("on_data_change", True):
+        seen_t: set[tuple[str, str]] = set()
         for ds in input_datasets(spec):
             session.add(WorkflowTrigger(workflow_code=wf_code, kind="dataset", target=ds, debounce_sec=None, enabled=True))
+            seen_t.add(("dataset", ds))
+        # 다른 흐름 KPI(상위 부서 목표 등)를 쓰면 그 흐름이 다시 계산되는 조건(자료 · 규칙 · 목표 확정 이벤트)도 잇는다 — 상위 값이 바뀌면 이 분석도 따라 돈다.
+        # 실행 순서는 오케스트레이터가 지표 참조로 정한다(상위 흐름이 끝난 뒤 실행)
+        for wf_up in upstream_workflows(session, spec):
+            for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf_up, WorkflowTrigger.enabled, WorkflowTrigger.kind.in_(("dataset", "master", "event", "rule")))).scalars():
+                if (t.kind, t.target) in seen_t:
+                    continue
+                seen_t.add((t.kind, t.target))
+                session.add(WorkflowTrigger(workflow_code=wf_code, kind=t.kind, target=t.target, debounce_sec=None, enabled=True))
     if sch.get("cron"):
         session.add(WorkflowTrigger(workflow_code=wf_code, kind="cron", target=sch["cron"], debounce_sec=None, enabled=True))
     # 지표 — 이번 명세에 없는 이전 지표는 끈다(계산 이력 보존)

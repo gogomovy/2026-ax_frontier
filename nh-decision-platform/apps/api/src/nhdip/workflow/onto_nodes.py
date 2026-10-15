@@ -262,7 +262,53 @@ def n_discover_links(ctx: RunContext, node) -> NodeResult:
                 why, c["confidence"], "llm" if d else "rule", "link")
         out.append({"type": rtype, "from": c["from_class"], "to": c["to_class"], "containment": c["containment"], "cardinality": c["cardinality"], "by": "llm" if d else "rule"})
         record(ctx, node.agent_code or "onto_linker", "link", f"{c['from_class']} → {c['to_class']} ({rtype})", {"candidate": c, "type": rtype, "by": "llm" if d else "rule", "llm": meta})
-    return NodeResult({"candidates": len(cands), "links": out, "llm": meta.get("by")})
+    refs = _common_references(ctx, schema, pol)
+    return NodeResult({"candidates": len(cands), "links": out, "references": refs, "llm": meta.get("by")})
+
+
+def _common_references(ctx: RunContext, schema: Any, pol: dict[str, Any]) -> list[dict[str, Any]]:
+    """공통 통합 DB 참조 관계 제안 (§38 CMN) — 부서 자료(사실 표 포함)의 열이 공통 자료 개체의 키를 가리키면
+    'Dataset —REFERS_<유형>→ 공통 개체'. 관계 하나에 여러 부서 자료를 원천으로 묶어 한 연산으로 제안한다(승인되면 그래프에 부서 사이 연관이 생긴다)."""
+    from nhdip.common_db import common_codes
+    from nhdip.data.sources import Resolver as Sources
+    from nhdip.graph.extraction import Resolver
+    from nhdip.graph.schema import DATASET_FROM
+
+    common = common_codes(ctx.session)
+    if not common or not any(c.get("label") == "Dataset" for c in schema.classes or []):
+        return []
+    src = Sources(ctx.session)
+
+    def code_of(ref: str) -> str:
+        d = src.resolve(ref)
+        return d.code if d is not None else ref
+
+    rows_by = _rows(ctx)
+    # 공통 자료가 원천 없이 매핑(정의 mapping · 업무 구성 자료의 온톨로지 연결 nodes)으로 개체가 되는 경우 — 그 개체 키도 참조 대상
+    mapped: dict[str, tuple[set[str], set[str]]] = {}
+    for d in ctx.session.execute(select(Dataset).where(Dataset.code.in_(common))).scalars():
+        specs = list((d.mapping or {}).get("nodes") or []) + [n for m in src.mappings_for(d.code) for n in m.get("nodes") or []]
+        for sp in specs:
+            if not sp.get("label") or not sp.get("key_col"):
+                continue
+            keys = {str(r.get(sp["key_col"])) for r in rows_by.get(d.code, []) if r.get(sp["key_col"]) not in (None, "")}
+            srcs, ks = mapped.get(sp["label"], (set(), set()))
+            mapped[sp["label"]] = (srcs | {d.code}, ks | keys)
+    cands = L.reference_candidates(_datasets(ctx), ctx.state.get("onto_profiles") or {}, schema, rows_by, Resolver(schema), pol, common, code_of, mapped)
+    by_rel: dict[str, dict[str, Any]] = {}
+    for c in cands:
+        g = by_rel.setdefault(c["type"], {"class": c["class"], "ko": c["ko"], "items": []})
+        g["items"].append(c)
+    out = []
+    for rtype, g in by_rel.items():
+        backing = [{"dataset": c["dataset"], "from_col": DATASET_FROM, "to_col": c["col"]} for c in g["items"]]
+        names = ", ".join(f"{c['datasetName']}.{c['col']}({c['containment']:.0%})" for c in g["items"][:4])
+        why = f"부서 자료 {len(g['items'])}개가 공통 통합 DB 의 {g['class']} 키를 가리킴 — {names}"
+        _add_op(ctx, {"op": "add_relation", "relation": {"type": rtype, "ko": g["ko"], "from": "Dataset", "to": g["class"], "cardinality": "N:N", "description": why, "extractable": False, "backing": backing}},
+                why, min(c["confidence"] for c in g["items"]), "rule", "link")
+        out.append({"type": rtype, "to": g["class"], "datasets": [c["dataset"] for c in g["items"]]})
+        record(ctx, "onto_linker", "reference", why[:300], {"type": rtype, "to": g["class"], "items": g["items"][:20]})
+    return out
 
 
 # ═════════════════════════ 4. 개체 해소 ═════════════════════════

@@ -30,6 +30,8 @@ REL_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,60}$")
 PROP_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,60}$")
 BASE_TYPES = ("string", "integer", "decimal", "date", "boolean", "code")
 KINDS = ("object", "concept", "system")
+# 참조 관계(§38 CMN)의 from 열 — 행의 열이 아니라 그 자료(Dataset 노드) 자신. 사실 표(키가 여러 열)도 공통 개체를 가리킬 수 있게
+DATASET_FROM = "$dataset"
 CARDINALITIES = ("1:1", "1:N", "N:1", "N:N")
 OPS = ("add_class", "update_class", "add_property", "add_backing", "add_relation", "update_relation", "add_link_backing", "add_alias")
 
@@ -171,11 +173,13 @@ def validate_schema(schema: dict[str, Any], session: Session | None = None) -> d
                 continue
             if "*" in (frm, to):
                 errors.append(f"{rtype}: 끝점이 '*' 인 관계에는 원천을 둘 수 없습니다")
+            if b["from_col"] == DATASET_FROM and frm != "Dataset":
+                errors.append(f"{rtype}: from_col '{DATASET_FROM}'(자료 자신)은 from 이 Dataset 인 참조 관계에만 씁니다")
             if ds_cols is not None:
                 cols = ds_cols.get(b["dataset"])
                 if cols is None:
                     errors.append(f"{rtype}: 원천 데이터셋 없음 {b['dataset']}")
-                elif any(x not in cols for x in (b["from_col"], b["to_col"])):
+                elif any(x not in cols for x in (b["from_col"], b["to_col"]) if x != DATASET_FROM):
                     errors.append(f"{rtype}: {b['dataset']} 에 없는 열 {b['from_col']} · {b['to_col']}")
     for label in (schema.get("aliases") or {}):
         if label not in labels:

@@ -431,6 +431,8 @@ def ingest_rows(
     from nhdip.locks import lock
 
     t = source(ds.origin)
+    if getattr(ds, "common", False):
+        owner_org = None  # 공통 통합 DB(§38 CMN) — 소유 팀 없이 전행 공통. 팀 소유로 올라가 다른 부서 자료처럼 갈리지 않게
     lock(session, f"ds:{ds.origin}:{ds.code}")  # 동시 업로드 · 되돌리기 직렬화 — 버전 번호 · 현재 버전 교체가 겹치지 않도록 (B.32)
     last = session.execute(
         select(t.version.version).where(t.version.dataset_code == ds.code).order_by(t.version.version.desc()).limit(1)
@@ -480,7 +482,8 @@ def ingest_rows(
         emit(
             session,
             "dataset.committed",
-            {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "rows": len(rows), **({"owner_org": owner_org} if owner_org else {})},
+            {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "rows": len(rows), **({"owner_org": owner_org} if owner_org else {}),
+             **({"common": True} if getattr(ds, "common", False) else {})},
             actor,
         )
     audit(session, actor, "dataset.upload", "dataset", ds.code, {"version": v.version, "status": v.status, "quality": quality["status"], "file": file_name, "owner": owner_org})
@@ -614,13 +617,27 @@ def current_rows(session: Session, ds: Dataset) -> tuple[VersionSet | None, list
     versions = current_versions(session, ds)
     if not versions:
         return None, []
-    claimed: set[str] = set()
+    from nhdip.orgs import is_branch
+
+    # 기준일 값은 소유 구획(partition_clause)마다 따로 — 영업점이 올린 판은 영업점마다 같은 기준일을 가질 수 있다.
+    # 예전에는 구획을 보지 않아 같은 기준일의 다른 영업점 판 행이 최근 판에 가려졌다(여러 영업점 자료를 올리면 마지막 영업점만 남음)
+    branch_of_owner: dict[str, bool] = {}
+
+    def part(owner: str | None) -> str:
+        if not owner:
+            return ""
+        if owner not in branch_of_owner:
+            branch_of_owner[owner] = is_branch(session, owner)
+        return owner if branch_of_owner[owner] else ""
+
+    claimed: set[tuple[str, str]] = set()
     out: list[dict[str, Any]] = []
     for v in versions:
         rows = session.execute(select(t.row.data).where(t.row.version_id == v.id).order_by(t.row.row_no)).scalars().all()
         if ds.as_of_column:
-            mine = {str(r.get(ds.as_of_column)) for r in rows}
-            rows = [r for r in rows if str(r.get(ds.as_of_column)) not in claimed]
+            p = part(getattr(v, "owner_org", None))
+            mine = {(p, str(r.get(ds.as_of_column))) for r in rows}
+            rows = [r for r in rows if (p, str(r.get(ds.as_of_column))) not in claimed]
             claimed |= mine
         # 행 단위 계보(어느 버전·파일에서 왔는지) — 계산 근거 표시에 사용
         out.extend({**r, "__v": v.version, "__file": v.file_name} for r in rows)

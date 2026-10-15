@@ -11,6 +11,11 @@ from typing import Any
 # 포함 규칙(sources): doc_classes(문서 분류, '*' = 다른 컬렉션이 가져가지 않은 나머지) · artifact_keys(정확히 일치) · artifact_prefixes
 #                     · spaces(분석 공간) · personas(P1 종합기획부 · P2 신용리스크 · P3 영업점) · screens(현재 화면 경로 접두어 — 가산점)
 COLLECTIONS: list[dict[str, Any]] = [
+    # 공통 통합 DB(§38 CMN) — 모든 부서가 함께 보는 문서 · 자료 설명 카드(관리자만 올림)
+    dict(code="doc.common", label="공통 통합 문서", kind="document", description="모든 부서(종기부 · 사업부서 · 영업본부 · 영업점)가 함께 보는 공통 통합 DB 문서 — 관리자만 올림", owner_orgs=[], shared_orgs=[],
+         required_resources=[], audience="all", sources={"doc_classes": ["common_ref"]}, sort=18),
+    dict(code="catalog.common", label="공통 통합 DB 자료", kind="catalog", description="공통 통합 DB 데이터셋 설명 카드 — 전행 공개(값은 도구 · 지표로)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
+         sources={}, sort=32),
     dict(code="doc.reference", label="기타 문서", kind="document", description="참고 자료와 위 컬렉션에 없는 문서 분류", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
          sources={"doc_classes": ["reference", "*"]}, sort=19),
     dict(code="glossary", label="용어집", kind="glossary", description="통계 · 리스크 용어 정의 (전행 공개)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",

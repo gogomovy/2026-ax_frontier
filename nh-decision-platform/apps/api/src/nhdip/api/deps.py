@@ -120,9 +120,15 @@ def user_screen_codes(session: Session, user: AppUser) -> set[str]:
     screens = session.execute(select(Screen).where(Screen.active)).scalars().all()
     if user.role == "admin":
         return {s.code for s in screens}
-    orgs = [o.code for o in org_chain(session, user.org_code)]
+    chain = org_chain(session, user.org_code)
+    orgs = [o.code for o in chain]
     granted = set(session.execute(select(ScreenGrant.screen_code).where(ScreenGrant.org_code.in_(orgs))).scalars())
-    return {s.code for s in screens if s.code in granted and not s.admin_only}
+    # 권한은 하위 조직으로 이어진다 — 그 가운데 하위 단위에는 주지 않을 화면(예: 영업본부 통합 화면은 지역본부만, 그 아래 영업점 직원은 제외)
+    # 설정 screen.deny_unit_types = {화면 코드: [조직 유형...]} — 사용자 소속 경로에 그 유형이 있으면 뺀다
+    deny = session.get(Setting, "screen.deny_unit_types")
+    deny_map: dict[str, list[str]] = deny.value if deny is not None and isinstance(deny.value, dict) else {}
+    types = {o.unit_type for o in chain}
+    return {s.code for s in screens if s.code in granted and not s.admin_only and not (set(deny_map.get(s.code) or []) & types)}
 
 
 def user_resources(session: Session, user: AppUser, screens: set[str] | None = None) -> set[str] | None:

@@ -82,7 +82,30 @@ def dataset_catalog(session: Session, codes: list[str] | None = None) -> list[di
         out.append({
             "code": d.code, "name": d.name, "origin": d.origin, "kind": d.kind, "description": (d.description or "")[:200], "asOfColumn": d.as_of_column,
             "columns": [{"name": n, "label": c.get("label") or "", "type": c.get("type") or "str"} for n, c in _cols(d).items()],
+            **({"common": True} if getattr(d, "common", False) else {}),  # 공통 통합 DB(§38 CMN) — 모든 부서가 함께 쓰는 기준 자료
         })
+    return out
+
+
+def kpi_catalog(session: Session, limit: int = 120, per_workflow: int = 20) -> list[dict[str, Any]]:
+    """다른 흐름(종기부 경영목표 · KPI, 사업부서 · 영업점 지표)이 계산한 지표 — 분석 에이전트가 {"kpi": 코드}로 입력에 쓴다(상위 부서 목표 연계).
+    값은 그 흐름이 마지막으로 계산한 값(calc.metric_value)을 읽고, 그 흐름이 다시 계산되면 이 분석도 따라 돈다(승인 때 흐름 조건을 잇는다)."""
+    from nhdip.models import Metric, MetricValue, Workflow
+
+    names = {w.code: w.name for w in session.execute(select(Workflow)).scalars()}
+    have = set(session.execute(select(MetricValue.metric_code).distinct()).scalars())
+    out: list[dict[str, Any]] = []
+    per: dict[str, int] = {}
+    for m in session.execute(select(Metric).where(Metric.enabled).order_by(Metric.workflow_code, Metric.sort, Metric.code)).scalars():
+        if m.code.startswith("dyn_") or m.code not in have:
+            continue  # 분석 에이전트 자신의 지표 · 아직 계산된 값이 없는 지표는 빼고
+        wf = m.workflow_code or ""
+        if per.get(wf, 0) >= per_workflow:
+            continue  # 흐름마다 앞쪽(정렬 순서)만 — 한 부서 지표가 목록을 다 차지하지 않게
+        per[wf] = per.get(wf, 0) + 1
+        out.append({"code": m.code, "label": m.label, "unit": m.unit, "workflow": wf, "workflowName": names.get(wf, wf)})
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -130,6 +153,7 @@ def catalog(session: Session, space: str, datasets: list[str] | None = None) -> 
         "blocks": list(BLOCKS),
         "chartKinds": list(CHART_KINDS),
         "docClasses": doc_classes(session),
+        "kpis": kpi_catalog(session),
         "limits": LIMITS,
         "whereTokens": ["$latest", "$earliest", "$latest-12"],
     }
@@ -289,10 +313,20 @@ def validate_spec(session: Session, raw: Any, space: str) -> tuple[dict[str, Any
                     ok = False
                     break
                 args[pname] = {"metric": str(ref["metric"])}
+            elif "kpi" in ref:
+                # 다른 흐름의 지표(상위 부서 목표 · KPI) — 켜져 있고 분석 에이전트 자신의 지표가 아닌 것만
+                from nhdip.models import Metric
+
+                km = v.session.get(Metric, str(ref["kpi"]))
+                if km is None or not km.enabled or km.code.startswith("dyn_"):
+                    v.issue(f"{p}.args.{pname}", f"쓸 수 없는 KPI(없거나 꺼진 지표 · 분석 에이전트 지표): {ref['kpi']}")
+                    ok = False
+                    break
+                args[pname] = {"kpi": km.code, "label": _s(ref.get("label") or km.label, 40)}
             elif "const" in ref and _num(ref["const"]) is not None:
                 args[pname] = {"const": _num(ref["const"])}
             else:
-                v.issue(f"{p}.args.{pname}", "입력은 데이터 조회(q) · 지표(metric) · 숫자(const) 중 하나")
+                v.issue(f"{p}.args.{pname}", "입력은 데이터 조회(q) · 지표(metric) · 다른 흐름 KPI(kpi) · 숫자(const) 중 하나")
                 ok = False
                 break
         extra = set(args_in) - set(params)

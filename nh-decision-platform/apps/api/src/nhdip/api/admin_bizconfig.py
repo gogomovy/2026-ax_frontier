@@ -134,11 +134,12 @@ async def dataset_auto_upload(
     note: str | None = Form(None),
     force: bool = Form(False),
     owner_org: str | None = Form(None),
+    common: bool = Form(False),
     session: Session = Depends(get_session),
     admin: AppUser = Depends(require_admin),
 ):
     """대상 없이 올리기 — 맞는 정의(파일 이름 규칙 · 열 구성)가 있으면 그 자료의 새 버전, 없으면 파일에서 정의를 만들어 첫 버전(한 트랜잭션).
-    owner_org = 자료를 둘 팀 · 영업점(빈 값 = 전행 공통)."""
+    owner_org = 자료를 둘 팀 · 영업점(빈 값 = 전행 공통). common = 공통 통합 DB 로 올림(새 정의면 공통으로 만든다 · 소유 팀 없음, §38 CMN)."""
     from nhdip.data.datasets import IngestError, ingest_file
     from nhdip.data.infer import infer_definition, validate_definition
 
@@ -149,7 +150,7 @@ async def dataset_auto_upload(
         raise HTTPException(422, "origin 은 bank | ext, data_origin 은 actual | simulated")
     owner = owner_of(session, admin, owner_org)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
-    d, matches = auto_target(session, name, content)
+    d, matches = auto_target(session, name, content, include_common=True)
     created = False
     if d is None:
         try:
@@ -164,10 +165,14 @@ async def dataset_auto_upload(
         problems = validate_definition(defn)
         if problems:
             raise HTTPException(422, " · ".join(problems[:6]))
-        d = Dataset(**{k: v for k, v in defn.items() if v is not None})
+        d = Dataset(**{k: v for k, v in defn.items() if v is not None}, common=bool(common))
         session.add(d)
         session.flush()
         created = True
+    elif common and not getattr(d, "common", False):
+        raise HTTPException(409, f"이 파일은 부서 자료 '{d.name}' 의 새 판입니다 — 공통 통합 DB 로 옮기려면 [데이터셋·문서]에서 그 정의를 공통으로 바꾸세요")
+    if getattr(d, "common", False):
+        owner = None  # 공통 통합 DB — 소유 팀 없음
     try:
         v = ingest_file(session, d, name, content, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner)
     except (IngestError, ValueError) as exc:

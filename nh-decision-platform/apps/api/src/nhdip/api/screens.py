@@ -56,10 +56,23 @@ for _path, _key, _res in [
     ("/analysis-tabs", "analysis_tabs", "analysis_tabs"),
     ("/inclusive", "inclusive", "inclusive"),
     ("/default-rate-trend", "default_rate_trend", "default_rate_trend"),
-    ("/branch-targets", "branch_targets", "branch_targets"),
     ("/terms", "terms", "terms"),
 ]:
     _simple(_path, _key, _res)
+
+
+@router.get("/branch-targets")
+def branch_targets(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("branch_targets"))):
+    """본부 전파 목표 · 가이드 — 지역본부 · 영업점 직원은 자기 지역본부로 전파된 목표만(§37 RGN). 관리자 · 본부(지역 소속 아님)는 전체."""
+    from nhdip.orgs import org_chain
+
+    rows = _artifact(session, "branch_targets") or []
+    if user.role == "admin" or not isinstance(rows, list):
+        return rows
+    region = next((o.code for o in org_chain(session, user.org_code) if o.unit_type == "REGION"), None)
+    if region is None:
+        return rows
+    return [t for t in rows if not isinstance(t, dict) or not t.get("orgCode") or t.get("orgCode") == region]
 
 
 @router.get("/report-requests")
@@ -218,6 +231,17 @@ def branch_report(tab_key: str, office: str | None = OFFICE_Q, session: Session 
     if v is None:
         raise HTTPException(404, "보고서 없음")
     return {**strip_tpl(v), "workflow": _producer(session, f"report.branch-{tab_key}")}
+
+
+@router.get("/region/kpi")
+def region_kpi_view(region: str | None = Query(None, pattern=r"^[A-Za-z0-9_-]{1,20}$"), session: Session = Depends(get_session), user: AppUser = Depends(require_resource("region_kpi"))):
+    """영업본부 통합 업적평가 (§37 RGN) — 지역본부 아래 영업점의 업적평가를 한 화면에. 지역본부 직원은 자기 지역만, 관리자는 고른 지역."""
+    from nhdip.views.region import RegionDenied, region_kpi
+
+    try:
+        return region_kpi(session, user, region)
+    except RegionDenied as exc:
+        raise HTTPException(403, str(exc)) from exc
 
 
 @router.get("/changes")

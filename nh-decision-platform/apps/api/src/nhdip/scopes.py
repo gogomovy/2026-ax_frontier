@@ -38,8 +38,30 @@ def scope_values(session: Session, spec: dict[str, Any], *, limit: bool = True) 
     values = [str(v) for v in (body.get(spec.get("list", "")) or []) if v not in (None, "") and SCOPE_VALUE.match(str(v))]
     if spec.get("name") == "office" and spec.get("from_owners", True):
         values += owner_offices(session)  # 관리자가 영업점을 골라 올린 자료가 있으면 그 영업점도 계산한다(§33 OWN — 규칙에 지점을 더하지 않아도)
+    if spec.get("from_data", True) and spec.get("requires"):
+        values += data_scopes(session, spec)  # 필요한 자료에 행이 있는 범위(예: 득점 현황 · 사무소 마스터에 다 있는 지점) — 지역 영업점 통합 화면이 지점을 하나씩 등록하지 않아도
     extras = [v for v in dict.fromkeys(values) if v != primary]
     return primary, (extras[: scope_cap(spec)] if limit else extras)
+
+
+def data_scopes(session: Session, spec: dict[str, Any]) -> list[str]:
+    """설정 requires(['자료 이름.열', ...])의 모든 자료에 값이 있는 범위 값 — 교집합, 자료 순서대로. 자료가 없으면 빈 목록."""
+    from nhdip.data.datasets import current_rows
+    from nhdip.data.sources import Resolver
+
+    res = Resolver(session)
+    common: list[str] | None = None
+    for req in spec.get("requires") or []:
+        name, _, col = str(req).rpartition(".")
+        d = res.resolve(name) if name else None
+        if d is None or not col:
+            return []
+        col = res.aliases(name, d).get(col, col)
+        _, rows = current_rows(session, d)
+        vals = [str(r.get(col)) for r in rows if r.get(col) not in (None, "") and SCOPE_VALUE.match(str(r.get(col)))]
+        vals = list(dict.fromkeys(vals))
+        common = vals if common is None else [v for v in common if v in set(vals)]
+    return common or []
 
 
 def owner_offices(session: Session) -> list[str]:

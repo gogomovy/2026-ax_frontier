@@ -272,6 +272,10 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     if doc_filter is None:
         note.append("그래프 필터 없음(개념 미연결 또는 그래프 장애) → 권한 범위 전체 검색")
     k = int(cfg.get("k", 5))
+    from .evidence_nodes import _doc_meta, owner_gate, with_common_classes
+
+    # 공통 통합 DB 문서 분류도 함께(§38 CMN) — 흐름의 분류에 더한다
+    cfg = {**cfg, "doc_classes": with_common_classes(ctx.session, cfg.get("doc_classes"))}
     model = emb.model if (emb is not None and qvec is not None) else None
     sdiag: dict[str, Any] = {}  # 3-way — 키워드 · 의미 후보를 ES 문서 색인에서 찾았는지(engine) · 폴백 사유
     cand = hybrid_search(ctx.session, cfg.get("query", ""), doc_filter=doc_filter, query_vec=qvec, doc_classes=cfg.get("doc_classes"), k=k * 3, model=model, diag=sdiag)
@@ -282,6 +286,13 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         note.append("그래프 필터 결과 없음 → 전체 검색으로 확장")
     if sdiag.get("esFallback") and sdiag.get("esFallback") != "ES 아직 동기화 전":
         note.append(f"검색 엔진 폴백(PostgreSQL): {sdiag['esFallback']}")
+    # 영업점이 올린 문서는 그 영업점 실행에만 — 근거 붙이기와 같은 소유 규칙(§33 OWN · 다른 영업점 문서가 다른 흐름 근거로 새지 않게)
+    gate_ok = owner_gate(ctx)
+    metas = _doc_meta(ctx, cand)
+    before = len(cand)
+    cand = [h for h in cand if gate_ok(metas.get((h["origin"], h["document_id"])))]
+    if len(cand) < before:
+        note.append(f"영업점 소유 문서 {before - len(cand)}건 제외(다른 영업점 · 영업점 범위 밖 실행)")
     # 근거 선별(3.6) — 시스템 실행이라 권한 단계는 통과, 부문 · 시점 · 문서유형 · 의미 · 개념경로 게이팅 후 우선순위 · 범주 균형
     from nhdip.data.datasets import display_as_of
 

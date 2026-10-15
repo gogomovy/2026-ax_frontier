@@ -26,7 +26,7 @@ interface Version {
   spec?: {
     title: string;
     purpose: string;
-    metrics: { key: string; label: string; formula: string; unit: string; args: Record<string, { q?: { dataset: string; col?: string; agg: string }; metric?: string; const?: number }> }[];
+    metrics: { key: string; label: string; formula: string; unit: string; args: Record<string, { q?: { dataset: string; col?: string; agg: string }; metric?: string; kpi?: string; const?: number }> }[];
     tables: { key: string; caption: string; dataset: string; group_by: string; agg: string }[];
     insights: { key: string; title: string; instruction: string }[];
     schedule: { cron: string | null; on_data_change: boolean };
@@ -238,7 +238,7 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
                       <b className="text-ink-deep">{m.label}</b> <Badge tone="info">{m.formula}</Badge>{" "}
                       <span className="text-steel">
                         {Object.values(m.args)
-                          .map((r) => (r.q ? `${r.q.dataset}.${r.q.col ?? "행"} ${r.q.agg}` : r.metric ? `지표 ${r.metric}` : `상수 ${r.const}`))
+                          .map((r) => (r.q ? `${r.q.dataset}.${r.q.col ?? "행"} ${r.q.agg}` : r.metric ? `지표 ${r.metric}` : r.kpi ? `상위 KPI ${r.kpi}` : `상수 ${r.const}`))
                           .join(", ")}
                       </span>
                     </li>

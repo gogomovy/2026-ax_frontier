@@ -656,6 +656,43 @@ export interface CascadeNode {
   children?: CascadeNode[];
 }
 
+/** 영업본부 통합 업적평가 (§37 RGN) — 지점별 점수는 영업점 흐름이 계산한 값 그대로, 평균 · 순위만 서버가 센다 */
+export interface RegionKpiGroup {
+  code: string;
+  label: string;
+  kind?: string | null;
+  score?: number | null;
+  max?: number | null;
+  rate?: number | null;
+  avg?: number | null;
+}
+export interface RegionKpiBranch {
+  code: string;
+  name: string;
+  orgCode: string | null;
+  available: boolean;
+  rank?: number;
+  total: number | null;
+  max: number | null;
+  rate: number | null;
+  adjustments: number | null;
+  totalAfter: number | null;
+  uplift: number | null;
+  groups: RegionKpiGroup[];
+  avgGrade: number | null;
+  alerts: { title?: string; severity?: string; tabKey?: string }[];
+  alertCount: number;
+}
+export interface RegionKpi {
+  region: { code: string; name: string } | null;
+  regions: { code: string; name: string }[];
+  periodLabel?: string | null;
+  asOfLabel?: string | null;
+  branches: RegionKpiBranch[];
+  groups?: RegionKpiGroup[];
+  summary: { branches: number; computed: number; avgTotal?: number | null; avgRate?: number | null; avgTotalAfter?: number | null; alerts?: number; top?: { code: string; name: string } | null };
+}
+
 export interface BranchTarget {
   id: string;
   orgCode: string;

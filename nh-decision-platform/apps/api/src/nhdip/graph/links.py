@@ -176,3 +176,59 @@ def link_candidates(datasets: list[Any], profiles: dict[str, dict[str, Any]], sc
         if k not in best or c["containment"] > best[k]["containment"]:
             best[k] = c
     return list(best.values())
+
+
+def reference_candidates(datasets: list[Any], profiles: dict[str, dict[str, Any]], schema: Any, rows_by_ds: dict[str, list[dict[str, Any]]], resolver: Any, policy: dict[str, Any],
+                         common: set[str], code_of: Any, mapped: dict[str, tuple[set[str], set[str]]] | None = None) -> list[dict[str, Any]]:
+    """공통 통합 DB 참조 (§38 CMN) — 부서 자료의 열 값 대부분이 공통 자료가 원천인 객체 유형의 키면 'Dataset —REFERS_<유형>→ 공통 개체' 후보.
+
+    link_candidates 는 행이 객체인 자료(키 하나)만 링크의 출발점이 될 수 있어, 기간 × 지점 × 상품 같은 사실 표는 공통 기준과 이어지지 않았다.
+    참조 관계는 자료 자신(Dataset 노드)에서 출발하므로 사실 표도 공통 개체(상품 · 사무소 · 등급 …)에 이어지고, 같은 공통 개체를 가리키는
+    다른 부서 자료끼리 그래프에서 만난다. {class, type, ko, dataset, col, containment, distinct, confidence}
+    common = 공통 데이터셋 코드, code_of = 원천 이름(코드 · 자료 이름) → 코드,
+    mapped = 공통 자료의 온톨로지 연결(nodes)로 생기는 개체 {유형: (원천 코드들, 키들)} — 원천(backing) 없이 매핑으로 개체가 되는 공통 기준표."""
+    if not common:
+        return []
+    common_classes: dict[str, set[str]] = {}
+    labels = {c.get("label") for c in schema.classes or []}
+    for c in schema.classes or []:
+        srcs = {code_of(str(bk.get("dataset"))) for bk in c.get("backing") or [] if bk.get("dataset")}
+        hit = {s for s in srcs if s in common}
+        if hit:
+            common_classes[c["label"]] = srcs
+    for label, (srcs, _keys) in (mapped or {}).items():
+        if label in labels:
+            common_classes[label] = common_classes.get(label, set()) | set(srcs)
+    if not common_classes:
+        return []
+    unis = {k: v for k, v in class_universes(schema, rows_by_ds, resolver).items() if k in common_classes}
+    for label, (srcs, keys) in (mapped or {}).items():
+        if label in common_classes and keys:
+            u = unis.setdefault(label, {"keys": set(), "aliases": (resolver.alias.get(label) or {}) if resolver is not None else {}, "backing": []})
+            u["keys"] = set(u["keys"]) | set(keys)
+    have = {(str(r.get("to")), code_of(str(b.get("dataset"))), b.get("to_col")) for r in schema.relations or [] if r.get("from") == "Dataset" for b in r.get("backing") or []}
+    min_c, min_d = float(policy.get("link_min_containment", 0.95)), int(policy.get("link_min_distinct", 2))
+    out: list[dict[str, Any]] = []
+    for ds in datasets:
+        if ds.code in common:
+            continue
+        prof = profiles.get(ds.code) or {}
+        rows = rows_by_ds.get(ds.code, [])
+        if not rows:
+            continue
+        for label, uni in unis.items():
+            if ds.code in common_classes[label]:
+                continue
+            best: dict[str, Any] | None = None
+            for col, meta in (prof.get("columns") or {}).items():
+                if meta.get("semantic") not in ("identifier", "code", "name") or meta.get("pii"):
+                    continue
+                vals = {str(r.get(col)) for r in rows if r.get(col) not in (None, "")}
+                if len(vals) < min_d:
+                    continue
+                ratio = sum(1 for v in vals if _hit(v, uni, resolver, label)) / len(vals)
+                if ratio >= min_c and (best is None or ratio > best["containment"]):
+                    best = {"class": label, "dataset": ds.code, "datasetName": ds.name, "col": col, "containment": round(ratio, 4), "distinct": len(vals)}
+            if best and (label, ds.code, best["col"]) not in have:
+                out.append({**best, "type": f"REFERS_{snake(label)}", "ko": f"{CLASS_KO.get(label, label)} 참조", "confidence": round(min(0.99, 0.6 + 0.4 * best["containment"]), 2)})
+    return out

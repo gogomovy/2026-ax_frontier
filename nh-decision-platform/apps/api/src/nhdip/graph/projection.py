@@ -169,12 +169,16 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         if not cvs:
             # 자료(현재 판)가 없는 정의는 지도 · 그래프에 넣지 않는다 — 지운 자료의 개념 · 지표 군집이 다른 자료를 올렸을 때 다시 나타나지 않게
             continue
-        b.node("Dataset", ds.code, {"name": ds.name, "origin": ds.origin, "kind": ds.kind, "refresh_cycle": ds.refresh_cycle}, origin=ds.origin, src_kind="dataset", src_ref=f"cfg.dataset({ds.code})")
+        # 소유(팀 · 영업점) · 공통 통합 DB 표시 — 그래프 질의가 어느 부서 자료인지 · 공통 자료인지 가린다(§33 OWN · §38 CMN)
+        owners = sorted({cv.owner_org for cv in cvs if cv.owner_org})
+        b.node("Dataset", ds.code, {"name": ds.name, "origin": ds.origin, "kind": ds.kind, "refresh_cycle": ds.refresh_cycle, "common": bool(getattr(ds, "common", False)), "owners": owners},
+               origin=ds.origin, src_kind="dataset", src_ref=f"cfg.dataset({ds.code})")
         v, rows = current_rows(session, ds)
         rows_by_ds[ds.code] = (v, rows, ds.origin)
         for cv in cvs:
             vkey = f"{ds.code}:v{cv.version}"
-            b.node("DatasetVersion", vkey, {"version": cv.version, "as_of": cv.as_of.isoformat() if cv.as_of else None, "data_origin": cv.data_origin, "committed_at": cv.committed_at.isoformat() if cv.committed_at else None, "file": cv.file_name}, origin=ds.origin, src_kind="dataset", src_ref=f"{ds.origin}.dataset_version({cv.id})")
+            b.node("DatasetVersion", vkey, {"version": cv.version, "as_of": cv.as_of.isoformat() if cv.as_of else None, "data_origin": cv.data_origin, "committed_at": cv.committed_at.isoformat() if cv.committed_at else None, "file": cv.file_name,
+                                            "owner_org": cv.owner_org}, origin=ds.origin, src_kind="dataset", src_ref=f"{ds.origin}.dataset_version({cv.id})")
             b.rel("HAS_VERSION", "Dataset", ds.code, "DatasetVersion", vkey)
         mapping = dict(ds.mapping or {})
         for extra in _maps.mappings_for(ds.code):
@@ -241,6 +245,26 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         for bk in rdef.get("backing") or []:
             got = _rows_of(bk.get("dataset"))
             if not got or not bk.get("from_col") or not bk.get("to_col"):
+                continue
+            if bk["from_col"] == "$dataset":
+                # 참조 관계(§38 CMN) — 부서 자료(Dataset) → 그 자료의 열이 가리키는 공통 개체. 같은 값은 한 번, 상한 1,000
+                dcode = _code_of(str(bk["dataset"]))
+                if not dcode:
+                    continue
+                seen_t: set[str] = set()
+                for r in got[1]:
+                    tk = r.get(bk["to_col"])
+                    if tk in (None, ""):
+                        continue
+                    if _res.alias.get(to):
+                        tk = _res.match(to, str(tk)) or tk
+                    if str(tk) in seen_t:
+                        continue
+                    seen_t.add(str(tk))
+                    if len(seen_t) > 1000:
+                        break
+                    b.rel(rdef["type"], "Dataset", dcode, to, tk, {"column": bk["to_col"]}, extracted_by="backing", src_ref=str(bk["dataset"]))
+                    b.counts["reference_links"] = b.counts.get("reference_links", 0) + 1
                 continue
             for r in got[1]:
                 fk, tk = r.get(bk["from_col"]), r.get(bk["to_col"])

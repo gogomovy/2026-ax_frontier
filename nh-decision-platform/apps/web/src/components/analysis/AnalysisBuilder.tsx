@@ -35,7 +35,8 @@ interface Validation {
   issues: Issue[];
   counts?: Record<string, number>;
 }
-type Ref = { q?: { dataset: string; col?: string; agg: string; where?: Record<string, unknown> }; metric?: string; const?: number; label?: string };
+/** kpi = 다른 흐름(상위 부서 목표 · KPI)이 계산한 지표 코드 — 그 흐름이 다시 계산되면 이 분석도 따라 돈다 */
+type Ref = { q?: { dataset: string; col?: string; agg: string; where?: Record<string, unknown> }; metric?: string; kpi?: string; const?: number; label?: string };
 interface SpecMetric {
   key: string;
   label: string;
@@ -92,6 +93,7 @@ const SAMPLES = [
 function refText(r: Ref): string {
   if (r.q) return `${r.q.dataset} · ${r.q.col ?? "행"} ${r.q.agg}${r.q.where && Object.keys(r.q.where).length ? ` (${Object.entries(r.q.where).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`).join(", ")})` : ""}`;
   if (r.metric) return `지표 ${r.metric}`;
+  if (r.kpi) return `상위 KPI ${r.label ? `${r.label} (${r.kpi})` : r.kpi}`;
   if (r.const !== undefined) return `상수 ${r.const}`;
   return "-";
 }

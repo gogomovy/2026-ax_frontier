@@ -164,6 +164,8 @@ class Dataset(Base):
     parser: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     materialize: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 공통 통합 DB (요구사항 §38 CMN) — 모든 부서(종기부 · 사업부서 · 영업본부 · 영업점)가 함께 보는 자료. 관리자만 올리고 소유 팀이 없다(전행 공통)
+    common: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
 

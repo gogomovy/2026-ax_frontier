@@ -55,13 +55,26 @@ def _allowed(spec: Any, key: str) -> bool:
     return spec == "*" or (isinstance(spec, list) and key in spec)
 
 
-def _doc_classes(session: Session) -> list[dict[str, str]]:
+def _doc_classes(session: Session, user: AppUser | None = None) -> list[dict[str, str]]:
+    """올릴 수 있는 문서 분류 — 공통 통합 DB 분류는 관리자에게만(§38 CMN)."""
+    from nhdip.common_db import common_doc_classes
+
     labels = session.get(Setting, "doc_class.labels")
     origins = session.get(Setting, "doc_class.default_origin")
     lab = labels.value if labels is not None and isinstance(labels.value, dict) else {}
     org = origins.value if origins is not None and isinstance(origins.value, dict) else {}
     allow = _targets(session)["doc_classes"]
-    return [{"key": k, "label": str(v), "origin": str(org.get(k, "bank"))} for k, v in lab.items() if _allowed(allow, k)]
+    hide = set() if getattr(user, "role", None) == "admin" else set(common_doc_classes(session))
+    return [{"key": k, "label": str(v), "origin": str(org.get(k, "bank"))} for k, v in lab.items() if _allowed(allow, k) and k not in hide]
+
+
+def _no_common(user: AppUser, *, dataset: Any = None, doc_class: str | None = None, session: Session | None = None) -> None:
+    from nhdip.common_db import CommonOnly, assert_can_upload
+
+    try:
+        assert_can_upload(user, dataset=dataset, doc_class=doc_class, session=session)
+    except CommonOnly as exc:
+        raise HTTPException(403, str(exc)) from exc
 
 
 def _store(user: str, name: str, content: bytes) -> tuple[str, str]:
@@ -118,6 +131,8 @@ def _dataset_for_user(session: Session, code: str) -> Dataset:
         raise HTTPException(404, "데이터셋 없음")
     if not _allowed(_targets(session)["datasets"], code):
         raise HTTPException(403, "이 데이터셋은 업무 화면에서 올릴 수 없습니다 — 관리자에게 요청하세요")
+    if getattr(d, "common", False):
+        raise HTTPException(403, "공통 통합 DB 자료는 관리자만 올릴 수 있습니다 — 관리자에게 요청하세요")
     return d
 
 
@@ -128,7 +143,7 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
     allow = _targets(session)["datasets"]
     out = []
     for d in session.execute(select(Dataset).order_by(Dataset.origin, Dataset.code)).scalars():
-        if not getattr(d, "active", True) or not _allowed(allow, d.code):
+        if not getattr(d, "active", True) or not _allowed(allow, d.code) or (getattr(d, "common", False) and user.role != "admin"):
             continue
         cur = current_versions(session, d)
         out.append({
@@ -141,7 +156,7 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
     max_mb = (pol.value or {}).get("max_mb") if pol is not None and isinstance(pol.value, dict) else None
     return {
         "datasets": out,
-        "docClasses": _doc_classes(session),
+        "docClasses": _doc_classes(session, user),
         "canPropose": bool(_targets(session).get("new_datasets", True)),
         "accept": {"dataset": ".csv,.tsv,.xlsx,.json", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"},
         # 파일 놓기 영역이 먼저 알려 주는 용량 한도(Phase E · UXF-01) — 실제 차단은 서버 보안 검사
@@ -152,8 +167,9 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
 AUTO_MATCH_MIN = 0.6  # 파일 이름 규칙이 맞거나 머리글이 충분히 겹치면 기존 자료의 새 버전 (자료 등록 에이전트와 같은 기준)
 
 
-def auto_target(session: Session, filename: str, content: bytes) -> tuple[Dataset | None, list[dict[str, Any]]]:
-    """대상을 고르지 않고 올린 파일 — 기존 정의 중 맞는 것(파일 이름 규칙 · 머리글 겹침). 없으면 (None, 후보)."""
+def auto_target(session: Session, filename: str, content: bytes, *, include_common: bool = False) -> tuple[Dataset | None, list[dict[str, Any]]]:
+    """대상을 고르지 않고 올린 파일 — 기존 정의 중 맞는 것(파일 이름 규칙 · 머리글 겹침). 없으면 (None, 후보).
+    공통 통합 DB 자료는 관리자 올리기(include_common=True)에서만 대상이 된다(§38 CMN)."""
     from nhdip.data.infer import _read
     from nhdip.data.onboarding import match_datasets
 
@@ -168,6 +184,8 @@ def auto_target(session: Session, filename: str, content: bytes) -> tuple[Datase
         if m["score"] >= AUTO_MATCH_MIN and _allowed(allow, m["code"]):
             d = session.get(Dataset, m["code"])
             if d is not None and getattr(d, "active", True):
+                if getattr(d, "common", False) and not include_common:
+                    raise HTTPException(403, f"이 파일은 공통 통합 DB 자료 '{d.name}' 입니다 — 공통 자료는 관리자만 올릴 수 있습니다")
                 return d, matches
     return None, matches
 
@@ -362,7 +380,7 @@ async def request_document(
     user: AppUser = Depends(require_resource("db_upload")),
     session: Session = Depends(get_session),
 ):
-    classes = {c["key"]: c for c in _doc_classes(session)}
+    classes = {c["key"]: c for c in _doc_classes(session, user)}
     if doc_class not in classes:
         raise HTTPException(422, "올릴 수 없는 문서 분류입니다")
     title = (title or "").strip()
@@ -447,6 +465,11 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
         raise HTTPException(409, "요청 파일이 바뀌었습니다(해시 불일치) — 반려 후 다시 올려 달라고 요청하세요")
     meta = r.meta or {}
     note = f"업무 자료 요청 #{r.id} ({r.requested_by}) 승인" + (" · 부서 데이터 책임자" if via == "steward" else "") + (f" — {meta.get('note')}" if meta.get("note") else "")
+    # 공통 통합 DB 는 관리자만 반영한다(§38 CMN) — 부서 책임자 승인 · 직접 반영으로 들어가지 않게
+    if r.kind == "dataset":
+        _no_common(actor, dataset=session.get(Dataset, r.target))
+    else:
+        _no_common(actor, doc_class=r.target, session=session)
     sp = session.begin_nested()
     try:
         if r.kind == "dataset":
@@ -841,7 +864,7 @@ def intake_patch(rid: int, body: IntakePatch, request: Request, user: AppUser = 
         r.target, r.origin = ds.code, ds.origin
     if body.document is not None and r.kind == "document":
         doc = body.document
-        classes = {c["key"] for c in _doc_classes(session)}
+        classes = {c["key"] for c in _doc_classes(session, user)}
         if doc.get("doc_class") and doc["doc_class"] not in classes:
             raise HTTPException(422, "올릴 수 없는 문서 분류입니다")
         if doc.get("published_at") and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(doc["published_at"])):
@@ -876,6 +899,10 @@ def intake_submit(rid: int, body: ReviewIn, request: Request, user: AppUser = De
         raise HTTPException(422, "올릴 데이터셋을 정하세요(기존 자료를 고르거나 새 자료 정의를 확인)")
     if r.kind == "dataset" and (r.meta or {}).get("proposal") is not None and _pending_proposal(session, r.target):
         raise HTTPException(409, "같은 코드의 새 자료 요청이 이미 승인 대기 중입니다")
+    if r.kind == "dataset":
+        _no_common(user, dataset=session.get(Dataset, r.target))
+    else:
+        _no_common(user, doc_class=r.target, session=session)
     via = _self_apply(session, user)
     r.status = "pending"
     if via is None:

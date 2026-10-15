@@ -392,6 +392,22 @@
    ]
   },
   {
+   "code": "REGION_KPI",
+   "path": "/region",
+   "label": "영업점 업적평가 통합",
+   "section": "영업본부",
+   "kind": "flow",
+   "step": 1,
+   "count_key": null,
+   "match": "=/region",
+   "sort": 29,
+   "admin_only": false,
+   "active": true,
+   "resources": [
+    "region_kpi"
+   ]
+  },
+  {
    "code": "BRANCH_HOME",
    "path": "/branch",
    "label": "현황",
@@ -526,6 +542,10 @@
    "screen": "KNOWLEDGE"
   },
   {
+   "org": "D300",
+   "screen": "REGION_KPI"
+  },
+  {
    "org": "D400",
    "screen": "BRANCH_ANALYSIS"
   },
@@ -542,6 +562,10 @@
    "screen": "KNOWLEDGE"
   },
   {
+   "org": "D400",
+   "screen": "REGION_KPI"
+  },
+  {
    "org": "D500",
    "screen": "BRANCH_ANALYSIS"
   },
@@ -556,6 +580,10 @@
   {
    "org": "D500",
    "screen": "KNOWLEDGE"
+  },
+  {
+   "org": "D500",
+   "screen": "REGION_KPI"
   }
  ],
  "settings": [
@@ -944,7 +972,8 @@
     "gov_policy": "정부정책 DB",
     "mgmt_decision": "경영 의사결정 DB",
     "model_method": "모형·방법론",
-    "branch_ref": "영업점 기준·공문"
+    "branch_ref": "영업점 기준·공문",
+    "common_ref": "공통 통합 자료"
    },
    "description": "문서 분류 코드 → 화면 표시명",
    "mode": "merge"
@@ -955,7 +984,8 @@
     "gov_policy": "ext",
     "mgmt_decision": "bank",
     "model_method": "bank",
-    "branch_ref": "bank"
+    "branch_ref": "bank",
+    "common_ref": "bank"
    },
    "description": "문서 분류별 기본 출처(업로드 화면 기본값)",
    "mode": "merge"
@@ -974,6 +1004,24 @@
    ],
    "description": "알림 종 목록 (Phase K) — [{countKey, label, fallback}] · 주소는 같은 건수 키를 가진 메뉴 화면. fallback=true 는 다른 알림이 없을 때만",
    "mode": "merge"
+  },
+  {
+   "key": "screen.deny_unit_types",
+   "value": {
+    "REGION_KPI": [
+     "BRANCH"
+    ]
+   },
+   "description": "화면 권한은 하위 조직으로 이어진다 — 그 가운데 이 조직 유형(소속 경로)에는 주지 않을 화면 {화면 코드: [조직 유형]}",
+   "mode": "set"
+  },
+  {
+   "key": "common.doc_classes",
+   "value": [
+    "common_ref"
+   ],
+   "description": "공통 통합 DB 문서 분류 — 관리자만 올리고(소유 팀 없음), 모든 부서 흐름의 근거 검색 · 질의에 함께 쓰인다(§38 CMN)",
+   "mode": "set"
   }
  ],
  "rules": [
@@ -18708,7 +18756,7 @@
       "value": null,
       "decimals": 2
      },
-     "orgCode": "R001",
+     "orgCode": "D300",
      "orgName": "수도권1지역본부",
      "progress": null,
      "titleTpl": "기업여신 신규 취급 [[fig:bt1_target]]",
@@ -18736,7 +18784,7 @@
       "label": "월 한도",
       "value": null
      },
-     "orgCode": "R001",
+     "orgCode": "D300",
      "orgName": "수도권1지역본부",
      "progress": null,
      "titleTpl": "가계여신 월 취급 한도 [[fig:bt2_target]]",
@@ -18767,7 +18815,7 @@
       "value": null,
       "decimals": 0
      },
-     "orgCode": "R001",
+     "orgCode": "D300",
      "orgName": "수도권1지역본부",
      "progress": null,
      "guideline": "",

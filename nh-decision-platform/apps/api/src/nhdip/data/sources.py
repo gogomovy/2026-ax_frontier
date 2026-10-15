@@ -140,7 +140,8 @@ class Resolver:
         found: Dataset | None = None
         d = self.session.get(Dataset, ref)
         if d is not None and getattr(d, "active", True):
-            found = d
+            # 코드로 가리켰는데(분석 에이전트 · 예전 흐름 조건) 그 정의에 올린 자료가 없으면 — 같은 자료를 새 정의로 다시 올린 경우의 후속 정의로
+            found = d if d.code in self.latest else (self._successor(d) or d)
         else:
             sp = self.spec(ref)
             cands = self.candidates(sp) if sp else [x for x in self.datasets if norm(x.name) == norm(ref)]
@@ -148,6 +149,16 @@ class Resolver:
                 found = max(cands, key=lambda x: self._score(sp, x)) if sp else cands[0]
         self._cache[ref] = found
         return found
+
+    def _successor(self, d: Dataset) -> Dataset | None:
+        """자료가 없는 정의 d 를 이어받는 정의 — 이름이 같거나 파일 이름 규칙이 같고, d 의 열을 모두 가지며, 올린 자료가 있는 것(최근 확정 순).
+        분석 에이전트는 승인 때 데이터셋 코드로 입력을 고정한다 — 같은 자료가 다시 올라오며 새 정의(새 코드)가 생겨도 끊기지 않게."""
+        need = {norm(c.get("name")) for c in d.columns or [] if c.get("name")}
+        cands = [x for x in self.datasets if x.code != d.code and x.code in self.latest
+                 and (norm(x.name) == norm(d.name) or (d.file_pattern and x.file_pattern == d.file_pattern)) and need <= self._cols(x)]
+        if not cands:
+            return None
+        return max(cands, key=lambda x: self.latest[x.code])
 
     def aliases(self, ref: str, ds: Dataset) -> dict[str, str]:
         """코드용 열 별칭 — 그 이름의 자료 정의, 코드로 가리켰으면 그 정의로 이어지는 자료 정의들의 별칭."""
@@ -174,6 +185,10 @@ class Resolver:
         d = self.session.get(Dataset, code)
         if d is not None and d.name:
             out.add(d.name)
+        # 이 정의가 이어받은 예전 코드(자료 없는 같은 자료의 정의) — 그 코드로 고정된 분석 에이전트 흐름 조건 · 계보도 깨운다
+        for x in self.datasets:
+            if x.code != code and x.code not in self.latest and (r := self.resolve(x.code)) is not None and r.code == code:
+                out.add(x.code)
         return out
 
     def status(self) -> list[dict[str, Any]]:

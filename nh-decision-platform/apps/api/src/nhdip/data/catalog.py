@@ -19,6 +19,17 @@ KIND = "dataset"
 RESOURCE = "datasets"
 
 
+COMMON_COLLECTION = "catalog.common"  # 공통 통합 DB 자료 설명 카드(전행 공개, §38 CMN)
+
+
+def _owner_of(session: Session, ds: Dataset) -> str | None:
+    """설명 카드의 소유 팀 — 현재 판의 소유가 하나면 그 팀, 여럿(영업점별 판)이거나 없으면 None."""
+    from .datasets import current_versions
+
+    owners = {v.owner_org for v in current_versions(session, ds)}
+    return next(iter(owners)) if len(owners) == 1 else None
+
+
 def _enabled(session: Session) -> bool:
     st = session.get(Setting, "knowledge.dataset_cards")
     return not (st is not None and st.value is False)
@@ -42,7 +53,7 @@ def card_text(session: Session, ds: Dataset) -> tuple[str, Any, int] | None:
         label = c.get("label") or c.get("name")
         cols.append(f"{label}" + (f"({meaning})" if meaning and meaning != label else ""))
     entity = (prof.semantics or {}).get("entity") if prof is not None else None
-    lines = [f"데이터셋 {ds.name} ({ds.code})", ds.description or "", f"출처: {'당행' if ds.origin == 'bank' else '외부'} · 종류: {'기준(마스터)' if ds.kind == 'master' else '실적'}" + (f" · 행이 가리키는 대상: {entity}" if entity else ""),
+    lines = [f"데이터셋 {ds.name} ({ds.code})" + (" · 공통 통합 DB(전 부서 공통)" if getattr(ds, "common", False) else ""), ds.description or "", f"출처: {'당행' if ds.origin == 'bank' else '외부'} · 종류: {'기준(마스터)' if ds.kind == 'master' else '실적'}" + (f" · 행이 가리키는 대상: {entity}" if entity else ""),
              "열: " + ", ".join(cols[:60])]
     if as_of:
         lines.append(f"기준일: {as_of.isoformat()}")
@@ -69,7 +80,11 @@ def index_dataset_cards(session: Session, codes: list[str] | None = None) -> dic
             continue
         seen.add(key)
         text, as_of, rows = got
-        h = hashlib.sha1(text.encode("utf-8")).hexdigest()[:40]
+        # 열람 권한은 [데이터 목록] 산출물(dataset_meta)과 같은 화면 리소스 — 데이터베이스 화면 권한이 있어야 검색된다.
+        # 공통 통합 DB(§38 CMN)는 전행 공개 컬렉션 — 모든 부서 질의에서 찾는다. 소유 팀은 카드에도 남긴다(ES kb 색인 owner_org)
+        common = bool(getattr(ds, "common", False)) and session.get(KbCollection, COMMON_COLLECTION) is not None
+        owner = None if common else _owner_of(session, ds)
+        h = hashlib.sha1(f"{text}\n{'common' if common else ''}|{owner or ''}".encode("utf-8")).hexdigest()[:40]
         cur = session.execute(select(KbChunk).where(KbChunk.source_key == key)).scalars().all()
         if len(cur) == 1 and cur[0].unit_hash == h:
             out["kept"] += 1
@@ -77,10 +92,9 @@ def index_dataset_cards(session: Session, codes: list[str] | None = None) -> dic
         for c in cur:
             session.delete(c)
         session.flush()
-        # 열람 권한은 [데이터 목록] 산출물(dataset_meta)과 같은 화면 리소스 — 데이터베이스 화면 권한이 있어야 검색된다
-        session.add(KbChunk(collection_code=COLLECTION, source_kind=KIND, source_key=key, unit_hash=h, ordinal=0, title=f"데이터셋 · {ds.name}"[:300], text=text,
-                            required_resource=RESOURCE,
-                            concepts=[], meta={"artifactTitle": ds.name, "dataset": ds.code, "rows": rows, "href": "/knowledge"}, as_of=as_of))
+        session.add(KbChunk(collection_code=COMMON_COLLECTION if common else COLLECTION, source_kind=KIND, source_key=key, unit_hash=h, ordinal=0, title=f"{'공통 · ' if common else ''}데이터셋 · {ds.name}"[:300], text=text,
+                            required_resource=None if common else RESOURCE, owner_org=owner,
+                            concepts=[], meta={"artifactTitle": ds.name, "dataset": ds.code, "rows": rows, "href": "/knowledge", **({"common": True} if common else {})}, as_of=as_of))
         out["inserted"] += 1
     if not codes:
         stale = [k for (k,) in session.execute(select(KbChunk.source_key).where(KbChunk.source_kind == KIND).distinct()).all() if k not in seen]

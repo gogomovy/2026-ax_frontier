@@ -279,6 +279,7 @@ class DatasetIn(BaseModel):
     quality_rules: list[dict[str, Any]] = []
     parser: dict[str, Any] = {}
     active: bool = True
+    common: bool = False  # 공통 통합 DB(§38 CMN) — 모든 부서가 함께 보는 자료, 관리자만 올림
 
 
 def _ds(session: Session, code: str) -> Dataset:
@@ -304,7 +305,7 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True, resolver:
 
     t = source(d.origin)
     res = resolver or Resolver(session)
-    out: dict[str, Any] = {k: getattr(d, k) for k in ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "columns", "key_columns", "as_of_column", "mapping", "quality_rules", "parser", "materialize", "active")}
+    out: dict[str, Any] = {k: getattr(d, k) for k in ("code", "name", "origin", "kind", "description", "file_pattern", "refresh_cycle", "columns", "key_columns", "as_of_column", "mapping", "quality_rules", "parser", "materialize", "active", "common")}
     out["storage"] = f"{d.origin}.row_store"
     # 업무 구성의 자료 이름으로 이 정의를 읽는 지표까지(Phase O)
     out["sources"] = _config_sources(session, d, res)
@@ -333,6 +334,14 @@ def datasets(session: Session = Depends(get_session)):
 
     res = Resolver(session)
     return [_ds_json(session, d, resolver=res) for d in session.execute(select(Dataset).order_by(Dataset.origin, Dataset.code)).scalars()]
+
+
+@router.get("/common-db")
+def common_db_view(session: Session = Depends(get_session)):
+    """공통 통합 DB 요약 (§38 CMN) — 공통 데이터셋 · 공통 문서 수 · 온톨로지 참조 관계(부서 자료 → 공통 개체)."""
+    from nhdip.common_db import summary
+
+    return summary(session)
 
 
 @router.post("/datasets", status_code=201)
@@ -367,11 +376,26 @@ def dataset_patch(code: str, body: dict[str, Any], request: Request, session: Se
         problems = validate_definition(merged)
         if problems:
             raise HTTPException(422, " · ".join(problems[:6]))
+    was_common = bool(getattr(d, "common", False))
     for k, v in patch.items():
-        setattr(d, k, v)
+        setattr(d, k, bool(v) if k == "common" else v)
+    if "common" in patch and bool(patch["common"]) and not was_common:
+        # 공통 통합 DB 로 — 판의 소유 팀을 비운다(전행 공통). 팀 · 영업점 화면 범위에 갈리지 않고 모든 부서가 본다(§38 CMN)
+        from sqlalchemy import update as sql_update
+
+        t = source(d.origin)
+        session.execute(sql_update(t.version).where(t.version.dataset_code == code).values(owner_org=None))
     _config_changed(session, "dataset", code, admin.emp_no)
     audit(session, admin.emp_no, "admin.dataset.update", "dataset", code, patch, client_ip(request))
     session.commit()
+    if "common" in patch and bool(patch["common"]) != was_common:
+        try:
+            from nhdip.data.catalog import index_dataset_cards
+
+            index_dataset_cards(session, [code])  # 설명 카드 컬렉션(공통 · 부서) 맞추기
+            session.commit()
+        except Exception:  # noqa: BLE001 — 카드는 워커 주기가 다시 맞춘다
+            session.rollback()
     return _ds_json(session, d)
 
 

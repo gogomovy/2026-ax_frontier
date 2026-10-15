@@ -113,6 +113,49 @@ def _item(h: dict[str, Any], doc: Any, terms: list[str]) -> dict[str, Any] | Non
     }
 
 
+def run_office(ctx: RunContext) -> str | None:
+    """이 실행의 영업점(영업점 범위 흐름만) — 추가 범위면 범위 값, 아니면 기본 지점. 영업점 흐름이 아니면 None."""
+    from nhdip.scopes import office_scope, scope_spec
+
+    spec = scope_spec(ctx.session, ctx.workflow.code)
+    if not spec or spec.get("name") != "office":
+        return None
+    sfx = getattr(ctx.eval, "scope_suffix", "") or ""
+    return sfx.lstrip("@") or office_scope(ctx.session)[0]
+
+
+def owner_gate(ctx: RunContext):
+    """근거 문서 소유 검사 — 소유 없음(전행 공통 · 공통 통합 DB) · 본부 팀 문서는 모든 흐름, 영업점이 올린 문서는 그 영업점 실행에만(§33 OWN).
+    근거 검색(retrieve_evidence) · 근거 붙이기(attach_evidence)가 같은 규칙을 쓴다 — 다른 영업점 문서가 근거로 새지 않게."""
+    from nhdip.orgs import is_branch, office_code_of
+
+    office = run_office(ctx)
+    cache: dict[str, bool] = {}
+
+    def allowed(doc: Any) -> bool:
+        owner = getattr(doc, "owner_org", None)
+        if not owner:
+            return True
+        if owner not in cache:
+            cache[owner] = is_branch(ctx.session, owner)
+        if not cache[owner]:
+            return True
+        return office is not None and office_code_of(ctx.session, owner) == office
+
+    return allowed
+
+
+def with_common_classes(session: Any, classes: list[str] | None) -> list[str] | None:
+    """흐름의 근거 문서 분류 + 공통 통합 DB 문서 분류(설정 common.doc_classes) — 모든 부서 흐름이 공통 자료를 근거로 본다(§38 CMN).
+    분류를 정하지 않은 흐름(None = 전체)은 그대로."""
+    if not classes:
+        return classes
+    from nhdip.common_db import common_doc_classes
+
+    extra = [c for c in common_doc_classes(session) if c not in classes]
+    return [*classes, *extra] if extra else classes
+
+
 class _Searcher:
     def __init__(self, ctx: RunContext, cfg: dict[str, Any]):
         from nhdip.data.datasets import display_as_of
@@ -123,30 +166,8 @@ class _Searcher:
         self.cache: dict[str, list[dict[str, Any]]] = {}
         self.notes: list[str] = []
         self.calls = 0
-        self.office = self._office()
-        self.branch_owner: dict[str, bool] = {}
-
-    def _office(self) -> str | None:
-        """이 실행의 영업점(영업점 범위 흐름만) — 추가 범위면 범위 값, 아니면 기본 지점."""
-        from nhdip.scopes import office_scope, scope_spec
-
-        spec = scope_spec(self.ctx.session, self.ctx.workflow.code)
-        if not spec or spec.get("name") != "office":
-            return None
-        sfx = getattr(self.ctx.eval, "scope_suffix", "") or ""
-        return sfx.lstrip("@") or office_scope(self.ctx.session)[0]
-
-    def allowed(self, doc: Any) -> bool:
-        from nhdip.orgs import is_branch, office_code_of
-
-        owner = getattr(doc, "owner_org", None)
-        if not owner:
-            return True
-        if owner not in self.branch_owner:
-            self.branch_owner[owner] = is_branch(self.ctx.session, owner)
-        if not self.branch_owner[owner]:
-            return True
-        return self.office is not None and office_code_of(self.ctx.session, owner) == self.office
+        self.office = run_office(ctx)
+        self.allowed = owner_gate(ctx)
 
     def find(self, q: str, k: int) -> list[dict[str, Any]]:
         key = f"{k}|{q}"
@@ -164,7 +185,7 @@ class _Searcher:
                 self.notes.append(f"임베딩 실패 → 키워드 검색만: {str(exc)[:120]}")
                 self.emb = None
         self.calls += 1
-        classes = self.cfg.get("doc_classes") or None
+        classes = with_common_classes(self.ctx.session, self.cfg.get("doc_classes") or None)
         cand = hybrid_search(self.ctx.session, q, query_vec=qvec, doc_classes=classes, k=k * 5, model=model)
         # 질의어 2개 이상이 맞거나(키워드) 의미가 가까운(벡터) 구간만 — 흔한 낱말 하나만 겹친 구간은 근거로 보지 않는다
         need = min(int(self.cfg.get("min_terms", 2)), max(1, len(query_terms(q))))

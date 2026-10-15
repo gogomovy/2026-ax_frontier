@@ -189,7 +189,11 @@ def ingest_document(
     emit_event: bool = True,
     owner_org: str | None = None,
 ):
-    """문서 적재 — owner_org = 자료 소유 조직(올린 팀 · 영업점, 없으면 전행 공통)."""
+    """문서 적재 — owner_org = 자료 소유 조직(올린 팀 · 영업점, 없으면 전행 공통). 공통 통합 DB 문서 분류면 소유 팀 없이(§38 CMN)."""
+    from nhdip.common_db import is_common_doc_class
+
+    if is_common_doc_class(session, doc_class):
+        owner_org = None
     t = source(origin)
     sha = path = mime = None
     meta = dict(meta or {})

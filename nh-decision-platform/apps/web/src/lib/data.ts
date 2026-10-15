@@ -10,6 +10,7 @@ import type {
   AnalysisTab,
   BranchDashboard,
   BranchOfficeList,
+  RegionKpi,
   BranchTabs,
   BranchTarget,
   CapitalView,
@@ -78,6 +79,8 @@ export const getBranchTargets = (): Promise<BranchTarget[]> => api("/screens/bra
 
 /* ── 영업점 (B.29) — 서버가 사용자 영업점과 산출물 영업점을 대조한다 ─────────── */
 export const getBranchOffices = (): Promise<BranchOfficeList> => api("/screens/branch/offices");
+/** 영업본부 통합 업적평가 (§37 RGN) — 지역본부 직원은 자기 지역, 관리자는 region 인자로 고른다 */
+export const getRegionKpi = (region?: string | null): Promise<RegionKpi> => api(`/screens/region/kpi${region ? `?region=${enc(region)}` : ""}`);
 export const getBranchDashboard = (office?: string | null): Promise<BranchDashboard> => api(`/screens/branch/dashboard${officeQs(office)}`);
 export const getBranchTabs = (office?: string | null): Promise<BranchTabs> => api(`/screens/branch/tabs${officeQs(office)}`);
 export const getBranchReport = (tabKey: string, office?: string | null): Promise<ReportDoc | null> => api(`/screens/branch/reports/${enc(tabKey)}${officeQs(office)}`);

@@ -265,9 +265,9 @@ def test_cascade_clears_values_computed_from_the_dataset(db):
             assert s.get(CalcRun, ids["cr_o"]) is not None  # 무관한 지표의 계산 기록은 남는다
             nr = s.execute(select(NodeRun).where(NodeRun.workflow_run_id == ids["run"])).scalars().one()
             assert set(nr.output["values"]) == {"t_defdel_other"} and nr.output["changed"] == {}
-            # 구성 지도 · 그래프 — 꺼진 지표는 넣지 않는다
+            # 구성 지도 · 그래프 — 꺼진 지표는 넣지 않는다. 자료가 없는 데이터셋(NO_SUCH_DS)을 읽는 지표도 넣지 않는다(지운 자료의 군집이 남지 않게)
             got = {(lab[0], k) for lab, items in collect_graph(s).nodes.items() for k in items}
-            assert ("Metric", "t_defdel_sum") not in got and ("Metric", "t_defdel_half") not in got and ("Metric", "t_defdel_other") in got
+            assert ("Metric", "t_defdel_sum") not in got and ("Metric", "t_defdel_half") not in got and ("Metric", "t_defdel_other") not in got
     finally:
         with db() as s:
             for a in s.execute(select(ViewArtifact).where(ViewArtifact.key == ART)).scalars():

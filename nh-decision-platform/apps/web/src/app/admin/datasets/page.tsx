@@ -150,6 +150,8 @@ interface Ds {
   versions: Version[];
   /** 사용/중지 (Phase M · DOB-09) — 중지하면 업로드 대상 · 매칭에서 빠진다 */
   active?: boolean;
+  /** 공통 통합 DB (§38 CMN) — 모든 부서가 함께 보는 자료, 관리자만 올림 · 소유 팀 없음 */
+  common?: boolean;
   /** 이 정의로 이어진 업무 구성의 자료 이름 (Phase O · BIZ-03) — 비면 업무 화면과 이어지지 않은 자료 */
   sources?: string[];
   /** 지우면 끊기는 것 — 비어 있어야 삭제할 수 있다 */
@@ -177,6 +179,68 @@ interface Doc {
   deleteReason?: string | null;
 }
 
+interface CommonDb {
+  datasets: { code: string; name: string; kind: string; versions: number; rows: number; asOf: string | null }[];
+  docClasses: string[];
+  documents: number;
+  references: { type: string; ko?: string; to: string; datasets: string[] }[];
+}
+
+/** 공통 통합 DB (§38 CMN) — 모든 부서가 함께 보는 자료. 관리자만 올리고, 온톨로지 참조 관계로 부서 자료와 이어진다 */
+function CommonDbCard({ onPick }: { onPick: (code: string) => void }) {
+  const data = useApiData<CommonDb>("/admin/common-db");
+  const d = data.data;
+  return (
+    <Card title="공통 통합 DB" actions={<Badge tone="primary">관리자만 올림 · 전 부서 공통</Badge>}>
+      <p className="mb-md text-[12.5px] text-steel">
+        종기부 · 사업부서 · 영업본부 · 영업점이 함께 보는 기준 자료입니다. 데이터셋은 [정의 관리]의 &apos;공통 통합 DB&apos;를 켜고, 문서는 [문서] 탭에서 분류 &apos;공통 통합 자료&apos;로 올립니다. 올린 판의 소유 팀은 비고(전행
+        공통), 모든 부서 흐름의 근거 검색 · 질의에 함께 쓰입니다. 다른 부서 자료의 열이 공통 자료의 키(상품코드 · 사무소코드 등)를 가리키면 온톨로지 구축 에이전트가 참조 관계를 제안합니다([온톨로지 › 변경 제안]에서 승인).
+      </p>
+      {!d ? null : (
+        <div className="grid grid-cols-1 gap-md md:grid-cols-3" data-common-db>
+          <div>
+            <p className="mb-1 text-[12px] font-bold text-steel">공통 데이터셋 {d.datasets.length}개</p>
+            {d.datasets.length ? (
+              <ul className="flex flex-col gap-0.5 text-[12.5px]">
+                {d.datasets.map((x) => (
+                  <li key={x.code}>
+                    <button type="button" className="font-bold text-primary-text hover:underline" onClick={() => onPick(x.code)}>
+                      {x.name}
+                    </button>{" "}
+                    <span className="text-stone">
+                      · 현재 판 {x.versions} · {x.rows.toLocaleString("ko-KR")}행{x.asOf ? ` · ${x.asOf}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-stone">아직 없습니다 — 아래 목록에서 데이터셋을 열고 [정의 관리]에서 켭니다.</p>
+            )}
+          </div>
+          <div>
+            <p className="mb-1 text-[12px] font-bold text-steel">공통 문서 {d.documents}건</p>
+            <p className="text-[12px] text-stone">분류: {d.docClasses.join(", ") || "–"}</p>
+          </div>
+          <div>
+            <p className="mb-1 text-[12px] font-bold text-steel">온톨로지 참조 관계 {d.references.length}개</p>
+            {d.references.length ? (
+              <ul className="flex flex-col gap-0.5 text-[12px]">
+                {d.references.map((r) => (
+                  <li key={r.type}>
+                    <span className="font-mono text-[11px]">{r.type}</span> → {r.to} <span className="text-stone">· 부서 자료 {r.datasets.length}개</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-stone">승인된 참조 관계가 없습니다.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /** 데이터셋 정의 · 당행/외부 업로드 · 버전 · 롤백 · 품질 / 문서 업로드 · 구조화 (ADM-08, ING-01~07) */
 export default function DatasetsAdmin() {
   const [tab, setTab] = useState<"intake" | "datasets" | "documents">("datasets");
@@ -196,7 +260,7 @@ function Datasets() {
   const data = useApiData<Ds[]>("/admin/datasets");
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState("");
-  const [org, setOrg] = useState<"all" | "bank" | "ext">("all");
+  const [org, setOrg] = useState<"all" | "bank" | "ext" | "common">("all");
   // 머리 '파일로 업로드' 에서 고른 파일 — 데이터셋을 열면 상세 양식에 채운다 (Phase E · UXF-03)
   const [drop, setDrop] = useState<File | null>(null);
   const [openFile, setOpenFile] = useState<File | null>(null);
@@ -258,12 +322,13 @@ function Datasets() {
     // 맞는 정의가 없으면 바로 파일에서 정의를 만들어 보여 준다(M.24) — 정의를 미리 만들어 둘 필요가 없다
     else setCreating(true);
   };
-  const list = all.filter((d) => (org === "all" || d.origin === org) && (!q || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(q.toLowerCase())));
+  const list = all.filter((d) => (org === "all" || (org === "common" ? d.common : d.origin === org)) && (!q || `${d.code} ${d.name} ${d.description}`.toLowerCase().includes(q.toLowerCase())));
   const warn = all.filter((d) => d.versions.some((v) => v.isCurrent && v.quality.status && !["passed", "ok"].includes(v.quality.status))).length;
   const empty = all.filter((d) => !d.versions.some((v) => v.isCurrent)).length;
   const sim = all.filter((d) => d.versions.some((v) => v.isCurrent && v.dataOrigin !== "actual")).length;
   return (
     <>
+      <CommonDbCard onPick={(code) => open(code, null)} />
       <div className="mb-lg">
         <StatGrid columns={4} label="데이터셋 요약">
           <StatCard label="데이터셋" value={all.length || "-"} unit="개" hint={`당행 ${all.filter((d) => d.origin === "bank").length} · 외부 ${all.filter((d) => d.origin === "ext").length}`} />
@@ -339,7 +404,7 @@ function Datasets() {
         actions={
           <>
             <TextInput ariaLabel="데이터셋 찾기" placeholder="코드 · 이름 · 설명" value={q} onChange={setQ} className="w-[240px]" />
-            <PillTabs size="sm" label="출처" value={org} onChange={setOrg} items={[{ key: "all", label: "전체" }, { key: "bank", label: "당행" }, { key: "ext", label: "외부" }]} />
+            <PillTabs size="sm" label="출처" value={org} onChange={setOrg} items={[{ key: "all", label: "전체" }, { key: "bank", label: "당행" }, { key: "ext", label: "외부" }, { key: "common", label: "공통 통합 DB" }]} />
           </>
         }
       >
@@ -359,6 +424,11 @@ function Datasets() {
                 <C>
                   <span className="font-bold text-ink-deep">{d.name}</span>
                   {d.active === false ? <Badge tone="neutral" className="ml-1">중지</Badge> : null}
+                  {d.common ? (
+                    <Badge tone="primary" className="ml-1">
+                      공통 통합 DB
+                    </Badge>
+                  ) : null}
                   {d.sources?.length ? (
                     <Badge tone="info" className="ml-1">
                       업무 구성 자료 · {d.sources[0]}
@@ -555,6 +625,26 @@ function DefinitionManage({ ds, reload }: { ds: Ds; reload: () => Promise<void> 
       </p>
       <div className="flex flex-wrap items-center gap-xs">
         <Check label={active ? "사용 중" : "중지됨"} checked={active} disabled={busy} onChange={(v) => run(() => apiPatch(`/admin/datasets/${ds.code}`, { active: v }), v ? "정의를 다시 사용합니다" : "정의를 중지했습니다", reload)} />
+        <Check
+          label="공통 통합 DB"
+          checked={!!ds.common}
+          disabled={busy}
+          onChange={async (v) => {
+            if (v) {
+              const ok = await confirm({
+                title: `${ds.name} 을(를) 공통 통합 DB 로 둘까요?`,
+                body: (
+                  <p>
+                    모든 부서(종기부 · 사업부서 · 영업본부 · 영업점)가 함께 보는 자료가 됩니다. 올린 판의 소유 팀은 비워지고(전행 공통), 앞으로는 관리자만 올릴 수 있습니다. 온톨로지 구축 에이전트가 이 자료를 가리키는 다른 부서 자료와의 참조 관계를 제안합니다.
+                  </p>
+                ),
+                confirmLabel: "공통으로",
+              });
+              if (!ok) return;
+            }
+            await run(() => apiPatch(`/admin/datasets/${ds.code}`, { common: v }), v ? "공통 통합 DB 로 두었습니다 — 온톨로지 구축이 참조 관계를 다시 찾습니다" : "부서 자료로 되돌렸습니다", reload);
+          }}
+        />
         {refs.length && isDataAdmin ? (
           <Button size="sm" variant="danger" disabled={busy || del.busy} onClick={() => del.deleteDefinition(ds, reload)} data-dataset-delete-cascade>
             연결까지 정의 삭제
@@ -829,7 +919,7 @@ function Documents() {
       <Card title="문서 등록">
         <div className="grid grid-cols-1 gap-md md:grid-cols-6">
           <Select label="출처" value={f.origin} onChange={(v) => setF({ ...f, origin: v })} options={[{ value: "ext", label: "외부 문서" }, { value: "bank", label: "당행 문서" }]} />
-          <Select label="문서 분류 DB" value={f.doc_class} onChange={(v) => setF({ ...f, doc_class: v })} options={[{ value: "gov_policy", label: "정부정책" }, { value: "mgmt_decision", label: "경영 의사결정" }, { value: "model_method", label: "모형·방법론" }, { value: "branch_ref", label: "영업점 기준·공문" }, { value: "reference", label: "참고" }]} />
+          <Select label="문서 분류 DB" value={f.doc_class} onChange={(v) => setF({ ...f, doc_class: v })} options={[{ value: "gov_policy", label: "정부정책" }, { value: "mgmt_decision", label: "경영 의사결정" }, { value: "model_method", label: "모형·방법론" }, { value: "branch_ref", label: "영업점 기준·공문" }, { value: "reference", label: "참고" }, { value: "common_ref", label: "공통 통합 자료(전 부서)" }]} />
           <TextInput label="제목" value={f.title} onChange={(v) => setF({ ...f, title: v })} className="md:col-span-2" />
           <TextInput label="발행 기관" value={f.issuer} onChange={(v) => setF({ ...f, issuer: v })} />
           <TextInput label="시행일" type="date" value={f.published_at} onChange={(v) => setF({ ...f, published_at: v })} />
