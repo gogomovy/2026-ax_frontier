@@ -71,17 +71,52 @@ def test_infer_empty_and_bad_inputs():
         infer_definition(MONTHLY, "x.csv", origin="zzz")
 
 
-def test_infer_rejects_original_report_form(monkeypatch):
-    """원본 보고서 양식(2633 · 2020 · 7790)은 새 데이터셋이 아니라 기존 데이터셋에 올리게 안내한다."""
-    import nhdip.data.adapters as ad
+def _report_files() -> dict[str, bytes]:
+    """업무 보고서 양식 3종(다단 머리글 · 들여쓰기 계층 · 월 열) — 시연 자료 생성기와 같은 모양."""
+    from nhdip.sample import excel as X
 
-    class Fake:
-        report_code, dataset = "7790", "PROVISION_BY_PRODUCT"
+    tree = [("대출금", 0, [100.0, 110.0, 120.0]), ("기업자금대출금", 1, [60.0, 65.0, 70.0]), ("가계자금대출금", 1, [40.0, 45.0, 50.0]), ("종합계", 0, [100.0, 110.0, 120.0])]
+    items = [("총수익", 0, 4800.0, 4600.0), ("이자수익", 1, 2800.0, None), ("대출금이자수익", 2, 2200.0, None), ("여신(일반)부문 이자마진 수익", 0, 2100.0, 2000.0)]
+    prods = [{"code": "2001101010001", "name": "주택담보대출", "borrowers": 120, "provision": 105.0}, {"code": "2001109670002", "name": "햇살론", "borrowers": 40, "provision": 29.0}]
+    return {
+        "(202603)2020 과목별 월별 여신현황.xlsx": X.report_2020(2026, 3, tree, base_date="2026-03-31"),
+        "(202608)2633_상품부문별손익계산서.xlsx": X.report_2633("202608", items),
+        "(202608)7790_상품별_충당금.xlsx": X.report_7790("202608", prods, 134.0),
+    }
 
-    monkeypatch.setattr(ad, "load_sheets", lambda c: ["s"])
-    monkeypatch.setattr(ad, "detect", lambda s, f: (Fake(), 90))
-    with pytest.raises(InferError, match="PROVISION_BY_PRODUCT"):
-        infer_definition(b"PK\x03\x04", "7790_202608.xlsx")
+
+def test_infer_report_forms_build_structure_from_the_file():
+    """정해 둔 양식 · 데이터셋 코드 없이 — 보고서 양식 파일도 파일 모양에서 구조를 만든다(M.25 · DOB-19).
+    예전에는 '원본 보고서 양식입니다 — 기존 데이터셋 LOAN_BALANCE_MONTHLY 에 올려 주세요' 로 막혔다."""
+    f = _report_files()
+    d20 = infer_definition(f["(202603)2020 과목별 월별 여신현황.xlsx"], "(202603)2020 과목별 월별 여신현황.xlsx")
+    c20 = _by_label(d20)
+    assert d20["parser"] == {"layout": "report"} and set(c20) == {"기준년월", "과목구분", "상위 항목", "수준", "계리잔액"}
+    assert d20["as_of_column"] == c20["기준년월"]["name"] and c20["계리잔액"]["type"] in ("num", "int")
+    assert d20["code"].startswith("DS_") and "LOAN_BALANCE" not in d20["code"] and any("보고서 양식" in n for n in d20["notes"])
+    d33 = infer_definition(f["(202608)2633_상품부문별손익계산서.xlsx"], "(202608)2633_상품부문별손익계산서.xlsx")
+    c33 = _by_label(d33)
+    assert {"기준년월", "항목명", "상위 항목", "기준월 누계"} <= set(c33) and "8월 누계" not in c33  # 달마다 열 이름이 바뀌지 않게
+    d79 = infer_definition(f["(202608)7790_상품별_충당금.xlsx"], "(202608)7790_상품별_충당금.xlsx")
+    c79 = _by_label(d79)
+    assert {"상품코드", "손실충당금 대출채권", "손실충당금 및 충당부채 총계", "합계 행"} <= set(c79)  # 다단 머리글을 합친 열 이름
+    assert c79["상품코드"]["type"] == "str"  # 숫자로 된 코드는 코드(글자)로
+
+
+def test_report_form_rows_store_through_generic_reader():
+    """만든 정의로 같은 파일을 읽으면 행이 그대로 들어간다 — 원본 양식 어댑터(정해 둔 열)를 쓰지 않는다."""
+    from types import SimpleNamespace
+
+    from nhdip.data.datasets import _read_any, map_rows
+
+    name, content = next(iter(_report_files().items()))
+    d = infer_definition(content, name)
+    ds = SimpleNamespace(**{**d, "mapping": {}})
+    raw, src = _read_any(content, name, ds)
+    rows, errors = map_rows(ds, raw)
+    assert src["layout"] == "report" and not errors and len(rows) == 12  # 과목 4개 × 3개월
+    by = {(r[_by_label(d)["기준년월"]["name"]], r[_by_label(d)["과목구분"]["name"]]): r for r in rows}
+    assert by[("202602", "기업자금대출금")][_by_label(d)["계리잔액"]["name"]] == 65.0 and by[("202602", "기업자금대출금")][_by_label(d)["상위 항목"]["name"]] == "대출금"
 
 
 def test_infer_xlsx_header_not_on_first_row():

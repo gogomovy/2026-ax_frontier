@@ -50,3 +50,40 @@ def test_existing_db_cleared_once_keeps_admin_values(db, monkeypatch):
             assert "contract_mock_values" not in out2
         finally:
             s.rollback()  # 다른 시험이 정의서 화면값 대조를 쓴다
+
+
+def test_seed_contracts_removed_once_keeps_admin_workbook(db, monkeypatch):
+    """M.25 (SEED-13 · Q213) — 시드로 들어간 컬럼 정의서 3종은 1회 지우고, 관리자가 올린 정의서는 남긴다. SEED_COLUMN_CONTRACTS=1 이면 하지 않는다."""
+    from sqlalchemy import func
+
+    from nhdip.models import ColumnContract, Setting
+    from nhdip.seed import run as seed_run
+
+    def count(s, seeded: bool) -> int:
+        cond = ColumnContract.workbook.in_(seed_run.SEED_WORKBOOKS)
+        return int(s.execute(select(func.count()).select_from(ColumnContract).where(cond if seeded else ~cond)).scalar() or 0)
+
+    with db() as s:
+        try:
+            st = s.get(Setting, "seed.applied_upgrades")
+            st.value = [x for x in st.value if x != "seed-contracts-remove-v1"]
+            s.add(ColumnContract(table_code="ADM01", table_name="관리자 정의서", dept="영업점", seq=1, column_name="A", kor_name="가", workbook="관리자_정의서.xlsx"))
+            s.flush()
+            seeded, admin = count(s, True), count(s, False)
+            assert seeded > 0 and admin >= 1
+            monkeypatch.setenv("SEED_COLUMN_CONTRACTS", "1")  # 시험 · 시연 스택 — 지우지 않는다
+            out: dict = {}
+            seed_run.seed_contracts_remove_upgrade(s, out)
+            assert "seed_contracts_removed" not in out and count(s, True) == seeded
+            monkeypatch.setenv("SEED_COLUMN_CONTRACTS", "0")
+            seed_run.seed_contracts_remove_upgrade(s, out)
+            assert out["seed_contracts_removed"]["columns"] == seeded and out["seed_contracts_removed"]["tables"]
+            assert count(s, True) == 0 and count(s, False) == admin
+            assert seed_run.seed_flag("SEED_DATASET_DEFS") is True  # conftest — 시험 DB 만 1
+            monkeypatch.delenv("SEED_COLUMN_CONTRACTS")
+            assert seed_run.seed_flag("SEED_COLUMN_CONTRACTS") is False  # 기본은 넣지 않음
+            out2: dict = {}
+            seed_run.seed_contracts_remove_upgrade(s, out2)
+            assert "seed_contracts_removed" not in out2  # 1회만
+        finally:
+            s.rollback()  # 다른 시험이 시드 정의서를 쓴다

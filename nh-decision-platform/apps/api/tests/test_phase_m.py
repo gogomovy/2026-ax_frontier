@@ -383,6 +383,8 @@ def test_dataset_definition_delete_guard_and_seed_suppression(db, iw):
             mp.setenv("SEED_DATASET_DEFS", "0")
             assert seed_run.seed_dataset_defs(s) == []
             mp.delenv("SEED_DATASET_DEFS")
+            assert seed_run.seed_dataset_defs(s) == []  # 기본값은 넣지 않음(SEED-13 — 미리 정한 구조 없음)
+            mp.setenv("SEED_DATASET_DEFS", "1")
             assert seed_run.seed_dataset_defs(s) == ["PHASE_M_SEED_FAKE"]
             s.rollback()  # 시험용 변경은 모두 되돌린다
     finally:

@@ -142,6 +142,12 @@ def _read(content: bytes, filename: str) -> tuple[list[dict[str, Any]], dict[str
     name = filename.lower()
     parser: dict[str, Any] = {}
     if name.endswith((".xlsx", ".xlsm")):
+        # 업무 보고서 양식(다단 머리글 · 들여쓰기 계층 · 월 열)이면 파일 모양에서 구조를 만든다 — 미리 정한 양식 · 코드 없음 (M.25 · DOB-19)
+        from .layout import read_report
+
+        rep = read_report(content, filename)
+        if rep is not None:
+            return rep.rows, {"layout": "report", "_notes": rep.info.get("notes") or []}
         try:
             import openpyxl
 
@@ -173,18 +179,7 @@ def _read(content: bytes, filename: str) -> tuple[list[dict[str, Any]], dict[str
     return rows, parser
 
 
-def _reject_report_form(content: bytes, filename: str) -> None:
-    """원본 보고서 양식은 어댑터가 읽는다 — 새 데이터셋이 아니라 기존 데이터셋에 올리게 안내."""
-    if not filename.lower().endswith(".xlsx"):
-        return
-    try:
-        from nhdip.data.adapters import detect, load_sheets
 
-        adapter, _ = detect(load_sheets(content), filename)
-    except Exception:  # noqa: BLE001 — 판별 실패는 일반 표로 읽는다
-        return
-    if adapter is not None:
-        raise InferError(f"이 파일은 원본 보고서 양식({adapter.report_code})입니다 — 새 데이터셋을 만들지 말고 기존 데이터셋 {adapter.dataset} 에 올려 주세요")
 
 
 # ═════════════════════════ 정의 추론 ═════════════════════════
@@ -238,8 +233,8 @@ def infer_definition(content: bytes, filename: str, *, code: str | None = None, 
     """새 파일 → 데이터셋 정의 초안(`DatasetIn` 모양) + 사람이 확인할 안내(notes) + 열별 예시값(samples). 저장하지 않는다."""
     if origin not in ("bank", "ext"):
         raise InferError("origin 은 bank(당행) | ext(외부)")
-    _reject_report_form(content, filename)
     raw, parser = _read(content, filename)
+    layout_notes = list(parser.pop("_notes", []) or [])
     if not raw:
         raise InferError("읽을 행이 없습니다 — 첫 줄(또는 제목 줄 아래)에 머리글이 있는 표인지 확인하세요")
     raw = raw[:SCAN_ROWS]
@@ -250,7 +245,7 @@ def infer_definition(content: bytes, filename: str, *, code: str | None = None, 
         raise InferError(f"열이 너무 많습니다({len(headers)}개, 최대 {MAX_COLUMNS}개)")
     used: set[str] = set()
     cols: list[dict[str, Any]] = []
-    notes: list[str] = []
+    notes: list[str] = layout_notes
     ym_idx: list[int] = []
     date_idx: list[int] = []
     for i, h in enumerate(headers):
@@ -313,7 +308,6 @@ def infer_definition(content: bytes, filename: str, *, code: str | None = None, 
 # ═════════════════════════ 기존 데이터셋에 새 열 ═════════════════════════
 def infer_new_columns(ds: Any, content: bytes, filename: str) -> dict[str, Any]:
     """기존 데이터셋 + 새 파일 → 정의에 없어 저장되지 않던 열을 새 열 후보로. 기존 열은 그대로 두고 새 열은 선택(필수 아님)으로만 더한다."""
-    _reject_report_form(content, filename)
     raw, _ = _read(content, filename)
     if not raw:
         raise InferError("읽을 행이 없습니다")

@@ -106,11 +106,17 @@ def seed_iam(s: Session, out: dict[str, Any]) -> None:
     out["iam"] = n
 
 
+def seed_flag(name: str) -> bool:
+    """시연 · 시험용 시드 묶음을 넣을지 — 기본은 넣지 않는다(M.25 · Q213: 미리 정한 데이터셋 정의 · 컬럼 정의서 없음).
+    SEED_DATASET_DEFS(업무 화면 연결 데이터셋 정의) · SEED_COLUMN_CONTRACTS(컬럼 정의서) — 시험 DB(conftest) · CI 시험 스택만 1."""
+    return os.environ.get(name, "0").strip().lower() in ("1", "true", "yes")
+
+
 def seed_dataset_defs(s: Session) -> list[str]:
     """업무 화면 연결 정의(Phase M · DOB-09 · Q194) — 없는 정의만 넣는다. SEED_DATASET_DEFS=0 이면 넣지 않고(빈 카탈로그로 시작),
     관리자가 지운 정의(설정 seed.suppressed_datasets)는 되살리지 않는다. 넣은 코드를 돌려준다."""
-    if os.environ.get("SEED_DATASET_DEFS", "1").strip().lower() in ("0", "false", "no"):
-        return []
+    if not seed_flag("SEED_DATASET_DEFS"):
+        return []  # 기본(M.25 · Q213) — 미리 정한 데이터셋 정의를 넣지 않는다. 정의는 올린 파일에서 만들어진다
     sup = s.get(Setting, "seed.suppressed_datasets")
     suppressed = set(sup.value) if sup is not None and isinstance(sup.value, list) else set()
     added = []
@@ -337,6 +343,9 @@ def seed_contracts(s: Session, out: dict[str, Any]) -> None:
     from nhdip.contracts.materialize import import_workbook
     from nhdip.models import ColumnContract
 
+    if not seed_flag("SEED_COLUMN_CONTRACTS"):
+        out["contracts"] = "off"  # 미리 정한 컬럼 정의서를 넣지 않는다(M.25) — 관리자가 [컬럼 정의서]에서 자기 정의서를 올릴 수는 있다
+        return
     if s.execute(select(ColumnContract.id).limit(1)).first():
         # 결정 반영(추천안) — 연결이 이전 기본값 그대로인 컬럼만 새 기본값으로
         n = 0
@@ -687,6 +696,8 @@ def dept_contracts_upgrade(s: Session, out: dict[str, Any], first: bool) -> None
     from nhdip.models import ColumnContract, WorkflowNode
     from nhdip.seed import defs_dept_contracts as DD
 
+    if not seed_flag("SEED_COLUMN_CONTRACTS"):
+        return  # 미리 정한 컬럼 정의서 없음(M.25) — 켜면 다음 기동에 넣는다(1회 표시를 남기지 않음)
     up = 0
     for key, olds in DD.BINDING_UPGRADES.items():
         t, col = key.split(".", 1)
@@ -733,6 +744,26 @@ def dept_contracts_upgrade(s: Session, out: dict[str, Any], first: bool) -> None
         for wf in DD.WORKFLOW_TABLES:
             emit(s, "manual", {"workflow": wf, "reason": "사업부서 · 영업점 컬럼 정의서 반영 후 적재"}, "seed")
     out["dept_contracts_upgrade"] = done
+
+
+SEED_WORKBOOKS = ("TalkFile_종기부_컬럼정의서(컬럼기준)_v2.xlsx", "TalkFile_사업부서_컬럼정의서_컬럼기준_v1.xlsx", "TalkFile_영업점_컬럼정의서_컬럼기준_v1.xlsx")
+
+
+def seed_contracts_remove_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """M.25 (Q213) — 운영 DB 에 시드로 들어간 컬럼 정의서(종기부 · 사업부서 · 영업점 시연 정의서 3종)를 지운다(1회).
+    관리자가 [컬럼 정의서]에서 올린 정의서(다른 파일 이름)는 그대로 둔다. SEED_COLUMN_CONTRACTS=1(시험 · 시연)이면 하지 않는다."""
+    from sqlalchemy import delete as sql_delete
+
+    from nhdip.models import ColumnContract
+
+    if seed_flag("SEED_COLUMN_CONTRACTS") or _applied(s, "seed-contracts-remove-v1"):
+        return
+    tables = sorted({c for c in s.execute(select(ColumnContract.table_code).where(ColumnContract.workbook.in_(SEED_WORKBOOKS))).scalars()})
+    n = int(s.execute(sql_delete(ColumnContract).where(ColumnContract.workbook.in_(SEED_WORKBOOKS))).rowcount or 0)
+    s.flush()
+    if n:
+        audit(s, "seed", "contracts.seed_removed", "column_contract", None, {"columns": n, "tables": tables, "workbooks": list(SEED_WORKBOOKS)})
+    out["seed_contracts_removed"] = {"columns": n, "tables": tables}
 
 
 def contract_mock_values_upgrade(s: Session, out: dict[str, Any]) -> None:
@@ -1191,6 +1222,7 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:
     hardening_upgrade(s, out)
     s.flush()
     dept_contracts_upgrade(s, out, first)
+    seed_contracts_remove_upgrade(s, out)
     contract_mock_values_upgrade(s, out)
     score_snapshot_upgrade(s, out)
     ontology_extraction_upgrade(s, out)

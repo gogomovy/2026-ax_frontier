@@ -311,3 +311,29 @@ def test_admin_create_and_upload_is_one_step(db, world):
     assert r.status_code == 201, r.text
     assert r.json()["dataset"] == "TEST_NEWDS_ONESTEP" and r.json()["status"] == "committed" and r.json()["rows"] == 6
     assert admin.post("/admin/datasets/create-upload", data={"definition": json.dumps(defn)}, files=_files("x.csv", MONTHLY)).status_code == 409
+
+
+def test_report_form_file_without_definition_is_structured_from_the_file(db, world):
+    """정의 없는 업무 보고서 양식(월 열 · 들여쓰기 계층) — 미리 정한 양식 · 데이터셋 코드 없이 파일 모양에서 정의를 만들어 요청 → 승인 → 저장 (M.25 · DOB-19).
+    예전에는 '원본 보고서 양식입니다 — 기존 데이터셋 LOAN_BALANCE_MONTHLY 에 올려 주세요' 로 막혔다."""
+    from nhdip.models import Dataset, source
+    from nhdip.sample import excel as X
+
+    req, stw = world["req"], world["stw"]
+    tree = [("대출금", 0, [100.0, 110.0]), ("기업자금대출금", 1, [60.0, 65.0]), ("가계자금대출금", 1, [40.0, 45.0])]
+    content = X.report_2020(2026, 2, tree, base_date="2026-02-28")
+    name = "(202602)과목별 여신 보고서.xlsx"
+    r = req.post("/db/uploads/dataset", data={"data_origin": "simulated"}, files={"file": (name, io.BytesIO(content), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert r.status_code == 201, r.text
+    j = r.json()
+    prop = j["meta"]["proposal"]
+    assert prop["parser"] == {"layout": "report"} and {c["label"] for c in prop["columns"]} >= {"기준년월", "과목구분", "상위 항목", "계리잔액"}
+    ok = stw.post(f"/db/uploads/{j['id']}/approve", json={"note": "보고서 양식 승인"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["result"]["status"] == "committed" and ok.json()["result"]["rows"] == 6
+    with db() as s:
+        ds = s.get(Dataset, j["target"])
+        t = source("bank")
+        rows = [x.data for x in s.execute(select(t.row).where(t.row.dataset_code == ds.code)).scalars()]
+    by_label = {c["label"]: c["name"] for c in ds.columns}
+    assert {(x[by_label["기준년월"]], x[by_label["과목구분"]], x[by_label["상위 항목"]]) for x in rows} >= {("202602", "기업자금대출금", "대출금")}

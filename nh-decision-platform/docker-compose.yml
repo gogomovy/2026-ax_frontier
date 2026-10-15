@@ -210,8 +210,10 @@ services:
       RUN_MIGRATIONS: "1"
       SEED_ON_START: "1"
       # 기동 때 업무 자료를 넣는 설정은 없다(M.20 · Q206 — 예전 LOAD_SAMPLE_ON_START 는 읽지 않음). 시드는 정의 · 값 없는 화면 틀만
-      # 업무 화면 연결 데이터셋 정의 시드(Phase M · Q194) — 1(기본) = 없는 정의만 넣음(지운 정의는 되살리지 않음), 0 = 정의 없이 빈 카탈로그로 시작
-      SEED_DATASET_DEFS: ${SEED_DATASET_DEFS:-1}
+      # 미리 정한 구조 시드(M.25 · Q213) — 0(기본) = 넣지 않음: 데이터셋 정의 · 컬럼 정의서는 올린 파일에서 만들어진다.
+      # 1 = 시연 · 시험 스택용(업무 화면 연결 정의 · 시연 컬럼 정의서). 운영 DB 에 시드로 들어간 컬럼 정의서는 0 일 때 1회 지운다
+      SEED_DATASET_DEFS: ${SEED_DATASET_DEFS:-0}
+      SEED_COLUMN_CONTRACTS: ${SEED_COLUMN_CONTRACTS:-0}
       # 컬럼 정의서 시연 화면값(목업값) 시드(M.22 · Q209) — 0(기본) = 넣지 않음(운영 DB 는 1회 비움), 1 = 시연 수치 대조용으로 넣음
       SEED_CONTRACT_EXPECTED: ${SEED_CONTRACT_EXPECTED:-0}
       # API 전용 DB 계정 (B.33) — 데이터 조작만 가능, 감사 로그는 조회 · 추가만. 비우면 소유자 계정으로 접속

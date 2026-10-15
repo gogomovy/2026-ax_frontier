@@ -52,6 +52,9 @@ jobs:
           BOOTSTRAP_ADMIN_PASSWORD: Selftest1234!
           FILESTORE_DIR: /tmp/nhdip-selftest-files
           NHDIP_USE_APP_ROLE: "0"
+          SEED_DATASET_DEFS: "1"  # 시험 스택만 시연 정의 · 정의서를 넣는다(M.25 — 플랫폼 기본은 넣지 않음)
+          SEED_COLUMN_CONTRACTS: "1"
+          SEED_CONTRACT_EXPECTED: "1"
         run: |
           python -c "import psycopg; c = psycopg.connect('postgresql://nhdip:nhdip@localhost:5432/nhdip', autocommit=True); c.execute('DROP DATABASE IF EXISTS nhdip_selftest WITH (FORCE)'); c.execute('CREATE DATABASE nhdip_selftest')"
           alembic upgrade head
@@ -91,8 +94,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: .env (비밀값 자동 생성)
-        run: bash infra/scripts/ensure-env.sh
+      - name: .env (비밀값 자동 생성 · 시험 스택은 시연 정의 · 정의서 시드)
+        run: |
+          bash infra/scripts/ensure-env.sh
+          bash infra/scripts/set-env.sh SEED_DATASET_DEFS 1
+          bash infra/scripts/set-env.sh SEED_COLUMN_CONTRACTS 1
+          bash infra/scripts/set-env.sh SEED_CONTRACT_EXPECTED 1
       - name: Elasticsearch 커널 설정 (vm.max_map_count — 3-way 검색 엔진) · 디스크 확보(쓰지 않는 도구 정리)
         run: |
           sudo sysctl -w vm.max_map_count=262144

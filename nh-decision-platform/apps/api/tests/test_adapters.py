@@ -141,8 +141,12 @@ def test_7790_total_header_total_row_and_fallback_column():
 
 
 def test_detection_wrong_dataset_and_tidy_fallback():
-    with pytest.raises(AdapterError, match="LOAN_BALANCE_MONTHLY"):
-        parse_report(wb_2020(), "(202608)2020.xlsx", "PROVISION_BY_PRODUCT", {})
+    # 어댑터를 명시하지 않은 정의(파일에서 만든 정의)는 원본 양식 어댑터를 쓰지 않는다 — 보고서 양식은 layout 이 읽는다(M.25)
+    assert parse_report(wb_2020(), "(202608)2020.xlsx", "PROVISION_BY_PRODUCT", {}) is None
+    # 명시한 정의에 다른 양식이 오면 막되, 특정 데이터셋을 가리키지 않는다
+    with pytest.raises(AdapterError, match="다른 원본 양식") as e:
+        parse_report(wb_2020(), "(202608)2020.xlsx", "PROVISION_BY_PRODUCT", {"adapter": "auto"})
+    assert "LOAN_BALANCE_MONTHLY" not in str(e.value)
 
     def tidy(ws):
         ws.append(["ym", "account_code", "account_name", "balance"])

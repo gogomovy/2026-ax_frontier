@@ -53,6 +53,12 @@ def match_datasets(session: Session, filename: str, headers: list[str]) -> list[
             if hit:
                 score += 0.4 * ratio
                 why.append(f"머리글 {hit}개 일치")
+            # 열 구성이 거의 같으면(양쪽 90% 이상) 같은 자료 — 파일 이름이 달라도(예: 기준분포 · 모니터링 집계) 새 자료를 만들지 않게 (M.25)
+            names = {_norm(c.get("name")) for c in d.columns or []} | {_norm(c.get("label")) for c in d.columns or [] if c.get("label")}
+            own = {h for h in hs if h in names}
+            if d.columns and len(own) >= 0.9 * len(hs) and len(own) >= 0.9 * len(d.columns):
+                score += 0.3
+                why.append("열 구성이 같음")
         if score > 0:
             out.append({"code": d.code, "name": d.name, "origin": d.origin, "score": round(score, 3), "why": why})
     return sorted(out, key=lambda x: -x["score"])[:3]

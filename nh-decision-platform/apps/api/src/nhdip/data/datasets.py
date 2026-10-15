@@ -233,8 +233,8 @@ def with_new_columns(session: Session | None, ds: Dataset, raw_rows: list[dict[s
 
     from .infer import validate_definition
 
-    if source is not None or not ds.columns or not auto_columns_on(session):
-        return ds, []
+    if (source or {}).get("adapter") or not ds.columns or not auto_columns_on(session):
+        return ds, []  # 예전 원본 양식 어댑터는 열이 그 정의에 맞춰 정해져 있다 — 보고서 양식 읽기(layout)는 새 열을 더한다
     new = new_columns_from(ds, raw_rows)
     if not new:
         return ds, []
@@ -474,19 +474,30 @@ def ingest_rows(
 
 
 def _read_any(content: bytes, filename: str, ds: Dataset) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """원본 보고서 양식(2633 · 2020 · 7790)이면 어댑터로, 아니면 일반 표 파서로 읽는다 (1.3.2)."""
-    if filename.lower().endswith(".xlsx"):
-        from .adapters import AdapterError, parse_report
+    """파일 → 원본 행. 읽는 방법은 정의의 parser 가 정한다(파일에서 정의를 만들 때 정해짐):
+      layout=report   업무 보고서 양식(다단 머리글 · 계층 · 월 열) — 파일 모양에서 구조를 만든다(data/layout.py, 정한 양식 · 코드 없음 · M.25)
+      adapter=…       예전 정의가 명시한 원본 양식 어댑터(2633 · 2020 · 7790 — 그 정의에 맞춘 열로 변환). 명시하지 않으면 쓰지 않는다
+      그 밖           일반 표(머리글 1줄 · 제목 줄 건너뜀)
+    보고서 양식으로 정한 정의에 일반 표가 오면(또는 그 반대) 파일 모양을 따른다."""
+    parser = ds.parser or {}
+    if filename.lower().endswith((".xlsx", ".xlsm")):
+        if parser.get("adapter") not in (None, "", "none"):
+            from .adapters import AdapterError, parse_report
 
-        try:
-            parsed = parse_report(content, filename, ds.code, ds.parser or {})
-        except AdapterError as exc:
-            raise IngestError(str(exc)) from exc
-        if parsed is not None:
-            if not parsed.rows:
-                raise IngestError(f"{parsed.adapter}: 읽은 값이 없습니다")
-            return parsed.rows, {"adapter": parsed.adapter, "meta": parsed.meta, "notes": parsed.notes}
-    return _read_table(content, filename, ds.parser or {}, header_candidates(ds)), None
+            try:
+                parsed = parse_report(content, filename, ds.code, parser)
+            except AdapterError as exc:
+                raise IngestError(str(exc)) from exc
+            if parsed is not None:
+                if not parsed.rows:
+                    raise IngestError(f"{parsed.adapter}: 읽은 값이 없습니다")
+                return parsed.rows, {"adapter": parsed.adapter, "meta": parsed.meta, "notes": parsed.notes}
+        from .layout import read_report
+
+        rep = read_report(content, filename)
+        if rep is not None:
+            return rep.rows, {"layout": "report", **{k: v for k, v in rep.info.items() if k != "layout"}}
+    return _read_table(content, filename, parser, header_candidates(ds)), None
 
 
 def _read_mapped(session: Session | None, ds: Dataset, filename: str, content: bytes) -> tuple[list[dict[str, Any]], dict[str, Any] | None, Any, list[dict[str, Any]], list[dict[str, Any]], list[str], list[str]]:

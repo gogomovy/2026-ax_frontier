@@ -365,8 +365,9 @@ def detect(sheets: list[Sheet], filename: str) -> tuple[Adapter | None, int]:
 
 
 def parse_report(content: bytes, filename: str, dataset_code: str, parser: dict[str, Any]) -> Parsed | None:
-    """데이터셋에 맞는 원본 양식이면 어댑터로 변환, 아니면 None(일반 표 파서 사용). 다른 양식이면 오류."""
-    mode = (parser or {}).get("adapter", "auto")
+    """정의가 원본 양식 어댑터를 명시했을 때만(parser.adapter = 어댑터 코드 · auto) 변환, 아니면 None.
+    명시하지 않은 정의(파일에서 만든 정의)는 쓰지 않는다 — 보고서 양식은 data/layout.py 가 파일 모양에서 구조를 만든다 (M.25 · Q213)."""
+    mode = (parser or {}).get("adapter") or "none"
     if mode == "none":
         return None
     sheets = load_sheets(content)
@@ -381,5 +382,6 @@ def parse_report(content: bytes, filename: str, dataset_code: str, parser: dict[
     if a is None:
         return None
     if a.dataset != dataset_code:
-        raise AdapterError(f"이 파일은 {a.report_code} 원본 양식입니다 — 데이터셋 {a.dataset} 에 올려 주세요")
+        # 이 정의의 양식이 아니다 — 다른 자료를 고르라고 특정 데이터셋을 가리키지 않는다(정의는 올린 파일로 만든다)
+        raise AdapterError(f"이 파일은 다른 원본 양식({a.report_code})입니다 — 이 자료의 양식과 다릅니다. 맞는 자료를 고르거나 대상 없이 올려 새 자료로 만드세요")
     return a.parse(sheets, filename, parser or {})
