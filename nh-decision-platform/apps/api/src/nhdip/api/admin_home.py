@@ -87,6 +87,11 @@ def overview(session: Session = Depends(get_session)):
         {"key": "alerts", "label": "최근 24시간 경고 · 위험 알림", "count": int(alerts), "href": "/admin/monitor/alerts", "tone": "critical"},
         {"key": "issues", "label": "온톨로지 추출 검토", "count": int(issues), "href": "/admin/ontology", "tone": "info"},
     ]
+    # 업무 구성이 없으면 업무 화면 · 지표 · 업무 흐름이 없다(Phase O) — 첫 할 일로 알린다
+    from nhdip.models import BusinessConfig
+
+    if not session.execute(select(BusinessConfig.id).where(BusinessConfig.status == "active").limit(1)).first():
+        tasks.insert(0, {"key": "business_config", "label": "업무 구성 파일 올리기(업무 화면 없음)", "count": 1, "href": "/admin/business-config", "tone": "critical"})
     # 상태
     workers = session.execute(select(WorkerHeartbeat)).scalars().all()
     alive = sum(1 for w in workers if (now - w.seen_at).total_seconds() < 30)

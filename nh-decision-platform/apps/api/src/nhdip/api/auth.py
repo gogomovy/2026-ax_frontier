@@ -192,7 +192,8 @@ def _home(session: Session, user: AppUser) -> str:
         if home is not None:
             return home.path
     biz = [s for s in screens if s.kind != "admin"]
-    return (biz or screens)[0].path if (biz or screens) else "/"
+    # 볼 화면이 하나도 없으면(업무 구성 전 · 권한 없음) '/' 로 돌려보내면 자기 자신으로 계속 넘어간다 — 권한 안내 화면으로
+    return (biz or screens)[0].path if (biz or screens) else "/forbidden?from=/"
 
 
 def _data_origin(session: Session) -> str:

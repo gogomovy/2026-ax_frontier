@@ -127,10 +127,23 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
 
         {adminShell ? (
           <div className="hidden items-center gap-5 lg:flex">
-            <Link href={scope?.home ?? "/"} className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-steel transition-colors hover:bg-surface-soft hover:text-ink-deep">
-              <IconChevronLeft />
-              업무 화면
-            </Link>
+            {scope ? (
+              <Link href={scope.home} className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-steel transition-colors hover:bg-surface-soft hover:text-ink-deep">
+                <IconChevronLeft />
+                업무 화면
+              </Link>
+            ) : (
+              // 업무 화면이 하나도 없다(업무 구성 전, Phase O) — '/' 는 관리자를 다시 관리자 홈으로 보내므로 업무 구성으로 안내한다
+              <Link
+                href="/admin/business-config"
+                title="업무 화면이 아직 없습니다 — [업무 구성]에 업무 구성 파일을 올리면 생깁니다"
+                data-no-business-screens
+                className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-attention transition-colors hover:bg-surface-soft"
+              >
+                <IconChevronLeft />
+                업무 화면 없음 · 업무 구성 올리기
+              </Link>
+            )}
             <span aria-hidden="true" className="h-5 w-px bg-hairline-soft" />
             <AdminLink active />
           </div>

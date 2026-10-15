@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AdminPage, C, Card, Loading, Table, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { reasonRule, useIsDataAdmin } from "@/components/admin/DataDelete";
@@ -54,6 +55,7 @@ export default function BusinessConfigAdmin() {
   const data = useApiData<{ items: ConfigRow[]; sources: SourceStatus[]; linked: number; waiting: number }>("/admin/business-config");
   const isDataAdmin = useIsDataAdmin();
   const confirm = useConfirm();
+  const router = useRouter();
   const { run, busy } = useAction();
   const [file, setFile] = useState<File | null>(null);
   const [pv, setPv] = useState<Preview | null>(null);
@@ -71,6 +73,7 @@ export default function BusinessConfigAdmin() {
       setPv(null);
       setFile(null);
       await data.reload();
+      router.refresh(); // 메뉴(업무 화면 · 영역)를 다시 받는다 — 구성이 화면 · 권한을 바꾼다
     });
   const remove = async (c: ConfigRow) => {
     const reason = await confirm({
@@ -86,7 +89,10 @@ export default function BusinessConfigAdmin() {
       input: { label: "삭제 사유", placeholder: "예: 새 업무 구성으로 교체", validate: reasonRule },
     });
     if (typeof reason !== "string" || !reason) return;
-    await run(() => apiPost(`/admin/business-config/${c.id}/delete`, { reason }), "업무 구성을 지웠습니다", data.reload);
+    await run(() => apiPost(`/admin/business-config/${c.id}/delete`, { reason }), "업무 구성을 지웠습니다", async () => {
+      await data.reload();
+      router.refresh();
+    });
   };
 
   return (
