@@ -165,10 +165,14 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
     _maps = _MapResolver(session)
     rows_by_ds: dict[str, tuple[Any, list[dict[str, Any]], str]] = {}
     for ds in session.execute(select(Dataset).where(Dataset.active)).scalars():
+        cvs = current_versions(session, ds)
+        if not cvs:
+            # 자료(현재 판)가 없는 정의는 지도 · 그래프에 넣지 않는다 — 지운 자료의 개념 · 지표 군집이 다른 자료를 올렸을 때 다시 나타나지 않게
+            continue
         b.node("Dataset", ds.code, {"name": ds.name, "origin": ds.origin, "kind": ds.kind, "refresh_cycle": ds.refresh_cycle}, origin=ds.origin, src_kind="dataset", src_ref=f"cfg.dataset({ds.code})")
         v, rows = current_rows(session, ds)
         rows_by_ds[ds.code] = (v, rows, ds.origin)
-        for cv in current_versions(session, ds):
+        for cv in cvs:
             vkey = f"{ds.code}:v{cv.version}"
             b.node("DatasetVersion", vkey, {"version": cv.version, "as_of": cv.as_of.isoformat() if cv.as_of else None, "data_origin": cv.data_origin, "committed_at": cv.committed_at.isoformat() if cv.committed_at else None, "file": cv.file_name}, origin=ds.origin, src_kind="dataset", src_ref=f"{ds.origin}.dataset_version({cv.id})")
             b.rel("HAS_VERSION", "Dataset", ds.code, "DatasetVersion", vkey)
@@ -249,18 +253,32 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
 
     # 2) 지표 · 워크플로우 계보 (영향 범위 질의 원천, EVT-03)
     # 꺼진 지표 · 워크플로는 넣지 않는다(M.23 · Q210) — 정의 삭제가 끈 지표 · 은퇴한 분석 에이전트가 지도 · 그래프에 남지 않게
-    metrics = [m for m in session.execute(select(Metric).where(Metric.enabled)).scalars()]
+    # 자료가 있는 데이터셋을 읽는 지표만(파생 지표는 그 입력 지표가 들어갔을 때) — 지운 자료의 지표 · 흐름이 군집으로 남지 않게
+    all_metrics = [m for m in session.execute(select(Metric).where(Metric.enabled)).scalars()]
+    m_ds = {m.code: {c for c in (_code_of(r) for r in _datasets_in_args(m.args)) if c} for m in all_metrics}
+    m_dep = {m.code: {ref["metric"] for ref in (m.args or {}).values() if isinstance(ref, dict) and "metric" in ref} for m in all_metrics}
+    keep = {c for c, ds_ in m_ds.items() if ds_ & set(rows_by_ds)}
+    grew = True
+    while grew:
+        grew = False
+        for c, deps in m_dep.items():
+            if c not in keep and not m_ds[c] and deps and deps <= keep:
+                keep.add(c)
+                grew = True
+    metrics = [m for m in all_metrics if m.code in keep]
     for m in metrics:
         b.node("Metric", m.code, {"name": m.label, "unit": m.unit, "formula": m.formula, "enabled": m.enabled}, src_kind="metric", src_ref=f"cfg.metric({m.code})")
-        for ref in _datasets_in_args(m.args):
-            dcode = _code_of(ref)
-            if dcode:  # 아직 연결되지 않은 자료(자료 대기)는 그래프에 넣지 않는다
+        for dcode in m_ds[m.code]:
+            if dcode in rows_by_ds:  # 아직 연결되지 않은 자료(자료 대기) · 자료 없는 정의는 그래프에 넣지 않는다
                 b.rel("FEEDS", "Dataset", dcode, "Metric", m.code)
-        for ref in (m.args or {}).values():
-            if isinstance(ref, dict) and "metric" in ref:
-                b.rel("DERIVED_FROM", "Metric", m.code, "Metric", ref["metric"])
+        for dep in m_dep[m.code]:
+            if dep in keep:
+                b.rel("DERIVED_FROM", "Metric", m.code, "Metric", dep)
     live_wf: set[str] = set()
+    used_wf = {m.workflow_code for m in metrics}
     for wf in session.execute(select(Workflow).where(Workflow.enabled)).scalars():
+        if wf.code not in used_wf:
+            continue  # 계산할 자료가 없는 흐름 — 산출물 · 흐름 노드를 넣지 않는다
         live_wf.add(wf.code)
         b.node("Workflow", wf.code, {"name": wf.name, "enabled": wf.enabled}, src_kind="workflow", src_ref=f"cfg.workflow({wf.code})")
         for m in metrics:
@@ -274,7 +292,7 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
             continue
         if t.kind in ("dataset", "master"):
             dcode = _code_of(t.target) if t.target != "*" else None
-            if dcode:
+            if dcode and dcode in rows_by_ds:
                 b.rel("USES", "Workflow", t.workflow_code, "Dataset", dcode)
         elif t.kind == "doc_class":
             b.node("DocClass", t.target, {"name": t.target}, src_kind="workflow")

@@ -343,14 +343,18 @@ def unlink_ontology(session: Session, code: str, proposal_ids: list[int], actor:
     from nhdip.graph.proposals import activate_schema
     from nhdip.models import OntologyProposal
 
+    from nhdip.data.sources import Resolver
+
     out: dict[str, Any] = {"schemaVersion": None, "backing": 0, "proposals": 0}
+    # 원천은 코드 · 자료 이름(업무 구성) · 정의 이름으로 가리킬 수 있다 — 이 자료를 가리키는 이름 모두
+    names = Resolver(session).refs_for(code)
     sc = active_schema(session)
     if sc is not None:
         classes, relations, n = copy.deepcopy(sc.classes or []), copy.deepcopy(sc.relations or []), 0
         for item in [*classes, *relations]:
             bk = item.get("backing")
-            if isinstance(bk, list) and any(isinstance(b, dict) and b.get("dataset") == code for b in bk):
-                item["backing"] = [b for b in bk if not (isinstance(b, dict) and b.get("dataset") == code)]
+            if isinstance(bk, list) and any(isinstance(b, dict) and b.get("dataset") in names for b in bk):
+                item["backing"] = [b for b in bk if not (isinstance(b, dict) and b.get("dataset") in names)]
                 n += 1
         if n:
             out["schemaVersion"] = activate_schema(session, {"classes": classes, "relations": relations, "aliases": sc.aliases, "interfaces": sc.interfaces or []},

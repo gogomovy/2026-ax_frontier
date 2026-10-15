@@ -397,7 +397,17 @@ def signature(session: Session) -> tuple[Any, ...]:
         parts.append(session.scalar(select(func.count()).select_from(t.version).where(t.version.is_current)))
         parts.append(session.scalar(select(func.max(t.document.id)).where(t.document.is_current)))
         parts.append(session.scalar(select(func.count()).select_from(t.document).where(t.document.is_current)))
+    # 지운 판이 이전 판으로 돌아가도(개수 · 최대 id 가 같아도) 다른 지도가 되게 — 현재 판 id 목록 · 스키마 판 · 정의 변경
+    for origin in ("bank", "ext"):
+        t = source(origin)
+        parts.append(",".join(str(i) for i in session.execute(select(t.version.id).where(t.version.is_current).order_by(t.version.id)).scalars()))
+    parts.append(session.scalar(select(func.max(OntologySchema.id))))
     return tuple(str(p) for p in parts)
+
+
+def clear_cache() -> None:
+    with _cache_lock:
+        _cache.clear()
 
 
 def ontology_map(session: Session, *, limit: int = DEFAULT_LIMIT, classes: list[str] | None = None, refresh: bool = False) -> dict[str, Any]:
