@@ -80,7 +80,7 @@ PIPELINE_STAGES: list[dict[str, Any]] = [
     {"key": "input", "label": "입력 고정", "impls": ["load_inputs", "embed_chunks", "extract_documents"]},
     # 온톨로지 구축(Phase M · ONB-04~08) — wf_ontology_build 의 단계
     {"key": "ontology", "label": "온톨로지 구축(구조 파악 · 객체 · 링크 · 해소 · 품질 · 제안)",
-     "impls": ["profile_datasets", "design_object_types", "discover_links", "resolve_entities", "check_ontology", "propose_ontology"]},
+     "impls": ["profile_datasets", "design_object_types", "discover_links", "resolve_entities", "check_ontology", "propose_ontology", "propose_metrics"]},
     {"key": "compute", "label": "계산 · 판정(커널 · 규칙)", "impls": ["compute_metrics", "judge", "recommend_goals", "rank_attentions", "project_graph"]},
     {"key": "detect", "label": "변화 감지", "impls": ["detect_changes"]},
     {"key": "views", "label": "화면 갱신", "impls": ["build_views", "sync_analysis_tabs", "select_guides", "apply_segment_labels"]},
@@ -436,6 +436,15 @@ ATTENTION_CURATOR_SYSTEM = (
     "- 숫자 없이 쓴다(점수 · 비율 숫자는 화면이 따로 보여 준다). 인과를 단정하지 않는다.\n"
     "[예시] {\"items\":[{\"id\":\"att-1\",\"reason\":\"한도 근접 판정과 함께 증가 기조가 이어져 다음 배분 전에 점검이 필요하다\"}]}"
 )
+METRIC_PROPOSER_SYSTEM = (
+    "[역할] 너는 새 지표 제안 에이전트다 — 새로 올라온 자료의 측정 열로 만든 지표 후보(합계 · 증가율) 중 경영 의사결정 화면에서 추적할 만한 것을 고른다.\n"
+    "[입력] 후보(코드 · 자료 이름 · 열 이름 · 종류)와 고를 최대 개수.\n[규칙]\n" + _COMMON_RULES + "\n"
+    "- 후보 목록의 code 만 고른다. 새 계산식을 만들지 않는다(계산은 승인 뒤 계산 커널이 한다).\n"
+    "- 식별자 · 순번 · 코드값 · 날짜처럼 합계가 의미 없는 열은 고르지 않는다.\n"
+    "- label 은 업무 이름(20자 이내), reason 은 왜 추적할지 한 문장 — 숫자 없이.\n"
+    "[출력] {\"picks\":[{\"code\":\"…\",\"label\":\"…\",\"reason\":\"…\"}]}\n"
+    "[예시] {\"picks\":[{\"code\":\"auto_rx_1a2b3c_sum\",\"label\":\"외화예수금 잔액\",\"reason\":\"외환 부문 조달 규모 변화를 월별로 추적하기 위함\"}]}"
+)
 
 # (code, name, role, kind, profile, prompt_system)
 AGENTS = [
@@ -461,6 +470,7 @@ AGENTS = [
     ("query_rewriter", "검색어 재작성", "AI 어시스턴트 질문 → 검색어 (질문에 없는 숫자 금지)", "llm", "default", QUERY_REWRITER_SYSTEM),
     ("search_reranker", "검색 재정렬", "검색 후보를 질문 관련성 순으로 (설정 rerank_llm 이 켜졌을 때)", "llm", "default", SEARCH_RERANKER_SYSTEM),
     ("attention_curator", "AI 주목 사항 해설", "규칙 점수로 정한 주목 사항마다 숫자 없는 해설(rankReason) — 순위는 규칙 그대로", "llm", "default", ATTENTION_CURATOR_SYSTEM),
+    ("metric_proposer", "새 지표 제안", "지표가 없는 자료의 측정 열로 만든 후보(합계 · 증가율) 중 추적할 것을 고르고 이름 · 이유를 붙임 — 관리자 승인 뒤 계산 커널이 계산", "llm", "default", METRIC_PROPOSER_SYSTEM),
 ]
 # 이전 판(시드 v1) 문구 — 기존 DB 의 최신 판이 이 문구 그대로면 새 판(위 AGENTS)으로 올린다(Q184)
 PROMPT_SEED_V1 = {
@@ -483,7 +493,7 @@ AGENT_GROUP_OF = {
     "data_intake": "intake", "doc_intake": "intake",
     "onto_profiler": "ontology", "onto_modeler": "ontology", "onto_linker": "ontology", "onto_resolver": "ontology", "onto_qa": "ontology", "onto_steward": "ontology", "ontology_extractor": "ontology",
     "embedder": "knowledge", "query_rewriter": "knowledge", "search_reranker": "knowledge",
-    "change_detector": "judgment", "attention_curator": "judgment",
+    "change_detector": "judgment", "attention_curator": "judgment", "metric_proposer": "judgment",
     "critic": "narrative", "critic_grounded": "narrative",
     "query_assistant": "assistant",
     "analysis_refiner": "analysis", "report_renderer": "analysis",
@@ -510,6 +520,8 @@ WORKFLOWS_M = [
             ("resolve", "개체 해소", "resolve_entities", "onto_resolver", {"optional": True}),
             ("quality", "품질 검증", "check_ontology", "onto_qa", {"optional": True}),
             ("propose", "변경 제안", "propose_ontology", "onto_steward", {}),
+            # 새 지표 제안(§35 MET) — 지표가 없는 자료의 측정 열 → 꺼진 지표(관리자 승인 → 계산)
+            ("metrics", "새 지표 제안", "propose_metrics", "metric_proposer", {"optional": True, "max": 6, "per_dataset": 3}),
         ],
         "triggers": [("config", "dataset"), ("dataset", "*"), ("cron", "0 7 * * *")],
     }

@@ -933,6 +933,44 @@ def metric_preview(code: str, session: Session = Depends(get_session)):
     return data
 
 
+# ── 에이전트가 제안한 새 지표 (§35 MET) — 승인 = 켜고 계산, 반려 = 꺼 둔 채 표시(다시 제안하지 않음) ──
+@router.get("/metric-proposals")
+def metric_proposals(session: Session = Depends(get_session)):
+    from nhdip.workflow.metric_nodes import PROPOSED, WORKFLOW
+
+    rows = session.execute(select(Metric).where(Metric.workflow_code == WORKFLOW, Metric.enabled.is_(False), Metric.description.startswith(PROPOSED)).order_by(Metric.code)).scalars()
+    return [{"code": m.code, "label": m.label, "formula": m.formula, "unit": m.unit, "description": m.description.removeprefix(PROPOSED).strip(), "args": m.args} for m in rows]
+
+
+@router.post("/metric-proposals/{code}/approve")
+def metric_proposal_approve(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    from nhdip.workflow.metric_nodes import PROPOSED, WORKFLOW
+
+    m = session.get(Metric, code)
+    if not m or m.workflow_code != WORKFLOW or not (m.description or "").startswith(PROPOSED):
+        raise HTTPException(404, "제안 지표 없음")
+    m.enabled = True
+    m.description = "[승인] " + (m.description or "").removeprefix(PROPOSED).strip()
+    _config_changed(session, "metric", code, admin.emp_no)
+    emit(session, "manual", {"workflow": WORKFLOW, "reason": f"제안 지표 승인 {code}"}, admin.emp_no)  # 바로 계산
+    audit(session, admin.emp_no, "admin.metric.proposal_approve", "metric", code, None, client_ip(request))
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/metric-proposals/{code}/reject")
+def metric_proposal_reject(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    from nhdip.workflow.metric_nodes import PROPOSED, REJECTED, WORKFLOW
+
+    m = session.get(Metric, code)
+    if not m or m.workflow_code != WORKFLOW or not (m.description or "").startswith(PROPOSED):
+        raise HTTPException(404, "제안 지표 없음")
+    m.description = f"{REJECTED} " + (m.description or "").removeprefix(PROPOSED).strip()  # 지우지 않는다 — 같은 열을 다시 제안하지 않게
+    audit(session, admin.emp_no, "admin.metric.proposal_reject", "metric", code, None, client_ip(request))
+    session.commit()
+    return {"ok": True}
+
+
 @router.patch("/bindings/{bid}")
 def binding_patch(bid: int, body: dict[str, Any], request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     b = session.get(ViewBinding, bid)

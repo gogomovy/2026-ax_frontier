@@ -1075,3 +1075,5 @@ from . import analysis_nodes as _analysis_nodes  # noqa: E402,F401
 from . import onto_nodes as _onto_nodes  # noqa: E402,F401
 # 문서 근거 붙이기(화면 근거 칸 · 제약 근거 문서를 올라온 문서로) 등록
 from . import evidence_nodes as _evidence_nodes  # noqa: E402,F401
+# 새 지표 제안(지표가 없는 자료의 측정 열 → 승인 대기 지표) 등록
+from . import metric_nodes as _metric_nodes  # noqa: E402,F401

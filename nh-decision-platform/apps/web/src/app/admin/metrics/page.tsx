@@ -80,6 +80,7 @@ export default function MetricsAdmin() {
         ]}
       />
       <Loading error={data.error} loading={!data.data && data.loading} />
+      {tab === "metrics" ? <MetricProposals onChanged={data.reload} /> : null}
       {tab === "metrics" ? (
         <Card
           title={`지표 ${list.length}개`}
@@ -194,5 +195,58 @@ export default function MetricsAdmin() {
         </Card>
       ) : null}
     </AdminPage>
+  );
+}
+
+interface MetricProposal {
+  code: string;
+  label: string;
+  formula: string;
+  unit: string;
+  description: string;
+  args: unknown;
+}
+
+/** 에이전트가 제안한 새 지표(§35 MET) — 자료가 올라오면 지표가 없는 자료의 측정 열로 제안. 승인하면 켜지고 계산 커널이 바로 계산한다 */
+function MetricProposals({ onChanged }: { onChanged: () => Promise<void> }) {
+  const props = useApiData<MetricProposal[]>("/admin/metric-proposals");
+  const { run, busy } = useAction();
+  const rows = props.data ?? [];
+  if (!rows.length) return null;
+  const after = async () => {
+    await props.reload();
+    await onChanged();
+  };
+  return (
+    <Card title={`에이전트 제안 지표 ${rows.length}개 — 승인 대기`}>
+      <p className="mb-md text-[12.5px] text-steel">새로 올라온 자료 가운데 아직 어떤 지표도 읽지 않는 자료의 측정 열로 지표 제안 에이전트가 만든 후보입니다. 승인하면 계산 커널이 바로 계산해 지표 이력에 남기고, 반려하면 같은 열을 다시 제안하지 않습니다.</p>
+      <Table head={["지표", "수식", "이유 · 자료", ""]}>
+        {rows.map((m) => (
+          <tr key={m.code} data-metric-proposal={m.code}>
+            <C>
+              <span className="font-bold text-ink-deep">{m.label}</span>
+              <p className="font-mono text-[10.5px] text-stone">{m.code}</p>
+            </C>
+            <C>
+              <Badge>{m.formula}</Badge> <span className="text-[11px] text-steel">{m.unit}</span>
+              <Collapse label="입력">
+                <JsonView value={m.args} />
+              </Collapse>
+            </C>
+            <C className="max-w-[420px] text-[12px]">{m.description}</C>
+            <C>
+              <div className="flex gap-1">
+                <Button size="sm" variant="confirm" disabled={busy} onClick={() => run(() => apiPost(`/admin/metric-proposals/${m.code}/approve`), "승인했습니다 — 계산이 대기열에 올라갑니다", after)}>
+                  승인
+                </Button>
+                <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => apiPost(`/admin/metric-proposals/${m.code}/reject`), "반려했습니다", after)}>
+                  반려
+                </Button>
+              </div>
+            </C>
+          </tr>
+        ))}
+      </Table>
+    </Card>
   );
 }
