@@ -46,7 +46,6 @@ function UnitMenu({ scope, active }: { scope: Scope; active: boolean }) {
   const id = useId();
   const close = useCallback(() => setOpen(false), []);
   useDismiss(ref, open, close);
-  const Icon = ICON[scope.kind];
   const noun = scope.kind === "branch" ? "지점" : "부서";
   return (
     <div ref={ref} className="relative z-10">
@@ -64,7 +63,6 @@ function UnitMenu({ scope, active }: { scope: Scope; active: boolean }) {
           active ? "font-bold text-ink-deep" : "font-medium text-steel hover:text-ink-deep",
         )}
       >
-        <Icon size={14} className={active ? "text-primary" : "text-icon"} />
         {scope.label}
         {active ? <span className="hidden max-w-[120px] truncate font-medium text-steel 2xl:inline">· {scope.orgName}</span> : null}
         <IconChevronDown className={clsx("transition-transform", open && "rotate-180")} />
@@ -233,7 +231,7 @@ export function ScopeList({ scopes, currentId }: { scopes: Scope[]; currentId: s
 
 /** 영역이 하나뿐인 사용자 — 전환 컨트롤 대신 현재 소속만 알려 준다. 단위(지점)가 둘 이상이면 단위 메뉴 */
 export function OrgChip({ scope }: { scope: Scope }) {
-  const Icon = ICON[scope.kind];
+  // 사용자 결정: 헤더 영역 칸에는 아이콘을 두지 않는다 (관리자 · 모든 계정 동일)
   if (scope.units.length > 1) {
     return (
       <div className="rounded-lg border border-hairline-soft bg-surface-soft p-[3px]">
@@ -243,7 +241,6 @@ export function OrgChip({ scope }: { scope: Scope }) {
   }
   return (
     <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-hairline-soft bg-surface-soft px-3 text-[13px] font-medium text-ink-deep" title="내 업무 영역">
-      <Icon size={14} className="text-primary" />
       {scope.orgName}
     </span>
   );

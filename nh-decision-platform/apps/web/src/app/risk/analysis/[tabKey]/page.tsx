@@ -1,20 +1,39 @@
 import { notFound } from "next/navigation";
-import { AnalysisReportPage } from "@/components/analysis/AnalysisReportPage";
+import { ReportShell } from "@/components/analysis/report/ReportShell";
+import { InclusiveRiskReport } from "@/components/analysis/report/risk/InclusiveRiskReport";
+import { ModelMonitoringReport } from "@/components/analysis/report/risk/ModelMonitoringReport";
+import { ProvisionShareReport } from "@/components/analysis/report/risk/ProvisionShareReport";
 import { NextStep } from "@/components/ui/primitives";
-import { getAnalysisTabs, getReport } from "@/lib/data";
-
+import { getAnalysisTabs, getReport, getRiskDashboard } from "@/lib/data";
+import { isProvisionShareReport } from "@/lib/provisionShare";
+import type { ModelSummaryRow, ReportDoc } from "@/lib/types";
 // 데이터(분석 탭·문서)가 실행 시점에 바뀌므로 요청 시 렌더링한다
 export const dynamic = "force-dynamic";
-
-/** STEP 2 — 분석 결과. 모든 탭은 Agent 의견에서 시작해 보고서 본문으로 이어진다. 분석 에이전트 탭(an-*)도 같은 화면 (Phase C · Q102) */
+/** 보고서 수치와 같은 모형의 현황 판정 행 (PSI · AR 수치 id 로 찾는다) */
+function modelRowOf(report: ReportDoc, rows: ModelSummaryRow[]): ModelSummaryRow | null {
+  return rows.find((r) => (r.psi && report.figures[r.psi.id]) || report.figures[r.ar.id]) ?? null;
+}
+/** STEP 2 — 분석 결과 (시안 350:2 모형 모니터링 · 352:2 포용금융 · 389:2 상품별 충당금 비중(분석 에이전트 탭)). 시안이 없는 탭(그 밖의 분석 에이전트 · 이전 세대)은 기존 보고서 보기 */
 export default async function AnalysisTabPage(props: { params: Promise<{ tabKey: string }> }) {
   const params = await props.params;
   const [tabs, report] = await Promise.all([getAnalysisTabs(), getReport(params.tabKey)]);
   if (!report) notFound();
-
+  // 모형 판정(조건부 적정 등)은 현황의 모형 행에서 — 없으면 '–'
+  const model = report.kind === "model_monitoring" && tabs.current.some((t) => t.tabKey === params.tabKey) ? await getRiskDashboard().then((d) => modelRowOf(report, [...d.corpModels, ...(d.retailModels ?? [])])).catch(() => null) : null;
+  // 시안 본문은 현재 세대 탭만 — 이전 세대(열람 전용)는 기존 보고서 보기
+  const current = tabs.current.some((t) => t.tabKey === params.tabKey);
+  const body = !current
+    ? null
+    : report.kind === "model_monitoring" ? (
+      <ModelMonitoringReport report={report} model={model} rerun={report.workflow} />
+    ) : report.kind === "inclusive_risk" ? (
+      <InclusiveRiskReport report={report} rerun={report.workflow} />
+    ) : report.kind === "dynamic" && isProvisionShareReport(report) ? (
+      <ProvisionShareReport report={report} />
+    ) : null;
   return (
-    <AnalysisReportPage
-      eyebrow="2단계 · 분석 결과"
+    <ReportShell
+      title={tabs.space?.label ? `${tabs.space.label} 분석 결과` : "분석 결과"}
       report={report}
       tabs={tabs.current}
       previous={tabs.previous}
@@ -29,6 +48,8 @@ export default async function AnalysisTabPage(props: { params: Promise<{ tabKey:
           href="/risk/guides"
         />
       }
-    />
+    >
+      {body}
+    </ReportShell>
   );
 }

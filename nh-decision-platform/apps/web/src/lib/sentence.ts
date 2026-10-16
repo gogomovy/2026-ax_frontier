@@ -1,3 +1,4 @@
+import { cloneElement, isValidElement, type ReactNode } from "react";
 /**
  * Agent 해설 문장 다듬기 — 해요체(구어체) + 마침표로 끝맺는다.
  * 서버 서술은 '…있습니다' 같은 합쇼체가 섞여 오므로, 화면에 보일 결론 한 문장만 끝말을 바꾼다.
@@ -28,10 +29,41 @@ function politeEnding(s: string): string {
   return s;
 }
 
+/**
+ * 여러 문장 해설 → 문장마다 끝말을 해요체로 (Agent 의견 · 해설 본문).
+ * 문장 끝 = 한글 음절 바로 뒤의 마침표(·!·?) 또는 줄 끝. 소수점 · 수치 표식([[fig:…]]) · 문장 가운데는 그대로 둔다.
+ */
+export function toPoliteText(text: string): string {
+  if (!text) return text;
+  return text
+    .split("\n")
+    .map((line) => line.replace(/([가-힣]+)(?=[.!?](?:\s|$))/g, (w) => politeEnding(w)).replace(/([가-힣]+)\s*$/, (w) => politeEnding(w)))
+    .join("\n");
+}
 /** 결론 한 문장 → 해요체 + 마침표 */
 export function toPoliteSentence(text: string): string {
   const t = text.replace(/\s+/g, " ").trim();
   if (!t) return t;
   const body = t.replace(/[.!?。]+$/, "");
   return `${politeEnding(body)}.`;
+}
+
+/**
+ * 화면 조각(글자 · 배열 · 요소)의 글자만 해요체로 — 그래프 설명처럼 ReactNode 로 받는 Agent 해설용.
+ * 요소는 children 만 따라 내려가고 다른 속성은 그대로 둔다. 수치 표식이 든 RichText 는 text 속성을 바꾼다.
+ */
+export function politeNode(node: ReactNode): ReactNode {
+  const walk = (n: ReactNode): ReactNode => {
+    if (typeof n === "string") return toPoliteText(n);
+    if (Array.isArray(n)) return n.map(walk);
+    if (isValidElement(n)) {
+      const props = n.props as { children?: ReactNode; text?: unknown };
+      const next: Record<string, unknown> = {};
+      if (typeof props.text === "string") next.text = toPoliteText(props.text);
+      if (props.children !== undefined) next.children = walk(props.children);
+      return Object.keys(next).length ? cloneElement(n, next) : n;
+    }
+    return n;
+  };
+  return walk(node);
 }

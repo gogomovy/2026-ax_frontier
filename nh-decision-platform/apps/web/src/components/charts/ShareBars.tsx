@@ -55,12 +55,17 @@ export function ShareBars({
                 <span className="sr-only">
                   {p.label} {targetName}{" "}
                 </span>
-                <span
-                  className={clsx("flex h-full origin-left items-center px-3 text-[14px] font-bold tnum motion-safe:animate-grow-x", pair || latest ? "bg-primary text-white" : "bg-primary-soft text-primary")}
-                  style={{ width: `${v}%`, "--i": i } as CSSProperties}
-                >
-                  {fmt(v)}%
-                </span>
+                {v > 0 ? (
+                  <span
+                    className={clsx("flex h-full origin-left items-center whitespace-nowrap px-3 text-[14px] font-bold tnum motion-safe:animate-grow-x", pair || latest ? "bg-primary text-white" : "bg-primary-soft text-primary")}
+                    style={{ width: `${v}%`, "--i": i } as CSSProperties}
+                  >
+                    {fmt(v)}%
+                  </span>
+                ) : (
+                  // 값이 없으면(0 · 미제공) 막대 없이 원래 수치 자리에 '0' 하나만 — 폭 0 막대 안에서 글자가 줄바꿈되지 않게
+                  <span className="flex h-full items-center px-3 text-[14px] font-bold tnum text-primary">0</span>
+                )}
                 <span className="sr-only">, {otherName} </span>
                 <span className={clsx("ml-auto flex items-center px-3 tnum", pair ? "text-[11px] font-bold text-ink-deep" : "text-[12px] text-steel")}>{fmt(100 - v)}%</span>
               </button>

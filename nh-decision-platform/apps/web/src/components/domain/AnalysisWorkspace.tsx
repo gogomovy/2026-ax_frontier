@@ -23,7 +23,7 @@ import { UNIT_LABEL, formatFigure, formatSigned, formatValue } from "@/lib/forma
 import { pointCount, revenueRowsOf, targetPath, trendPhrase } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
 import { usePrinting } from "@/lib/printState";
-import { toPoliteSentence } from "@/lib/sentence";
+import { toPoliteSentence, toPoliteText } from "@/lib/sentence";
 import { signatureOf, tabSeenKey, tabSignature } from "@/lib/seen";
 import type { AnalysisTab, ComparisonRow, ComparisonView, DomainCardInfo, Evidence, Figure, Goal, Insight, LoanOverview, LoanSegmentDetail, Severity } from "@/lib/types";
 import { goalByRole, threshold } from "@/lib/uiConfig";
@@ -254,7 +254,7 @@ function AgentBox({
               </p>
               <EvidenceRow items={evidence} title={evidenceTitle} statement={conclusion} expanded={full} onToggleFull={() => setFull((v) => !v)} />
             </div>
-            {full ? <RichText text={narrative} figures={figures} className="rounded-lg bg-surface-soft px-5 py-4 text-[14px] leading-[1.7] text-ink-deep" /> : null}
+            {full ? <RichText text={toPoliteText(narrative)} figures={figures} className="rounded-lg bg-surface-soft px-5 py-4 text-[14px] leading-[1.7] text-ink-deep" /> : null}
           </>
         ) : null}
       </div>

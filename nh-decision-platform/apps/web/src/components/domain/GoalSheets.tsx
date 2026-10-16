@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { FigureText } from "@/components/data/FigureText";
 import { RichText } from "@/components/data/RichText";
+import { toPoliteText } from "@/lib/sentence";
 import { EvidenceSummary } from "@/components/evidence/EvidenceChips";
 import { VerificationRow } from "@/components/domain/Verification";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
@@ -111,7 +112,7 @@ export function AttentionSheet({
       }
     >
       <SheetSection title="AI 판단" aside={<VerificationRow items={insight.verifications} />}>
-        <RichText text={insight.statement} figures={insight.figures} className="text-[14px] leading-[1.7] text-charcoal" />
+        <RichText text={toPoliteText(insight.statement)} figures={insight.figures} className="text-[14px] leading-[1.7] text-charcoal" />
       </SheetSection>
 
       <SheetSection title="근거">

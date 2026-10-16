@@ -60,7 +60,7 @@ export const getCascade = (): Promise<CascadeNode[]> => api("/screens/cascade");
 /* ── 신용리스크관리부 ────────────────────────────────────── */
 export const getRiskDashboard = (): Promise<RiskDashboard> => api("/screens/risk-dashboard");
 /** 분석 레지스트리(기존 탭 + 분석 에이전트 탭 · Phase C) */
-export const getAnalysisTabs = (): Promise<{ current: AnalysisTab[]; previous: AnalysisTab[]; builder?: { allowed: boolean } }> => api("/screens/analysis/risk/tabs");
+export const getAnalysisTabs = (): Promise<{ current: AnalysisTab[]; previous: AnalysisTab[]; builder?: { allowed: boolean }; space?: { key: string; label: string; path: string; scoped?: string | null } }> => api("/screens/analysis/risk/tabs");
 
 /* ── 부서 분석 공간 (Phase C · DAG-07) ── */
 /** 지점 인자(B.47 · 다지점) — 비우면 서버가 사용자 소속 영업점 → 기본 지점으로 고른다 */

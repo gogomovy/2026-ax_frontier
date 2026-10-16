@@ -131,7 +131,8 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
               업무 화면 없음
             </Link>
           )
-        ) : (
+        ) : flow.length < 2 ? null : (
+          // 단계가 하나뿐인 영역(영업본부 · 시안 386:2)은 단계 메뉴를 그리지 않는다
           <PrimaryNav model={model} className="hidden lg:flex" />
         )}
 
@@ -148,8 +149,8 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
         </div>
       </div>
 
-      {/* 좁은 화면 — 단계 줄 (가로 스크롤) */}
-      {!adminShell && flow.length ? (
+      {/* 좁은 화면 — 단계 줄 (가로 스크롤). 단계가 하나뿐이면 두지 않는다 */}
+      {!adminShell && flow.length > 1 ? (
         <nav aria-label="업무 단계" className="border-t border-hairline-soft lg:hidden">
           <div className="shell no-scrollbar flex gap-6 overflow-x-auto py-1">
             {flow.map((item) => (

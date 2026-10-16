@@ -7,6 +7,15 @@ import { DataTable, Td } from "@/components/ui/primitives";
 import { UNIT_LABEL, defaultDecimals } from "@/lib/format";
 import type { Figure, SeriesPoint } from "@/lib/types";
 
+/** 막대 위 모서리 반경(px) */
+const BAR_RADIUS = 3;
+/** 위 두 모서리만 둥근 세로 막대 경로 */
+function topRoundedRect(x: number, y: number, w: number, h: number, r: number): string {
+  const rr = Math.min(r, w / 2, h);
+  return `M${x},${y + h}V${y + rr}Q${x},${y} ${x + rr},${y}H${x + w - rr}Q${x + w},${y} ${x + w},${y + rr}V${y + h}Z`;
+}
+
+
 /** 차트 계열 색 — 토큰 `--chart-1..6`(primary · attention · success · stone · purple · teal 순, C.1 · Q106). SVG 에서는 style 로 칠한다 */
 export const PALETTE = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
 
@@ -144,13 +153,10 @@ export function Chart({ title, series, unit, decimals, height = 220, kind, capti
                       const cx = x(i) - (barW * series.length) / 2 + barW * si;
                       const top = y(p.value);
                       return (
-                        <rect
+                        // 바닥(기준선)에 닿는 쪽은 각지게 — 위 두 모서리만 둥글게
+                        <path
                           key={p.label}
-                          x={cx}
-                          y={top}
-                          width={barW}
-                          height={Math.max(1, y(min) - top)}
-                          rx="3"
+                          d={topRoundedRect(cx, top, barW, Math.max(1, y(min) - top), BAR_RADIUS)}
                           className="origin-bottom [transform-box:fill-box] motion-safe:animate-grow-y"
                           style={{ fill: s.color ?? PALETTE[si % PALETTE.length], "--i": i } as CSSProperties}
                           opacity={si === 0 ? 0.92 : 0.78}

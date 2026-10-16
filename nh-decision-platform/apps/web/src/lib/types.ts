@@ -665,6 +665,10 @@ export interface RegionKpiGroup {
   max?: number | null;
   rate?: number | null;
   avg?: number | null;
+  /** 지역 평균 득점률(%) — 계산된 지점 득점률 평균 */
+  avgRate?: number | null;
+  /** 지역 평균 득점률이 가장 낮은 그룹 (가 · 감점 제외, 하나만) */
+  lowest?: boolean;
 }
 export interface RegionKpiBranch {
   code: string;
@@ -680,8 +684,11 @@ export interface RegionKpiBranch {
   uplift: number | null;
   groups: RegionKpiGroup[];
   avgGrade: number | null;
-  alerts: { title?: string; severity?: string; tabKey?: string }[];
+  alerts: { title?: string; severity?: string; tabKey?: string; changeType?: string | null; uplift?: number | null }[];
   alertCount: number;
+  /** 알림 전체의 변경 유형(신설 · 변경 …) — 중복 제거 */
+  changeTypes?: string[];
+  asOf?: string | null;
 }
 export interface RegionKpi {
   region: { code: string; name: string } | null;
@@ -690,7 +697,23 @@ export interface RegionKpi {
   asOfLabel?: string | null;
   branches: RegionKpiBranch[];
   groups?: RegionKpiGroup[];
-  summary: { branches: number; computed: number; avgTotal?: number | null; avgRate?: number | null; avgTotalAfter?: number | null; alerts?: number; top?: { code: string; name: string } | null };
+  summary: {
+    branches: number;
+    computed: number;
+    avgTotal?: number | null;
+    avgRate?: number | null;
+    avgTotalAfter?: number | null;
+    /** 지점 상향 점수 평균 */
+    avgUplift?: number | null;
+    /** 득점 향상 기회 — 계산된 지점 알림 수 합 */
+    opportunities?: number;
+    /** 득점 향상 기회가 있는 지점 수 */
+    opportunityBranches?: number;
+    changeTypes?: string[];
+    /** 호환 — opportunities 와 같은 값 */
+    alerts?: number;
+    top?: { code: string; name: string } | null;
+  };
 }
 
 export interface BranchTarget {

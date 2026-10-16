@@ -110,9 +110,6 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
                   {inProgressPlans.length}건 · 영업점 참고 {sharedCount}건
                 </span>
               </div>
-              <button type="button" onClick={create} className={TEXT_LINK}>
-                + 직접 추가
-              </button>
             </header>
             {inProgressPlans.length === 0 ? (
               <div className="border-t border-track py-8 text-center">
@@ -148,8 +145,19 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
                 ))}
               </ul>
             )}
+            {/* 목록 끝에 붙는 추가 영역 — 목록을 이어 쓰는 동작이라 헤더가 아니라 마지막 행 아래에 둔다 (경영목표 설정과 같은 모양) */}
+            <div className="border-t border-hairline-soft pb-1.5 pt-3">
+              <button
+                type="button"
+                onClick={create}
+                className="flex h-10 w-full items-center justify-center gap-1 rounded-lg text-[13px] font-bold text-primary-deep transition-colors hover:bg-info-faint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <IconPlus /> 직접 추가
+              </button>
+            </div>
           </section>
-          {/* AI 제안안 — 옅은 보라 판 안의 흰 목록 */}
+          {/* AI 제안안 — 옅은 보라 판 안의 흰 목록. 제안안이 없으면 영역 자체를 두지 않는다 */}
+          {proposedPlans.length > 0 ? (
           <section aria-labelledby="guide-proposals" className="rounded-[10px] bg-info-soft px-4 pb-3.5 pt-5">
             <header className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-[15px] pl-2">
               <h2 id="guide-proposals" className="inline-flex items-center rounded-pill bg-canvas px-2 py-0.5 text-[12px] font-bold text-primary">
@@ -157,17 +165,7 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
               </h2>
               <span className="text-[12px] text-steel">특이사항별 가이드 · 배치 검증을 거쳐 제시돼요</span>
             </header>
-            {proposedPlans.length === 0 ? (
-              <div className="rounded-lg bg-canvas px-4 py-8 text-center">
-                <p className="text-[13px] font-bold text-charcoal">검토할 제안안이 없습니다</p>
-                <p className="mt-1 text-[12px] text-steel">일배치가 새 특이사항을 찾으면 이곳에 추가됩니다. 필요한 사업은 직접 추가할 수 있습니다.</p>
-                <div className="mt-3 flex justify-center">
-                  <Button variant="ghost" size="sm" onClick={create}>
-                    <IconPlus /> 직접 추가
-                  </Button>
-                </div>
-              </div>
-            ) : (
+            {(
               <ul className="divide-y divide-track rounded-lg bg-canvas px-4">
                 {proposedPlans.map((plan) => {
                   const blocked = plan.alignment.verdict === "conflict";
@@ -202,6 +200,7 @@ export function GuideWorkspace({ tabs }: { tabs: AnalysisTab[] }) {
               </ul>
             )}
           </section>
+          ) : null}
         </div>
       ) : (
         <div className="shell flex flex-col gap-5 pb-6 pt-[9px]">

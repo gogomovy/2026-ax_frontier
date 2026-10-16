@@ -109,7 +109,7 @@ export function StackedBars({ title, buckets, series, height = 120 }: { title: s
             <div key={b.label} className="flex h-full min-w-0 flex-1 origin-bottom flex-col-reverse motion-safe:animate-grow-y" style={{ "--i": Math.min(i, 24) } as CSSProperties} title={`${b.label} · ${totals[i]}건`}>
               {series.map((s) => {
                 const v = b.values[s.key] ?? 0;
-                return v ? <span key={s.key} className={clsx("block w-full first:rounded-b-sm last:rounded-t-sm", BG[s.tone])} style={{ height: `${(v / top) * 100}%` }} /> : null;
+                return v ? <span key={s.key} className={clsx("block w-full last:rounded-t-sm", BG[s.tone])} style={{ height: `${(v / top) * 100}%` }} /> : null;
               })}
             </div>
           ))}

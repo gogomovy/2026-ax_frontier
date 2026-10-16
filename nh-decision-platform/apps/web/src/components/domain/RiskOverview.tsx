@@ -10,7 +10,7 @@ import { Fig, Tag, type MarkTone, type Tone } from "@/components/domain/overview
 import { useSession } from "@/components/providers/SessionProvider";
 import { IconChevron, SEVERITY_TEXT } from "@/components/ui/primitives";
 import { derivedFigure } from "@/lib/derived";
-import { UNIT_LABEL, formatValue } from "@/lib/format";
+import { UNIT_LABEL, formatFigure, formatValue } from "@/lib/format";
 import { NO_VALUE } from "@/lib/period";
 import type { AnalysisTab, DefaultRateSeries, DefaultRateTrend, Figure, Insight, ModelSummaryRow, RiskDashboard, Severity } from "@/lib/types";
 
@@ -471,7 +471,8 @@ export function RiskOverview({
                           <td key={k} className={clsx(rowLine, "tnum")}>
                             {f ? (
                               <span className="inline-flex items-center gap-1.5">
-                                <FigureText figure={f} plain className={isOut ? "!font-bold !text-ink-deep" : "!font-normal !text-ink-deep"} />
+                                {/* 사용자 결정: 지표 값은 글자만 — 호버 설명은 머리글(용어)에만 둔다 */}
+                                <span className={isOut ? "font-bold text-ink-deep" : "font-normal text-ink-deep"}>{formatFigure(f)}</span>
                                 {isOut ? <span aria-label="판정 기준 이탈" role="img" className={clsx("h-[5px] w-[5px] shrink-0 rounded-circle", MARK_DOT[mark ?? "neutral"])} /> : null}
                               </span>
                             ) : (

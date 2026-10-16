@@ -265,7 +265,7 @@ function StaleNotice({ reason, what }: { reason?: string; what: string }) {
   );
 }
 
-function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
+export function Block({ block, report }: { block: ReportBlock; report: ReportDoc }) {
   switch (block.type) {
     case "p":
       return <RichText text={block.text ?? ""} figures={report.figures} />;

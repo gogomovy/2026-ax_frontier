@@ -7,6 +7,7 @@ import { AsOfTools, ExportButton } from "@/components/layout/PageTools";
 import { NextStep } from "@/components/ui/primitives";
 import { getBranchDashboard, getBranchOffices, getBranchReport, getChanges } from "@/lib/data";
 import { officeParam, withOffice } from "@/lib/branchOffice";
+import { guideBasis, type GuideBasis } from "@/lib/branchGuideBasis";
 import type { Evidence } from "@/lib/types";
 
 // 영업점 산출물은 사용자 소속에 따라 달라지고 일 단위로 갱신되므로 요청 시 렌더링한다
@@ -42,12 +43,15 @@ export default async function BranchHomePage(props: { searchParams: Promise<Reco
     }),
   );
 
+  // 근거 펼침 — 지점 vs 전행 비교 · 후보 기업 / 대상 상품 (시안 358:130). 보고서가 없으면 위 근거 목록
+  const guideBases: Record<string, GuideBasis | null> = Object.fromEntries(dashboard.alerts.map((a, i) => [a.tabKey, guideBasis(a, reports[i])]));
   return (
     <div className="shell flex flex-col pb-6 pt-5">
       <BranchOverview
         dashboard={dashboard}
         office={office}
         guideEvidence={guideEvidence}
+        guideBases={guideBases}
         picker={picker}
         tools={
           <AsOfTools key="page-tools">

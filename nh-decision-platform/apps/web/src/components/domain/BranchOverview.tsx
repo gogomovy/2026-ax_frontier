@@ -5,13 +5,15 @@ import Link from "next/link";
 import clsx from "clsx";
 import { FigureText } from "@/components/data/FigureText";
 import { RichText } from "@/components/data/RichText";
+import { toPoliteText } from "@/lib/sentence";
 import { Fig } from "@/components/domain/overviewKit";
 import { IconChevronDown, IconSparkle } from "@/components/ui/icons";
-import { IconCheck, IconChevron } from "@/components/ui/primitives";
+import { IconChevron } from "@/components/ui/primitives";
 import { withOffice } from "@/lib/branchOffice";
 import { derivedFigure } from "@/lib/derived";
 import { formatFigure, formatValue } from "@/lib/format";
 import { NO_VALUE } from "@/lib/period";
+import type { GuideBasis } from "@/lib/branchGuideBasis";
 import type { BranchDashboard, BranchKpiAlert, DomainCardInfo, Evidence, Figure, KpiGroup, KpiItem } from "@/lib/types";
 
 /** 득점 표기 — 소수 둘째 자리까지 (배점표 득점) */
@@ -27,10 +29,10 @@ const LOW_SHARE_PCT = 30;
 const isLow = (score: number | null | undefined, max: number | null | undefined) => typeof score === "number" && !!max && (score / max) * 100 < LOW_SHARE_PCT;
 
 /** 카드 공통 — 흰 바탕 · 10px 모서리 · 옅은 테두리 (사업부서 현황과 같은 카드) */
-const CARD = "min-w-0 rounded-[10px] border border-hairline-soft bg-canvas";
+export const CARD = "min-w-0 rounded-[10px] border border-hairline-soft bg-canvas";
 
 /** 카드 제목 줄 — 14px 제목 + 12px 보조 글자 (시안 326:2) */
-function CardHead({ id, title, hint, right }: { id?: string; title: ReactNode; hint?: ReactNode; right?: ReactNode }) {
+export function CardHead({ id, title, hint, right }: { id?: string; title: ReactNode; hint?: ReactNode; right?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-[7px] gap-y-1">
@@ -137,6 +139,7 @@ export function BranchOverview({
   dashboard,
   office,
   guideEvidence,
+  guideBases = {},
   picker,
   tools,
   children,
@@ -145,6 +148,8 @@ export function BranchOverview({
   office?: string | null;
   /** 가이드별 근거 (분석 탭 키 → 근거) — 분석 보고서의 AI 의견 근거 */
   guideEvidence: Record<string, Evidence[]>;
+  /** 가이드별 근거 펼침 내용 (분석 탭 키 → 지점 vs 전행 비교 · 알약) — 없으면 근거 목록 */
+  guideBases?: Record<string, GuideBasis | null>;
   /** 지점 선택 (볼 수 있는 지점이 둘 이상일 때만 보임) */
   picker?: ReactNode;
   tools?: ReactNode;
@@ -210,7 +215,7 @@ export function BranchOverview({
           {/* 카드는 제 높이만 — 한쪽 근거를 펼쳐도 옆 카드는 늘어나지 않는다 (items-start) */}
           <ul className="mt-3.5 grid grid-cols-1 items-start gap-3 lg:grid-cols-2">
             {alerts.map((a, i) => (
-              <GuideCard key={a.id} alert={a} index={i} dashboard={dashboard} office={office} evidence={guideEvidence[a.tabKey] ?? []} />
+              <GuideCard key={a.id} alert={a} index={i} dashboard={dashboard} office={office} evidence={guideEvidence[a.tabKey] ?? []} basis={guideBases[a.tabKey] ?? null} />
             ))}
           </ul>
         </section>
@@ -228,7 +233,7 @@ export function BranchOverview({
 }
 
 /** 가이드 1건 — 상향 점수 · 할 일 · AI 설명 · 항목 득점 변화 · 실적/목표 · 근거 펼치기 */
-function GuideCard({ alert, index, dashboard, office, evidence }: { alert: BranchKpiAlert; index: number; dashboard: BranchDashboard; office?: string | null; evidence: Evidence[] }) {
+function GuideCard({ alert, index, dashboard, office, evidence, basis }: { alert: BranchKpiAlert; index: number; dashboard: BranchDashboard; office?: string | null; evidence: Evidence[]; basis: GuideBasis | null }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const item = findItem(dashboard.scorecard.groups, alert.itemCode);
@@ -253,7 +258,7 @@ function GuideCard({ alert, index, dashboard, office, evidence }: { alert: Branc
       <p className="mt-2 flex items-start gap-1.5 text-[12px] leading-[1.6] text-slate">
         {/* AI 표식 — 글자(✦) 대신 SVG, 첫 줄 가운데(19px 줄 · 12px 아이콘)에 맞춘다 */}
         <IconSparkle size={12} className="mt-[3.5px] h-3 w-3 shrink-0 text-primary" />
-        <RichText as="span" text={alert.summary} figures={dashboard.figures} className="min-w-0" />
+        <RichText as="span" text={toPoliteText(alert.summary)} figures={dashboard.figures} className="min-w-0" />
       </p>
 
       <div className="pt-4">
@@ -277,7 +282,7 @@ function GuideCard({ alert, index, dashboard, office, evidence }: { alert: Branc
           </p>
         ) : null}
 
-        {evidence.length > 0 ? (
+        {basis || evidence.length > 0 ? (
           <>
             <button
               type="button"
@@ -289,7 +294,9 @@ function GuideCard({ alert, index, dashboard, office, evidence }: { alert: Branc
               {open ? "근거 접기" : "근거 보기"}
               <IconChevronDown size={10} className={clsx("transition-transform", open && "rotate-180")} />
             </button>
-            {open ? (
+            {open && basis ? (
+              <BasisPanel id={panelId} basis={basis} />
+            ) : open ? (
               <ul id={panelId} className="mt-2 flex flex-col gap-2 border-t border-track pt-2.5">
                 {evidence.map((e) => (
                   <li key={e.id} className="text-[11px] leading-[1.55]">
@@ -305,6 +312,51 @@ function GuideCard({ alert, index, dashboard, office, evidence }: { alert: Branc
     </li>
   );
 }
+
+/** 근거 펼침 (시안 358:149 · 358:191) — 지점 vs 전행 비교 막대 + 후보 기업 · 대상 상품 알약 */
+function BasisPanel({ id, basis }: { id: string; basis: GuideBasis }) {
+  const { compare, chips } = basis;
+  const top = compare ? Math.max(compare.ours.value ?? 0, compare.bank.value ?? 0) : 0;
+  const w = (v: number | null) => (top > 0 && typeof v === "number" ? (v / top) * 100 * COMPARE_ROOM : 0);
+  return (
+    <div id={id} className="-mx-2.5 mt-2.5 rounded-[8px] bg-canvas px-3.5 pb-3.5 pt-3">
+      {compare ? (
+        <div>
+          <p className="text-[11px] leading-[1.4] text-steel">{compare.label}</p>
+          <ul className="mt-2 flex flex-col gap-1.5">
+            {[
+              { key: "ours", label: "우리 지점", f: compare.ours, strong: true },
+              { key: "bank", label: "전행", f: compare.bank, strong: false },
+            ].map((r, i) => (
+              <li key={r.key} className="flex items-center gap-2.5">
+                <span className={clsx("w-[52px] shrink-0 text-[11px] leading-[1.4]", r.strong ? "font-bold text-ink-deep" : "text-steel")}>{r.label}</span>
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className={clsx("block h-1.5 shrink-0 origin-left rounded-pill motion-safe:animate-grow-x", r.strong ? "bg-primary" : "bg-track")} style={{ width: `${w(r.f.value)}%`, ["--i" as string]: i }} />
+                  <span className={clsx("tnum shrink-0 text-[11px]", r.strong ? "font-bold text-primary-deep" : "text-steel")}>{formatFigure(r.f)}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {chips ? (
+        <div className={clsx(compare && "mt-3 border-t border-track pt-3")}>
+          <p className="text-[11px] leading-[1.4] text-steel">{chips.title}</p>
+          <ul className="mt-2 flex flex-wrap items-center gap-1.5">
+            {chips.items.map((c) => (
+              <li key={c} className="inline-flex h-[23px] items-center rounded-pill border border-hairline-soft px-2.5 text-[11px] font-medium text-ink-deep">
+                {c}
+              </li>
+            ))}
+            {chips.overflow > 0 ? <li className="text-[11px] font-medium text-primary-deep">+{chips.overflow}{chips.unit}</li> : null}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+/** 비교 막대가 쓰는 폭(나머지는 값 글자 자리) */
+const COMPARE_ROOM = 0.75;
 
 /** KPI 대분류 득점 Figure — 큰 숫자 롤링 · 계산 추적 */
 function groupFigure(g: KpiGroup, asOf: string, total: Figure): Figure {
@@ -493,7 +545,8 @@ function Segments({ dashboard, office }: { dashboard: BranchDashboard; office?: 
                 </span>
                 {off ? <span className="sr-only">상세 데이터 준비 중</span> : null}
               </span>
-              {off ? null : on ? <IconCheck className="shrink-0 text-primary-deep" /> : <IconChevron className="h-3 w-3 shrink-0 text-icon" />}
+              {/* 사용자 결정: 선택된 부문에는 체크 표시를 두지 않는다 (테두리 · 글자색으로만 선택 표시) */}
+              {off || on ? null : <IconChevron className="h-3 w-3 shrink-0 text-icon" />}
             </button>
           );
         })}

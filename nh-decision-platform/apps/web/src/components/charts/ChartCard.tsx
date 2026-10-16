@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from "react";
 import { IconTable } from "@/components/ui/icons";
 import { DataTable, Td } from "@/components/ui/primitives";
+import { politeNode } from "@/lib/sentence";
 
 export interface ChartTable {
   columns: { key: string; label: string; align?: "left" | "right" }[];
@@ -85,7 +86,7 @@ export function ChartCard({
         )}
       </div>
 
-      {caption ? <figcaption className="mt-3 text-[12px] leading-normal text-steel">{caption}</figcaption> : null}
+      {caption ? <figcaption className="mt-3 text-[12px] leading-normal text-steel">{politeNode(caption)}</figcaption> : null}
     </figure>
   );
 }

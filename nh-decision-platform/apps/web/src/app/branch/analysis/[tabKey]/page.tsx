@@ -1,22 +1,29 @@
 import { notFound } from "next/navigation";
-import { AnalysisReportPage } from "@/components/analysis/AnalysisReportPage";
+import { PrimeCorpReport } from "@/components/analysis/report/branch/PrimeCorpReport";
+import { SeominReport } from "@/components/analysis/report/branch/SeominReport";
+import { ReportShell } from "@/components/analysis/report/ReportShell";
 import { NextStep } from "@/components/ui/primitives";
 import { officeParam, withOffice } from "@/lib/branchOffice";
 import { getBranchReport, getBranchTabs } from "@/lib/data";
-
+import type { ReportDoc } from "@/lib/types";
 export const dynamic = "force-dynamic";
-
-/** 영업점 STEP 2 — 기준 변경 항목별 분석 보고서(2 · 3화면). AI 의견 → 보고서 본문 순서 (표시 단계는 부서 분석 공용 · Phase C) */
+/** 시안대로 그린 본문 (보고서 종류별) — 그 밖의 종류는 기존 보고서 보기 */
+function bodyOf(report: ReportDoc) {
+  if (report.kind === "branch_prime_corp") return <PrimeCorpReport report={report} rerun={report.workflow} />;
+  if (report.kind === "branch_seomin") return <SeominReport report={report} rerun={report.workflow} />;
+  return null;
+}
+/** 영업점 STEP 2 — 기준 변경 항목별 분석 결과 (시안 346:2 우량기업여신 · 348:2 서민금융) */
 export default async function BranchAnalysisTabPage(props: { params: Promise<{ tabKey: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await props.params;
   const office = officeParam(await props.searchParams);
   const [tabs, report] = await Promise.all([getBranchTabs(office), getBranchReport(params.tabKey, office)]);
   if (!report) notFound();
   const others = tabs.current.filter((t) => t.tabKey !== params.tabKey);
-
+  const officeName = report.office?.name ?? tabs.office?.name;
   return (
-    <AnalysisReportPage
-      eyebrow={`2단계 · 분석 결과${report.office ? ` · ${report.office.name}` : ""}`}
+    <ReportShell
+      title={officeName ? `${officeName} 분석 결과` : "분석 결과"}
       report={report}
       tabs={tabs.current}
       previous={tabs.previous}
@@ -32,6 +39,8 @@ export default async function BranchAnalysisTabPage(props: { params: Promise<{ t
           <NextStep step={1} title="현황으로 돌아가기" description="업적평가 득점과 사업부문 현황을 다시 확인합니다." href={withOffice("/branch", office)} />
         )
       }
-    />
+    >
+      {bodyOf(report)}
+    </ReportShell>
   );
 }

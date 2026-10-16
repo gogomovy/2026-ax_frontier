@@ -82,7 +82,9 @@ export function GoalsWorkspace({
   // 삭제한 목표를 겨냥한 제안은 검토 건수에서 뺀다
   const live = (p: Proposal) => !p.targetGoalId || !isArchived(overrides[p.targetGoalId]);
   const modifyPending = proposals.filter((p) => p.kind === "goal_modify" && !proposalActions[p.id] && live(p));
-  const newProposals = proposals.filter((p) => p.kind === "goal_new" && p.domainCode === code);
+  // 이미 목표로 추가한 신규 제안은 아래 제안 목록에서 뺀다 — 추가한 목표를 삭제하면 다시 보인다
+  const addedFrom = new Set(liveAdded.map((g) => g.sourceProposalId).filter(Boolean));
+  const newProposals = proposals.filter((p) => p.kind === "goal_new" && p.domainCode === code && !addedFrom.has(p.id));
   const pendingTotal = proposals.filter((p) => !proposalActions[p.id] && live(p)).length;
   const attentionOf = (goalId: string) => [...attentions].filter((a) => a.relatedGoalId === goalId).sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0))[0];
   const looseAttentions = attentions.filter((a) => !a.relatedGoalId || !goals.some((g) => g.id === a.relatedGoalId));
@@ -225,17 +227,22 @@ export function GoalsWorkspace({
                   </li>
                 );
               })}
+              {/* 추가한 목표도 위 목표 줄과 같은 칸 구성 — 제목 옆 태그로 출처만 구분한다 */}
               {liveAdded.map((g) => (
-                <li key={g.id} className="flex flex-wrap items-center gap-3 py-5">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[16px] font-bold leading-[1.4] text-ink-deep">{g.title}</p>
-                    <p className="mt-0.5 text-[12px] text-steel">
+                <li key={g.id} className="grid grid-cols-1 gap-y-3 py-3 lg:grid-cols-[minmax(0,1fr)_26px_36px_minmax(0,500px)] lg:items-center">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-[14px] font-bold leading-[21px] text-ink-deep">{g.title}</span>
+                      <Badge tone="info">{g.creationMode === "ai_proposed" ? "AI 제안 기반 신규" : "직접 추가"}</Badge>
+                    </p>
+                    <p className="mt-1 text-[12px] leading-[18px] text-steel">
                       {g.periodLabel || "–"} · 목표 {g.targetLabel}
                       {g.metricLabel ? ` · ${g.metricLabel}` : ""}
                     </p>
                   </div>
-                  <Badge tone="info">{g.creationMode === "ai_proposed" ? "AI 제안 기반 신규" : "직접 추가"}</Badge>
                   <GoalMenu items={[{ label: "목표 삭제", danger: true, onSelect: () => setSheet({ kind: "change", req: { mode: "delete", goalId: g.id } }) }]} />
+                  <span aria-hidden="true" className="hidden lg:block" />
+                  <p className="text-[12px] text-steel lg:pl-4">변경 제안 없음</p>
                 </li>
               ))}
               {domainGoals.length + liveAdded.length === 0 ? (

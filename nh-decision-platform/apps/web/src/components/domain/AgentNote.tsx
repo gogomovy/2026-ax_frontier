@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { RichText } from "@/components/data/RichText";
+import { toPoliteText } from "@/lib/sentence";
 import { EvidenceChips } from "@/components/evidence/EvidenceChips";
 import { VerificationRow } from "@/components/domain/Verification";
 import { IconSparkle } from "@/components/ui/icons";
@@ -36,7 +37,7 @@ export function AgentNote({
       </span>
       <div className="mt-3 flex-1 rounded-lg bg-canvas px-6 py-5">
         {title ? <h3 className="text-[16px] font-bold leading-[1.4] text-ink-deep">{title}</h3> : null}
-        <RichText text={text} figures={figures} className="mt-1 text-[14px] leading-[1.7] text-ink-deep" />
+        <RichText text={toPoliteText(text)} figures={figures} className="mt-1 text-[14px] leading-[1.7] text-ink-deep" />
         {evidence || verifications || footer ? (
           <div className="mt-4 flex flex-wrap items-center gap-xs">
             {evidence ? <EvidenceChips items={evidence} title={evidenceTitle ?? "근거"} /> : null}
