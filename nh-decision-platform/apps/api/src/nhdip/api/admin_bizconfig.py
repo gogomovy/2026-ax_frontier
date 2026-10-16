@@ -174,7 +174,7 @@ async def dataset_auto_upload(
     if getattr(d, "common", False):
         owner = None  # 공통 통합 DB — 소유 팀 없음
     try:
-        v = ingest_file(session, d, name, content, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner)
+        v = ingest_file(session, d, name, content, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner, memo=note)
     except (IngestError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, f"올릴 수 없습니다 — {exc}") from exc

@@ -49,6 +49,51 @@ def upstream_workflows(session: Session, spec: dict[str, Any]) -> list[str]:
     return out
 
 
+DEFAULT_CRON = "40 6 * * *"
+
+
+def default_cron(session: Session) -> str | None:
+    """분석 에이전트 기본 정기 실행 — 설정 analysis_agents.default_cron(빈 값 = 없음). 잘못된 식이면 없음."""
+    from nhdip.workflow.scheduler import is_valid as cron_ok
+
+    s = session.get(Setting, "analysis_agents.default_cron")
+    v = (str(s.value).strip() if s is not None and s.value is not None else DEFAULT_CRON) or None
+    return v if v and cron_ok(v) else None
+
+
+def team_triggers(session: Session, a: AnalysisAgent) -> list[tuple[str, str]]:
+    """팀 조건(요청 팀 코드) · 공통 조건 (TDB-07)."""
+    from .team import team_of_agent
+
+    team = team_of_agent(session, a.code)
+    return ([("team", team.code)] if team.code else []) + [("common", "*")]
+
+
+def sync_nodes(session: Session, a: AnalysisAgent) -> bool:
+    """이미 승인된 분석 에이전트를 새 노드 사슬 · 팀 조건으로 맞춘다(명세 · 지표 · 기존 조건은 그대로) — 1회 보강(seed)용."""
+    if not a.workflow_code or not a.spec or a.status not in ("active", "paused"):
+        return False
+    wf = session.get(Workflow, a.workflow_code)
+    if wf is None:
+        return False
+    have = {n.key for n in session.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf.code)).scalars()}
+    if "team" in have:
+        return False
+    for n in session.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf.code)).scalars():
+        session.delete(n)
+    session.flush()
+    for seq, (key, name, impl, agent, cfg) in enumerate(_nodes(a.spec, a.code), start=1):
+        session.add(WorkflowNode(workflow_code=wf.code, seq=seq * 10, key=key, name=name, impl=impl, agent_code=agent, enabled=True, config=cfg))
+    trig = {(t.kind, t.target) for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf.code)).scalars()}
+    on = a.status == "active"
+    if (a.spec.get("schedule") or {}).get("on_data_change", True):
+        for kind, target in team_triggers(session, a):
+            if (kind, target) not in trig:
+                session.add(WorkflowTrigger(workflow_code=wf.code, kind=kind, target=target, debounce_sec=None, enabled=on))
+    session.flush()
+    return True
+
+
 def _metric_rows(spec: dict[str, Any], token: str, workflow: str) -> list[dict[str, Any]]:
     from .spec import figure_id
 
@@ -74,10 +119,14 @@ def _nodes(spec: dict[str, Any], agent: str) -> list[tuple[str, str, str, str | 
     nodes: list[tuple[str, str, str, str | None, dict[str, Any]]] = [
         ("load", "입력 고정", "load_inputs", None, {"datasets": input_datasets(spec)}),
         ("compute", "지표 계산(커널)", "compute_metrics", None, {}),
+        # 팀 데이터(Phase P · TDB-02~05) — 명세에 적힌 자료만이 아니라 요청 팀의 정형 자료 · 상위 KPI · 온톨로지 관계를 실행마다 다시 본다
+        ("team", "팀 데이터(정형 · KPI · 온톨로지)", "team_context", None, {"agent": agent, "optional": True}),
     ]
-    ev = spec.get("evidence")
-    if ev:
-        nodes.append(("evidence", "근거 검색", "retrieve_evidence", None, {"query": ev["query"], "doc_classes": ev.get("doc_classes") or None, "k": ev.get("k", 4), "optional": True, "respect_plan": False}))
+    ev = spec.get("evidence") or {}
+    # 근거 검색은 명세에 근거 설정이 없어도 돈다(TDB-04) — 검색어 = 근거 설정 또는 제목 · 목적, 그래프 필터 = 팀 데이터의 개념, 팀 문서 우선
+    query = (ev.get("query") or f"{spec.get('title', '')} {spec.get('purpose', '')}").strip()[:200]
+    nodes.append(("evidence", "근거 검색(팀 문서 · 공통 · 그래프)", "retrieve_evidence", None, {"query": query, "doc_classes": ev.get("doc_classes") or None, "k": ev.get("k", 4), "optional": True,
+                                                                         "respect_plan": False, "concepts_from_context": True, "team_only": True}))
     nodes += [
         ("task", "동적 수행(분석 에이전트)", "dynamic_task", agent, {"agent": agent, "optional": True}),
         ("render", "범용 렌더링", "render_report", "report_renderer", {"agent": agent}),
@@ -163,6 +212,11 @@ def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: 
     if sp is None:
         raise LifecycleError(f"분석 공간이 없습니다: {a.space}")
     spec = apply_options(dict(v.spec), options)
+    if "cron" not in (options or {}) and not (spec.get("schedule") or {}).get("cron"):
+        # 정기 실행을 정하지 않은 승인 — 기본 정기 실행(설정 analysis_agents.default_cron, 빈 값이면 없음 · AGW-06)
+        dflt = default_cron(session)
+        if dflt:
+            spec = {**spec, "schedule": {**(spec.get("schedule") or {"on_data_change": True}), "cron": dflt}}
     v.spec = spec  # 승인된 기준을 그 버전 기록에도 남긴다
     token = token_of(a.code)
     i = ids(token)
@@ -210,6 +264,11 @@ def approve(session: Session, a: AnalysisAgent, v: AnalysisAgentVersion, actor: 
                     continue
                 seen_t.add((t.kind, t.target))
                 session.add(WorkflowTrigger(workflow_code=wf_code, kind=t.kind, target=t.target, debounce_sec=None, enabled=True))
+        # 팀 · 공통 조건(TDB-07) — 입력 자료가 아니어도 요청 팀이 새 자료를 반영하거나 공통 통합 DB 가 바뀌면 다시 돈다(팀 데이터 절 · 서술 갱신)
+        for kind, target in team_triggers(session, a):
+            if (kind, target) not in seen_t:
+                seen_t.add((kind, target))
+                session.add(WorkflowTrigger(workflow_code=wf_code, kind=kind, target=target, debounce_sec=None, enabled=True))
     if sch.get("cron"):
         session.add(WorkflowTrigger(workflow_code=wf_code, kind="cron", target=sch["cron"], debounce_sec=None, enabled=True))
     # 지표 — 이번 명세에 없는 이전 지표는 끈다(계산 이력 보존)
@@ -302,6 +361,7 @@ def preview(session: Session, spec: dict[str, Any], space: str, actor: str) -> d
         ctx = RunContext(session=session, run=run, workflow=wf, causes=run.causes, eval=EvalContext(session, workflow_run_id=run.id))
         ctx.state["preview"] = True
         ctx.state["analysis_spec"] = {"spec": spec, "token": token, "version": 0}
+        ctx.state["team_actor"] = actor  # 미리보기의 팀 = 요청자 소속 (TDB-09)
         for key, _name, impl, agent, cfg in _nodes(spec, i["agent"]):
             if impl in ("critic", "publish"):
                 continue

@@ -38,6 +38,9 @@ def _make(schema: str, prefix: str):
             "quality": Column(JSONB, default=dict, nullable=False),
             "note": Column(Text),
             "uploaded_by": Column(String(40)),
+            # 요청자 메모 · 요청자 (Phase P · UPV-06) — note 는 승인 기록, uploaded_by 는 반영한 사람
+            "memo": Column(Text),
+            "requested_by": Column(String(40)),
             # 자료 소유 조직(팀 · 영업점) — 올린 사람의 소속, 관리자는 올릴 때 고른다. 없으면 전행 공통 (요구사항 §33 OWN)
             "owner_org": Column(String(32), index=True),
             "created_at": _ts(default=utcnow, nullable=False),

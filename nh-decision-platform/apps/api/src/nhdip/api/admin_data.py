@@ -322,6 +322,7 @@ def _ds_json(session: Session, d: Dataset, with_versions: bool = True, resolver:
         oc: dict[str, Any] = {}
         out["versions"] = [
             {"id": v.id, "version": v.version, "asOf": _iso(v.as_of), "status": v.status, "isCurrent": v.is_current, "dataOrigin": v.data_origin, "fileName": v.file_name, "sha256": v.file_sha256, "rows": v.row_count, "quality": v.quality, "uploadedBy": v.uploaded_by, "createdAt": _iso(v.created_at), "committedAt": _iso(v.committed_at), "note": v.note,
+             "memo": getattr(v, "memo", None), "requestedBy": getattr(v, "requested_by", None),  # 요청자 메모 · 요청자 (Phase P · UPV-06)
              "owner": owner_json(session, v.owner_org, oc), "deletedAt": _iso(v.deleted_at), "deletedBy": v.deleted_by, "deleteReason": v.delete_reason}
             for v in vs
         ]
@@ -593,7 +594,7 @@ async def dataset_upload(
     owner = owner_of(session, admin, owner_org)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     try:
-        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner)
+        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, force=force, owner_org=owner, memo=note)
     except (IngestError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, str(exc)) from exc
@@ -640,7 +641,7 @@ async def dataset_create_upload(
     session.add(d)
     session.flush()
     try:
-        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, owner_org=owner)
+        v = ingest_file(session, d, name, content, as_of=as_of or None, data_origin=data_origin, actor=admin.emp_no, note=note, owner_org=owner, memo=note)
     except (IngestError, ValueError) as exc:
         session.rollback()
         raise HTTPException(422, f"이 정의로 파일을 읽을 수 없습니다 — {exc}") from exc

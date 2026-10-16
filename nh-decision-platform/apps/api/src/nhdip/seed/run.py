@@ -334,6 +334,40 @@ def admin_ia_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["admin_ia_upgrade"] = moved
 
 
+def admin_ia_v2_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """관리자 메뉴 7묶음(Phase P · ADM2-04) — 1회. Phase C 기본 묶음에 있는 관리자 화면만 새 묶음 · 정렬로(관리자가 바꾼 묶음은 그대로)."""
+    if _applied(s, "admin-ia-v2"):
+        return
+    moved = 0
+    for spec in C.SCREENS:
+        if spec.get("kind") != "admin":
+            continue
+        sc = s.get(Screen, spec["code"])
+        if sc is None or sc.section not in C.ADMIN_SECTIONS_V1:
+            continue
+        if (sc.section, sc.sort) != (spec["section"], spec["sort"]):
+            sc.section, sc.sort = spec["section"], spec["sort"]
+            moved += 1
+    out["admin_ia_v2"] = moved
+
+
+def analysis_agents_team_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """분석 에이전트 팀 데이터(Phase P · TDB) — 1회. 이미 승인된 분석 에이전트의 노드 사슬(팀 데이터 · 근거 검색)과 팀 · 공통 조건을 맞춘다."""
+    if _applied(s, "analysis-agents-team-v1"):
+        return
+    from nhdip.analysis_agents.lifecycle import sync_nodes
+    from nhdip.models import AnalysisAgent
+
+    n = 0
+    for a in s.execute(select(AnalysisAgent).where(AnalysisAgent.status.in_(("active", "paused")))).scalars():
+        try:
+            with s.begin_nested():
+                n += int(sync_nodes(s, a))
+        except Exception:  # noqa: BLE001 — 한 에이전트 보강 실패가 기동을 막지 않는다
+            log.exception("analysis agent sync failed (%s)", a.code)
+    out["analysis_agents_team"] = n
+
+
 def rename_upgrades(s: Session, out: dict[str, Any]) -> None:
     """화면 이름 바꾸기(이전 기본 이름일 때만 · 관리자가 바꾼 이름은 보존) — 1회씩."""
     for name, code, old, new in (("assist-rename-v1", "ADMIN_KNOWLEDGE", "질문하기 색인", "AI 어시스턴트 색인"), ("analysis-builder-rename-v1", "ANALYSIS_BUILDER", "분석 만들기", "분석 에이전트 만들기")):
@@ -413,9 +447,11 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:  # no
     phase_m_upgrade(s, out)
     phase_m_stages_upgrade(s, out)
     admin_ia_upgrade(s, out)
+    admin_ia_v2_upgrade(s, out)
     rename_upgrades(s, out)
     admin_counts_upgrade(s, out)
     data_admin_upgrade(s, out)
+    analysis_agents_team_upgrade(s, out)
     s.flush()
     # 기본 업무 구성(3개 부서 화면 · 흐름 · 지표 산식 · 화면 연결 · 조직 · 화면 권한 — 값 없음). 값은 올린 원천 자료로 계산한다
     from .pack import seed_business_pack

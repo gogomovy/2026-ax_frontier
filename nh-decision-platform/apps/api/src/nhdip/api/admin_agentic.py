@@ -129,3 +129,45 @@ def agentic_overview(session: Session = Depends(get_session)):
         out.append(item)
     return {"groups": out, "breaker": snapshot(), "generatedAt": _iso(utcnow()),
             "totals": {"agents": len(agents), "llm": sum(1 for a in agents if a.kind == "llm"), "calls24h": sum(v.get("calls", 0) for v in stats.values()), "errors24h": sum(v.get("errors", 0) for v in stats.values())}}
+
+
+# ═════════════════════════ 자동 실행 · 변경 감지 (Phase P · AGW-09) ═════════════════════════
+@router.get("/automation")
+def automation(session: Session = Depends(get_session)):
+    """흐름별 감지 조건 · 상위 흐름 · 정기 실행(다음 시각) · 대기/실행 상태 · 마지막 실행 + 최근 영향 판단 + 감지 정책 요약."""
+    from nhdip.models import Setting
+    from nhdip.workflow.orchestrator import dependency_graph, policy
+    from nhdip.workflow.scheduler import _tz
+    from nhdip.workflow.status import workflow_status
+
+    tz = _tz(session)
+    graph = dependency_graph(session)
+    wfs = session.execute(select(Workflow).order_by(Workflow.sort, Workflow.code)).scalars().all()
+    names = {w.code: w.name for w in wfs}
+    ds_names = {d.code: d.name for d in session.execute(select(Dataset)).scalars()}
+    since = utcnow() - timedelta(hours=24)
+    runs = dict(session.execute(select(WorkflowRun.workflow_code, func.count()).where(WorkflowRun.started_at >= since).group_by(WorkflowRun.workflow_code)).all())
+    fails = dict(session.execute(select(WorkflowRun.workflow_code, func.count()).where(WorkflowRun.started_at >= since, WorkflowRun.status == "failed").group_by(WorkflowRun.workflow_code)).all())
+    items = []
+    for w in wfs:
+        st = workflow_status(session, w, graph=graph, names=names, ds_names=ds_names, tz=tz)
+        st["runs24h"], st["failed24h"] = int(runs.get(w.code, 0)), int(fails.get(w.code, 0))
+        st["kind"] = "analysis_agent" if w.code.startswith("wf_an_") else "base" if w.code in ("wf_graph_projection", "wf_ontology_build") else "business"
+        items.append(st)
+    decisions = session.execute(select(AgentDecision).where(AgentDecision.agent_code == "impact_assessor").order_by(AgentDecision.id.desc()).limit(30)).scalars().all()
+    pol = policy(session)
+    deb = session.get(Setting, "workflow.debounce_default_sec")
+    judge = session.get(Setting, "agents.llm_judge")
+    return {
+        "workflows": items,
+        "decisions": [{"id": d.id, "at": _iso(d.at), "decision": d.decision, "summary": d.summary, "matched": sorted((d.detail or {}).get("matched") or {}), "kinds": (d.detail or {}).get("kinds") or {}} for d in decisions],
+        "policy": {
+            "debounceSec": deb.value if deb is not None else 60, "maxChain": pol.get("max_chain", 3), "routeOn": pol.get("route_on") or [], "maxRoute": pol.get("max_route", 2),
+            "requireApproval": pol.get("require_approval") or [], "holdSec": pol.get("hold_sec", 15), "maxHoldSec": pol.get("max_hold_sec", 300),
+            "llmJudge": bool((judge.value or {}).get("enabled", True)) if judge is not None and isinstance(judge.value, dict) else True,
+            "schedulerEverySec": 20, "timezone": str(tz),
+        },
+        "counts": {"workflows": len(items), "pending": sum(1 for i in items if i["state"] != "idle"), "cron": sum(len(i["triggers"]["cron"]) for i in items),
+                   "failed24h": sum(i["failed24h"] for i in items)},
+        "generatedAt": _iso(utcnow()),
+    }

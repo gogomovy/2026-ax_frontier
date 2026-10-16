@@ -515,11 +515,11 @@ def test_admin_status_reindex_and_search_diagnostic(db):
     assert all("parts" in a for a in d["analysis"])
     assert admin.post("/admin/knowledge/search", json={"query": "소기업 6B", "asEmpNo": "99999999"}).status_code == 404
     assert risk.post("/admin/knowledge/search", json={"query": "소기업 6B"}).status_code == 403
-    # 관리자 메뉴에는 [질문하기 색인] 이 있고(데이터와 지식 묶음), 일반 사용자 메뉴에는 없다
+    # 관리자 메뉴에는 [질문하기 색인] 이 있고(데이터 반영 묶음 · Phase P), 일반 사용자 메뉴에는 없다
     def hrefs(c):
         return {i["href"]: s["section"] for s in c.get("/me/menu").json()["sections"] for i in s["flow"] + s["reference"]}
 
-    assert hrefs(admin).get("/admin/knowledge") == "데이터와 지식" and "/admin/knowledge" not in hrefs(risk)
+    assert hrefs(admin).get("/admin/knowledge") == "데이터 반영" and "/admin/knowledge" not in hrefs(risk)
 
 
 # ═════════════════════════ 통합 — 검색 채널 ═════════════════════════

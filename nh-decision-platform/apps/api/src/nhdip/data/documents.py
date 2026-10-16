@@ -242,6 +242,8 @@ def ingest_document(
     for seq, ((page, chunk), sec) in enumerate(zip(chunks, section_paths([c for _, c in chunks])), start=1):
         session.add(t.chunk(document_id=doc.id, seq=seq, page=page, text=chunk, section_path=sec[:500] if sec else None))
     if emit_event:
-        emit(session, "document.ingested", {"origin": origin, "document_id": doc.id, "doc_code": doc_code, "doc_class": doc_class}, actor)
+        # 소유 조직 · 공통 여부(Phase P · AGW-04 · TDB-07) — 디스패처가 팀 · 공통 조건 흐름(분석 에이전트)을 깨운다
+        emit(session, "document.ingested", {"origin": origin, "document_id": doc.id, "doc_code": doc_code, "doc_class": doc_class, **({"owner_org": owner_org} if owner_org else {}),
+                                            **({"common": True} if is_common_doc_class(session, doc_class) else {})}, actor)
     audit(session, actor, "document.upload", "document", doc_code, {"origin": origin, "version": doc.version, "doc_class": doc_class})
     return doc

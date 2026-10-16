@@ -17,7 +17,9 @@ const CHECK_LABEL: Record<Verification["checkCode"], string> = {
 /** Critic 검증 결과 (요구사항 AGT-06) */
 export function VerificationRow({ items }: { items: Verification[] }) {
   const [open, setOpen] = useState(false);
-  const allPassed = items.every((i) => i.passed);
+  const allPassed = (items ?? []).every((i) => i.passed);
+  // 검증 항목이 없는 의견(아직 검증 전 · 규칙 기본 문장)에 '검증 0/0 통과'를 그리지 않는다 (Phase P · GAP-02)
+  if (!items || items.length === 0) return null;
 
   return (
     <div className="relative">

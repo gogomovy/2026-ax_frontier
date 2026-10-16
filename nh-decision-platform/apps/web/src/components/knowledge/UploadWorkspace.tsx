@@ -50,6 +50,40 @@ interface Check {
   detail: string;
   severity: string;
 }
+/** 반영 미리보기 (Phase P · UPV-02) — 이 파일이 같은 자료의 어느 판으로 들어가는지 */
+export interface Placement {
+  typedAsOf: string | null;
+  versionAsOf: string | null;
+  fileFrom: string | null;
+  fileTo: string | null;
+  fileDates: number;
+  noAsOfColumn: boolean;
+  action: "add" | "replace";
+  replaces: { version: number; asOf: string | null; memo: string | null; rows: number; committedAt: string | null } | null;
+  overlaps: { asOf: string; version: number }[];
+  duplicateOf: { version: number } | null;
+  existing: { asOf: string | null; version: number; rows: number; memo: string | null }[];
+  messages: string[];
+}
+
+/** 반영 미리보기 — 새 기준일로 추가 / 같은 기준일 판 교체 · 겹치는 기간 · 같은 파일 */
+export function PlacementNote({ p }: { p: Placement }) {
+  const tone = p.duplicateOf ? "attention" : p.action === "replace" ? "attention" : "info";
+  const title = p.duplicateOf
+    ? `같은 파일이 이미 현재 판(v${p.duplicateOf.version})입니다`
+    : p.action === "replace"
+      ? `같은 기준일(${p.replaces?.asOf ?? "기준일 없음"}) 판 v${p.replaces?.version} 을(를) 교체합니다`
+      : `새 기준일(${p.versionAsOf ?? "기준일 없음"})로 추가합니다`;
+  return (
+    <Notice tone={tone} title={title}>
+      <span data-upload-placement={p.action}>
+        {p.fileFrom ? `파일 기간 ${p.fileFrom === p.fileTo ? p.fileFrom : `${p.fileFrom} ~ ${p.fileTo} (${p.fileDates}개)`}. ` : ""}
+        {p.messages.join(" ")}
+      </span>
+    </Notice>
+  );
+}
+
 export interface UploadReq {
   id: number;
   kind: "dataset" | "document";
@@ -58,7 +92,7 @@ export interface UploadReq {
   origin: string;
   fileName: string;
   meta: Record<string, string | null> & { proposal?: { code: string; name: string; columns: { name: string; label: string; type: string; required?: boolean }[]; key_columns: string[]; as_of_column: string | null } };
-  preview: { rows?: number; quality?: { status?: string; checks?: Check[] }; chars?: number; pages?: number; excerpt?: string; headers?: string[]; columns?: string[]; sample?: Record<string, unknown>[] };
+  preview: { rows?: number; quality?: { status?: string; checks?: Check[] }; chars?: number; pages?: number; excerpt?: string; headers?: string[]; columns?: string[]; sample?: Record<string, unknown>[]; placement?: Placement | null };
   status: "pending" | "approved" | "rejected" | "failed";
   statusLabel: string;
   requestedBy: string;
@@ -121,12 +155,14 @@ export function RequestPreview({ r, showSample }: { r: UploadReq; showSample?: b
   const cols = (r.preview.columns ?? []).slice(0, 8);
   return (
     <div className="flex flex-col gap-xs">
+      {r.preview.placement ? <PlacementNote p={r.preview.placement} /> : null}
       <KeyValueList
         dense
         items={[
           { label: "행", value: `${(r.preview.rows ?? 0).toLocaleString("ko-KR")}행` },
           { label: "품질 검사", value: <QualityBadge status={r.preview.quality?.status} />, hint: checks.length ? `${checks.length}개 중 통과 ${checks.length - notPassed.length}` : undefined },
-          ...(r.meta.asOf ? [{ label: "기준일", value: r.meta.asOf }] : []),
+          ...(r.meta.asOf ? [{ label: "기준일", value: r.meta.asOf }] : r.preview.placement?.versionAsOf ? [{ label: "기준일", value: `${r.preview.placement.versionAsOf} (파일 기간에서)` }] : []),
+          ...(r.meta.note ? [{ label: "메모", value: r.meta.note }] : []),
           { label: "자료 성격", value: r.meta.dataOrigin === "simulated" ? "시뮬레이션" : "실데이터" },
         ]}
       />
@@ -234,6 +270,51 @@ function DatasetOption({ d, on, onPick, suggestion }: { d: DatasetOpt; on: boole
       </span>
       {suggestion ? <span className={clsx("mt-0.5 block text-[11.5px]", strong ? "font-bold text-success" : "text-steel")}>근거: {suggestion.reasons.join(" · ")}</span> : null}
     </button>
+  );
+}
+
+interface PeriodRow {
+  version: number;
+  asOf: string | null;
+  rows: number;
+  memo: string | null;
+  committedAt: string | null;
+  requestedByName?: string | null;
+  owner: { code: string; name: string } | null;
+}
+
+/** 보관 중인 기준일 (Phase P · UPV-07) — 이 자료의 현재 판(기준일마다 하나 · 영업점 자료는 영업점마다) */
+function PeriodList({ code }: { code: string }) {
+  const [data, setData] = useState<{ asOfColumn: string | null; periods: PeriodRow[] } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api<{ asOfColumn: string | null; periods: PeriodRow[] }>(`/db/datasets/${encodeURIComponent(code)}/periods`)
+      .then((d) => alive && setData(d))
+      .catch(() => alive && setData(null));
+    return () => {
+      alive = false;
+    };
+  }, [code]);
+  if (!data) return null;
+  if (!data.periods.length) return <p className="text-[12px] text-stone">아직 반영된 판이 없습니다 — 이 파일이 첫 판이 됩니다.</p>;
+  return (
+    <div data-upload-periods={data.periods.length}>
+      <p className="mb-1 text-[12px] font-bold text-steel">
+        보관 중인 기준일 {new Set(data.periods.map((p) => p.asOf)).size}개{data.asOfColumn ? "" : " · 기준일 열이 없는 자료(계산은 가장 늦은 기준일 판만)"}
+      </p>
+      <ul className="flex max-h-[180px] flex-col gap-0.5 overflow-y-auto text-[12px]">
+        {[...data.periods].reverse().map((p) => (
+          <li key={`${p.version}`} className="flex flex-wrap items-baseline gap-x-2 border-b border-hairline-soft py-1">
+            <span className="font-bold text-ink-deep tnum">{p.asOf ?? "기준일 없음"}</span>
+            <span className="text-steel tnum">
+              v{p.version} · {p.rows.toLocaleString("ko-KR")}행 · {fmtDateTime(p.committedAt)}
+            </span>
+            {p.owner ? <span className="text-stone">{p.owner.name}</span> : null}
+            {p.memo ? <span className="text-charcoal">메모: {p.memo}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -600,13 +681,19 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                         <option value="simulated">시뮬레이션</option>
                       </select>
                     </Field>
-                    <Field label="기준일(선택)" htmlFor="up-asof" hint="비우면 파일의 기준일 열에서 읽습니다">
+                    <Field label="기준일(선택)" htmlFor="up-asof" hint="판을 구분하는 날짜 — 비우면 파일 기간의 마지막 날">
                       <input id="up-asof" className="input !h-9 text-[13px]" type="date" value={form.as_of} onChange={(e) => setForm({ ...form, as_of: e.target.value })} />
                     </Field>
-                    <Field label="메모(선택)" htmlFor="up-note">
+                    <Field label="메모(선택)" htmlFor="up-note" hint="판 설명으로 남음(판 구분에는 쓰지 않음)">
                       <input id="up-note" className="input !h-9 text-[13px]" value={form.note} maxLength={500} placeholder="예: 8월 정정본" onChange={(e) => setForm({ ...form, note: e.target.value })} />
                     </Field>
                   </div>
+                  {/* 같은 자료를 날짜만 바꿔 올릴 때 (Phase P · UPV-01 · UPV-07) — 기준일이 판을 가른다 · 보관 중인 기준일 */}
+                  <p className="rounded-lg bg-surface-soft px-md py-2 text-[12px] leading-relaxed text-charcoal" data-upload-period-rule>
+                    같은 자료의 판은 <strong className="font-bold">기준일</strong>로 구분됩니다 — 기준일이 같으면 그 판을 새 파일로 교체하고, 다르면 날짜별로 함께 보관해 날짜별 비교(전월 · 전년 동기 대비)에 씁니다.
+                    메모는 판 설명이고, 시행일은 문서에만 있습니다. 입력한 기준일의 달이 파일 기간에 없으면 요청하지 않습니다.
+                  </p>
+                  {ds ? <PeriodList code={ds.code} /> : null}
                   {ds ? (
                     <Advanced label={`이 자료의 열 ${ds.columns.length}개${ds.filePattern ? " · 파일 이름 규칙" : ""}`}>
                       {ds.filePattern ? (

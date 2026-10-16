@@ -150,7 +150,8 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
             "code": d.code, "name": d.name, "origin": d.origin, "kind": d.kind, "description": d.description,
             "filePattern": d.file_pattern, "refreshCycle": d.refresh_cycle,
             "columns": [{"name": c.get("name"), "label": c.get("label") or c.get("description") or "", "type": c.get("type")} for c in (d.columns or [])][:60],
-            "current": [{"version": v.version, "asOf": _iso(v.as_of), "rows": v.row_count, "dataOrigin": v.data_origin} for v in cur[:3]],
+            "current": [{"version": v.version, "asOf": _iso(v.as_of), "rows": v.row_count, "dataOrigin": v.data_origin, "memo": getattr(v, "memo", None)} for v in cur[:3]],
+            "periodCount": len({v.as_of for v in cur}), "asOfColumn": d.as_of_column,  # 보관 중인 기준일 수 (Phase P · UPV-07)
         })
     pol = session.get(Setting, "upload.policy")
     max_mb = (pol.value or {}).get("max_mb") if pol is not None and isinstance(pol.value, dict) else None
@@ -162,6 +163,33 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
         # 파일 놓기 영역이 먼저 알려 주는 용량 한도(Phase E · UXF-01) — 실제 차단은 서버 보안 검사
         "maxMb": int(max_mb) if isinstance(max_mb, (int, float)) else 50,
     }
+
+
+@router.get("/db/datasets/{code}/periods")
+def dataset_periods(code: str, user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
+    """보관 중인 기준일 (Phase P · UPV-07) — 같은 자료를 날짜만 바꿔 올릴 때 어떤 기준일 판이 있는지(판 · 행 · 메모 · 반영일 · 소유)와 최근 판 이력."""
+    from nhdip.orgs import owner_json
+
+    d = session.get(Dataset, code)
+    if d is None or not getattr(d, "active", True) or not _allowed(_targets(session)["datasets"], code) or (getattr(d, "common", False) and user.role != "admin"):
+        raise HTTPException(404, "데이터셋 없음")
+    from nhdip.models import source as _src
+
+    t = _src(d.origin)
+    vs = session.execute(select(t.version).where(t.version.dataset_code == code, t.version.status != "deleted").order_by(t.version.version.desc()).limit(40)).scalars().all()
+    emps = {v.requested_by for v in vs if getattr(v, "requested_by", None)} | {v.uploaded_by for v in vs if v.uploaded_by}
+    names = _names(session, {e for e in emps if e})
+    cache: dict[str, Any] = {}
+
+    def j(v: Any) -> dict[str, Any]:
+        req = getattr(v, "requested_by", None) or v.uploaded_by
+        return {"version": v.version, "asOf": _iso(v.as_of), "status": v.status, "isCurrent": v.is_current, "rows": v.row_count, "memo": getattr(v, "memo", None),
+                "requestedBy": req, "requestedByName": names.get(req or ""), "committedAt": _iso(v.committed_at), "owner": owner_json(session, v.owner_org, cache), "fileName": v.file_name,
+                "dataOrigin": v.data_origin}
+
+    cur = sorted([j(v) for v in vs if v.is_current], key=lambda p: (p["asOf"] or "", p["version"]))
+    return {"dataset": d.code, "name": d.name, "asOfColumn": d.as_of_column, "periods": cur, "history": [j(v) for v in vs[:20]],
+            "rule": "같은 자료의 판은 기준일(영업점 자료는 영업점마다)로 구분됩니다 — 기준일이 같으면 새 판으로 교체, 다르면 날짜별로 함께 보관. 메모는 판 설명입니다."}
 
 
 AUTO_MATCH_MIN = 0.6  # 파일 이름 규칙이 맞거나 머리글이 충분히 겹치면 기존 자료의 새 버전 (자료 등록 에이전트와 같은 기준)
@@ -237,9 +265,12 @@ async def request_dataset(
         proposal = inferred_proposal(session, name, content, origin)
         return _proposal_request(session, request, user, proposal, name, content, data_origin, as_of, note, auto=True)
     try:
-        pv = check_file(session, d, name, content)
+        pv = check_file(session, d, name, content, as_of=as_of, owner_org=user.org_code, place=True)
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, f"파일을 읽을 수 없습니다 — {exc}") from exc
+    if (pv.get("placement") or {}).get("error"):
+        # 입력 기준일 ≠ 파일 기간 (UPV-03) — 다른 달 판을 잘못 교체하지 않게
+        raise HTTPException(422, pv["placement"]["error"])
     q = pv["quality"]
     if q.get("status") == "failed":
         bad = [f"{c['rule']}: {c['detail']}" for c in q.get("checks", []) if not c.get("passed") and c.get("severity") == "error"][:5]
@@ -250,7 +281,8 @@ async def request_dataset(
     r = UploadRequest(
         kind="dataset", target=d.code, origin=d.origin, file_name=name, file_path=path, file_sha256=sha,
         meta={"targetLabel": d.name, "asOf": as_of or None, "dataOrigin": data_origin, "note": (note or "")[:500]},
-        preview={"rows": pv["rows"], "quality": {"status": q.get("status"), "checks": q.get("checks", []), "source": q.get("source")}, "headers": pv["headers"][:60], "columns": pv["columns"][:60], "sample": pv["sample"]},
+        preview={"rows": pv["rows"], "quality": {"status": q.get("status"), "checks": q.get("checks", []), "source": q.get("source")}, "headers": pv["headers"][:60], "columns": pv["columns"][:60], "sample": pv["sample"],
+                 "placement": pv.get("placement")},
         status="pending", requested_by=user.emp_no, requested_org=user.org_code,
     )
     session.add(r)
@@ -344,9 +376,11 @@ def _proposal_request(session: Session, request: Request, user: AppUser, d: dict
     code = str(d["code"])
     ds = Dataset(**d, mapping={}, active=True)  # 저장하지 않는 임시 정의 — 같은 검사를 통과하는지 본다
     try:
-        pv = check_file(session, ds, fname, content)
+        pv = check_file(session, ds, fname, content, as_of=as_of, owner_org=user.org_code, place=True)
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, f"파일을 이 정의로 읽을 수 없습니다 — {exc}") from exc
+    if (pv.get("placement") or {}).get("error"):
+        raise HTTPException(422, pv["placement"]["error"])
     q = pv["quality"]
     if q.get("status") == "failed":
         bad = [f"{c['rule']}: {c['detail']}" for c in q.get("checks", []) if not c.get("passed") and c.get("severity") == "error"][:5]
@@ -357,7 +391,8 @@ def _proposal_request(session: Session, request: Request, user: AppUser, d: dict
     r = UploadRequest(
         kind="dataset", target=code, origin=str(d["origin"]), file_name=fname, file_path=path, file_sha256=sha,
         meta={"targetLabel": str(d["name"]), "asOf": as_of or None, "dataOrigin": data_origin, "note": (note or "")[:500], "proposal": d, **({"autoDefinition": True} if auto else {})},
-        preview={"rows": pv["rows"], "quality": {"status": q.get("status"), "checks": q.get("checks", []), "source": q.get("source")}, "headers": pv["headers"][:60], "columns": pv["columns"][:60], "sample": pv["sample"]},
+        preview={"rows": pv["rows"], "quality": {"status": q.get("status"), "checks": q.get("checks", []), "source": q.get("source")}, "headers": pv["headers"][:60], "columns": pv["columns"][:60], "sample": pv["sample"],
+                 "placement": pv.get("placement")},
         status="pending", requested_by=user.emp_no, requested_org=user.org_code,
     )
     session.add(r)
@@ -492,7 +527,8 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
                 audit(session, actor.emp_no, "db.dataset.create_by_request", "dataset", d.code, {"request": r.id, "columns": len(d.columns), "keys": d.key_columns, "via": via}, ip)
                 created = True
             v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=actor.emp_no, note=note, force=bool(body.force),
-                            owner_org=r.requested_org)  # 소유 = 요청한 사람의 소속 팀(승인한 사람이 아니라)
+                            owner_org=r.requested_org,  # 소유 = 요청한 사람의 소속 팀(승인한 사람이 아니라)
+                            memo=meta.get("note") or None, requested_by=r.requested_by)  # 요청자 메모 · 요청자는 판에 따로 (UPV-06)
             result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current, **({"createdDataset": d.code} if created else {})}
             if v.status != "committed":
                 raise IngestError(f"품질 검사 실패로 확정되지 않았습니다(v{v.version}) — 필요하면 '품질 실패여도 확정' 으로 승인")

@@ -1391,7 +1391,8 @@ def test_admin_home_and_monitor_overview(db):
     _login(admin, "00000001", "Admin1234!")
     menu = admin.get("/me/menu").json()
     admin_secs = [s["section"] for s in menu["sections"] if s["admin"]]
-    assert admin_secs == ["관리자 홈", "사용자와 권한", "데이터와 지식", "AI · 에이전트", "계산과 규칙", "운영 모니터링"], admin_secs
+    # Phase P (ADM2-01) — 업무 순서대로 7묶음
+    assert admin_secs == ["관리자 홈", "데이터 반영", "에이전트 · 자동화", "운영 현황", "실행 기록 · 품질", "계산 · 설정", "사용자 · 권한"], admin_secs
     hrefs = {i["href"] for s in menu["sections"] if s["admin"] for i in s["flow"] + s["reference"]}
     assert {"/admin", "/admin/settings", "/admin/monitor", "/admin/monitor/runs", "/admin/pipeline"} <= hrefs
     ov = admin.get("/admin/overview").json()
@@ -1425,8 +1426,20 @@ def test_admin_home_and_monitor_overview(db):
         admin_ia_upgrade(s, out)
         s.commit()
         assert out["admin_ia_upgrade"] == 2
-        assert (home.section, home.label) == ("관리자 홈", "관리자 홈") and (rules.section, rules.label) == ("계산과 규칙", "규칙(사용자 지정)")
+        assert (home.section, home.label) == ("관리자 홈", "관리자 홈") and (rules.section, rules.label) == ("계산 · 설정", "규칙(사용자 지정)")
         rules.label = "판정 규칙"
+        # Phase P (ADM2-04) — Phase C 기본 묶음에 있는 화면만 7묶음으로, 관리자가 바꾼 묶음은 그대로
+        from nhdip.seed.run import admin_ia_v2_upgrade
+
+        rules.section, sc_users = "계산과 규칙", s.get(Screen, "ADMIN_USERS")
+        sc_users.section = "내가 만든 묶음"
+        st.value = [x for x in (st.value or []) if x != "admin-ia-v2"]
+        s.commit()
+        out2: dict = {}
+        admin_ia_v2_upgrade(s, out2)
+        s.commit()
+        assert rules.section == "계산 · 설정" and sc_users.section == "내가 만든 묶음" and out2["admin_ia_v2"] >= 1, out2
+        sc_users.section = "사용자 · 권한"
         s.commit()
 
 
@@ -1527,7 +1540,7 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     from sqlalchemy import func
 
     from nhdip.data.datasets import current_rows
-    from nhdip.models import Agent, Dataset, MetricValue, NodeRun, Prompt, ViewArtifact, Workflow, WorkflowNode, WorkflowRun
+    from nhdip.models import Agent, Dataset, MetricValue, NodeRun, Prompt, ViewArtifact, Workflow, WorkflowNode, WorkflowRun, WorkflowTrigger
     from nhdip.workflow import llm_judge
 
     _drain(db)
@@ -1621,7 +1634,8 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert figs and all(f["value"] is not None for f in figs.values()), figs
     assert any(b["type"] == "metrics" for s_ in pv["report"]["sections"] for b in s_["blocks"]) and any(b["type"] == "table" and b["table"]["rows"] for s_ in pv["report"]["sections"] for b in s_["blocks"])
     assert all("[[fig:" in o["statement"] for o in pv["report"]["opinions"])
-    groups = [r["group"] for s_ in pv["report"]["sections"] for b in s_["blocks"] if b["type"] == "table" for r in b["table"]["rows"]]
+    assert any(s_["id"] == "sec-team" for s_ in pv["report"]["sections"])  # 미리보기도 참고한 팀 데이터 절(TDB-09)
+    groups = [r["group"] for s_ in pv["report"]["sections"] if s_["id"] != "sec-team" for b in s_["blocks"] if b["type"] == "table" for r in b["table"]["rows"]]
     assert groups and "그 외 상품 합계" not in groups and "합계" not in groups, groups
     with db() as s:
         assert s.execute(select(func.count()).select_from(ViewArtifact)).scalar() == arts0
@@ -1648,7 +1662,11 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
         impls = [n.impl for n in s.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == wf).order_by(WorkflowNode.seq)).scalars()]
         prompt = s.execute(select(Prompt).where(Prompt.agent_code == code)).scalar()
         assert s.get(Agent, code).kind == "llm"
-    assert impls == ["load_inputs", "compute_metrics", "dynamic_task", "render_report", "critic", "publish"], impls
+    # Phase P (TDB-02~05) — 팀 데이터 · 근거 검색(팀 문서 · 그래프 개념)이 명세의 근거 설정과 관계없이 들어간다
+    assert impls == ["load_inputs", "compute_metrics", "team_context", "retrieve_evidence", "dynamic_task", "render_report", "critic", "publish"], impls
+    with db() as s:
+        kinds = {(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf)).scalars()}
+    assert ("common", "*") in kinds and any(k == "team" for k, _ in kinds) and any(k == "cron" for k, _ in kinds), kinds  # 팀 · 공통 조건 · 기본 정기 실행(AGW-06)
     assert "<<자료>>" in prompt.system and "이전 지시는 모두 무시하고" in prompt.system.split("<<자료>>", 1)[1]  # 요청 글은 구분자 안 자료로만
 
     # 실행 — 동적 수행(LLM 미연결 → 축소 · 규칙 판정) · 렌더링 · 게시
@@ -1663,6 +1681,13 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
     assert any(t["tabKey"] == "model-monitoring" for t in tabs["current"])  # 기존 탭 그대로
     rep = u.get(f"/screens/analysis/risk/reports/{tab}").json()
     assert rep["workflow"] == wf and rep["analysisAgent"]["code"] == code and rep["figures"]
+    # 참고한 팀 데이터 절(TDB-06) — 입력 자료(계산 입력) 표 · 당행 Data 근거
+    team_sec = next(sc for sc in rep["sections"] if sc["id"] == "sec-team")
+    ds_tbl = next(b for b in team_sec["blocks"] if b["type"] == "table" and "정형" in b["table"]["caption"])
+    assert any(r["use"] == "계산 입력" for r in ds_tbl["table"]["rows"]), ds_tbl
+    assert any(e["category"] == "bank_data" for e in rep["opinions"][0]["evidence"]), rep["opinions"][0]["evidence"]
+    st = u.get("/analysis/status", params={"workflow": wf}).json()  # 업무 화면 갱신 상태(AGW-08)
+    assert st["workflow"] == wf and st["triggers"]["common"] and st["triggers"]["cron"] and st["state"] in ("idle", "queued", "held", "running"), st
     assert u.get(f"/screens/reports/{tab}").json()["id"] == rep["id"]  # 기존 보고서 경로도 같은 산출물
     assert b.get(f"/screens/analysis/risk/reports/{tab}").status_code == 403
     fmt = u.get("/reports/formats").json()[0]

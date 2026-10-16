@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from nhdip.analysis_agents.lifecycle import LifecycleError, approve, preview, reject, request, set_state
 from nhdip.analysis_agents.refine import refine
 from nhdip.analysis_agents.spec import catalog, validate_spec
+from nhdip.analysis_agents.team import team_of
 from nhdip.analysis_registry import space as get_space, spaces
 from nhdip.db import get_session
 from nhdip.models import AnalysisAgent, AnalysisAgentVersion, AppUser, Prompt, Setting, Workflow, WorkflowRun
@@ -81,13 +82,15 @@ def get_catalog(space: str | None = None, session: Session = Depends(get_session
     if key is None:
         raise HTTPException(403, "분석을 만들 수 있는 공간이 없습니다 — 관리자에게 화면 권한을 요청하세요")
     _builder_space(session, user, key)
-    return {"spaces": sps, **catalog(session, key)}
+    team = team_of(session, user.org_code)
+    return {"spaces": sps, **catalog(session, key, team_orgs=team.orgs, team_name=team.name)}
 
 
 @router.post("/refine")
 def do_refine(body: RefineIn, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("analysis_builder"))):
     _builder_space(session, user, body.space)
-    spec, validation, meta = refine(session, body.text, body.space, {"datasets": body.datasets[:5], "doc_classes": body.doc_classes[:5]})
+    team = team_of(session, user.org_code)
+    spec, validation, meta = refine(session, body.text, body.space, {"datasets": body.datasets[:5], "doc_classes": body.doc_classes[:5], "team_orgs": sorted(team.orgs), "team_name": team.name})
     session.commit()  # LLM 호출 기록
     return {"spec": spec, "validation": validation, "meta": meta}
 
@@ -151,6 +154,11 @@ def _agent_json(session: Session, a: AnalysisAgent, names: dict[str, str] | None
         out["prompt"] = {"version": pr.version, "system": pr.system} if pr else None
         wf = session.get(Workflow, a.workflow_code) if a.workflow_code else None
         out["workflowEnabled"] = bool(wf and wf.enabled)
+        from nhdip.analysis_agents.lifecycle import default_cron
+        from nhdip.analysis_agents.team import team_of_agent
+
+        out["defaultCron"] = default_cron(session)  # 승인 화면 정기 실행 기본값(AGW-06)
+        out["team"] = team_of_agent(session, a.code).json()
     return out
 
 

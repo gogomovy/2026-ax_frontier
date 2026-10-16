@@ -825,7 +825,7 @@ try {
     await sleep(300);
     ok("운영 개요: 그래프 → 표로 보기", toggled && (await a.$$("figure table")).length >= 1);
     const crumbM = await a.evaluate(() => document.querySelector('nav[aria-label="현재 위치"]')?.innerText ?? "");
-    ok("운영 개요: 위치(관리자 > 운영 모니터링 > 운영 개요)", crumbM.includes("운영 모니터링") && crumbM.includes("운영 개요"), crumbM.replace(/\n/g, " "));
+    ok("운영 개요: 위치(관리자 > 운영 현황 > 운영 개요)", crumbM.includes("운영 현황") && crumbM.includes("운영 개요"), crumbM.replace(/\n/g, " "));
     await shot(a, "07b-admin-monitor");
   }
 

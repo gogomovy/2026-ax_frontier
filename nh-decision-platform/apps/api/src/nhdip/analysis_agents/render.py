@@ -123,6 +123,83 @@ def _evidence(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def _metric_datasets(m: dict[str, Any]) -> list[str]:
+    return [ref["q"]["dataset"] for ref in (m.get("args") or {}).values() if isinstance(ref, dict) and isinstance(ref.get("q"), dict) and ref["q"].get("dataset")]
+
+
+def data_evidence(ctx: EvalContext, spec: dict[str, Any], token: str) -> list[dict[str, Any]]:
+    """당행 Data 근거 (GAP-01 · TDB-06) — 계산에 쓴 자료의 현재 판 · 기준일 · 행 수. 의견 근거 범주 검증이 실제 자료를 본다."""
+    from .spec import input_datasets
+
+    first_fig: dict[str, str] = {}
+    for m in spec.get("metrics") or []:
+        for code in _metric_datasets(m):
+            first_fig.setdefault(code, figure_id(token, m["key"]))
+    out = []
+    for i, code in enumerate(dict.fromkeys(input_datasets(spec)), start=1):
+        try:
+            vs, rows, ds = ctx.dataset(code)
+        except Exception:  # noqa: BLE001 — 자료가 없으면 근거도 없다
+            continue
+        if vs is None:
+            continue
+        as_of = vs.as_of.isoformat() if getattr(vs, "as_of", None) else "-"
+        out.append({
+            "id": f"ev-data-{i}", "category": "bank_data", "sourceKind": "calc_run", "label": f"{ds.name} · 판 {vs.version} · 기준일 {as_of}"[:160],
+            "snippet": f"계산 입력 {len(rows):,}행 · {vs.file_name or '-'}"[:240], "relevance": None, "tableRef": ds.code, **({"figureId": first_fig[code]} if code in first_fig else {}),
+        })
+    return out
+
+
+def _num_text(v: Any, unit: str | None) -> str:
+    if v is None:
+        return "-"
+    try:
+        d = Decimal(str(v))
+    except ArithmeticError:
+        return str(v)
+    s = _fmt(d, unit or "NONE") if d == d.to_integral_value() else f"{float(d):,.2f}"
+    lbl = UNIT_LABELS.get(unit or "NONE") if unit and unit != "NONE" else None
+    return f"{s} {lbl}" if lbl else s
+
+
+def team_section(team: dict[str, Any] | None, evidence: list[dict[str, Any]], meta: dict[str, Any] | None) -> dict[str, Any] | None:
+    """보고서 마지막 절 '참고한 팀 데이터 (정형 · 근거 · 온톨로지)' — 이 분석이 실행 때 본 팀의 3개 DB (TDB-06)."""
+    if not team:
+        return None
+    tname = (team.get("team") or {}).get("name") or "전행"
+    g = team.get("graph") or {}
+    meta = meta or {}
+    engine = {"es": "Elasticsearch", "pg": "PostgreSQL(대체)"}.get(str(meta.get("engine") or ""), "-")
+    intro = (f"이 분석은 실행할 때마다 {tname}의 데이터베이스를 다시 봅니다 — 정형 자료(PostgreSQL) {len(team.get('datasets') or [])}건"
+             f"(우리 팀 {team.get('counts', {}).get('team', 0)} · 공통 {team.get('counts', {}).get('common', 0)}), 상위 부서 KPI {len(team.get('kpis') or [])}건, "
+             f"근거 문서 {len(evidence)}건(검색 {engine}), 온톨로지 관계 {len(g.get('relations') or [])}건"
+             + ("" if g.get("available") else f"(그래프 미사용 — {g.get('reason') or '연결 없음'})") + ".")
+    blocks: list[dict[str, Any]] = [{"type": "p", "text": intro}]
+    ds_rows = [{"name": d["name"], "scope": d["scopeLabel"], "use": d["useLabel"], "periods": d["periodText"], "version": str(d["versions"]), "rows": f"{int(d.get('rows') or 0):,}"} for d in team.get("datasets") or []]
+    if ds_rows:
+        blocks.append({"type": "table", "table": {"caption": "정형 자료 (PostgreSQL)", "columns": [
+            {"key": "name", "label": "자료"}, {"key": "scope", "label": "구분"}, {"key": "use", "label": "쓰임"}, {"key": "periods", "label": "보관 기준일"},
+            {"key": "version", "label": "현재 판", "align": "right"}, {"key": "rows", "label": "행", "align": "right"}], "rows": ds_rows,
+            "note": "같은 자료는 기준일마다 따로 보관됩니다 — 기준일이 같으면 새 판으로 교체, 다르면 날짜별로 함께 보관(날짜별 비교)."}})
+    kp_rows = [{"label": k["label"], "workflow": k["workflowName"], "value": _num_text(k.get("value"), k.get("unit")), "previous": _num_text(k.get("previous"), k.get("unit")), "use": "계산 입력" if k.get("used") else "참고"}
+               for k in team.get("kpis") or []]
+    if kp_rows:
+        blocks.append({"type": "table", "table": {"caption": "상위 부서 · 다른 흐름 KPI", "columns": [
+            {"key": "label", "label": "지표"}, {"key": "workflow", "label": "흐름"}, {"key": "value", "label": "최근 값", "align": "right"}, {"key": "previous", "label": "직전 값", "align": "right"},
+            {"key": "use", "label": "쓰임"}], "rows": kp_rows}})
+    ev_rows = [{"title": str((e.get("doc") or {}).get("title") or e.get("label") or "")[:80], "cls": str((e.get("doc") or {}).get("dbClass") or "-"), "page": str((e.get("doc") or {}).get("page") or "-")}
+               for e in evidence if e.get("sourceKind") == "doc_chunk"]
+    if ev_rows:
+        blocks.append({"type": "table", "table": {"caption": f"근거 문서 (검색 {engine})", "columns": [{"key": "title", "label": "문서"}, {"key": "cls", "label": "분류"}, {"key": "page", "label": "쪽", "align": "right"}],
+                                                  "rows": ev_rows, **({"note": meta["note"]} if meta.get("note") else {})}})
+    rel_rows = [{"from": str(r.get("from") or ""), "rel": str(r.get("rel") or ""), "to": f"{r.get('to')} ({r.get('toLabel')})"} for r in g.get("relations") or []]
+    rel_rows += [{"from": "연관 자료", "rel": "같은 개념 · 지표", "to": f"{r.get('name')} — {', '.join(r.get('via') or [])}"} for r in (g.get("related") or [])[:5]]
+    if rel_rows:
+        blocks.append({"type": "table", "table": {"caption": "온톨로지 관계 (Neo4j)", "columns": [{"key": "from", "label": "대상"}, {"key": "rel", "label": "관계"}, {"key": "to", "label": "연결 대상"}], "rows": rel_rows}})
+    return {"id": "sec-team", "heading": "참고한 팀 데이터 (정형 · 근거 · 온톨로지)", "level": 2, "blocks": blocks}
+
+
 def render(
     spec: dict[str, Any],
     token: str,
@@ -135,14 +212,21 @@ def render(
     evidence: list[dict[str, Any]],
     as_of: str | None,
     version: int,
+    team: dict[str, Any] | None = None,
+    data_evidence: list[dict[str, Any]] | None = None,
+    evidence_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     tab_key = f"an-{token}"
     prev_ops = {o.get("id"): o for o in ((previous or {}).get("opinions") or []) if isinstance(o, dict)}
     ev = _evidence(evidence)
+    dev = list(data_evidence or [])
+    metric_ds = {m["key"]: set(_metric_datasets(m)) for m in spec.get("metrics") or []}
     opinions = []
     for ins in spec.get("insights") or []:
         iid = insight_id(token, ins["key"])
         fids = [figure_id(token, k) for k in ins.get("metrics") or []]
+        used = set().union(*[metric_ds.get(k, set()) for k in ins.get("metrics") or []]) if ins.get("metrics") else set()
+        own_dev = [e for e in dev if e.get("tableRef") in used] or dev
         rule_sev = _sev_max(*[verdict.get(k, {}).get("severity") for k in ins.get("metrics") or []])
         found = findings.get(ins["key"]) or {}
         prev = prev_ops.get(iid) or {}
@@ -153,7 +237,7 @@ def render(
             "statement": prev.get("statement") or default_statement(spec, ins, token),
             "severity": _sev_max(rule_sev, found.get("severity")),
             "asOf": as_of or "", "dataOrigin": _origin(figs, fids),
-            "figures": {f: figs[f] for f in fids if f in figs}, "evidence": ev[:3], "verifications": [],
+            "figures": {f: figs[f] for f in fids if f in figs}, "evidence": own_dev[:2] + ev[:3], "verifications": [],
             "reportKind": "dynamic", "reportAnchor": "sec-1", "tabKey": tab_key,
         })
     sections, toc = [], []
@@ -185,6 +269,10 @@ def render(
                                                               "series": [{"name": td["value_label"], "points": [{"label": g, "value": float(v)} for g, v in tv["rows"]]}]}})
         sections.append({"id": sid, "heading": sec["heading"], "level": 2, "blocks": blocks})
         toc.append({"id": sid, "label": sec["heading"], "level": 2})
+    ts = team_section(team, ev, evidence_meta)
+    if ts is not None:
+        sections.append(ts)
+        toc.append({"id": ts["id"], "label": ts["heading"], "level": 2})
     return {
         "id": f"rep-{tab_key}",
         "kind": "dynamic",
@@ -197,7 +285,7 @@ def render(
         "sections": sections,
         "figures": figs,
         "opinions": opinions,
-        "evidence": ev,
+        "evidence": dev + ev,
         "limitations": [
             "수치는 계산 커널이 데이터셋 현재 버전으로 계산했고, 의견 문장은 이 분석 전용 에이전트가 쓴 뒤 검증(숫자 직접 기재 · 인과 단정 차단)을 통과한 것만 게시합니다.",
             f"부서 요청으로 만든 맞춤 분석(명세 v{version}) — 관리자 승인 후 실행됩니다.",

@@ -307,6 +307,42 @@ def blank_outputs(session: Session, wf: Workflow, run: WorkflowRun) -> WorkflowR
     return run
 
 
+def changed_upstream_metrics(session: Session, workflow_code: str, outcomes: dict[str, Any]) -> list[str]:
+    """이 실행에서 값이 바뀐(첫 값 포함) 지표 가운데 다른 흐름이 참조하는 것 (Phase P · AGW-03)."""
+    from nhdip.models import Metric
+
+    changed = {code for code, oc in outcomes.items() if not getattr(oc, "error", None) and getattr(oc, "display", None) is not None and getattr(oc, "previous", None) != getattr(oc, "display", None)}
+    if not changed:
+        return []
+    used: set[str] = set()
+    for m in session.execute(select(Metric).where(Metric.enabled, Metric.workflow_code != workflow_code)).scalars():
+        for ref in (m.args or {}).values():
+            if isinstance(ref, dict) and ref.get("metric") in changed:
+                used.add(str(ref["metric"]))
+    return sorted(used)
+
+
+def _emit_metrics_changed(ctx: RunContext) -> None:
+    """상위 → 하위 결정론 전파(AGW-03) — 성공한 실행의 결과(지표)가 바뀌었고 그 지표를 다른 흐름이 쓰면 metrics.changed.
+    디스패처가 그 지표를 참조하는 흐름(분석 에이전트 포함)을 다시 계산한다(LLM 경로 지정 없이도). 실패해도 실행 결과는 그대로."""
+    session = ctx.session
+    try:
+        codes = changed_upstream_metrics(session, ctx.workflow.code, ctx.eval.outcomes)
+        if not codes:
+            return
+        from nhdip.events import emit
+
+        from .agent_nodes import run_chain
+
+        emit(session, "metrics.changed", {"workflow": ctx.workflow.code, "run": ctx.run.id, "finished_at": utcnow().isoformat(), "metrics": codes[:50], "chain": [*run_chain(ctx), ctx.workflow.code]}, "engine")
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        import logging
+
+        logging.getLogger("nhdip.engine").exception("metrics.changed emit failed (%s)", ctx.workflow.code)
+
+
 def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id: int | None = None) -> WorkflowRun:
     import nhdip.workflow.nodes  # noqa: F401  (노드 구현 등록)
 
@@ -371,4 +407,6 @@ def run_workflow(session: Session, workflow_code: str, causes: list[Any], job_id
     run.summary = summary
     run.finished_at = utcnow()
     session.commit()
+    if run.status in ("succeeded", "degraded"):
+        _emit_metrics_changed(ctx)
     return run

@@ -36,38 +36,42 @@ SCREENS = [
     # 분석 에이전트 만들기 (Phase C · DAG-01 · 이름 Phase K · Q155) — 화면을 받은 조직은 부서 분석 공간에 새 분석을 요청(관리자 승인)
     dict(code="ANALYSIS_BUILDER", path="/analysis/builder", label="분석 에이전트 만들기", section="공통", kind="reference", sort=82, match="/analysis/builder", resources=["analysis_builder"]),
     dict(code="KNOWLEDGE_UPLOAD", path="/knowledge/upload", label="자료 올리기", section="공통", kind="reference", sort=81, resources=["db_upload"]),
-    # 관리자 — 묶음 6개 (Phase C · ADM-01 · Q104). 화면 코드 · 경로는 그대로, 묶음(section) · 이름 · 정렬만
+    # 관리자 — 업무 순서대로 묶음 7개 (Phase P · ADM2-01 · 이전 Phase C ADM-01 6묶음). 화면 코드 · 경로는 그대로, 묶음(section) · 정렬만
     dict(code="ADMIN_HOME", path="/admin", label="관리자 홈", section="관리자 홈", kind="admin", sort=100, admin_only=True, match="=/admin", count_key="adminTodo"),
-    dict(code="ADMIN_USERS", path="/admin/users", label="사용자", section="사용자와 권한", kind="admin", sort=110, admin_only=True, count_key="adminUsers"),
-    dict(code="ADMIN_ORGS", path="/admin/orgs", label="조직", section="사용자와 권한", kind="admin", sort=111, admin_only=True),
-    dict(code="ADMIN_SCREENS", path="/admin/screens", label="화면 권한", section="사용자와 권한", kind="admin", sort=112, admin_only=True),
-    dict(code="ADMIN_AUDIT", path="/admin/audit", label="감사 로그", section="사용자와 권한", kind="admin", sort=113, admin_only=True),
-    dict(code="ADMIN_UPLOADS", path="/admin/uploads", label="자료 승인", section="데이터와 지식", kind="admin", sort=120, admin_only=True, count_key="adminUploads"),
-    dict(code="ADMIN_DATASETS", path="/admin/datasets", label="데이터셋·문서", section="데이터와 지식", kind="admin", sort=121, admin_only=True),
-    dict(code="ADMIN_CONTRACTS", path="/admin/contracts", label="컬럼 정의서", section="데이터와 지식", kind="admin", sort=122, admin_only=True),
-    dict(code="ADMIN_ONTOLOGY", path="/admin/ontology", label="온톨로지", section="데이터와 지식", kind="admin", sort=123, admin_only=True),
-    dict(code="ADMIN_KNOWLEDGE", path="/admin/knowledge", label="AI 어시스턴트 색인", section="데이터와 지식", kind="admin", sort=124, admin_only=True),
+    dict(code="ADMIN_UPLOADS", path="/admin/uploads", label="자료 승인", section="데이터 반영", kind="admin", sort=110, admin_only=True, count_key="adminUploads"),
+    dict(code="ADMIN_DATASETS", path="/admin/datasets", label="데이터셋·문서", section="데이터 반영", kind="admin", sort=111, admin_only=True),
+    dict(code="ADMIN_CONTRACTS", path="/admin/contracts", label="컬럼 정의서", section="데이터 반영", kind="admin", sort=112, admin_only=True),
+    dict(code="ADMIN_ONTOLOGY", path="/admin/ontology", label="온톨로지", section="데이터 반영", kind="admin", sort=113, admin_only=True),
+    dict(code="ADMIN_KNOWLEDGE", path="/admin/knowledge", label="AI 어시스턴트 색인", section="데이터 반영", kind="admin", sort=114, admin_only=True),
     # Phase M · AGG-03 — 그룹별 에이전틱 파이프라인(단계 · 상태 · 통계 · 결정)
-    dict(code="ADMIN_AGENTIC", path="/admin/agentic", label="에이전틱 파이프라인", section="AI · 에이전트", kind="admin", sort=129, admin_only=True),
-    dict(code="ADMIN_ANALYSIS_AGENTS", path="/admin/analysis-agents", label="분석 에이전트", section="AI · 에이전트", kind="admin", sort=130, admin_only=True, count_key="adminAnalyses"),
-    dict(code="ADMIN_LLM", path="/admin/llm", label="LLM 연동", section="AI · 에이전트", kind="admin", sort=131, admin_only=True),
-    dict(code="ADMIN_AGENTS", path="/admin/agents", label="에이전트·프롬프트", section="AI · 에이전트", kind="admin", sort=132, admin_only=True),
-    dict(code="ADMIN_WORKFLOWS", path="/admin/workflows", label="워크플로", section="AI · 에이전트", kind="admin", sort=133, admin_only=True),
-    dict(code="ADMIN_METRICS", path="/admin/metrics", label="지표·계산", section="계산과 규칙", kind="admin", sort=141, admin_only=True),
-    dict(code="ADMIN_RULES", path="/admin/rules", label="판정 규칙", section="계산과 규칙", kind="admin", sort=142, admin_only=True),
-    dict(code="ADMIN_SETTINGS", path="/admin/settings", label="운영 설정", section="계산과 규칙", kind="admin", sort=143, admin_only=True),
+    dict(code="ADMIN_AGENTIC", path="/admin/agentic", label="에이전틱 파이프라인", section="에이전트 · 자동화", kind="admin", sort=120, admin_only=True),
+    # Phase P · AGW-09 — 흐름별 감지 조건 · 정기 실행 · 대기/실행 상태 · 영향 판단 기록
+    dict(code="ADMIN_AUTOMATION", path="/admin/automation", label="자동 실행 · 변경 감지", section="에이전트 · 자동화", kind="admin", sort=121, admin_only=True),
+    dict(code="ADMIN_ANALYSIS_AGENTS", path="/admin/analysis-agents", label="분석 에이전트", section="에이전트 · 자동화", kind="admin", sort=122, admin_only=True, count_key="adminAnalyses"),
+    dict(code="ADMIN_WORKFLOWS", path="/admin/workflows", label="워크플로", section="에이전트 · 자동화", kind="admin", sort=123, admin_only=True),
+    dict(code="ADMIN_AGENTS", path="/admin/agents", label="에이전트·프롬프트", section="에이전트 · 자동화", kind="admin", sort=124, admin_only=True),
+    dict(code="ADMIN_LLM", path="/admin/llm", label="LLM 연동", section="에이전트 · 자동화", kind="admin", sort=125, admin_only=True),
+    dict(code="ADMIN_MONITOR", path="/admin/monitor", label="운영 개요", section="운영 현황", kind="admin", sort=130, admin_only=True, match="=/admin/monitor"),
+    dict(code="ADMIN_PIPELINE", path="/admin/pipeline", label="파이프라인", section="운영 현황", kind="admin", sort=131, admin_only=True),
+    dict(code="ADMIN_FLOW", path="/admin/monitor/flow", label="데이터 흐름", section="운영 현황", kind="admin", sort=132, admin_only=True),
+    dict(code="ADMIN_ALERTS", path="/admin/monitor/alerts", label="운영 알림 · 비용", section="운영 현황", kind="admin", sort=133, admin_only=True),
+    dict(code="ADMIN_RUNS", path="/admin/monitor/runs", label="에이전트 실행", section="실행 기록 · 품질", kind="admin", sort=140, admin_only=True),
+    dict(code="ADMIN_AGENT_DECISIONS", path="/admin/monitor/agents", label="에이전트 결정", section="실행 기록 · 품질", kind="admin", sort=141, admin_only=True),
+    dict(code="ADMIN_CALC", path="/admin/monitor/calc", label="수치 모니터링", section="실행 기록 · 품질", kind="admin", sort=142, admin_only=True),
+    dict(code="ADMIN_TRACE", path="/admin/monitor/trace", label="요청 추적", section="실행 기록 · 품질", kind="admin", sort=143, admin_only=True),
+    dict(code="ADMIN_EVALS", path="/admin/monitor/evals", label="골든셋 평가", section="실행 기록 · 품질", kind="admin", sort=144, admin_only=True),
+    dict(code="ADMIN_METRICS", path="/admin/metrics", label="지표·계산", section="계산 · 설정", kind="admin", sort=150, admin_only=True),
+    dict(code="ADMIN_RULES", path="/admin/rules", label="판정 규칙", section="계산 · 설정", kind="admin", sort=151, admin_only=True),
+    dict(code="ADMIN_SETTINGS", path="/admin/settings", label="운영 설정", section="계산 · 설정", kind="admin", sort=152, admin_only=True),
     # 화면 설정 (Phase K · Q148) — 판정 구간 · 기준값 · 목표 역할 · 업무 영역 · 예시 질문 · 알림
-    dict(code="ADMIN_UI", path="/admin/ui", label="화면 설정", section="계산과 규칙", kind="admin", sort=144, admin_only=True),
-    dict(code="ADMIN_MONITOR", path="/admin/monitor", label="운영 개요", section="운영 모니터링", kind="admin", sort=150, admin_only=True, match="=/admin/monitor"),
-    dict(code="ADMIN_PIPELINE", path="/admin/pipeline", label="파이프라인", section="운영 모니터링", kind="admin", sort=151, admin_only=True),
-    dict(code="ADMIN_FLOW", path="/admin/monitor/flow", label="데이터 흐름", section="운영 모니터링", kind="admin", sort=152, admin_only=True),
-    dict(code="ADMIN_RUNS", path="/admin/monitor/runs", label="에이전트 실행", section="운영 모니터링", kind="admin", sort=153, admin_only=True),
-    dict(code="ADMIN_AGENT_DECISIONS", path="/admin/monitor/agents", label="에이전트 결정", section="운영 모니터링", kind="admin", sort=154, admin_only=True),
-    dict(code="ADMIN_CALC", path="/admin/monitor/calc", label="수치 모니터링", section="운영 모니터링", kind="admin", sort=155, admin_only=True),
-    dict(code="ADMIN_TRACE", path="/admin/monitor/trace", label="요청 추적", section="운영 모니터링", kind="admin", sort=156, admin_only=True),
-    dict(code="ADMIN_EVALS", path="/admin/monitor/evals", label="골든셋 평가", section="운영 모니터링", kind="admin", sort=157, admin_only=True),
-    dict(code="ADMIN_ALERTS", path="/admin/monitor/alerts", label="운영 알림 · 비용", section="운영 모니터링", kind="admin", sort=158, admin_only=True),
+    dict(code="ADMIN_UI", path="/admin/ui", label="화면 설정", section="계산 · 설정", kind="admin", sort=153, admin_only=True),
+    dict(code="ADMIN_USERS", path="/admin/users", label="사용자", section="사용자 · 권한", kind="admin", sort=160, admin_only=True, count_key="adminUsers"),
+    dict(code="ADMIN_ORGS", path="/admin/orgs", label="조직", section="사용자 · 권한", kind="admin", sort=161, admin_only=True),
+    dict(code="ADMIN_SCREENS", path="/admin/screens", label="화면 권한", section="사용자 · 권한", kind="admin", sort=162, admin_only=True),
+    dict(code="ADMIN_AUDIT", path="/admin/audit", label="감사 로그", section="사용자 · 권한", kind="admin", sort=163, admin_only=True),
 ]
+# Phase C(ADM-01) 기본 관리자 묶음 — 관리자가 바꾸지 않은 화면만 Phase P 묶음으로 옮긴다 (ADM2-04)
+ADMIN_SECTIONS_V1 = {"관리자 홈", "사용자와 권한", "데이터와 지식", "AI · 에이전트", "계산과 규칙", "운영 모니터링"}
 
 # 조직 → 화면 (하위 조직은 상속) — 업무 조직 · 업무 화면 권한은 업무 구성 파일 [화면권한]
 GRANTS = {
@@ -141,6 +145,9 @@ SETTINGS = {
     "analysis.spaces": ({}, "부서 분석 공간(Phase C · DAG-07) — 기본(risk · branch · hq)에 덧붙이거나 바꿀 값. 공간 = {label, path, tabs(기존 탭 산출물), tabsResource, resource(보고서 열람 리소스), reportPrefix, scoped, builder(분석 에이전트 만들기 허용), domain, persona, enabled}. 새 공간은 관리자 [화면 권한] 화면 등록과 함께"),
     "upload.user_targets": ({"datasets": "*", "doc_classes": "*"}, "업무 화면 [자료 올리기]에서 올릴 수 있는 대상 — datasets · doc_classes 에 \"*\"(전체) 또는 코드 목록. 올린 자료는 관리자 [자료 승인] 후 반영 (Phase C · UPL)"),
     "obs.request_log_days": (30, "요청 추적 기록(ops.request_log) 보관 일수 — 지난 기록은 워커가 하루 1회 정리"),
+    # Phase P (AGW-06 · TDB-02~03) — 분석 에이전트 기본 정기 실행 · 팀 데이터 범위
+    "analysis_agents.default_cron": ("40 6 * * *", "분석 에이전트 기본 정기 실행(cron · 업무 시간대) — 승인 때 정기 실행을 정하지 않으면 이 값. 빈 값이면 정기 실행 없음(자료 변경 때만)"),
+    "analysis_agents.team_context": ({"max_datasets": 6, "max_kpis": 6, "max_relations": 12}, "분석 에이전트 팀 데이터 — 입력 밖에서 더 볼 팀 · 공통 · 연관 자료 수, 상위 부서 KPI 수, 온톨로지 관계 수"),
     "analysis.min_interval_sec": (60, "업무 화면 온디맨드 분석 — 같은 분석을 다시 요청할 수 있는 최소 간격(초). 간격 안의 요청은 진행 중인 실행을 함께 본다"),
     "docs.owner_orgs": ({}, "부서한정 문서의 소유 부서(조직 코드, 하위 조직 포함) — 목록 · 근거 검색 · 원본 열람에서 같은 기준으로 검증"),
     "evidence.policy": ({"weights": {"official": 0.40, "recency": 0.25, "semantic": 0.20, "path": 0.15}, "recency_half_life_days": 365, "max_age_days": 1825, "min_keyword_coverage": 1, "max_cosine_distance": 0.65}, "근거 선별 — 우선순위 가중치(공식성 · 시점 · 의미 · 개념경로) · 시점 반감기 · 최대 경과일 · 의미 기준"),
@@ -456,6 +463,8 @@ AGENTS = [
     ("embedder", "문서 임베딩", "청크 임베딩(pgvector) — 임베딩 모델 지정 필요", "llm", "embedding", ""),
     ("analysis_refiner", "분석 정제", "사용자 글(도메인 지식 · 하고 싶은 분석) → 분석 명세 초안(허용 목록 검증) — LLM 미연결 · 실패 시 규칙 정제 (Phase C · DAG-02)", "llm", "default", ANALYSIS_REFINER_SYSTEM_V2),
     ("report_renderer", "범용 렌더링", "분석 명세 구성 + 계산 결과 + 판단으로 표준 보고서 조립(결정론, LLM 없음 · DAG-06)", "rule", None, ""),
+    # Phase P (AGW-02) — 실행 전 영향 판단: 이벤트마다 영향받는 흐름 · 이유(조건 · 계보 · 팀 · 공통 · 상위 흐름) · 같은 파일 재반영 건너뛰기
+    ("impact_assessor", "영향 판단", "자료 · 문서 · 목표 · 규칙 · 상위 흐름 결과 변화가 어느 흐름에 영향을 주는지 판단(명시 조건 · 계보 · 팀 · 공통 · 상위 지표) — 같은 파일 재반영은 다시 계산하지 않음 (규칙)", "rule", None, ""),
     ("query_assistant", "AI 어시스턴트", "자연어 질의 → 확정 수치 · 분석 결과 · 문서로 답(도구가 켜지면 계산 · 온톨로지 · 자료 집계 도구)", "llm", "default", QUERY_SYSTEM_V2),
     # Phase M — 온톨로지 구축(ONB-04~08) · 자료 등록(DOB-02 · DOB-03) · 근거 일치(LLM-P05) · 검색(LLM-P07) · 주목 사항(LLM-P08)
     ("onto_profiler", "구조 파악", "데이터셋 열 통계 · 의미 유형 · 키 후보(결정론) + 열 업무 의미(LLM) → ops.data_profile", "llm", "default", ONTO_PROFILER_SYSTEM),
@@ -489,7 +498,7 @@ AGENT_GROUPS = [
     ("analysis", "분석 에이전트", "분석 정제 · 범용 렌더링 · 사용자가 만든 분석 에이전트", 80),
 ]
 AGENT_GROUP_OF = {
-    "orchestrator": "orchestration", "planner": "orchestration",
+    "orchestrator": "orchestration", "planner": "orchestration", "impact_assessor": "orchestration",
     "data_intake": "intake", "doc_intake": "intake",
     "onto_profiler": "ontology", "onto_modeler": "ontology", "onto_linker": "ontology", "onto_resolver": "ontology", "onto_qa": "ontology", "onto_steward": "ontology", "ontology_extractor": "ontology",
     "embedder": "knowledge", "query_rewriter": "knowledge", "search_reranker": "knowledge",

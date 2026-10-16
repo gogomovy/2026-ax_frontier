@@ -21,6 +21,53 @@ def _datasets_in(obj: Any) -> set[str]:
     return _datasets_in_args(obj)
 
 
+BASE_WORKFLOWS = {"wf_graph_projection", "wf_ontology_build"}  # 기반 흐름 — 업무 판단 전파 대상이 아니다
+
+
+def _is_common_event(session: Session, etype: str, p: dict[str, Any]) -> bool:
+    if p.get("common"):
+        return True
+    if etype.startswith("dataset.") and p.get("dataset"):
+        from nhdip.models import Dataset
+
+        d = session.get(Dataset, p["dataset"])
+        return bool(d is not None and getattr(d, "common", False))
+    if etype.startswith("document.") and p.get("doc_class"):
+        from nhdip.common_db import is_common_doc_class
+
+        return is_common_doc_class(session, p.get("doc_class"))
+    return False
+
+
+def downstream_of(session: Session, p: dict[str, Any]) -> dict[str, list[str]]:
+    """상위 흐름 결과 변화(metrics.changed) → 그 지표를 참조하는 다른 흐름 {흐름: [지표...]} (Phase P · AGW-03).
+    이 이벤트를 낸 실행이 끝난 뒤 이미 시작한 하위 실행이 있으면 뺀다(그 실행이 새 값을 읽었다 — 두 번 돌지 않게)."""
+    from datetime import datetime
+
+    from nhdip.models import WorkflowRun
+
+    changed = {str(c) for c in p.get("metrics") or []}
+    src = p.get("workflow")
+    out: dict[str, list[str]] = {}
+    for m in session.execute(select(Metric).where(Metric.enabled)).scalars():
+        if m.workflow_code == src or not m.workflow_code:
+            continue
+        hit = [ref["metric"] for ref in (m.args or {}).values() if isinstance(ref, dict) and ref.get("metric") in changed]
+        if hit:
+            out.setdefault(m.workflow_code, [])
+            out[m.workflow_code] += [h for h in hit if h not in out[m.workflow_code]]
+    fin = None
+    try:
+        fin = datetime.fromisoformat(str(p["finished_at"])) if p.get("finished_at") else None
+    except ValueError:
+        fin = None
+    if fin is not None:
+        for wf in list(out):
+            if session.execute(select(WorkflowRun.id).where(WorkflowRun.workflow_code == wf, WorkflowRun.started_at >= fin).limit(1)).first():
+                out.pop(wf)
+    return out
+
+
 def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
     """{workflow_code: [사유...]}"""
     p = ev.payload or {}
@@ -47,8 +94,29 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
         from nhdip.data.sources import Resolver
 
         refs = Resolver(session).refs_for(p["dataset"])
+    # 팀 · 공통 조건 (Phase P · TDB-07 · AGW-04) — 자료 · 문서 이벤트의 소유 조직 · 공통 통합 DB 여부
+    data_ev = ev.type.startswith("dataset.") or ev.type.startswith("document.")
+    owner = p.get("owner_org") if data_ev else None
+    is_common = data_ev and _is_common_event(session, ev.type, p)
+    team_orgs: dict[str, set[str]] = {}
+
+    def in_team(root: str) -> bool:
+        if not owner:
+            return False
+        if root not in team_orgs:
+            from nhdip.analysis_agents.team import subtree
+
+            team_orgs[root] = subtree(session, root)
+        return owner in team_orgs[root]
+
     for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled)).scalars():
-        if t.kind == "any" and t.target in ("*", ev.type.split(".")[0]):
+        if t.kind == "team" and data_ev:
+            if in_team(t.target):
+                add(t.workflow_code, f"trigger:team({t.target}·{owner})")
+        elif t.kind == "common" and data_ev:
+            if is_common:
+                add(t.workflow_code, "trigger:common(공통 통합 DB)")
+        elif t.kind == "any" and t.target in ("*", ev.type.split(".")[0]):
             add(t.workflow_code, f"trigger:any({t.target})")
         elif t.kind in ("dataset", "master") and ev.type.startswith("dataset.") and (t.target == "*" or t.target in refs):
             add(t.workflow_code, f"trigger:{t.kind}({p.get('dataset') if t.target == '*' else t.target})")
@@ -70,6 +138,14 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
             hit = sorted(changed & set((n.config or {}).get("tables") or []))
             if hit:
                 add(n.workflow_code, f"lineage:contract({', '.join(hit[:3])})")
+    if is_common and ev.type.startswith("document."):
+        # 공통 통합 DB 문서(AGW-04) — 모든 업무 흐름이 공통 분류를 근거로 보므로 근거 검색 노드가 있는 흐름(기반 흐름 제외). 서술 갱신 여부는 플래너가 판단
+        for n in session.execute(select(WorkflowNode).where(WorkflowNode.impl == "retrieve_evidence", WorkflowNode.enabled)).scalars():
+            if n.workflow_code not in BASE_WORKFLOWS:
+                add(n.workflow_code, f"lineage:common_doc({p.get('doc_class')})")
+    if ev.type == "metrics.changed" and p.get("metrics"):
+        for wf, codes in downstream_of(session, p).items():
+            add(wf, f"lineage:upstream({p.get('workflow')} · {codes[0]}{f' 외 {len(codes) - 1}' if len(codes) > 1 else ''})")
     if ev.type.startswith("dataset.") and p.get("dataset"):
         for m in session.execute(select(Metric).where(Metric.enabled)).scalars():
             if refs & _datasets_in(m.args):
@@ -148,6 +224,62 @@ def _chain_block(session: Session, ev: OutboxEvent, wf: str) -> str | None:
     return None
 
 
+IMPACT_AGENT = "impact_assessor"
+IMPACT_EVENTS = ("dataset.", "document.", "metrics.changed", "goal.", "rule.changed", "contract.changed", "change.detected")
+REASON_KIND = (("trigger:team", "팀"), ("trigger:common", "공통"), ("lineage:common_doc", "공통 문서"), ("lineage:upstream", "상위 흐름"), ("lineage:metric", "계보"), ("lineage:binding", "계보"),
+               ("lineage:contract", "정의서"), ("agent:orchestrator", "LLM 경로"), ("trigger:", "조건"))
+
+
+def unchanged_reason(ev: OutboxEvent) -> str | None:
+    """같은 구획 현재 판과 같은 파일(해시 · 행 수)을 다시 반영한 자료 이벤트 — 재계산하지 않는 사유 (UPV-05)."""
+    p = ev.payload or {}
+    if ev.type == "dataset.committed" and p.get("unchanged") and not p.get("rollback"):
+        return f"변경 없음 — 같은 파일 · 같은 행(판 {p.get('same_as') or '-'})을 다시 반영해 다시 계산하지 않음"
+    return None
+
+
+def _event_label(ev: OutboxEvent) -> str:
+    p = ev.payload or {}
+    if ev.type.startswith("dataset."):
+        return f"자료 {p.get('dataset')} " + ("되돌림" if p.get("rollback") else "삭제" if ev.type == "dataset.deleted" else f"새 판 v{p.get('version')}")
+    if ev.type.startswith("document."):
+        return f"문서 {p.get('doc_code') or p.get('document_id')}({p.get('doc_class')}) " + ("삭제" if ev.type == "document.deleted" else "반영")
+    if ev.type == "metrics.changed":
+        return f"상위 흐름 {p.get('workflow')} 지표 {len(p.get('metrics') or [])}개 변화"
+    return ev.type
+
+
+def record_impact(session: Session, ev: OutboxEvent, matched: dict[str, list[str]], blocked: list[dict[str, Any]], skip: str | None = None) -> None:
+    """영향 판단 기록 (Phase P · AGW-02) — 자동 이벤트마다 영향받는 흐름과 이유를 ops.agent_decision 에 남긴다. 실패는 디스패치를 막지 않는다."""
+    if not ev.type.startswith(IMPACT_EVENTS):
+        return
+    from nhdip.models import AgentDecision
+
+    kinds: dict[str, int] = {}
+    for reasons in matched.values():
+        seen = set()
+        for r in reasons:
+            k = next((lbl for pre, lbl in REASON_KIND if r.startswith(pre)), "기타")
+            if k not in seen:
+                seen.add(k)
+                kinds[k] = kinds.get(k, 0) + 1
+    label = _event_label(ev)
+    if skip:
+        summary = f"{label} → {skip}"
+    elif matched:
+        summary = f"{label} → 흐름 {len(matched)}개 다시 계산 ({' · '.join(f'{k} {v}' for k, v in kinds.items())})" + (f" · 막음 {len(blocked)}" if blocked else "")
+    else:
+        summary = f"{label} → 영향받는 흐름 없음" + (f" · 막음 {len(blocked)}" if blocked else "")
+    try:
+        with session.begin_nested():
+            session.add(AgentDecision(agent_code=IMPACT_AGENT, workflow_code=None, decision="skip" if skip else "impact", summary=summary[:500],
+                                      detail={"event": {"id": ev.id, "type": ev.type, "label": label}, "matched": matched, "blocked": blocked, "kinds": kinds, **({"skip": skip} if skip else {})}))
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger("nhdip.dispatcher").exception("impact record failed (event %s)", ev.id)
+
+
 ROUTE_CLAIM_MIN = 5
 ROUTE_BATCH = 5  # 한 번의 디스패치 순회에서 LLM 경로 판단을 하는 이벤트 수
 
@@ -210,6 +342,15 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
             if ev is None:
                 session.rollback()
                 continue  # 다른 워커가 처리함
+            skip = unchanged_reason(ev)
+            if skip:
+                # 판단 에이전트(AGW-02) — 같은 파일 · 같은 행을 다시 반영한 이벤트는 결과가 바뀌지 않으므로 다시 계산하지 않는다
+                ev.matched = [{"workflow": "(변경 없음)", "reasons": [], "blocked": skip}]
+                ev.dispatched_at = utcnow()
+                record_impact(session, ev, {}, [], skip=skip)
+                session.commit()
+                n += 1
+                continue
             matched = matched_pre if matched_pre is not None else match_event(session, ev)
             cause = {"event_id": ev.id, "type": ev.type, "payload": ev.payload, "at": ev.created_at.isoformat(), "actor": ev.actor, "trace_id": ev.trace_id}
             record, blocked = [], []
@@ -222,6 +363,7 @@ def dispatch_once(session: Session, limit: int = 50) -> int:
                 record.append({"workflow": wf, "reasons": reasons})
             ev.matched = record + [{"workflow": b["workflow"], "reasons": [], "blocked": b["reason"]} for b in blocked]
             ev.dispatched_at = utcnow()
+            record_impact(session, ev, {r["workflow"]: r["reasons"] for r in record}, blocked)
             session.commit()
             n += 1
         except Exception as exc:  # noqa: BLE001

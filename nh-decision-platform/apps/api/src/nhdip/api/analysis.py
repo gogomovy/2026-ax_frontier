@@ -67,6 +67,17 @@ def run_analysis(body: RunIn, request: Request, session: Session = Depends(get_s
     return {"event": ev.id, "traceId": ev.trace_id, "reused": False}
 
 
+@router.get("/status")
+def analysis_status(workflow: str = Query(..., min_length=2, max_length=60), session: Session = Depends(get_session), user: AppUser = Depends(current_user)):
+    """업무 화면 갱신 상태 (Phase P · AGW-08) — 자동 갱신 조건 · 다음 정기 실행 · 마지막 갱신 · 반영 대기/실행 중(원인). 실행 권한과 같은 범위, 읽기 전용."""
+    from nhdip.workflow.status import workflow_status
+
+    wf = _check(session, user, workflow)
+    st = workflow_status(session, wf)
+    st["triggers"].pop("upstreamCodes", None)
+    return st
+
+
 def _snapshot(event_id: int) -> dict[str, Any]:
     with SessionLocal() as s:
         ev = s.get(OutboxEvent, event_id)

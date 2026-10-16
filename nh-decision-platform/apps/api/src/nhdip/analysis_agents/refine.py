@@ -15,6 +15,8 @@ from .spec import ALLOWED_FORMULAS, catalog, dataset_catalog, validate_spec
 
 AGENT = "analysis_refiner"
 MAX_TEXT = 6000
+# 같은 관련도면 우리 팀 자료 > 공통 통합 DB (Phase P · TDB-08) — 글이 가리키는 자료(코드 +10 · 이름 낱말 +2)를 넘지 않는 작은 가산
+_SCOPE_BONUS = {"team": 2, "common": 1}
 
 TASK = (
     "요청자의 글(request)을 분석 명세(JSON) 하나로 정리하라. 반드시 catalog 의 데이터셋 코드 · 열 이름 · 수식 ID · 단위 코드 · 블록 종류만 쓴다.\n"
@@ -26,7 +28,8 @@ TASK = (
     " \"insights\": [{\"key\", \"title\", \"metrics\": [지표 키], \"instruction\": 의견 작성 지시}], \"evidence\": {\"query\": 근거 검색어, \"doc_classes\": [문서 분류]}(선택),\n"
     " \"schedule\": {\"cron\": \"분 시 일 월 요일\" 또는 null, \"on_data_change\": true}}\n"
     "상위 부서 목표 · KPI(예: 종기부 경영목표 · 전파 목표, 다른 부서 지표)와 견주는 분석이면 catalog.kpis 의 지표를 {\"kpi\": 코드}로 입력에 쓰고(달성률은 RATIO, 차이는 DIFF), "
-    "datasets 가운데 common=true 는 모든 부서가 함께 쓰는 공통 통합 DB 기준 자료다.\n"
+    "datasets 가운데 common=true 는 모든 부서가 함께 쓰는 공통 통합 DB 기준 자료다. scope 가 team(요청 팀이 올린 자료)인 자료를 먼저 고르고, 그다음 common · bank, other(다른 부서)는 요청 글이 분명히 가리킬 때만 쓴다.\n"
+    "날짜별 비교(전월 · 전기 대비, 전년 동기 대비, 기준시점 대비)는 periods(보관 기준일 수)가 2개 이상인 자료에서 같은 열을 where 의 기준일 열 값 \"$latest\" 와 \"$latest-1\"(직전 기간) · \"$latest-12\"(전년 동기) · \"$earliest\"(가장 이른 기간)로 나눠 두 지표를 만들고 DIFF · GROWTH_RATE 로 견준다.\n"
     "규칙: 수치는 직접 쓰지 않는다(계산은 커널이 한다). 기간 최신값은 \"$latest\". 목록을 받는 수식(SUM · MEAN)은 agg \"list\". 비율은 SHARE · RATIO, 증감은 DIFF · GROWTH_RATE.\n"
     "where 조건 값은 값 그대로 · \"$latest\" · {\"in\": [값…]} · {\"ne\": 값} · {\"nin\": [값…]}. 열의 samples(값 예시)에 합계 · 기타(예: OTHERS · 합계 · 그 외) 같은 집계 행이 있으면 항목별 비교 · 비중 · 평균 지표에서는 {\"nin\": [...]} 로 뺀다"
     "(건수 · 최댓값 · 최솟값 · 표는 검증에서 자동으로 빠진다). 평균처럼 합계 ÷ 건수로 만드는 지표는 분자 · 분모에 같은 조건을 쓴다.\n"
@@ -61,7 +64,9 @@ def rule_refine(session: Session, text: str, space: str, hints: dict[str, Any] |
     hints = hints or {}
     cat = dataset_catalog(session, hints.get("datasets") or None)
     toks = _tokens(text)
-    ranked = sorted(cat, key=lambda d: -_score(toks, text, d))
+    order = {c: i for i, c in enumerate(hints.get("_ranked") or [])}
+    # 정제 순서(관련도 + 팀 범위)를 받았으면 그 순서, 아니면 관련도 순
+    ranked = sorted(cat, key=lambda d: order.get(d["code"], 10_000)) if order else sorted(cat, key=lambda d: -_score(toks, text, d))
     title_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")[:60]
     spec: dict[str, Any] = {"title": title_line or "맞춤 분석", "purpose": text.strip()[:300], "domain_knowledge": text.strip()[:2000], "task": text.strip()[:1000],
                             "metrics": [], "tables": [], "sections": [], "insights": [], "schedule": {"cron": None, "on_data_change": True}}
@@ -132,14 +137,17 @@ def refine(session: Session, text: str, space: str, hints: dict[str, Any] | None
 
     text = (text or "")[:MAX_TEXT]
     hints = hints or {}
-    cat = catalog(session, space, hints.get("datasets") or None)
-    # 카탈로그가 크면 요청 글과 관련 높은 데이터셋부터 (글자 상한 안에서 뒤쪽을 덜어 낸다)
+    team_orgs = set(hints.get("team_orgs") or []) if hints.get("team_orgs") is not None else None
+    cat = catalog(session, space, hints.get("datasets") or None, team_orgs=team_orgs, team_name=hints.get("team_name"))
+    # 카탈로그가 크면 요청 글과 관련 높은 데이터셋부터 (글자 상한 안에서 뒤쪽을 덜어 낸다) — 같은 관련도면 우리 팀 > 공통 > 전행 (TDB-08)
     toks = _tokens(text)
-    datasets = sorted(cat.pop("datasets"), key=lambda d: -_score(toks, text, d))
+    datasets = sorted(cat.pop("datasets"), key=lambda d: -(_score(toks, text, d) + _SCOPE_BONUS.get(str(d.get("scope") or ""), 0)))
     # 관련 높은 데이터셋 3개는 글자 열의 값 예시를 붙인다 — 합계 · 기타 같은 집계 행(예: OTHERS)을 LLM 이 알아보고 거르도록(실 LLM 시험)
     for d in datasets[:3]:
         _add_samples(session, d)
     context = {"request": text, "space": space, "hints": {k: v for k, v in hints.items() if k in ("datasets", "doc_classes")}, "catalog": cat, "datasets": datasets}
+    if hints.get("team_name"):
+        context["team"] = hints["team_name"]
     # 명세 JSON 은 길다 — 처음부터 출력 상한을 넉넉히(2500 에서 잘려 다시 부르면 30초 넘게 걸렸다 · 실 LLM 시험)
     data, meta = ask_json(session, AGENT, TASK + "\n(catalog 의 데이터셋 목록은 datasets 에 있다.)", context, shrink=("datasets",), min_tokens=6000)
     notes: list[str] = []
@@ -152,6 +160,6 @@ def refine(session: Session, text: str, space: str, hints: dict[str, Any] | None
     else:
         if data is not None:
             meta = {**meta, "by": "rule", "reason": "LLM 명세 형식 오류(metrics 목록 없음) — 규칙 정제"}
-        raw = rule_refine(session, text, space, hints)
+        raw = rule_refine(session, text, space, {**hints, "_ranked": [d["code"] for d in datasets]})
     spec, validation = validate_spec(session, raw, space)
     return spec, validation, {**{k: v for k, v in meta.items() if k in ("by", "reason", "llm_call_id", "model", "prompt_version", "contextTrimmed")}, **({"notes": notes} if notes else {})}

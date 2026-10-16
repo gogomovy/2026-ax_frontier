@@ -426,8 +426,11 @@ def ingest_rows(
     note: str | None = None,
     force: bool = False,
     owner_org: str | None = None,
+    memo: str | None = None,
+    requested_by: str | None = None,
 ):
-    """버전 생성 → (품질 통과 시) 확정 + 현재 버전 교체 + 아웃박스 이벤트 — 한 트랜잭션. owner_org = 자료 소유 조직(없으면 전행 공통)."""
+    """버전 생성 → (품질 통과 시) 확정 + 현재 버전 교체 + 아웃박스 이벤트 — 한 트랜잭션. owner_org = 자료 소유 조직(없으면 전행 공통).
+    memo = 요청자 메모(판 구분 설명 · UPV-06), requested_by = 요청자(없으면 반영한 사람)."""
     from nhdip.locks import lock
 
     t = source(ds.origin)
@@ -458,6 +461,8 @@ def ingest_rows(
         note=note,
         uploaded_by=actor,
         owner_org=owner_org,
+        memo=(memo or "").strip()[:500] or None,
+        requested_by=requested_by or actor,
         committed_at=utcnow() if commit else None,
     )
     session.add(v)
@@ -477,13 +482,19 @@ def ingest_rows(
     if commit:
         # 같은 기준일 · 소유 구획(partition)의 이전 현재 버전만 교체 — 다른 기준일 · 다른 영업점 자료는 유지
         same = partition_clause(session, t, v.as_of, owner_org)
+        # 같은 구획 현재 판과 같은 파일(해시 · 행 수)이면 결과가 바뀌지 않는다 — 이벤트에 표시해 디스패처가 재계산하지 않게 (Phase P · UPV-05 · AGW-02)
+        twin = None
+        if file_sha:
+            twin = session.execute(
+                select(t.version.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, t.version.is_current, t.version.file_sha256 == file_sha, t.version.row_count == len(rows), same).limit(1)
+            ).scalar()
         session.execute(update(t.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, same).values(is_current=False))
         v.is_current = True
         emit(
             session,
             "dataset.committed",
             {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "rows": len(rows), **({"owner_org": owner_org} if owner_org else {}),
-             **({"common": True} if getattr(ds, "common", False) else {})},
+             **({"common": True} if getattr(ds, "common", False) else {}), **({"unchanged": True, "same_as": twin} if twin is not None else {})},
             actor,
         )
     audit(session, actor, "dataset.upload", "dataset", ds.code, {"version": v.version, "status": v.status, "quality": quality["status"], "file": file_name, "owner": owner_org})
@@ -534,9 +545,10 @@ def preview_file(ds: Dataset, filename: str, content: bytes, session: Session | 
             "columnsAdded": added}
 
 
-def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10) -> dict[str, Any]:
+def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10, *, as_of: str | None = None, owner_org: str | None = None, place: bool = False) -> dict[str, Any]:
     """업무 사용자 자료 요청의 사전 검사(Phase C · UPL-01) — 확정과 같은 품질 검사(직전 현재 버전 대비 · 개인정보 정책), 저장 없음.
-    정의에 없는 열은 반영(승인) 때 정의에 더해 저장된다 — 여기서는 무엇이 더해지는지만 알린다(M.24)."""
+    정의에 없는 열은 반영(승인) 때 정의에 더해 저장된다 — 여기서는 무엇이 더해지는지만 알린다(M.24).
+    place=True 면 반영 미리보기(Phase P · UPV-02 — 새 기준일 추가 / 같은 기준일 교체 · 기간 겹침 · 같은 파일)를 함께 돌려준다."""
     from nhdip.privacy import policy as privacy_policy
 
     raw, source, view, added, rows, errors, warns = _read_mapped(session, ds, filename, content)
@@ -544,7 +556,12 @@ def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sam
     quality = quality_check(view, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(view, raw), added=added, warnings=warns)
     if source:
         quality["source"] = source
-    return {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in view.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality, "columnsAdded": added}
+    out = {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in view.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality, "columnsAdded": added}
+    if place:
+        from .placement import placement
+
+        out["placement"] = placement(session, view, rows, as_of=as_of, owner_org=owner_org, file_sha=hashlib.sha256(content).hexdigest())
+    return out
 
 
 def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
@@ -630,14 +647,38 @@ def current_rows(session: Session, ds: Dataset) -> tuple[VersionSet | None, list
             branch_of_owner[owner] = is_branch(session, owner)
         return owner if branch_of_owner[owner] else ""
 
+    if not ds.as_of_column and len(versions) > 1:
+        # 기준일 열이 없는 자료(Phase P · UPV-04) — 행으로 기간을 가릴 수 없어 날짜별 판을 합치면 같은 값이 겹쳐 집계된다.
+        # 구획마다 기준일이 가장 늦은 판만(같으면 최근 반영) — 판 하나뿐인 보통 경우는 예전과 같다
+        best: dict[str, Any] = {}
+        for v in versions:  # 최근 반영 순
+            p = part(getattr(v, "owner_org", None))
+            if p not in best or (v.as_of or date.min) > (best[p].as_of or date.min):
+                best[p] = v
+        keep = {v.id for v in best.values()}
+        versions = [v for v in versions if v.id in keep]
+
+    seen_period: dict[str, str] = {}
+
+    def period(val: Any) -> str:
+        # 기간 값 정규화(UPV-08) — 202607 · 2026-07 · 2026-07-31 은 같은 기간. 날짜로 못 읽는 값은 글자 그대로
+        s = str(val)
+        if s not in seen_period:
+            try:
+                seen_period[s] = to_date(val) or s
+            except (ValueError, TypeError):
+                seen_period[s] = s
+        return seen_period[s]
+
     claimed: set[tuple[str, str]] = set()
     out: list[dict[str, Any]] = []
     for v in versions:
         rows = session.execute(select(t.row.data).where(t.row.version_id == v.id).order_by(t.row.row_no)).scalars().all()
         if ds.as_of_column:
             p = part(getattr(v, "owner_org", None))
-            mine = {(p, str(r.get(ds.as_of_column))) for r in rows}
-            rows = [r for r in rows if (p, str(r.get(ds.as_of_column))) not in claimed]
+            keys = [(p, period(r.get(ds.as_of_column))) for r in rows]
+            mine = set(keys)
+            rows = [r for r, k in zip(rows, keys) if k not in claimed]
             claimed |= mine
         # 행 단위 계보(어느 버전·파일에서 왔는지) — 계산 근거 표시에 사용
         out.extend({**r, "__v": v.version, "__file": v.file_name} for r in rows)

@@ -73,16 +73,21 @@ def _cols(ds: Dataset) -> dict[str, dict[str, Any]]:
     return {c["name"]: c for c in (ds.columns or []) if c.get("name") and c["name"] not in pii}
 
 
-def dataset_catalog(session: Session, codes: list[str] | None = None) -> list[dict[str, Any]]:
+def dataset_catalog(session: Session, codes: list[str] | None = None, scopes: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """허용 목록 — scopes(팀 범위 · Phase P TDB-08)를 주면 자료마다 구분(우리 팀 · 공통 · 전행 · 다른 부서)과 보관 기준일(UPV-09)을 붙인다."""
+    from .team import SCOPE_LABEL
+
     q = select(Dataset).where(Dataset.active).order_by(Dataset.code)
     out = []
     for d in session.execute(q).scalars():
         if codes and d.code not in codes:
             continue
+        sc = (scopes or {}).get(d.code)
         out.append({
             "code": d.code, "name": d.name, "origin": d.origin, "kind": d.kind, "description": (d.description or "")[:200], "asOfColumn": d.as_of_column,
             "columns": [{"name": n, "label": c.get("label") or "", "type": c.get("type") or "str"} for n, c in _cols(d).items()],
             **({"common": True} if getattr(d, "common", False) else {}),  # 공통 통합 DB(§38 CMN) — 모든 부서가 함께 쓰는 기준 자료
+            **({"scope": sc["scope"], "scopeLabel": SCOPE_LABEL[sc["scope"]], "periods": sc.get("periods")} if sc else {}),
         })
     return out
 
@@ -140,10 +145,20 @@ def doc_classes(session: Session) -> dict[str, str]:
     return {str(k): str(v) for k, v in (s.value or {}).items()} if s is not None and isinstance(s.value, dict) else {}
 
 
-def catalog(session: Session, space: str, datasets: list[str] | None = None) -> dict[str, Any]:
+def catalog(session: Session, space: str, datasets: list[str] | None = None, team_orgs: set[str] | None = None, team_name: str | None = None) -> dict[str, Any]:
+    scopes = None
+    if team_orgs is not None:
+        from .team import dataset_scopes
+
+        scopes = dataset_scopes(session, team_orgs)
+    rank = {"team": 0, "common": 1, "bank": 2, "other": 3}
+    ds_list = dataset_catalog(session, datasets, scopes)
+    if scopes is not None:
+        ds_list.sort(key=lambda d: (rank.get(str(d.get("scope") or "other"), 4), d["code"]))  # 우리 팀 > 공통 > 전행 > 다른 부서 (TDB-08)
     return {
         "space": space,
-        "datasets": dataset_catalog(session, datasets),
+        **({"team": team_name} if team_name else {}),
+        "datasets": ds_list,
         "formulas": formula_catalog(),
         "units": [{"code": u, "label": UNIT_LABELS[u]} for u in UNITS],
         "severities": list(SEVERITIES),
@@ -155,7 +170,7 @@ def catalog(session: Session, space: str, datasets: list[str] | None = None) -> 
         "docClasses": doc_classes(session),
         "kpis": kpi_catalog(session),
         "limits": LIMITS,
-        "whereTokens": ["$latest", "$earliest", "$latest-12"],
+        "whereTokens": ["$latest", "$latest-1", "$latest-12", "$earliest"],
     }
 
 

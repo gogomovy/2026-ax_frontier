@@ -44,6 +44,24 @@ def _prepare(ctx: RunContext, node: WorkflowNode) -> dict[str, Any]:
     return an
 
 
+@node_impl("team_context", "팀 데이터 — 요청 팀의 정형 자료(PostgreSQL) · 상위 부서 KPI · 온톨로지 관계(Neo4j)를 실행마다 다시 찾아 근거 검색 · 서술 · 보고서에 넘긴다(결정론)")
+def n_team_context(ctx: RunContext, node: WorkflowNode) -> NodeResult:
+    from nhdip.analysis_agents.spec import input_datasets
+    from nhdip.analysis_agents.team import build_context, team_of_agent, team_of_user
+
+    spec, _token, _v = _load(ctx, node)
+    cfg = node.config or {}
+    actor = ctx.state.get("team_actor")
+    team = team_of_user(ctx.session, actor) if actor else team_of_agent(ctx.session, cfg.get("agent"))
+    tc = build_context(ctx.session, spec, team, inputs=input_datasets(spec), own_workflow=ctx.workflow.code, use_graph=cfg.get("graph", True))
+    ctx.state["team_context"] = tc
+    ctx.state["context_concepts"] = tc.get("concepts") or []
+    ctx.state["team_orgs"] = sorted(team.orgs)
+    g = tc.get("graph") or {}
+    return NodeResult({"team": tc["team"], "datasets": [{k: d[k] for k in ("code", "scope", "use", "periodText")} for d in tc["datasets"]], "kpis": [k["code"] for k in tc["kpis"]],
+                       "graph": {"available": g.get("available"), "reason": g.get("reason"), "relations": len(g.get("relations") or []), "concepts": tc.get("concepts")}})
+
+
 @node_impl("dynamic_task", "분석 에이전트 동적 수행 — 명세의 도메인 지식 · 수행 지시로 확정 수치 · 집계표 · 근거를 판단 · 서술(수치는 마커만, 실패 시 규칙 판정 · 기존 문장)")
 def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     from .llm_judge import ask_json
@@ -69,12 +87,18 @@ def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         "insights": [{"key": i["key"], "title": i["title"], "figures": [figure_id(token, m) for m in i.get("metrics") or []], "instruction": i.get("instruction") or ""} for i in spec.get("insights") or []],
         "evidence": [{"title": e.get("title"), "page": e.get("page"), "text": str(e.get("text") or "")[:300]} for e in ev],
     }
+    if ctx.state.get("team_context"):
+        # 팀 데이터(TDB-06) — 팀 자료 · 보관 기간 · 상위 부서 KPI 방향 · 온톨로지 관계 (숫자 값 없음)
+        from nhdip.analysis_agents.team import llm_summary
+
+        context["teamData"] = llm_summary(ctx.state["team_context"])
     from .nodes import _rule_body
 
     # 검증(critic)이 막는 표현을 미리 알려 준다 — 실 LLM 시험에서 '원인은 …' 같은 문장이 막혀 기본 문장으로 남았다
     banned = [str(p) for p in (_rule_body(ctx.session, "CRITIC_RULES").get("causal_phrases") or [])][:30]
     task = (
         "insights 의 의견 대상마다 확정 수치(figures) · 판정(verdicts) · 집계표(tables) · 근거(evidence)로 판단하고 의견 문장을 써라.\n"
+        "teamData 는 요청 팀이 올린 자료 · 공통 통합 DB · 상위 부서 KPI 의 방향 · 온톨로지 관계다 — 관련 있으면 맥락으로 말로만 언급한다(값은 쓰지 않는다).\n"
         "출력: {\"findings\": [{\"insight\": 의견 key, \"severity\": \"info\"|\"watch\"|\"caution\"|\"critical\", \"statement\": \"2~4문장\"}], \"summary\": \"한 문장\"}\n"
         "규칙: 숫자를 직접 쓰지 말고 수치는 그 의견의 figures 에 있는 [[fig:ID]] 마커로만 참조한다(마커 뒤에 단위를 붙이지 않는다). 집계표 값은 '상위 항목' 처럼 말로만 언급한다. 인과를 단정하지 않는다."
         + (f"\n다음 표현은 쓰지 않는다(검증에서 막힌다): {', '.join(banned)}" if banned else "")
@@ -107,6 +131,8 @@ def n_render_report(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     doc = R.render(
         spec, token, figs=an["figures"], tabs=an["tables"], verdict=an["verdicts"], findings=an["findings"], previous=arts.get(key),
         evidence=ctx.state.get("evidence") or [], as_of=R.as_of_of(ctx.eval, spec), version=an["version"],
+        team=ctx.state.get("team_context"), data_evidence=R.data_evidence(ctx.eval, spec, token),
+        evidence_meta=ctx.state.get("evidence_meta"),
     )
     arts[key] = doc
     ctx.changed.add(key)

@@ -22,7 +22,19 @@ import type { ReportDoc } from "@/lib/types";
 export interface Catalog {
   spaces: { key: string; label: string; path: string }[];
   space: string;
-  datasets: { code: string; name: string; description: string; origin: string; columns: { name: string; label: string; type: string }[] }[];
+  datasets: {
+    code: string;
+    name: string;
+    description: string;
+    origin: string;
+    columns: { name: string; label: string; type: string }[];
+    /** 팀 범위 (Phase P · TDB-08) — team(우리 팀) · common · bank(전행) · other(다른 부서) */
+    scope?: "team" | "common" | "bank" | "other";
+    scopeLabel?: string;
+    periods?: { count: number; first: string | null; last: string | null };
+  }[];
+  /** 요청 팀 이름 — 분석이 실행마다 볼 팀 DB */
+  team?: string;
   formulas: { id: string; description: string; params: Record<string, string> }[];
   units: { code: string; label: string }[];
 }
@@ -250,15 +262,27 @@ export function AnalysisBuilder({ catalog, mine: initialMine, editing, initialDa
                 </button>
               ))}
             </div>
-            <Advanced label={`사용할 자료 지정(선택) ${hints.length ? `· ${hints.length}개` : ""}`} hint="비우면 글에서 찾습니다" defaultOpen={Boolean(initialDatasets?.length)}>
+            {/* Phase P (TDB-01~07) — 첨부한 자료만이 아니라 실행마다 팀의 3개 DB 를 다시 본다 */}
+            <p className="text-[12px] leading-relaxed text-steel" data-builder-team>
+              만든 분석은 실행할 때마다 {catalog.team ? <strong className="font-bold text-ink-deep">{catalog.team}</strong> : "우리 팀"}의 데이터베이스를 다시 봅니다 — 팀이 올린 정형 자료 · 공통 통합 DB(PostgreSQL), 근거 문서(Elasticsearch),
+              온톨로지 관계(Neo4j), 상위 부서 KPI. 결과 화면 끝에 &lsquo;참고한 팀 데이터&rsquo;로 보이고, 팀 · 공통 자료가 바뀌면 다시 계산합니다.
+            </p>
+            <Advanced label={`사용할 자료 지정(선택) ${hints.length ? `· ${hints.length}개` : ""}`} hint="비우면 글에서 찾습니다(우리 팀 자료 먼저)" defaultOpen={Boolean(initialDatasets?.length)}>
               <input className="input !h-9 mb-xs w-full max-w-[320px] text-[13px]" placeholder="자료 이름 · 코드로 찾기" aria-label="자료 찾기" value={dsQ} onChange={(e) => setDsQ(e.target.value)} />
               <ul className="flex flex-wrap gap-1.5">
                 {datasets.map((d) => {
                   const on = hints.includes(d.code);
                   return (
                     <li key={d.code}>
-                      <button type="button" aria-pressed={on} onClick={() => setHints(on ? hints.filter((h) => h !== d.code) : [...hints, d.code].slice(0, 5))} className={clsx("rounded-pill border px-2.5 py-1 text-[11.5px]", on ? "border-primary bg-info-faint font-bold text-primary" : "border-hairline text-charcoal")}>
+                      <button
+                        type="button"
+                        aria-pressed={on}
+                        title={d.periods?.count ? `보관 기준일 ${d.periods.count}개${d.periods.first ? ` (${d.periods.first} ~ ${d.periods.last})` : ""}` : undefined}
+                        onClick={() => setHints(on ? hints.filter((h) => h !== d.code) : [...hints, d.code].slice(0, 5))}
+                        className={clsx("rounded-pill border px-2.5 py-1 text-[11.5px]", on ? "border-primary bg-info-faint font-bold text-primary" : "border-hairline text-charcoal")}
+                      >
                         {d.name}
+                        {d.scopeLabel && d.scope !== "other" ? <span className="ml-1 text-[10.5px] font-medium text-stone">{d.scopeLabel}</span> : null}
                       </button>
                     </li>
                   );

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { OnDemandAnalysis } from "@/components/agent/AgentProgress";
+import { RefreshStatus } from "@/components/agent/RefreshStatus";
 import { Chart } from "@/components/charts/Chart";
 import { RichText, renderRich } from "@/components/data/RichText";
 import { TermText } from "@/components/data/TermText";
@@ -64,6 +65,8 @@ export function ReportActions({ report, tabKey, office }: { report: ReportDoc; t
   };
   return (
     <>
+      {/* 자동 갱신 조건 · 반영 대기 상태 (Phase P · AGW-08) */}
+      {remote && report.workflow ? <RefreshStatus workflow={report.workflow} /> : null}
       {remote && report.workflow ? <OnDemandAnalysis workflow={report.workflow} /> : null}
       <Button variant="ghost" size="sm" onClick={() => window.print()}>
         인쇄

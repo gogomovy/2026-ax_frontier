@@ -56,6 +56,8 @@ interface Item {
   versions: Version[];
   prompt?: { version: number; system: string } | null;
   workflowEnabled?: boolean;
+  defaultCron?: string | null;
+  team?: { code: string | null; name: string; orgs: number };
 }
 
 const TABS = [
@@ -144,7 +146,8 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
   const shown = pending ?? a.versions[0];
   const spec = shown?.spec;
   // 관리자 승인 기준 (Q108) — 실행 주기 · 자료 변경 때 실행 · LLM 의견 사용. 요청 명세 값으로 시작
-  const [cron, setCron] = useState(spec?.schedule.cron ?? "");
+  // 정기 실행을 정하지 않은 요청이면 기본 정기 실행(설정 analysis_agents.default_cron)으로 시작 — 비우면 정기 실행 없음 (Phase P · AGW-06)
+  const [cron, setCron] = useState(spec?.schedule.cron ?? a.defaultCron ?? "");
   const [onData, setOnData] = useState(spec?.schedule.on_data_change ?? true);
   const [llm, setLlm] = useState(spec?.llm !== false);
   return (
@@ -227,7 +230,9 @@ function Detail({ a, reload }: { a: Item; reload: () => Promise<void> }) {
                 items={[
                   { label: "목적", value: spec.purpose || "-" },
                   { label: "실행", value: `${spec.schedule.on_data_change ? "자료 변경 시" : ""}${spec.schedule.cron ? ` · 정기 ${spec.schedule.cron}` : ""}` || "수동" },
-                  { label: "근거 검색", value: spec.evidence?.query ?? "사용 안 함" },
+                  { label: "근거 검색", value: spec.evidence?.query ?? "제목 · 목적으로 검색(팀 문서 · 공통 · 그래프 개념)" },
+                  // Phase P (TDB-01~07) — 실행마다 요청 팀의 3개 DB 를 다시 본다
+                  { label: "팀 데이터", value: `${a.team?.name ?? "전행"} — 팀 자료(PostgreSQL) · 근거 문서(Elasticsearch) · 온톨로지(Neo4j) · 상위 KPI, 팀 · 공통 자료가 바뀌면 다시 실행` },
                 ]}
               />
               <div>

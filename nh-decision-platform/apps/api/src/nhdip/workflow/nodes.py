@@ -255,6 +255,9 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         # 플래너가 이번 변화에 맞춰 덧붙인 검색어 (LLM 판단 · 정제 후)
         cfg = {**cfg, "query": f"{cfg.get('query', '')} {extra_q}".strip()}
     concepts = cfg.get("concepts") or []
+    if not concepts and cfg.get("concepts_from_context"):
+        # 분석 에이전트(Phase P · TDB-05) — 팀 데이터 노드가 온톨로지에서 찾은 개념으로 그래프 필터
+        concepts = list(ctx.state.get("context_concepts") or [])[:20]
     doc_filter = graph_documents(concepts)
     qvec = None
     emb = _embedder(ctx)
@@ -293,6 +296,25 @@ def n_retrieve(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     cand = [h for h in cand if gate_ok(metas.get((h["origin"], h["document_id"])))]
     if len(cand) < before:
         note.append(f"영업점 소유 문서 {before - len(cand)}건 제외(다른 영업점 · 영업점 범위 밖 실행)")
+    if cfg.get("team_only") and ctx.state.get("team_orgs") is not None:
+        # 팀 문서 우선(Phase P · TDB-04) — 팀 소유 · 소유 없음(전행) · 공통 분류 문서만. 하나도 없으면 원래 후보로(사유 기록)
+        from nhdip.common_db import common_doc_classes
+
+        team_orgs, common_cls = set(ctx.state.get("team_orgs") or []), set(common_doc_classes(ctx.session))
+
+        def _mine(h: dict[str, Any]) -> bool:
+            d = metas.get((h["origin"], h["document_id"]))
+            owner = getattr(d, "owner_org", None)
+            return not owner or owner in team_orgs or h.get("doc_class") in common_cls
+
+        mine = [h for h in cand if _mine(h)]
+        if mine:
+            if len(mine) < len(cand):
+                note.append(f"다른 부서 문서 {len(cand) - len(mine)}건 제외(팀 문서 · 전행 · 공통 우선)")
+            cand = mine
+        elif cand:
+            note.append("팀 · 전행 · 공통 문서가 없어 다른 부서 문서까지 넓혀 검색")
+    ctx.state["evidence_meta"] = {"engine": sdiag.get("engine", "pg"), "graphFilter": doc_filter is not None, "concepts": concepts[:10], "note": " · ".join(note[-2:]) if note else None}
     # 근거 선별(3.6) — 시스템 실행이라 권한 단계는 통과, 부문 · 시점 · 문서유형 · 의미 · 개념경로 게이팅 후 우선순위 · 범주 균형
     from nhdip.data.datasets import display_as_of
 
