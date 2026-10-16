@@ -6,7 +6,7 @@ import { buildCsp, newNonce } from "@/lib/csp";
  * 쿠키의 유효성·화면 권한은 백엔드가 최종 판정한다(401 → 로그인, 403 → 권한 없음).
  * 요청마다 CSP nonce 를 만들어 요청 · 응답 헤더에 싣는다 — Next 가 렌더링 때 프레임워크 스크립트에 nonce 를 붙인다 (B.33).
  */
-const PUBLIC = ["/login", "/signup", "/forbidden", "/api/health", "/backend", "/_next", "/favicon", "/icon", "/robots.txt"];
+const PUBLIC = ["/login", "/signup", "/forbidden", "/api/health", "/backend", "/_next", "/favicon", "/icon", "/robots.txt", "/nh-navi-logo.png"];
 
 function withCsp(res: NextResponse, csp: string): NextResponse {
   res.headers.set("Content-Security-Policy", csp);

@@ -66,11 +66,11 @@ export function AppShell({ children }: { children: ReactNode }) {
       ) : null}
 
       {adminShell ? (
-        <div className="flex">
-          <aside className="sticky top-[var(--header-h)] hidden h-[calc(100vh-var(--header-h))] w-[var(--admin-nav-w)] shrink-0 border-r border-hairline-soft bg-canvas lg:block no-print">
+        <div className="assist-push flex">
+          <aside className="admin-aside sticky top-[var(--header-h)] hidden h-[calc(100vh-var(--header-h))] shrink-0 border-r border-hairline-soft bg-canvas lg:block no-print">
             <AdminNav model={model} />
           </aside>
-          <div className="min-w-0 flex-1">
+          <div className="admin-main min-w-0 flex-1">
             <main id="main" className="min-h-[60vh]">
               {children}
             </main>
@@ -78,12 +78,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       ) : (
-        <>
+        <div className="assist-push">
           <main id="main" className="min-h-[60vh]">
             {children}
           </main>
           <DataBasis model={model} />
-        </>
+        </div>
       )}
       {!model.bare ? <AssistPanel /> : null}
     </div>

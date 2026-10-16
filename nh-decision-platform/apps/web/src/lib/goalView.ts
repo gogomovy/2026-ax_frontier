@@ -24,6 +24,8 @@ export function directionSuffix(goal?: Pick<Goal, "direction">): string {
 export interface GoalOverrideLike {
   status?: Goal["status"];
   targetValue?: number;
+  /** 서버가 기록한 현재 버전 (되돌리기 · 다시 수정 · 삭제도 새 버전) */
+  version?: number;
   updatedAt?: string;
   changeReason?: string;
   creationMode?: Goal["creationMode"];
@@ -55,7 +57,7 @@ export function resolveGoal(goal: Goal, override?: GoalOverrideLike) {
     updatedAt: override?.updatedAt ?? goal.updatedAt,
     creationMode: override?.creationMode ?? goal.creationMode,
     changeReason: override?.changeReason,
-    version: goal.version + (changed ? 1 : 0),
+    version: override?.version ?? goal.version + (changed ? 1 : 0),
     verdict: goal.gapVerdict ? GOAL_VERDICT[goal.gapVerdict] : null,
   };
 }

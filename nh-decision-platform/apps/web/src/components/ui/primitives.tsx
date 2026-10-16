@@ -469,6 +469,14 @@ export function StatusDot({ severity, className }: { severity: Severity; classNa
 
 /* ── Next step ─────────────────────────────────────────────── */
 /** 화면 맨 아래에서 다음 단계 하나만 제안한다 */
+/** 조사 '(으)로' — 마지막 글자에 받침이 없거나 ㄹ 받침이면 '로', 그 밖의 받침은 '으로' (결과로 · 설정으로 · 수행방안으로) */
+export function withRo(word: string): string {
+  const code = word.trim().charCodeAt(word.trim().length - 1) - 0xac00;
+  if (code < 0 || code > 11171) return "(으)로";
+  const jong = code % 28;
+  return jong === 0 || jong === 8 ? "로" : "으로";
+}
+
 export function NextStep({
   step,
   title,
@@ -484,22 +492,38 @@ export function NextStep({
   cta?: string;
 }) {
   return (
-    <section className="flex flex-wrap items-center gap-base rounded-xl border border-hairline-soft bg-canvas px-xl py-lg">
+    <section className="flex flex-wrap items-center gap-3 rounded-[10px] border border-hairline-soft bg-canvas py-[18px] pl-5 pr-[18px]">
       <span
         aria-hidden="true"
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-circle bg-info-soft text-[16px] font-bold text-primary"
+        className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-circle bg-info-soft text-[16px] font-bold text-primary-deep"
       >
         {step}
       </span>
       <div className="min-w-0 flex-1">
         <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">다음 단계 · {title}</h2>
-        <p className="mt-0.5 text-[12px] leading-normal text-steel">{description}</p>
+        <p className="mt-0.5 text-[12px] leading-[18px] text-steel">{description}</p>
       </div>
       <LinkButton href={href} className="shrink-0">
-        {cta ?? `${title}으로`}
+        {cta ?? `${title}${withRo(title)}`}
         <IconChevron />
       </LinkButton>
     </section>
+  );
+}
+
+/** 분석 탭 줄 끝의 [+] — 분석 에이전트 만들기 (시안 304:2 · 24px 흰 바탕 · 테두리) */
+export function AddAgentTab({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      aria-label="분석 에이전트 만들기"
+      data-builder-link
+      className="mt-[6.5px] inline-flex h-6 w-6 shrink-0 items-center justify-center self-start rounded-md border border-hairline-soft bg-canvas text-steel hover:bg-surface-soft hover:text-ink-deep"
+    >
+      <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
+        <path d="M6 1.5v9M1.5 6h9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    </Link>
   );
 }
 

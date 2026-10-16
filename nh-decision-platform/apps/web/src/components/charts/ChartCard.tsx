@@ -20,7 +20,10 @@ export function ChartCard({
   table,
   children,
   className,
+  titleSize = "md",
 }: {
+  /** md 16px(차트 카드) · lg 20px(섹션 카드) */
+  titleSize?: "md" | "lg";
   title: string;
   legend?: { label: string; color: string; dashed?: boolean; muted?: boolean; dot?: boolean }[];
   caption?: ReactNode;
@@ -30,12 +33,12 @@ export function ChartCard({
 }) {
   const [asTable, setAsTable] = useState(false);
   return (
-    <figure className={`flex min-w-0 flex-col rounded-xl border border-hairline-soft bg-canvas p-6 ${className ?? ""}`}>
+    <figure className={`flex min-w-0 flex-col rounded-[10px] border border-hairline-soft bg-canvas px-6 pb-[22px] pt-6 ${className ?? ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <figcaption className="text-[16px] font-bold leading-[1.4] text-ink-deep">{title}</figcaption>
+          <figcaption className={titleSize === "lg" ? "text-[20px] font-bold leading-[1.4] text-ink-deep" : "text-[16px] font-bold leading-[1.5] text-ink-deep"}>{title}</figcaption>
           {legend?.length ? (
-            <ul className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-steel">
+            <ul className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-steel">
               {legend.map((l) => (
                 <li key={l.label} className="inline-flex items-center gap-1.5">
                   {l.dot ? (
@@ -57,10 +60,10 @@ export function ChartCard({
           type="button"
           onClick={() => setAsTable((v) => !v)}
           aria-pressed={asTable}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-hairline-soft bg-canvas px-3 text-[12px] font-bold text-ink-deep hover:bg-surface-soft no-print"
+          className="inline-flex h-[28px] shrink-0 items-center gap-1 rounded-md border border-hairline-soft bg-canvas px-2 text-[12px] font-medium text-ink-deep hover:bg-surface-soft no-print"
         >
           <IconTable />
-          {asTable ? "차트 보기" : "표 보기"}
+          {asTable ? "차트로 보기" : "표로 보기"}
         </button>
       </div>
 

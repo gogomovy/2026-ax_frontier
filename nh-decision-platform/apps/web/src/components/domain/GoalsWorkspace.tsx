@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import clsx from "clsx";
+import { RichText } from "@/components/data/RichText";
 import { CascadeFlow } from "@/components/domain/CascadeFlow";
+import { GoalChangeDialog, type GoalChangeRequest } from "@/components/domain/GoalChangeDialog";
 import { AttentionSheet, GoalSheet, NewGoalSheet } from "@/components/domain/GoalSheets";
 import { HistorySheet } from "@/components/domain/HistorySheet";
 import { ProposalPopup } from "@/components/domain/ProposalPopup";
@@ -14,11 +16,12 @@ import { AsOfTools, ToolButton } from "@/components/layout/PageTools";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { usePlanState } from "@/components/providers/PlanStateProvider";
 import { useUi } from "@/components/providers/UiProvider";
-import { IconCheckCircle, IconDots, IconHistory, IconSparkle } from "@/components/ui/icons";
+import { IconCheckCircle, IconChevronDown, IconDots, IconHistory } from "@/components/ui/icons";
 import { EmptyCard } from "@/components/ui/StateViews";
-import { Badge, Button, IconArrowRight, IconChevron, IconPlus, PillTabs, TextLink } from "@/components/ui/primitives";
-import { formatDate, formatKstShort } from "@/lib/format";
-import { GOAL_VERDICT, directionSuffix, proposalRange, resolveGoal } from "@/lib/goalView";
+import { Badge, Button, IconChevron, IconPlus, PillTabs, TextLink } from "@/components/ui/primitives";
+import { UNIT_LABEL, formatDate, formatKstShort } from "@/lib/format";
+import { isArchived } from "@/lib/goalChange";
+import { GOAL_VERDICT, proposalRange, resolveGoal } from "@/lib/goalView";
 import { useDismiss } from "@/lib/useDismiss";
 import type { DomainCardInfo, Goal, Insight, Proposal, ReportRequest, ReviewQueueItem } from "@/lib/types";
 
@@ -30,6 +33,7 @@ type SheetState =
   | { kind: "history"; goalId: string | null }
   | { kind: "proposal"; id: string }
   | { kind: "newGoal" }
+  | { kind: "change"; req: GoalChangeRequest }
   | null;
 
 const DONE_LABEL = { keep: "기존 유지", adopt: "제안 반영", manual_edit: "직접 수정", added: "목표 추가" } as const;
@@ -64,16 +68,22 @@ export function GoalsWorkspace({
   const { code, domain } = useSector(domains);
   const [tab, setTab] = useState<Tab>("goals");
   const [sheet, setSheet] = useState<SheetState>(null);
+  // AI 신규 목표 제안 — 제안별 내용 펼침 상태
+  const [openProposals, setOpenProposals] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
   const close = () => setSheet(null);
 
   const ready = domain?.status === "active";
-  const domainGoals = goals.filter((g) => g.domainCode === code);
+  // 삭제(보관)한 목표는 목록에서 빼고 변경 이력에서만 보인다
+  const domainGoals = goals.filter((g) => g.domainCode === code && !isArchived(overrides[g.id]));
+  const liveAdded = addedGoals.filter((g) => g.status !== "archived");
   const stagedCount = Object.keys(staged).length;
   const proposalOf = (goalId: string) => proposals.find((p) => p.targetGoalId === goalId);
-  const modifyPending = proposals.filter((p) => p.kind === "goal_modify" && !proposalActions[p.id]);
+  // 삭제한 목표를 겨냥한 제안은 검토 건수에서 뺀다
+  const live = (p: Proposal) => !p.targetGoalId || !isArchived(overrides[p.targetGoalId]);
+  const modifyPending = proposals.filter((p) => p.kind === "goal_modify" && !proposalActions[p.id] && live(p));
   const newProposals = proposals.filter((p) => p.kind === "goal_new" && p.domainCode === code);
-  const pendingTotal = proposals.filter((p) => !proposalActions[p.id]).length;
+  const pendingTotal = proposals.filter((p) => !proposalActions[p.id] && live(p)).length;
   const attentionOf = (goalId: string) => [...attentions].filter((a) => a.relatedGoalId === goalId).sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0))[0];
   const looseAttentions = attentions.filter((a) => !a.relatedGoalId || !goals.some((g) => g.id === a.relatedGoalId));
   const sortedRequests = [...requests].sort((a, b) => (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
@@ -105,6 +115,7 @@ export function GoalsWorkspace({
   return (
     <>
       <PageHeader
+        compact
         title={<SectorTitle domains={domains} title="경영목표 설정" />}
         actions={
           <AsOfTools>
@@ -135,22 +146,17 @@ export function GoalsWorkspace({
           />
         </div>
       ) : tab === "goals" ? (
-        <div className="shell flex flex-col gap-5 pb-6">
+        <div className="shell flex flex-col gap-6 pb-6">
           {/* 현재 경영목표 ↔ AI 수정 제안 */}
-          <section className="rounded-xl border border-hairline-soft bg-canvas px-7 py-6" aria-label="현재 경영목표">
-            <header className="flex flex-wrap items-center justify-between gap-3 pb-4">
+          <section className="rounded-[10px] border border-hairline-soft bg-canvas px-6 pb-4 pt-6" aria-label="현재 경영목표">
+            <header className="grid grid-cols-1 items-center gap-3 pb-3 pt-[13px] lg:grid-cols-[minmax(0,1fr)_62px_minmax(0,500px)] lg:gap-0">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">현재 경영목표</h2>
-                <span className="text-[12px] text-steel tnum">{domainGoals.length + addedGoals.length}건 · 확정</span>
-                <button type="button" onClick={() => setSheet({ kind: "newGoal" })} className="inline-flex items-center gap-1 text-[13px] font-bold text-primary hover:underline">
-                  <IconPlus /> 직접 추가
-                </button>
+                <span className="text-[12px] text-steel tnum">{domainGoals.length + liveAdded.length}건 · 확정</span>
               </div>
+              <span aria-hidden="true" className="hidden lg:block" />
               <p className="inline-flex flex-wrap items-center gap-2 text-[12px] text-steel">
-                <span className="inline-flex h-7 items-center gap-1.5 rounded-pill bg-info-soft px-3 font-bold text-primary">
-                  <IconSparkle />
-                  AI 수정 제안 {modifyPending.length}건
-                </span>
+                <span className="inline-flex h-[23px] items-center rounded-pill bg-info-soft px-2 font-bold text-primary-deep">✦ AI 수정 제안 {modifyPending.length}건</span>
                 상위 제약 이내에서만 산출
               </p>
             </header>
@@ -162,33 +168,43 @@ export function GoalsWorkspace({
                 const attention = attentionOf(goal.id);
                 const verdict = goal.gapVerdict && goal.gapVerdict !== "on_track" ? GOAL_VERDICT[goal.gapVerdict] : null;
                 return (
-                  <li key={goal.id} className="grid grid-cols-1 gap-x-3 gap-y-3 py-5 lg:grid-cols-[minmax(0,1fr)_32px_20px_minmax(0,460px)] lg:items-center">
+                  <li key={goal.id} className="grid grid-cols-1 gap-y-3 py-3 lg:grid-cols-[minmax(0,1fr)_26px_36px_minmax(0,500px)] lg:items-center">
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="text-[16px] font-bold leading-[1.4] text-ink-deep">{view.title}</span>
+                        <span className="text-[14px] font-bold leading-[21px] text-ink-deep">{view.title}</span>
                         {verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : null}
                         {view.changed ? <Badge tone="info">방금 수정</Badge> : null}
                       </p>
-                      <p className="mt-0.5 text-[12px] text-steel">
+                      <p className="mt-1 text-[12px] leading-[18px] text-steel">
                         {goal.periodLabel} · {goal.metricLabel}
                       </p>
                       {attention ? (
                         <button
                           type="button"
                           onClick={() => setSheet({ kind: "attention", id: attention.id })}
-                          className="mt-1.5 inline-flex max-w-full items-center gap-1.5 text-left text-[12px] text-steel hover:text-ink-deep"
+                          className="group mt-1 inline-flex max-w-full items-center gap-[5px] text-left text-[12px] font-medium leading-[18px] text-steel hover:text-ink-deep"
                         >
-                          <IconSparkle className="shrink-0 text-primary" />
-                          <span className="truncate">
+                          <span aria-hidden="true" className="shrink-0 font-bold text-primary">
+                            ✦
+                          </span>
+                          {/* 눌러서 주목 사항 상세를 여는 줄 — 점선 밑줄 + › 로 '열 수 있음'을 늘 보이게 한다 */}
+                          <span className="truncate underline decoration-hairline decoration-dotted underline-offset-[3px] group-hover:decoration-solid group-hover:decoration-current">
                             {attention.title}
                             {attention.rankScore != null ? ` · 우선순위 ${attention.rankScore.toFixed(1)}` : ""}
                           </span>
+                          <IconChevron className="shrink-0 text-icon group-hover:text-ink-deep" />
                         </button>
                       ) : null}
                     </div>
-                    <GoalMenu onDetail={() => setSheet({ kind: "goal", id: goal.id })} onHistory={() => setSheet({ kind: "history", goalId: goal.id })} />
-                    <span aria-hidden="true" className="hidden text-icon lg:block">
-                      {proposal ? <IconArrowRight /> : null}
+                    <GoalMenu
+                      items={[
+                        { label: "목표 수정", onSelect: () => setSheet({ kind: "change", req: { mode: "edit", goalId: goal.id } }) },
+                        { label: "변경 이력", onSelect: () => setSheet({ kind: "history", goalId: goal.id }) },
+                        { label: "목표 삭제", danger: true, onSelect: () => setSheet({ kind: "change", req: { mode: "delete", goalId: goal.id } }) },
+                      ]}
+                    />
+                    <span aria-hidden="true" className="hidden text-center text-[16px] font-bold text-icon lg:block">
+                      {proposal ? "→" : ""}
                     </span>
                     {proposal ? (
                       <ProposalCell
@@ -197,18 +213,19 @@ export function GoalsWorkspace({
                         acted={proposalActions[proposal.id]}
                         inBasket={Boolean(staged[proposal.id])}
                         onReview={() => setSheet({ kind: "proposal", id: proposal.id })}
+                        onRevert={() => setSheet({ kind: "change", req: { mode: "revert", goalId: goal.id } })}
                         onUnstage={() => {
                           unstageProposal(proposal.id);
                           showToast("조정안에서 뺐어요");
                         }}
                       />
                     ) : (
-                      <p className="text-[13px] text-steel lg:pl-2">변경 제안 없음</p>
+                      <p className="text-[12px] text-steel lg:pl-4">변경 제안 없음</p>
                     )}
                   </li>
                 );
               })}
-              {addedGoals.map((g) => (
+              {liveAdded.map((g) => (
                 <li key={g.id} className="flex flex-wrap items-center gap-3 py-5">
                   <div className="min-w-0 flex-1">
                     <p className="text-[16px] font-bold leading-[1.4] text-ink-deep">{g.title}</p>
@@ -218,49 +235,74 @@ export function GoalsWorkspace({
                     </p>
                   </div>
                   <Badge tone="info">{g.creationMode === "ai_proposed" ? "AI 제안 기반 신규" : "직접 추가"}</Badge>
+                  <GoalMenu items={[{ label: "목표 삭제", danger: true, onSelect: () => setSheet({ kind: "change", req: { mode: "delete", goalId: g.id } }) }]} />
                 </li>
               ))}
-              {domainGoals.length + addedGoals.length === 0 ? (
+              {domainGoals.length + liveAdded.length === 0 ? (
                 <li className="py-8">
                   <EmptyCard className="border-0" title="이 부문에 적용된 경영목표가 없어요" description="직접 추가하거나 AI 신규 목표 제안을 검토해 목표를 만들어요." />
                 </li>
               ) : null}
             </ul>
+
+            {/* 목록 끝에 붙는 추가 영역 — 목록을 이어 쓰는 동작이라 헤더가 아니라 마지막 행 아래에 둔다 */}
+            <div className="border-t border-hairline-soft pt-3">
+              <button
+                type="button"
+                onClick={() => setSheet({ kind: "newGoal" })}
+                className="flex h-10 w-full items-center justify-center gap-1 rounded-lg text-[13px] font-bold text-primary-deep transition-colors hover:bg-info-faint"
+              >
+                <IconPlus /> 경영목표 직접 추가
+              </button>
+            </div>
           </section>
 
           {/* AI 신규 목표 제안 — AI 영역 */}
           {newProposals.length ? (
-            <section className="rounded-xl bg-info-soft p-3" aria-label="AI 신규 목표 제안">
-              <p className="flex flex-wrap items-center gap-3 px-2 pb-3 pt-1">
-                <span className="inline-flex h-7 items-center gap-1.5 rounded-pill bg-canvas px-3 text-[12px] font-bold text-primary">
-                  <IconSparkle />
-                  AI 신규 목표 제안 {newProposals.length}건
-                </span>
+            <section className="flex flex-col gap-3 rounded-[10px] bg-info-soft p-4" aria-label="AI 신규 목표 제안">
+              <p className="flex flex-wrap items-center gap-2 pl-0.5">
+                <span className="inline-flex h-[23px] items-center rounded-pill bg-canvas px-2 text-[12px] font-bold text-primary-deep">✦ AI 신규 목표 제안 {newProposals.length}건</span>
                 <span className="text-[12px] text-steel">현재 경영목표에 없는 항목</span>
               </p>
               <ul className="flex flex-col gap-3">
                 {newProposals.map((p) => {
                   const acted = proposalActions[p.id];
                   const inBasket = Boolean(staged[p.id]);
+                  const open = Boolean(openProposals[p.id]);
+                  const bodyId = `new-proposal-body-${p.id}`;
                   return (
-                    <li key={p.id} className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-lg bg-canvas px-6 py-5">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[16px] font-bold leading-[1.4] text-ink-deep">{p.title.replace("신규 경영목표 제안 — ", "")}</p>
-                        <p className="mt-1 flex items-center gap-1.5 text-[12px] text-steel">
-                          <IconSparkle className="shrink-0 text-primary" />
-                          <span className="line-clamp-1">{p.recommendation.text}</span>
-                        </p>
+                    <li key={p.id} className="flex flex-wrap items-start gap-4 rounded-lg bg-canvas py-4 pl-5 pr-4">
+                      <div className="flex min-w-0 flex-1 flex-col gap-1">
+                        <p className="text-[16px] font-bold leading-[24px] text-ink-deep">{p.title.replace("신규 경영목표 제안 — ", "")}</p>
+                        {/* 접힘: 한 줄씩 자름 · 펼침: 추천 근거와 판단 문장 전문 (해설 전문 보기와 같은 제자리 펼침) */}
+                        <div id={bodyId} className="flex flex-col gap-1">
+                          <p className={clsx("text-[12px] leading-[18px] text-steel", !open && "line-clamp-1")}>{p.recommendation.text}</p>
+                          {p.judgement ? (
+                            <p className={clsx("flex gap-[5px] text-[12px] font-medium leading-[18px] text-steel", open ? "items-start" : "items-center")}>
+                              <span aria-hidden="true" className="shrink-0 font-bold text-primary">
+                                ✦
+                              </span>
+                              {/* 판단 문장에 [[fig:…]] 수치 표식이 들어 있어 RichText 로 채워 그린다 (그대로 찍으면 표식 원문이 보였다) */}
+                              <RichText as="span" text={p.judgement} figures={p.figures} className={clsx(!open && "line-clamp-1")} />
+                            </p>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          aria-expanded={open}
+                          aria-controls={bodyId}
+                          onClick={() => setOpenProposals((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                          className="mt-0.5 inline-flex w-fit items-center gap-0.5 text-[12px] font-bold text-primary-deep hover:underline"
+                        >
+                          {open ? "접기" : "제안 내용 펼쳐 보기"}
+                          <IconChevronDown className={clsx("transition-transform", open && "rotate-180")} />
+                        </button>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <span className="text-[12px] text-steel">
-                          추천 <b className="tnum ml-1 text-[20px] font-bold text-primary">{proposalRange(p)}</b>
-                        </span>
-                        <StateTag acted={acted} inBasket={inBasket} />
-                        {acted ? null : (
-                          <Button variant="ghost" size="sm" onClick={() => setSheet({ kind: "proposal", id: p.id })}>
-                            제안 검토
-                          </Button>
-                        )}
+                      <div className="flex flex-wrap items-center gap-4 pt-0.5">
+                        <RangeText proposal={p} />
+                        {/* 신규 목표 제안은 [제안 검토] 단추가 이미 '검토할 일'을 말하므로 기본 '검토 필요' 태그는 두지 않는다 — 담김 · 완료 상태만 표시 */}
+                        {acted || inBasket ? <StateTag acted={acted} inBasket={inBasket} /> : null}
+                        {acted ? null : <ReviewButton onClick={() => setSheet({ kind: "proposal", id: p.id })} />}
                         {inBasket && !acted ? (
                           <button type="button" onClick={() => unstageProposal(p.id)} className="text-[12px] text-steel underline underline-offset-2 hover:text-ink-deep">
                             담기 취소
@@ -275,10 +317,10 @@ export function GoalsWorkspace({
           ) : null}
 
           {/* 받은 요청 */}
-          <section className="rounded-xl border border-hairline-soft bg-canvas px-7 py-6" aria-label="받은 요청">
-            <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 pb-4">
+          <section className="rounded-[10px] border border-hairline-soft bg-canvas px-6 pb-3 pt-[22px]" aria-label="받은 요청">
+            <header className="flex flex-wrap items-baseline gap-x-2 gap-y-1 pb-2">
               <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">받은 요청</h2>
-              <span className="text-[12px] text-steel">다른 부서 · 본부의 확인 · 보고 요청 {requests.length}건</span>
+              <span className="text-[12px] text-steel">다른 부서·본부의 확인·보고 요청 {requests.length}건</span>
             </header>
             {requests.length === 0 ? (
               <p className="border-t border-hairline-soft py-8 text-center text-[14px] text-steel">받은 요청이 없어요.</p>
@@ -286,12 +328,14 @@ export function GoalsWorkspace({
               <ul className="divide-y divide-hairline-soft border-t border-hairline-soft">
                 {sortedRequests.map((r) => (
                   <li key={r.id}>
-                    <button type="button" onClick={() => setSheet({ kind: "request", id: r.id })} className="row-button flex items-center gap-4 py-4 text-[14px]">
+                    <button type="button" onClick={() => setSheet({ kind: "request", id: r.id })} className="row-button flex items-center gap-3 py-2 text-[14px] leading-[25px]">
                       <span className="min-w-0 flex-1 font-medium text-ink-deep">{r.title}</span>
                       {REQ_STATUS[r.status] ? <Badge tone="neutral">{REQ_STATUS[r.status]}</Badge> : null}
                       <span className="hidden shrink-0 text-[12px] text-steel sm:inline">{r.fromOrg}</span>
                       <span className="shrink-0 text-[12px] text-steel tnum">{r.dueDate ? `기한 ${formatDate(r.dueDate)}` : ""}</span>
-                      <IconChevron className="shrink-0 text-icon" />
+                      <span aria-hidden="true" className="shrink-0 text-[16px] font-medium text-icon">
+                        ›
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -301,21 +345,22 @@ export function GoalsWorkspace({
 
           {/* 그 밖의 검토 사유 — 관련 목표가 없는 주목 사항 · 검토 필요사항 */}
           {looseAttentions.length + reviewQueue.length + reviewItems.length > 0 ? (
-            <details className="group rounded-xl border border-hairline-soft bg-canvas">
-              <summary className="flex cursor-pointer list-none items-center justify-between px-7 py-4 text-[14px] font-bold text-ink-deep">
+            <details className="group rounded-[10px] border border-hairline-soft bg-canvas">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-6 py-4 text-[14px] font-bold text-ink-deep">
                 그 밖의 검토 사유 {looseAttentions.length + reviewQueue.length + reviewItems.length}건
                 <span className="flex items-center gap-1 text-[12px] font-normal text-steel">
                   일배치 스캔 · 저장한 항목
                   <IconChevron className="transition-transform group-open:rotate-90" />
                 </span>
               </summary>
-              <ul className="flex flex-col gap-2 border-t border-hairline-soft px-7 py-4 text-[13px]">
+              <ul className="flex flex-col gap-2 border-t border-hairline-soft px-6 py-4 text-[13px]">
                 {looseAttentions.map((a) => (
                   <li key={a.id} className="flex items-start gap-2">
                     <Badge tone="info">AI 주목 사항</Badge>
                     <span className="min-w-0 flex-1">
-                      <button type="button" onClick={() => setSheet({ kind: "attention", id: a.id })} className="text-left font-medium leading-snug text-ink-deep hover:underline">
-                        {a.title}
+                      <button type="button" onClick={() => setSheet({ kind: "attention", id: a.id })} className="group inline-flex min-w-0 items-start gap-0.5 text-left font-medium leading-snug text-ink-deep">
+                        <span className="underline decoration-hairline decoration-dotted underline-offset-[3px] group-hover:decoration-solid group-hover:decoration-current">{a.title}</span>
+                        <IconChevron className="mt-[3px] shrink-0 text-icon group-hover:text-ink-deep" />
                       </button>
                       {a.rankReason ? <span className="mt-0.5 block text-[12px] leading-snug text-steel">{a.rankReason}</span> : null}
                     </span>
@@ -342,8 +387,8 @@ export function GoalsWorkspace({
           <ConfirmBar count={stagedCount} confirmed={lastConfirmed} busy={busy} onConfirm={onConfirm} onViewCascade={() => setTab("cascade")} />
         </div>
       ) : (
-        <div className="shell flex flex-col gap-5 pb-6">
-          <section className="rounded-xl border border-hairline-soft bg-canvas px-7 py-6" aria-label="경영목표 전파 경로">
+        <div className="shell flex flex-col gap-6 pb-6">
+          <section className="rounded-[10px] border border-hairline-soft bg-canvas px-6 py-6" aria-label="경영목표 전파 경로">
             <header className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-5">
               <div className="flex flex-wrap items-baseline gap-x-3">
                 <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">경영목표 전파 경로</h2>
@@ -370,7 +415,17 @@ export function GoalsWorkspace({
       ) : null}
       {activeAttention ? <AttentionSheet insight={activeAttention} onClose={close} onOpenGoal={(id) => setSheet({ kind: "goal", id })} /> : null}
       {activeGoal ? <GoalSheet goal={activeGoal} proposal={proposalOf(activeGoal.id)} onClose={close} onOpenProposal={(id) => setSheet({ kind: "proposal", id })} /> : null}
-      {sheet?.kind === "history" ? <HistorySheet goals={goals} focusGoalId={sheet.goalId} onClose={close} /> : null}
+      {sheet?.kind === "history" ? (
+        <HistorySheet
+          goals={goals}
+          focusGoalId={sheet.goalId}
+          onClose={close}
+          onRestore={(goalId, toVersion, value) => setSheet({ kind: "change", req: { mode: "revert", goalId, toVersion, value } })}
+        />
+      ) : null}
+      {sheet?.kind === "change" ? (
+        <GoalChangeDialog request={sheet.req} goal={goals.find((g) => g.id === sheet.req.goalId)} added={addedGoals.find((g) => g.id === sheet.req.goalId)} onClose={close} />
+      ) : null}
       {sheet?.kind === "newGoal" ? <NewGoalSheet onClose={close} /> : null}
     </>
   );
@@ -383,6 +438,7 @@ function ProposalCell({
   acted,
   inBasket,
   onReview,
+  onRevert,
   onUnstage,
 }: {
   proposal: Proposal;
@@ -390,82 +446,146 @@ function ProposalCell({
   acted?: keyof typeof DONE_LABEL;
   inBasket: boolean;
   onReview: () => void;
+  /** 처리 완료된 제안 — 확정한 변경을 되돌린다 (사유 필수 · 새 버전으로 기록) */
+  onRevert: () => void;
   onUnstage: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-info-faint px-5 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-[12px] text-steel">
-          추천{" "}
-          <b className="tnum ml-1 text-[20px] font-bold text-primary">
-            {proposalRange(proposal)}
-            <span className="num-unit">{directionSuffix(goal)}</span>
-          </b>
-        </p>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-steel">
+    <div className="flex items-center gap-2 rounded-lg bg-info-faint py-3 pl-4 pr-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <RangeText proposal={proposal} goal={goal} />
+        <p className="flex flex-wrap items-center gap-[5px] text-[12px] text-steel">
           <StateTag acted={acted} inBasket={inBasket} />
+          {acted && acted !== "added" ? (
+            <button type="button" onClick={onRevert} className="text-[12px] font-bold text-steel underline underline-offset-2 hover:text-ink-deep">
+              되돌리기
+            </button>
+          ) : null}
           {inBasket && !acted ? (
             <>
               <span>1단계 · 3단계에서 담음</span>
-              <button type="button" onClick={onUnstage} className="underline underline-offset-2 hover:text-ink-deep">
+              <span aria-hidden="true" className="text-icon">
+                ·
+              </span>
+              <button type="button" onClick={onUnstage} className="font-medium underline underline-offset-2 hover:text-ink-deep">
                 담기 취소
               </button>
             </>
           ) : null}
         </p>
       </div>
-      {acted ? null : (
-        <Button variant="ghost" size="sm" onClick={onReview}>
-          제안 검토
-        </Button>
-      )}
+      {acted ? null : <ReviewButton onClick={onReview} />}
     </div>
   );
 }
 
-function StateTag({ acted, inBasket }: { acted?: keyof typeof DONE_LABEL; inBasket: boolean }) {
-  if (acted) return <Badge tone="neutral">{DONE_LABEL[acted]} 완료</Badge>;
-  if (inBasket) return <Badge tone="info" icon={<IconCheckCircle size={13} />}>조정안에 담김</Badge>;
-  return <Badge tone="neutral">검토 필요</Badge>;
+/** 추천 범위 — '추천' 12 Medium · 숫자 20 Bold(primary/700) · 단위 12 Bold. 증가율 목표는 부호(+)를 붙인다 */
+function RangeText({ proposal, goal }: { proposal: Proposal; goal?: Goal }) {
+  const r = proposal.recommendation;
+  const unit = UNIT_LABEL[r.unit];
+  const dec = r.decimals ?? 1;
+  const signed = r.unit === "PCT" && (goal?.targetType === "growth" || /증가|성장/.test(goal?.metricLabel ?? ""));
+  const n = (v?: number | null, first?: boolean) => (v === undefined || v === null ? "-" : `${first && signed && v > 0 ? "+" : ""}${v.toFixed(dec)}`);
+  const body = r.mode === "range" ? `${n(r.low, true)} ~ ${n(r.high)}` : r.mode === "point" ? n(r.value, true) : null;
+  return (
+    <p className="flex items-baseline gap-[5px] whitespace-nowrap">
+      <span className="text-[12px] font-medium text-steel">추천</span>
+      {body ? (
+        <b className="tnum text-[20px] font-bold leading-[25px] text-primary-deep">
+          {body}
+          {unit ? <span className={clsx("text-[12px]", unit !== "%" && "ml-1")}>{unit}</span> : null}
+        </b>
+      ) : (
+        <b className="text-[14px] font-bold text-primary-deep">{proposalRange(proposal)}</b>
+      )}
+    </p>
+  );
 }
 
-/** 목표 줄의 … 메뉴 — 목표 상세 · 변경 이력 */
-function GoalMenu({ onDetail, onHistory }: { onDetail: () => void; onHistory: () => void }) {
+/** [제안 검토] — 흰 바탕 · 테두리 · 36px · 12 Bold */
+function ReviewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="inline-flex h-9 shrink-0 items-center rounded-md border border-hairline-soft bg-canvas px-3 text-[12px] font-bold text-ink-deep hover:bg-surface-soft">
+      제안 검토
+    </button>
+  );
+}
+
+function StateTag({ acted, inBasket }: { acted?: keyof typeof DONE_LABEL; inBasket: boolean }) {
+  const tag = "inline-flex h-[22px] items-center rounded-pill px-2 text-[12px] font-bold";
+  if (acted) return <span className={clsx(tag, "bg-track text-steel")}>{DONE_LABEL[acted]} 완료</span>;
+  if (inBasket) return <span className={clsx(tag, "bg-info-soft text-primary-deep")}>✓ 조정안에 담김</span>;
+  return <span className={clsx(tag, "bg-track text-ink-deep")}>검토 필요</span>;
+}
+
+/** 목표 줄의 … 메뉴 — 목표 수정 · 변경 이력 · 목표 삭제(위험색). 키보드: Enter/Space/↓ 로 열고 ↑↓ 로 이동, Esc · 바깥 클릭으로 닫고 트리거로 포커스 복귀 */
+interface GoalMenuItem {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+}
+function GoalMenu({ items }: { items: GoalMenuItem[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const id = useId();
   const closeMenu = useCallback(() => setOpen(false), []);
-  useDismiss(ref, open, closeMenu);
+  const dismiss = useCallback(() => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  }, []);
+  useDismiss(ref, open, dismiss);
+  useEffect(() => {
+    if (open) itemRefs.current[0]?.focus();
+  }, [open]);
+  const onMenuKey = (e: KeyboardEvent<HTMLUListElement>) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    const list = itemRefs.current.filter(Boolean) as HTMLButtonElement[];
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    const next = e.key === "Home" ? 0 : e.key === "End" ? list.length - 1 : (at + (e.key === "ArrowDown" ? 1 : -1) + list.length) % list.length;
+    list[next]?.focus();
+  };
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-controls={id}
+        aria-controls={open ? id : undefined}
         aria-label="목표 메뉴"
         onClick={() => setOpen((v) => !v)}
-        className={clsx("inline-flex h-8 w-8 items-center justify-center rounded-md text-steel hover:bg-surface-soft hover:text-ink-deep", open && "bg-surface-soft")}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" && !open) {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+        className={clsx("inline-flex h-[26px] w-[26px] items-center justify-center rounded-md text-steel hover:bg-surface-soft hover:text-ink-deep", open && "bg-surface-soft")}
       >
         <IconDots />
       </button>
       {open ? (
-        <ul id={id} role="menu" className="absolute left-0 top-[calc(100%+4px)] z-30 w-[136px] animate-pop-in rounded-lg border border-hairline-soft bg-canvas p-1 shadow-tooltip">
-          {[
-            ["목표 상세", onDetail],
-            ["변경 이력", onHistory],
-          ].map(([label, fn]) => (
-            <li key={label as string} role="none">
+        <ul id={id} role="menu" aria-label="목표 메뉴" onKeyDown={onMenuKey} className="absolute left-0 top-[calc(100%+4px)] z-30 w-[160px] animate-pop-in rounded-xl border border-hairline-soft bg-canvas p-1 shadow-tooltip">
+          {items.map((it, i) => (
+            <li key={it.label} role="none">
               <button
+                ref={(el) => {
+                  itemRefs.current[i] = el;
+                }}
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   closeMenu();
-                  (fn as () => void)();
+                  // 다이얼로그 · 서랍이 닫히면 포커스가 이 트리거로 돌아오게 먼저 옮겨 둔다
+                  triggerRef.current?.focus();
+                  it.onSelect();
                 }}
-                className="flex h-9 w-full items-center rounded-md px-3 text-left text-[13px] font-medium text-ink hover:bg-surface-soft"
+                className={clsx("flex h-11 w-full items-center rounded-lg px-3 text-left text-[14px] font-medium hover:bg-surface-soft focus-visible:bg-surface-soft", it.danger ? "text-critical" : "text-ink-deep")}
               >
-                {label as string}
+                {it.label}
               </button>
             </li>
           ))}
@@ -493,12 +613,12 @@ function ConfirmBar({
 }) {
   if (count > 0) {
     return (
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-soft bg-canvas px-7 py-5" aria-live="polite">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-hairline-soft bg-canvas py-[18px] pl-6 pr-[18px]" aria-live="polite">
         <div>
           <h2 className="text-[16px] font-bold leading-[1.4] text-ink-deep">조정안 {count}건이 확정을 기다리고 있어요</h2>
-          <p className="mt-0.5 text-[12px] text-steel">확정하면 AI가 실행방안과 영업점 기준을 자동으로 보완해 전파합니다.</p>
+          <p className="mt-0.5 text-[12px] leading-[18px] text-steel">확정하면 AI가 실행방안과 영업점 기준을 자동으로 보완해 전파합니다.</p>
         </div>
-        <Button onClick={onConfirm} disabled={busy}>
+        <Button onClick={onConfirm} disabled={busy} className="!h-[45px]">
           {busy ? "확정하는 중…" : "조정안 확정"}
         </Button>
       </section>
@@ -506,7 +626,7 @@ function ConfirmBar({
   }
   if (confirmed) {
     return (
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-soft bg-info-faint px-7 py-5" aria-live="polite">
+      <section className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-hairline-soft bg-info-faint py-[18px] pl-6 pr-[18px]" aria-live="polite">
         <div>
           <h2 className="flex items-center gap-2 text-[16px] font-bold leading-[1.4] text-ink-deep">
             <IconCheckCircle className="text-primary" />
@@ -529,7 +649,7 @@ function ConfirmBar({
     );
   }
   return (
-    <section className="rounded-xl border border-dashed border-hairline bg-transparent px-7 py-5">
+    <section className="rounded-[10px] border border-dashed border-hairline bg-transparent py-[18px] pl-6 pr-[18px]">
       <h2 className="text-[14px] font-bold text-ink-deep">확정할 조정안이 없어요</h2>
       <p className="mt-0.5 text-[12px] leading-normal text-steel">[제안 검토]에서 [조정안에 담기]를 누르면 여기서 한꺼번에 확정할 수 있어요.</p>
     </section>

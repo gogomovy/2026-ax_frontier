@@ -18,6 +18,7 @@ export function PageHeader({
   description,
   actions,
   children,
+  compact,
 }: {
   crumbs?: Crumb[];
   eyebrow?: string;
@@ -25,9 +26,12 @@ export function PageHeader({
   description?: ReactNode;
   actions?: ReactNode;
   children?: ReactNode;
+  /** 1 · 2 · 3단계 화면 머리말 — 제목 22px, 위 여백 20px(현황·목표 제목 줄과 같은 크기 · 위치) */
+  compact?: boolean;
 }) {
+  const titleCls = compact ? "text-[22px] font-bold leading-[1.25] text-ink-deep" : "text-[24px] font-bold leading-[1.25] text-ink-deep";
   return (
-    <div className="shell pb-5 pt-8">
+    <div className={compact ? "shell pb-4 pt-5" : "shell pb-5 pt-8"}>
       {/* 위치 표시 — 관리자 화면과 같은 구성 요소 (C.9 · UX-21) */}
       {crumbs && crumbs.length > 0 ? <Breadcrumbs items={crumbs} className="mb-2.5" /> : null}
 
@@ -35,10 +39,10 @@ export function PageHeader({
         <div className="min-w-0">
           {eyebrow ? <p className="mb-1 text-[12px] font-bold text-primary">{eyebrow}</p> : null}
           {typeof title === "string" ? (
-            <h1 className="text-[24px] font-bold leading-[1.25] text-ink-deep">{title}</h1>
+            <h1 className={titleCls}>{title}</h1>
           ) : (
             // 제목 안에 부문 선택 같은 조작 요소가 들어가면 제목 역할만 붙인다
-            <div role="heading" aria-level={1} className="text-[24px] font-bold leading-[1.25] text-ink-deep">
+            <div role="heading" aria-level={1} className={titleCls}>
               {title}
             </div>
           )}
@@ -47,7 +51,7 @@ export function PageHeader({
         {actions ? <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-md">{actions}</div> : null}
       </div>
 
-      {children ? <div className="mt-5">{children}</div> : null}
+      {children ? <div className={compact ? "mt-4" : "mt-5"}>{children}</div> : null}
     </div>
   );
 }

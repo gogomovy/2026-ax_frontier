@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import clsx from "clsx";
-import { DeltaFigure, FigureText } from "@/components/data/FigureText";
+import { FigureText } from "@/components/data/FigureText";
 import { IconSort } from "@/components/ui/icons";
 import { ScrollRegion } from "@/components/ui/ScrollRegion";
 import { UNIT_LABEL } from "@/lib/format";
@@ -17,7 +17,6 @@ export function ComparisonTable({
   rows,
   asOf,
   unitLabel,
-  positiveIsGood = true,
   highlight,
   sortable = false,
 }: {
@@ -26,6 +25,7 @@ export function ComparisonTable({
   asOf?: string | null;
   /** 단위 라벨 — 생략하면 첫 행 수치의 단위 */
   unitLabel?: string;
+  /** @deprecated 시안 3 표는 증감에 색을 쓰지 않는다 */
   positiveIsGood?: boolean;
   /** true 를 돌려주는 행을 강조 */
   highlight?: (row: ComparisonRow) => boolean;
@@ -37,7 +37,7 @@ export function ComparisonTable({
   const basis = p.month === NO_VALUE ? `기준일 ${NO_VALUE}` : `${p.month} 누계/말 기준`;
   const sorted =
     dir === "none" ? rows : [...rows].sort((a, b) => ((a.diffRate.value ?? 0) - (b.diffRate.value ?? 0)) * (dir === "asc" ? 1 : -1));
-  const head = "whitespace-nowrap px-3 py-2.5 text-right text-[12px] font-bold text-steel";
+  const head = "h-[35px] whitespace-nowrap px-3 text-right text-[12px] font-bold text-steel";
   return (
     <ScrollRegion label={`비교표${unit ? ` · 단위 ${unit}` : ""}`} className="overflow-x-auto [scrollbar-gutter:stable]">
       <table className="w-full min-w-[560px] border-collapse text-[14px]">
@@ -47,7 +47,7 @@ export function ComparisonTable({
         </caption>
         <thead>
           <tr className="bg-surface-soft">
-            <th scope="col" className="rounded-l-md px-3 py-2.5 text-left text-[12px] font-bold text-steel">
+            <th scope="col" className="h-[35px] rounded-l-md px-3 text-left text-[12px] font-bold text-steel">
               구분
             </th>
             <th scope="col" className={head}>
@@ -89,24 +89,26 @@ export function ComparisonTable({
           ) : null}
           {sorted.map((row) => {
             const on = highlight?.(row);
-            const cell = clsx("whitespace-nowrap border-b border-hairline-soft px-3 py-3.5 text-right", on && "bg-info-faint");
+            const cell = clsx("h-[46px] whitespace-nowrap border-b border-hairline-soft px-3 text-right", on && "bg-info-faint");
+            const val = on ? "!font-bold !text-ink-deep" : "!font-normal !text-ink-deep";
+            const delta = on ? "!font-bold !text-ink-deep" : "!font-normal !text-steel";
             return (
               <tr key={row.label}>
-                <th scope="row" className={clsx("border-b border-hairline-soft px-3 py-3.5 text-left", on ? "bg-info-faint font-bold text-ink-deep" : "font-bold text-ink-deep")}>
+                <th scope="row" className={clsx("h-[46px] border-b border-hairline-soft px-3 text-left font-bold text-ink-deep", on && "bg-info-faint")}>
                   {row.label}
                 </th>
                 <td className={cell}>
-                  <FigureText figure={row.current} strong plain />
-                </td>
-                <td className={clsx(cell, "text-steel")}>
-                  <FigureText figure={row.prior} plain className="!font-medium !text-steel" />
-                </td>
-                <td className={clsx(cell, "text-steel")}>{row.prior2 ? <FigureText figure={row.prior2} plain className="!font-medium !text-steel" /> : "-"}</td>
-                <td className={cell}>
-                  <DeltaFigure figure={row.diff} positiveIsGood={positiveIsGood} plain />
+                  <FigureText figure={row.current} bare plain className={val} />
                 </td>
                 <td className={cell}>
-                  <DeltaFigure figure={row.diffRate} positiveIsGood={positiveIsGood} plain />
+                  <FigureText figure={row.prior} bare plain className={val} />
+                </td>
+                <td className={cell}>{row.prior2 ? <FigureText figure={row.prior2} bare plain className={val} /> : "-"}</td>
+                <td className={cell}>
+                  <FigureText figure={row.diff} signed bare plain className={delta} />
+                </td>
+                <td className={cell}>
+                  <FigureText figure={row.diffRate} signed plain className={delta} />
                 </td>
               </tr>
             );

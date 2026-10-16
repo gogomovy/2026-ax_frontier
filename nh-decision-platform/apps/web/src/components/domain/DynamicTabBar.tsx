@@ -1,4 +1,4 @@
-import { SEVERITY_TEXT, StatusDot } from "@/components/ui/primitives";
+import { AddAgentTab, SEVERITY_TEXT, StatusDot } from "@/components/ui/primitives";
 import { SeenTabLinks } from "@/components/ui/SeenTabLinks";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { tabSeenKey, tabSignature } from "@/lib/seen";
@@ -15,7 +15,10 @@ export function DynamicTabBar({
   basePath = "/risk/analysis",
   query = "",
   lead = [],
+  addHref = null,
 }: {
+  /** 탭 줄 끝 [+] 분석 에이전트 만들기 (권한 있을 때만) */
+  addHref?: string | null;
   tabs: AnalysisTab[];
   previous: AnalysisTab[];
   activeKey: string;
@@ -48,6 +51,7 @@ export function DynamicTabBar({
           seenKey: tabSeenKey(tab),
           signature: tabSignature(tab),
         }))]}
+        after={addHref ? <AddAgentTab href={addHref} /> : null}
       />
 
       <div className="flex items-center gap-md text-[12px] text-stone">

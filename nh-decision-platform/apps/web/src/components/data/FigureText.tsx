@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
-import { formatFigure, formatSigned } from "@/lib/format";
+import { FloatingTip } from "@/components/ui/FloatingTip";
+import { formatFigure, formatSigned, formatSignedValue, formatValue } from "@/lib/format";
 import type { Figure } from "@/lib/types";
 
 /**
@@ -17,22 +18,27 @@ export function FigureText({
   className,
   strong,
   plain,
+  bare,
 }: {
   figure: Figure;
   signed?: boolean;
   className?: string;
   strong?: boolean;
+  /** 단위 없이 숫자만 (표 머리에 단위를 적은 표) */
+  bare?: boolean;
   /** 점선 밑줄 없이 그린다(표 · 큰 숫자) — 누르면 계산 추적이 열리는 것은 같다 */
   plain?: boolean;
 }) {
   const { openDrawer } = useUi();
   const [hint, setHint] = useState(false);
-  const text = signed ? formatSigned(figure) : formatFigure(figure);
+  const anchor = useRef<HTMLButtonElement>(null);
+  const text = bare ? (signed ? formatSignedValue(figure) : formatValue(figure)) : signed ? formatSigned(figure) : formatFigure(figure);
   const undefinedValue = figure.value === null || figure.value === undefined;
 
   return (
     <span className="relative inline-block">
       <button
+        ref={anchor}
         type="button"
         onClick={() => openDrawer({ kind: "calc", title: figure.label, figure })}
         onMouseEnter={() => setHint(true)}
@@ -41,7 +47,7 @@ export function FigureText({
         onBlur={() => setHint(false)}
         aria-label={`${figure.label} ${text}${figure.stale ? " (갱신 실패 — 이전 값)" : ""} — 계산 추적 보기`}
         className={clsx(
-          plain ? "cursor-pointer decoration-icon decoration-dotted underline-offset-4 hover:underline" : "figure-traceable",
+          plain ? "cursor-pointer decoration-icon decoration-dotted decoration-1 underline-offset-4 hover:underline" : "figure-traceable",
           "tnum text-left",
           undefinedValue ? "text-stone" : strong ? "font-bold text-ink-deep" : "font-bold text-ink",
           className,
@@ -54,11 +60,9 @@ export function FigureText({
           </span>
         ) : null}
       </button>
-      {hint ? (
-        <span
-          role="tooltip"
-          className="absolute left-0 top-[calc(100%+6px)] z-40 block w-[280px] rounded-lg border border-hairline-soft bg-canvas p-3 text-left shadow-tooltip"
-        >
+      {/* 카드 · 표 밖으로 꺼내 그린다(잘리지 않게) */}
+      <FloatingTip anchor={anchor} open={hint} width={280} className="block rounded-lg border border-hairline-soft bg-canvas p-3 text-left font-normal shadow-tooltip">
+        <span>
           <span className="block text-[11px] font-bold text-steel">{figure.label}</span>
           {figure.calc ? (
             <>
@@ -76,7 +80,7 @@ export function FigureText({
           )}
           <span className="mt-1.5 block text-[10.5px] font-bold text-primary">클릭 — 전체 계산 추적 보기</span>
         </span>
-      ) : null}
+      </FloatingTip>
     </span>
   );
 }

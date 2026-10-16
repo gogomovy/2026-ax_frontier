@@ -49,20 +49,30 @@ export function ModelMonitoringPanel({ corp, retail, asOf }: { corp: ModelSummar
               <th scope="col" className="px-lg py-2.5 font-bold text-charcoal">모형</th>
               {showPsi ? (
                 <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">
-                  <TermText code="PSI" label="PSI" />
+                  <span className="inline-flex items-center justify-end gap-1">
+                    <TermText code="PSI" label="PSI" />
+                  </span>
                 </th>
               ) : null}
               <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">
-                <TermText code="AR" label="AR" />
+                <span className="inline-flex items-center justify-end gap-1">
+                  <TermText code="AR" label="AR" />
+                </span>
               </th>
               <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">
-                <TermText code="AR_DECLINE" label="AR 하락률" />
+                <span className="inline-flex items-center justify-end gap-1">
+                  <TermText code="AR_DECLINE" label="AR 하락률" />
+                </span>
               </th>
               <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">
-                <TermText code="KS" label="K-S" />
+                <span className="inline-flex items-center justify-end gap-1">
+                  <TermText code="KS" label="K-S" />
+                </span>
               </th>
               <th scope="col" className="px-base py-2.5 text-right font-bold text-charcoal">
-                <TermText code="AUROC" label="AUROC" />
+                <span className="inline-flex items-center justify-end gap-1">
+                  <TermText code="AUROC" label="AUROC" />
+                </span>
               </th>
               <th scope="col" className="px-lg py-2.5 font-bold text-charcoal">판정</th>
             </tr>

@@ -32,7 +32,7 @@ function niceTicks(min: number, max: number, count = 4): number[] {
   return ticks;
 }
 
-const W = 440;
+const DEFAULT_W = 440;
 const PAD = { l: 44, r: 84, t: 16, b: 30 };
 
 /**
@@ -50,7 +50,13 @@ export function TrendChart({
   height = 224,
   ariaLabel,
   gapFill = false,
+  areaUnder = false,
+  projection,
+  yTicks,
+  width = DEFAULT_W,
 }: {
+  /** 그림 좌표 폭 — 넓은 카드에서는 카드 폭에 맞춰야 글자가 커지지 않는다 (기본 440) */
+  width?: number;
   points: TrendPoint[];
   target?: { name: string; values: (number | null)[] };
   limit?: { value: number; label: string };
@@ -63,7 +69,14 @@ export function TrendChart({
   ariaLabel: string;
   /** 실적과 목표 경로 사이(미달 폭)를 옅게 칠한다 */
   gapFill?: boolean;
+  /** 실적 선 아래 영역을 primary/100 으로 채운다 (축 0선까지) */
+  areaUnder?: boolean;
+  /** 연말 예상 — primary 짧은 점선. 실적 끝에서 이어지는 투영선 (끝 라벨 억제) */
+  projection?: { values: (number | null)[] };
+  /** y축 눈금을 호출부에서 지정 (0 기준·균등 간격 등 시안 축). 없으면 데이터에서 자동 */
+  yTicks?: number[];
 }) {
+  const W = width;
   const gradId = useId();
   const wrap = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -75,12 +88,13 @@ export function TrendChart({
   const all = [
     ...points.map((p) => p.value),
     ...(target?.values ?? []),
+    ...(projection?.values ?? []),
     ...(limit ? [limit.value] : []),
   ].filter((v): v is number => v !== null && v !== undefined);
   const lo = Math.min(...all);
   const hi = Math.max(...all);
   const pad = (hi - lo || Math.abs(hi) || 1) * 0.12;
-  const ticks = niceTicks(lo - pad, hi + pad);
+  const ticks = yTicks && yTicks.length > 1 ? yTicks : niceTicks(lo - pad, hi + pad);
   const yMin = ticks[0];
   const yMax = ticks[ticks.length - 1];
   const x = (i: number) => PAD.l + (n > 1 ? (innerW * i) / (n - 1) : innerW / 2);
@@ -90,6 +104,8 @@ export function TrendChart({
   const actualPts = actual.filter((p): p is readonly [number, number] => p !== null);
   const targetPts = (target?.values ?? []).map((v, i) => (v === null || v === undefined ? null : ([x(i), y(v)] as const)));
   const targetOk = targetPts.filter((p): p is readonly [number, number] => p !== null);
+  const projPts = (projection?.values ?? []).map((v, i) => (v === null || v === undefined ? null : ([x(i), y(v)] as const)));
+  const projOk = projPts.filter((p): p is readonly [number, number] => p !== null);
   const line = (pts: readonly (readonly [number, number])[]) => pts.map((p) => p.join(",")).join(" ");
   const last = actualPts[actualPts.length - 1];
   const lastTarget = targetOk[targetOk.length - 1];
@@ -161,7 +177,9 @@ export function TrendChart({
           </g>
         ) : null}
 
-        {gapFill && targetOk.length > 1 && actualPts.length > 1 ? (
+        {areaUnder && actualPts.length > 1 ? (
+          <polygon points={`${actualPts[0][0]},${y(yMin)} ${line(actualPts)} ${last[0]},${y(yMin)}`} fill="var(--color-info-soft)" className="motion-safe:animate-fade-late" />
+        ) : gapFill && targetOk.length > 1 && actualPts.length > 1 ? (
           <polygon points={`${line(targetOk)} ${line([...actualPts].reverse())}`} fill="var(--color-primary-soft)" opacity="0.5" className="motion-safe:animate-fade-late" />
         ) : !target && actualPts.length > 1 ? (
           <polygon points={`${actualPts[0][0]},${y(yMin)} ${line(actualPts)} ${last[0]},${y(yMin)}`} fill={`url(#${gradId})`} className="motion-safe:animate-fade-late" />
@@ -181,6 +199,9 @@ export function TrendChart({
           </g>
         ) : null}
 
+        {projOk.length > 1 ? (
+          <polyline points={line(projOk)} fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeDasharray="2 4" strokeLinejoin="round" strokeLinecap="round" className="motion-safe:animate-fade-late" />
+        ) : null}
         {actualPts.length > 1 ? <polyline points={line(actualPts)} fill="none" stroke="var(--color-primary)" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" pathLength={100} strokeDasharray="100 100" className="motion-safe:animate-draw" /> : null}
         {actual.map((p, i) =>
           p === null || i === n - 1 ? null : <circle key={i} cx={p[0]} cy={p[1]} r={hover === i ? 5 : 3} fill="var(--color-canvas)" stroke="var(--color-primary)" strokeWidth="2" className="motion-safe:animate-fade-late" />,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import clsx from "clsx";
 import { useGoalState } from "@/components/providers/GoalStateProvider";
 import { IconBriefcase, IconBuilding, IconTarget } from "@/components/ui/icons";
@@ -8,10 +8,13 @@ import { Badge } from "@/components/ui/primitives";
 import type { CascadeNode, Goal, Proposal } from "@/lib/types";
 
 /** 노드 한 칸의 높이와 간격 — 띠(SVG)의 좌표 계산에 같은 값을 쓴다 */
-const H = 72;
-const GAP = 16;
+const H = 52;
+/** 왼쪽 두 열 줄 간격 (시안 201:2 — 52 + 32) */
+const GAP = 32;
 const PITCH = H + GAP;
-const GUTTER = 88;
+/** 영업점 칸 사이 최소 간격 */
+const BGAP = 17;
+const GUTTER = 147;
 
 type FlowState = "confirmed" | "pre" | "dashed";
 
@@ -19,12 +22,18 @@ interface FlowNode {
   id: string;
   col: 0 | 1 | 2;
   y: number;
+  /** 칸 높이 — 영업점 칸은 배분 줄 수만큼 커진다 */
+  h: number;
+  /** 영업점 칸의 배분 줄 (설명 · 값) */
+  lines?: { label?: string; value?: string }[];
   title: string;
   sub?: string;
   value?: string;
   tags: { label: string; tone: "neutral" | "info" | "attention" }[];
   state: FlowState;
   latest: boolean;
+  /** 지금 보는 부서(highlightOrg)가 맡은 실행 사업 */
+  own?: boolean;
 }
 interface Link {
   from: string;
@@ -49,27 +58,42 @@ const ICON = { 0: IconTarget, 1: IconBriefcase, 2: IconBuilding } as const;
  * 경영목표 → 실행 사업 → 영업점 전파 흐름도 (가이드 7164 · 규칙: 표 대신 흐름으로).
  *  - 띠 굵기 = 전파 규모(아래로 이어진 노드 수), 확정된 흐름은 옅은 보라(primary/200), 확정 전 제안은 회색, 연결 없음은 가는 점선.
  *  - 최근 확정된 목표와 그 아래 경로는 보라 테두리. 숫자는 노드 안에만 두고 띠 위에는 쓰지 않는다.
- *  - 노드에 올리거나 포커스하면 그 경로만 강조하고 나머지는 흐리게 한다.
  *  - highlightOrg: 사업부서 수행방안에서 그 부서가 맡은 실행 사업에 '우리 부서' 표시 (Phase K 후속 · SCP-04)
+ *  - ownBorder: 우리 부서 실행 사업을 보라 테두리로 표시 · drawIn: 띠를 그리며 나타낸다 (사업부서 수행방안 시안 345:98 · 기본 꺼짐)
  */
 export function CascadeFlow({
   nodes,
   goals,
   proposals,
   highlightOrg,
+  ownBorder = false,
+  drawIn = false,
 }: {
   nodes: CascadeNode[];
   goals: Goal[];
   proposals: Proposal[];
   highlightOrg?: string | null;
+  ownBorder?: boolean;
+  drawIn?: boolean;
 }) {
   const { overrides, proposalActions } = useGoalState();
-  const [focus, setFocus] = useState<string | null>(null);
 
   const { flow, links, height } = useMemo(() => {
     const fn: FlowNode[] = [];
     const ln: Link[] = [];
+    // 왼쪽 두 열(경영목표 · 실행 사업)은 한 줄씩 같은 높이로 쌓는다 (시안 201:2 · 줄 간격 84)
     let row = 0;
+    // 영업점은 본부(제목) 기준으로 합친다 — 여러 실행 사업이 한 본부로 모이면 띠도 한 칸으로 모인다
+    type Bucket = { id: string; title: string; lines: { label?: string; value?: string }[]; srcs: { from: string; state: FlowState; latest: boolean }[]; sub?: string };
+    const buckets: Bucket[] = [];
+    const bucketOf = (key: string, title: string, sub?: string) => {
+      let b = buckets.find((x) => x.id === key);
+      if (!b) {
+        b = { id: key, title, lines: [], srcs: [], sub };
+        buckets.push(b);
+      }
+      return b;
+    };
 
     for (const g of nodes) {
       const orphan = g.id === "plan-unlinked" || g.label.startsWith("연결 경영목표");
@@ -77,7 +101,6 @@ export function CascadeFlow({
       const goalDef = goals.find((x) => x.id === g.id);
       const prop = proposals.find((p) => p.targetGoalId === g.id);
       const pending = prop ? !proposalActions[prop.id] : false;
-      // 목표값 변경 — 트리가 알려 주거나(서버 트리 · 사업부서) 이 화면의 목표 처리 상태로 판정(종합기획부)
       const changed =
         Boolean(g.changed) ||
         Boolean(goalDef && overrides[g.id]?.targetValue !== undefined && overrides[g.id]?.targetValue !== goalDef.targetValue);
@@ -86,101 +109,122 @@ export function CascadeFlow({
         ? []
         : pre
           ? [{ label: "확정 전", tone: "neutral" }]
-          : [{ label: "확정", tone: "info" }, ...(changed ? [{ label: "최신", tone: "neutral" as const }] : pending ? [{ label: "수정 제안", tone: "attention" as const }] : [])];
+          : [{ label: "✓ 확정", tone: "info" }, ...(changed ? [{ label: "최신", tone: "info" as const }] : pending ? [{ label: "수정 제안", tone: "neutral" as const }] : [])];
 
       const plans = g.children?.filter((c) => c.kind === "plan") ?? [];
-      const startRow = row;
-      const planYs: number[] = [];
+      const gy = row * PITCH;
+      const pState: FlowState = gState === "pre" ? "pre" : gState === "dashed" ? "dashed" : "confirmed";
 
       if (plans.length === 0) {
-        // 아래로 이어진 실행방안이 없는 목표 — 중단된 흐름을 점선 칸으로 보여 준다
-        const y = row * PITCH;
-        fn.push({ id: `${g.id}#empty-plan`, col: 1, y, title: "연결된 실행방안이 없어요", state: "dashed", tags: [], latest: false });
+        fn.push({ id: `${g.id}#empty-plan`, col: 1, y: row * PITCH, h: H, title: "연결된 실행방안이 없어요", state: "dashed", tags: [], latest: false });
         ln.push({ from: g.id, to: `${g.id}#empty-plan`, weight: 2, state: "dashed", latest: false });
         row += 1;
       }
       for (const p of plans) {
         const branches = p.children?.filter((c) => c.kind === "branch_target") ?? [];
-        const pStart = row;
-        const bYs: number[] = [];
-        if (branches.length === 0) {
-          const y = row * PITCH;
-          fn.push({ id: `${p.id}#empty-branch`, col: 2, y, title: "영업점 전파 없음", state: "dashed", tags: [], latest: false });
-          ln.push({ from: p.id, to: `${p.id}#empty-branch`, weight: 2, state: "dashed", latest: false });
-          row += 1;
-        }
-        for (const b of branches) {
-          const y = row * PITCH;
-          bYs.push(y);
-          const s = splitBranch(b.label, b.detail);
-          fn.push({ id: b.id, col: 2, y, title: s.title, sub: s.sub, value: s.value, state: gState === "pre" ? "pre" : "confirmed", tags: [], latest: changed });
-          ln.push({ from: p.id, to: b.id, weight: 8, state: gState === "pre" ? "pre" : "confirmed", latest: changed });
-          row += 1;
-        }
-        const py = bYs.length ? (bYs[0] + bYs[bYs.length - 1]) / 2 : pStart * PITCH;
-        planYs.push(py);
         fn.push({
           id: p.id,
           col: 1,
-          y: py,
+          y: row * PITCH,
+          h: H,
           title: p.label,
           sub: [p.org, p.detail?.split(" · ").slice(1, 2)[0]].filter(Boolean).join(" · ") || p.detail,
-          state: gState === "pre" ? "pre" : "confirmed",
+          state: pState,
           tags: highlightOrg && p.org === highlightOrg ? [{ label: "우리 부서", tone: "info" }] : [],
           latest: changed,
+          own: Boolean(highlightOrg && p.org === highlightOrg),
         });
-        ln.push({ from: g.id, to: p.id, weight: 6 + Math.min(12, Math.max(1, branches.length) * 3), state: gState === "pre" ? "pre" : gState === "dashed" ? "dashed" : "confirmed", latest: changed });
+        ln.push({ from: g.id, to: p.id, weight: pState === "dashed" ? 2 : 6 + Math.min(12, Math.max(1, branches.length) * 4), state: pState, latest: changed });
+        row += 1;
+        if (branches.length === 0) {
+          const b = bucketOf(`${p.id}#empty-branch`, orphan ? "영업점 참고 중단" : "영업점 전파 없음");
+          b.srcs.push({ from: p.id, state: "dashed", latest: false });
+        }
+        for (const br of branches) {
+          const s = splitBranch(br.label, br.detail);
+          const b = bucketOf(`branch:${s.title}`, s.title);
+          if (s.sub || s.value) b.lines.push({ label: s.sub, value: s.value });
+          b.srcs.push({ from: p.id, state: orphan ? "dashed" : gState === "pre" ? "pre" : "confirmed", latest: changed });
+        }
       }
-      const gy = planYs.length ? (planYs[0] + planYs[planYs.length - 1]) / 2 : startRow * PITCH;
-      // detail 이 이미 "조직 · …" 으로 시작하면 조직을 한 번 더 붙이지 않는다
       const gSub = orphan ? g.detail : g.detail && g.org && g.detail.startsWith(g.org) ? g.detail : [g.org, g.detail].filter(Boolean).join(" · ");
-      fn.push({ id: g.id, col: 0, y: gy, title: g.label, sub: gSub, state: gState, tags, latest: changed });
+      // 흐름도 칸은 좁아 '전년 대비'를 줄여 쓴다(시안: 기업여신 +7.8% 이상 확대)
+      fn.push({ id: g.id, col: 0, y: gy, h: H, title: g.label.replace(/\s*전년 대비\s*/, " "), sub: gSub, state: gState, tags, latest: changed });
     }
-    return { flow: fn, links: ln, height: Math.max(row, 1) * PITCH - GAP };
+
+    // 영업점 칸 — 이어진 실행 사업들의 가운데 높이에 두되, 앞 칸과 겹치지 않게 아래로 민다(간격 17)
+    const yOf = new Map(fn.map((n) => [n.id, n.y]));
+    const placed = buckets
+      .map((b, i) => {
+        const n = b.lines.length;
+        const h = n === 0 ? 44 : 10 + 18 + 6 + n * 16 + (n - 1) * 5 + 10;
+        const centers = b.srcs.map((s) => (yOf.get(s.from) ?? 0) + H / 2);
+        const target = centers.reduce((a, c) => a + c, 0) / Math.max(1, centers.length) - h / 2;
+        return { b, h, target, i };
+      })
+      .sort((a, c) => a.target - c.target || a.i - c.i);
+    let bottom = -BGAP;
+    for (const { b, h, target } of placed) {
+      const y = Math.max(0, target, bottom + BGAP);
+      bottom = y + h;
+      const allDashed = b.srcs.every((s) => s.state === "dashed");
+      const allPre = b.srcs.every((s) => s.state === "pre");
+      const latest = b.srcs.some((s) => s.latest);
+      fn.push({
+        id: b.id,
+        col: 2,
+        y,
+        h,
+        title: b.title,
+        sub: b.sub,
+        lines: b.lines,
+        state: allDashed ? "dashed" : allPre ? "pre" : "confirmed",
+        tags: latest ? [{ label: "AI 보완 완료", tone: "info" }] : [],
+        latest,
+      });
+      for (const s of b.srcs) ln.push({ from: s.from, to: b.id, weight: s.state === "dashed" ? 2 : 8, state: s.state, latest: s.latest });
+    }
+    return { flow: fn, links: ln, height: Math.max(H, row * PITCH - GAP, bottom) };
   }, [nodes, goals, proposals, overrides, proposalActions, highlightOrg]);
 
-  // 강조: 포커스한 노드와 그 위(상위) · 아래(하위) 경로
-  const related = useMemo(() => {
-    if (!focus) return null;
-    const set = new Set<string>([focus]);
-    // 아래(하위) 경로
-    const down = [focus];
-    while (down.length) {
-      const x = down.pop()!;
-      for (const l of links) if (l.from === x && !set.has(l.to)) (set.add(l.to), down.push(l.to));
-    }
-    // 위(상위) 경로
-    const up = [focus];
-    while (up.length) {
-      const x = up.pop()!;
-      for (const l of links) if (l.to === x && !set.has(l.from)) (set.add(l.from), up.push(l.from));
-    }
-    return set;
-  }, [focus, links]);
 
   const byId = new Map(flow.map((n) => [n.id, n]));
-  // 초점 노드와 관계없는 노드 — 글자까지 흐리던 opacity-35 대신 글자는 보조색(4.5:1 이상), 바탕 · 테두리 · 아이콘만 낮춘다(J3.6)
-  const dim = (id: string) => (related && !related.has(id) ? "!border-hairline-soft !bg-surface-soft !shadow-none [&_*]:!text-steel [&_svg]:opacity-40" : "");
+
+  // 한 칸으로 여러 띠가 모이거나 한 칸에서 여러 띠가 나갈 때, 띠 끝을 굵기만큼 나란히 쌓는다
+  const w = (l: Link) => (l.state === "dashed" ? 2 : l.weight);
+  const endY = (l: Link, side: "from" | "to") => {
+    const id = side === "from" ? l.from : l.to;
+    const node = byId.get(id)!;
+    const group = links
+      .filter((x) => (side === "from" ? x.from : x.to) === id)
+      .sort((p, q) => (byId.get(side === "from" ? p.to : p.from)?.y ?? 0) - (byId.get(side === "from" ? q.to : q.from)?.y ?? 0));
+    const total = group.reduce((acc, x) => acc + w(x), 0);
+    let acc = 0;
+    for (const x of group) {
+      if (x === l) return node.y + node.h / 2 - total / 2 + acc + w(x) / 2;
+      acc += w(x);
+    }
+    return node.y + node.h / 2;
+  };
 
   const ribbons = (fromCol: 0 | 1) =>
     links
       .filter((l) => byId.get(l.from)?.col === fromCol)
       .map((l) => {
-        const a = byId.get(l.from)!;
-        const b = byId.get(l.to)!;
-        const y1 = a.y + H / 2;
-        const y2 = b.y + H / 2;
+        const y1 = endY(l, "from");
+        const y2 = endY(l, "to");
         const dashed = l.state === "dashed";
-        const on = !related || (related.has(l.from) && related.has(l.to));
         return (
           <path
             key={`${l.from}>${l.to}`}
             d={`M0,${y1} C${GUTTER / 2},${y1} ${GUTTER / 2},${y2} ${GUTTER},${y2}`}
             fill="none"
-            stroke={dashed ? "var(--chart-axis)" : l.state === "pre" ? "var(--color-hairline-soft)" : "var(--color-primary-soft)"}
-            strokeWidth={dashed ? 1.5 : l.weight}
-            strokeDasharray={dashed ? "4 4" : undefined}
-            opacity={on ? 1 : 0.3}
+            stroke={dashed ? "var(--color-hairline-soft)" : l.state === "pre" ? "var(--color-hairline-soft)" : "var(--color-primary)"}
+            strokeOpacity={dashed || l.state === "pre" ? 1 : 0.42}
+            strokeWidth={w(l)}
+            strokeDasharray={dashed ? "4 4" : drawIn ? "100 100" : undefined}
+            pathLength={!dashed && drawIn ? 100 : undefined}
+            className={!dashed && drawIn ? "motion-safe:animate-draw" : undefined}
             strokeLinecap="butt"
           />
         );
@@ -191,28 +235,30 @@ export function CascadeFlow({
       <div className="overflow-x-auto thin-scroll">
         <div className="min-w-[900px]">
           {/* 열 머리글 — 경영목표 → 실행 사업 → 영업점 전파 */}
-          <div className="mb-5 grid grid-cols-[minmax(0,1fr)_88px_minmax(0,1fr)_88px_minmax(0,1fr)] items-center">
+          <div className="mb-[22px] grid grid-cols-[minmax(0,1fr)_147px_minmax(0,1fr)_147px_minmax(0,1fr)] items-center">
             {(["경영목표", "실행 사업", "영업점 전파"] as const).map((label, i) => {
               const Icon = ICON[i as 0 | 1 | 2];
               return (
-                <div key={label} className={clsx("flex items-center gap-3", i === 0 ? "col-start-1" : i === 1 ? "col-start-3" : "col-start-5")}>
-                  <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-pill bg-info-soft px-3.5 text-[14px] font-bold text-ink-deep">
-                    <Icon size={15} className="text-primary" />
+                <div key={label} className={clsx("flex items-center gap-2.5", i === 0 ? "col-span-2 col-start-1 pr-2.5" : i === 1 ? "col-span-2 col-start-3 pr-2.5" : "col-start-5")}>
+                  <span className="inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-pill bg-surface-soft pl-[3px] pr-[11px] text-[13px] font-bold text-ink-deep">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-circle bg-primary text-white">
+                      <Icon size={13} />
+                    </span>
                     {label}
                   </span>
-                  {i < 2 ? <span aria-hidden="true" className="relative h-px flex-1 bg-info-line-soft after:absolute after:-right-px after:-top-[3px] after:h-[7px] after:w-[7px] after:rotate-45 after:border-r after:border-t after:border-info-line" /> : null}
+                  {i < 2 ? <span aria-hidden="true" className="relative h-[2px] flex-1 bg-info-line-soft after:absolute after:-right-px after:-top-[3px] after:h-[7px] after:w-[7px] after:rotate-45 after:border-r after:border-t after:border-info-line" /> : null}
                 </div>
               );
             })}
           </div>
 
-          <div className="grid grid-cols-[minmax(0,1fr)_88px_minmax(0,1fr)_88px_minmax(0,1fr)]" style={{ height }}>
+          <div className="grid grid-cols-[minmax(0,1fr)_147px_minmax(0,1fr)_147px_minmax(0,1fr)]" style={{ height }}>
             {([0, 1, 2] as const).map((col) => (
               <div key={col} className="relative" style={{ gridColumn: col * 2 + 1 }}>
                 {flow
                   .filter((n) => n.col === col)
                   .map((n) => (
-                    <FlowBox key={n.id} node={n} icon={ICON[col]} className={dim(n.id)} onFocus={() => setFocus(n.id)} onBlur={() => setFocus(null)} />
+                    <FlowBox key={n.id} node={n} icon={ICON[col]} ownBorder={ownBorder} />
                   ))}
               </div>
             ))}
@@ -225,65 +271,89 @@ export function CascadeFlow({
         </div>
       </div>
 
-      <ul className="mt-6 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12px] text-steel">
+      <ul className="mt-3.5 flex flex-wrap items-center gap-x-[18px] gap-y-1.5 pb-1.5 text-[11px] text-steel">
         <li className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-1.5 w-6 rounded-sm bg-primary-soft" />
+          <span aria-hidden="true" className="h-1.5 w-[18px] rounded-[1.5px] bg-primary opacity-[0.42]" />
           확정된 전파 흐름
         </li>
         <li className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-1.5 w-6 rounded-sm bg-hairline-soft" />
+          <span aria-hidden="true" className="h-1.5 w-[18px] rounded-[1.5px] bg-hairline-soft" />
           확정 전 제안
         </li>
         <li className="inline-flex items-center gap-1.5">
-          <span aria-hidden="true" className="w-6 border-t border-dashed border-icon" />
+          <span aria-hidden="true" className="w-[18px] border-t border-dashed border-icon" />
           연결 없음 · 중단
         </li>
-        <li className="font-bold text-ink-deep">띠 굵기 = 전파 규모 · 최근 확정 순</li>
+        <li className="font-bold text-steel">띠 굵기 = 전파 규모 · 최근 확정 순</li>
       </ul>
     </div>
   );
 }
 
-function FlowBox({ node, icon: Icon, className, onFocus, onBlur }: { node: FlowNode; icon: (p: { className?: string; size?: number }) => ReactNode; className?: string; onFocus: () => void; onBlur: () => void }) {
+function FlowBox({ node, icon: Icon, ownBorder = false }: { node: FlowNode; icon: (p: { className?: string; size?: number }) => ReactNode; ownBorder?: boolean }) {
   const dashed = node.state === "dashed";
+  const lines = node.lines ?? [];
+  const tagEls = node.tags.length ? (
+    <span className="flex shrink-0 items-center gap-[7px]">
+      {node.tags.map((t) => (
+        <Badge key={t.label} tone={t.tone} className="!h-4 !px-1.5 !py-0 !text-[10px] !leading-[14px]">
+          {t.label}
+        </Badge>
+      ))}
+    </span>
+  ) : null;
   return (
     <div
-      tabIndex={dashed ? -1 : 0}
-      onMouseEnter={dashed ? undefined : onFocus}
-      onMouseLeave={dashed ? undefined : onBlur}
-      onFocus={dashed ? undefined : onFocus}
-      onBlur={dashed ? undefined : onBlur}
       className={clsx(
-        "absolute inset-x-0 flex items-center gap-3 rounded-lg border px-3.5 transition-opacity",
-        dashed ? "border-dashed border-hairline bg-transparent" : node.latest ? "border-primary bg-canvas shadow-[0_0_0_1px_var(--color-primary)]" : "border-hairline-soft bg-canvas",
-        className,
+        "absolute inset-x-0 flex gap-2 rounded-[7px] border pl-[9px] pr-[11px]",
+        node.col === 2 && lines.length ? "items-start py-[10px]" : "items-center",
+        dashed
+          ? "border-dashed border-hairline-soft bg-canvas opacity-70"
+          : ownBorder && node.own
+            ? "border-[1.5px] border-primary bg-info-faint"
+            : node.latest
+              ? "border-primary bg-canvas shadow-[0_0_0_0.5px_var(--color-primary)]"
+              : "border-hairline-soft bg-canvas",
       )}
-      style={{ top: node.y, height: H }}
+      style={{ top: node.y, height: node.h }}
       data-flow-node={node.id}
     >
-      <span className={clsx("flex h-8 w-8 shrink-0 items-center justify-center rounded-md", dashed ? "bg-track text-icon" : node.state === "pre" ? "bg-track text-steel" : "bg-info-soft text-primary")}>
-        <Icon size={16} />
+      <span className={clsx("flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md", dashed || node.state === "pre" ? "bg-track text-steel" : "bg-info-soft text-primary")}>
+        <Icon size={13} />
       </span>
-<span className="min-w-0 flex-1">
-        <span className={clsx("block text-[14px] leading-[1.35]", node.col === 0 ? "line-clamp-2" : "truncate", dashed ? "font-medium text-steel" : "font-bold text-ink-deep")} title={node.title}>
-          {node.title}
-        </span>
-        {node.sub ? (
-          <span className="block truncate text-[12px] leading-[1.4] text-steel" title={node.sub}>
-            {node.sub}
+      {node.col === 2 && lines.length ? (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex items-center gap-[5px]">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-bold leading-[18px] text-ink-deep">
+              {node.title}
+            </span>
+            {tagEls}
           </span>
-        ) : null}
-      </span>
-      {node.value ? <span className="tnum shrink-0 text-[14px] font-bold text-ink-deep">{node.value}</span> : null}
-      {node.tags.length ? (
-        <span className="flex shrink-0 flex-col items-end gap-1 xl:flex-row">
-          {node.tags.map((t) => (
-            <Badge key={t.label} tone={t.tone} className="!px-2 !py-[1px] !text-[12px]">
-              {t.label}
-            </Badge>
+          {lines.map((ln, i) => (
+            <span key={i} className={clsx("flex h-4 items-center gap-[5px]", i === 0 ? "mt-1.5" : "mt-[5px]")}>
+              <span className="min-w-0 flex-1 truncate text-[11px] leading-4 text-steel">
+                {ln.label}
+              </span>
+              {ln.value ? <span className="tnum shrink-0 text-[12px] font-bold text-ink-deep">{ln.value}</span> : null}
+            </span>
           ))}
         </span>
-      ) : null}
+      ) : (
+        <>
+          <span className="min-w-0 flex-1">
+            <span className={clsx("block truncate text-[13px] font-bold leading-[18px]", dashed ? "text-steel" : "text-ink-deep")}>
+              {node.title}
+            </span>
+            {node.sub ? (
+              <span className="mt-px block truncate text-[11px] leading-4 text-steel">
+                {node.sub}
+              </span>
+            ) : null}
+          </span>
+          {node.value ? <span className="tnum shrink-0 text-[12px] font-bold text-ink-deep">{node.value}</span> : null}
+          {tagEls}
+        </>
+      )}
     </div>
   );
 }

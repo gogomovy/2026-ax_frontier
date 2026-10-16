@@ -44,6 +44,9 @@ const HISTORY_ACTION: Record<string, string> = {
   "goal.add_new": "신규 추가",
   "goal.add_manual": "직접 등록",
   "goal.reset": "처리 초기화",
+  "goal.revert": "되돌리기",
+  "goal.edit": "목표 수정",
+  "goal.delete": "목표 삭제",
 };
 
 /* ═══════════════ AI 주목 사항 ═══════════════ */

@@ -6,12 +6,13 @@ import { PlanStateProvider } from "@/components/providers/PlanStateProvider";
 import { SessionProvider, type Bootstrap, type MenuPayload } from "@/components/providers/SessionProvider";
 import { SourceDrawer } from "@/components/evidence/SourceDrawer";
 import { AppShell } from "@/components/layout/AppShell";
+import { AsOfSelectionProvider } from "@/components/layout/PageTools";
 import { Toast } from "@/components/layout/Toast";
 import { apiTry, hasSession } from "@/lib/api-server";
 import type { ActionPlan, CascadeNode, Goal, Term } from "@/lib/types";
 
 export const metadata: Metadata = {
-  title: "NH AI 경영 의사결정 플랫폼",
+  title: "NH NAVI",
   description:
     "은행 내·외부 정보를 연결하여 경영목표의 설정과 조정을 지원하고, 그 결과를 조직 전체의 판단 기준으로 전파하는 의사결정 플랫폼",
 };
@@ -40,15 +41,17 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <UiProvider>
             <GoalStateProvider>
               <PlanStateProvider>
-                <a
-                  href="#main"
-                  className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-ink-deep focus:px-4 focus:py-2 focus:text-[13px] focus:font-bold focus:text-white"
-                >
-                  본문으로 건너뛰기
-                </a>
-                <AppShell>{children}</AppShell>
-                <SourceDrawer />
-                <Toast />
+                <AsOfSelectionProvider>
+                  <a
+                    href="#main"
+                    className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[70] focus:rounded-lg focus:bg-ink-deep focus:px-4 focus:py-2 focus:text-[13px] focus:font-bold focus:text-white"
+                  >
+                    본문으로 건너뛰기
+                  </a>
+                  <AppShell>{children}</AppShell>
+                  <SourceDrawer />
+                  <Toast />
+                </AsOfSelectionProvider>
               </PlanStateProvider>
             </GoalStateProvider>
           </UiProvider>

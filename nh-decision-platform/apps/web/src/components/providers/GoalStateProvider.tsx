@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { api } from "@/lib/api-client";
+import { ApiError, api } from "@/lib/api-client";
+import { MISSING_ROUTE_MESSAGE, isMissingRoute } from "@/lib/goalChange";
 import type { Goal, GoalStatus, Proposal } from "@/lib/types";
 import { useSession } from "./SessionProvider";
 import { useUi } from "./UiProvider";
@@ -19,10 +20,23 @@ export interface GoalOverride {
   status?: GoalStatus;
   targetValue?: number;
   version?: number;
+  /** 확정 버전 사슬(기준 버전 제외) — 서버가 덧붙이기만 한다 */
+  versions?: { version: number; value: number | null; at?: string; actor?: string; mode?: string; reason?: string }[];
   updatedAt?: string;
   changeReason?: string;
   creationMode?: Goal["creationMode"];
 }
+
+export interface ConsistencyIssue {
+  code: string;
+  severity: "block" | "warn" | "info";
+  message: string;
+}
+
+/** 되돌리기 · 다시 수정 · 삭제 결과 — 실패하면 화면(다이얼로그)이 메시지를 그대로 보여 준다 */
+export type GoalChangeResult =
+  | { ok: true; version?: number }
+  | { ok: false; message: string; issues?: ConsistencyIssue[]; needsForce?: boolean };
 
 export interface AddedGoal {
   id: string;
@@ -85,6 +99,12 @@ interface GoalStateValue extends GoalStateShape {
   addNewGoal: (proposal: Proposal, targetLabel: string) => void;
   addManualGoal: (input: ManualGoalInput) => void;
   registerReviewItem: (title: string) => void;
+  /** 확정한 변경 되돌리기 — 고른 이전 버전(기본: 바로 앞)의 값을 새 버전으로 기록 (사유 필수) */
+  revertGoal: (goalId: string, reason: string, toVersion?: number) => Promise<GoalChangeResult>;
+  /** 목표값 다시 수정 — 새 버전으로 기록 (사유 필수 · 정합성 경고는 force 로 확인) */
+  editConfirmedGoal: (goalId: string, value: number, reason: string, force?: boolean) => Promise<GoalChangeResult>;
+  /** 목표 삭제(보관) — 이력은 남고 새 버전으로 기록 (사유 필수) */
+  deleteGoal: (goalId: string, reason: string) => Promise<GoalChangeResult>;
   reset: () => void;
 }
 
@@ -125,6 +145,42 @@ export function GoalStateProvider({ children }: { children: ReactNode }) {
     },
     [showToast],
   );
+
+  /** 되돌리기 · 다시 수정 · 삭제 — 실패 메시지를 돌려줘 다이얼로그가 열린 채로 보여 준다 */
+  const change = useCallback(
+    async (path: string, json: unknown, goalId: string): Promise<GoalChangeResult> => {
+      if (!remote) {
+        offline();
+        return { ok: false, message: "서버에 연결되어 있지 않아 처리하지 못했어요 — 다시 로그인해 주세요" };
+      }
+      try {
+        const next = await api<GoalStateShape>(path, { method: "POST", json });
+        setState(next);
+        return { ok: true, version: next.overrides[goalId]?.version };
+      } catch (e) {
+        if (e instanceof ApiError) {
+          if (isMissingRoute(e.status, e.message)) {
+            showToast(MISSING_ROUTE_MESSAGE);
+            return { ok: false, message: MISSING_ROUTE_MESSAGE };
+          }
+          const d = (e.body as { detail?: { issues?: ConsistencyIssue[] } } | null)?.detail;
+          return { ok: false, message: e.message, issues: typeof d === "object" && d ? d.issues : undefined, needsForce: e.status === 409 };
+        }
+        return { ok: false, message: (e as Error).message };
+      }
+    },
+    [remote, offline, showToast],
+  );
+
+  const revertGoal = useCallback(
+    (goalId: string, reason: string, toVersion?: number) => change("/state/goals/revert", { goalId, reason, toVersion }, goalId),
+    [change],
+  );
+  const editConfirmedGoal = useCallback(
+    (goalId: string, value: number, reason: string, force?: boolean) => change("/state/goals/edit", { goalId, value, reason, force: Boolean(force) }, goalId),
+    [change],
+  );
+  const deleteGoal = useCallback((goalId: string, reason: string) => change("/state/goals/delete", { goalId, reason }, goalId), [change]);
 
   const applyCore = useCallback(
     async (proposal: Proposal, mode: "adopt" | "manual_edit", value?: number, reason?: string, force?: boolean): Promise<boolean> => {
@@ -251,9 +307,12 @@ export function GoalStateProvider({ children }: { children: ReactNode }) {
       addNewGoal,
       addManualGoal,
       registerReviewItem,
+      revertGoal,
+      editConfirmedGoal,
+      deleteGoal,
       reset,
     }),
-    [state, staged, lastConfirmed, stageProposal, unstageProposal, confirmStaged, applyProposal, keepGoal, addNewGoal, addManualGoal, registerReviewItem, reset],
+    [state, staged, lastConfirmed, stageProposal, unstageProposal, confirmStaged, applyProposal, keepGoal, addNewGoal, addManualGoal, registerReviewItem, revertGoal, editConfirmedGoal, deleteGoal, reset],
   );
 
   return <GoalStateContext.Provider value={value}>{children}</GoalStateContext.Provider>;

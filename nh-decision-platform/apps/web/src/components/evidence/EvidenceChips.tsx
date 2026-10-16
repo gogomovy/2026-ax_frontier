@@ -38,7 +38,7 @@ export function EvidenceRow({
   const open = (selectedId?: string) => openDrawer({ kind: "evidence", title, items, selectedId, statement });
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-2 text-[12px] text-steel">
-      <span className="mr-0.5">근거</span>
+      <span>근거</span>
       {ORDER.map((c) => {
         const group = items.filter((i) => i.category === c);
         return group.length ? (
@@ -46,19 +46,19 @@ export function EvidenceRow({
             key={c}
             type="button"
             onClick={() => open(group[0].id)}
-            className="inline-flex h-7 items-center gap-1.5 rounded-pill border border-hairline-soft bg-canvas px-3 font-bold text-ink-deep hover:bg-surface-soft"
+            className="inline-flex h-6 items-center rounded-pill border border-transparent bg-track px-2 font-medium text-ink-deep hover:bg-hairline-soft"
           >
-            <span aria-hidden="true" className={clsx("h-1.5 w-1.5 rounded-circle", CATEGORY_DOT[c])} />
-            {EVIDENCE_CATEGORY_LABEL[c]} <span className="tnum">{group.length}</span>
+            {EVIDENCE_CATEGORY_LABEL[c]} <span className="ml-1 tnum">{group.length}</span>
           </button>
         ) : (
-          <span key={c} className="px-1">
+          // 채움 칩과 같은 상자(h-6 · 1px 테두리 · px-2 · pill) — 바깥 경계가 같아야 다음 링크까지 간격이 탭마다 같다
+          <span key={c} className="inline-flex h-6 items-center rounded-pill border border-hairline-soft bg-canvas px-2 font-medium text-steel">
             {EVIDENCE_CATEGORY_LABEL[c]} 없음
           </span>
         );
       })}
       {onToggleFull ? (
-        <button type="button" onClick={onToggleFull} aria-expanded={expanded} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">
+        <button type="button" onClick={onToggleFull} aria-expanded={expanded} className="inline-flex items-center gap-0.5 font-bold text-primary-deep hover:underline">
           해설 전문 보기
           <IconChevronDown className={clsx("transition-transform", expanded && "rotate-180")} />
         </button>
@@ -66,7 +66,7 @@ export function EvidenceRow({
       <span aria-hidden="true" className="text-icon">
         ·
       </span>
-      <button type="button" onClick={() => open()} className="inline-flex items-center gap-0.5 font-bold text-primary hover:underline">
+      <button type="button" onClick={() => open()} className="inline-flex items-center gap-0.5 font-bold text-primary-deep hover:underline">
         원문 확인
         <IconChevron />
       </button>

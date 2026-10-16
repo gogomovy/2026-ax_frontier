@@ -3,9 +3,6 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useUiConfig } from "@/components/providers/SessionProvider";
-import { Badge } from "@/components/ui/primitives";
-import { apiGetC } from "@/lib/api-client";
-import type { ScopeItem } from "@/lib/assist-chat";
 import { AssistantMessage, UserMessage } from "./ChatMessages";
 import { ASSIST_NAME } from "./brand";
 import { IconArrowDown, IconBot, IconClose, IconCollapse, IconExpand, IconList, IconPlus, IconSend, IconStop, IconTrash } from "./icons";
@@ -15,6 +12,31 @@ import type { useAssistChat } from "./useAssistChat";
 const MAX_LEN = 500;
 
 type Chat = ReturnType<typeof useAssistChat>;
+
+const MAX_TOPICS = 5; // 440px 도킹 폭에서 칩이 두 줄 안에 들어가는 개수
+const MAX_TOPIC_QS = 4;
+/** 예시 질문의 hint(관리자 설정) → 짧은 주제 칩 이름 · 함께 추천할 질문(수치를 박지 않은 일반 질문) */
+const TOPIC_PRESETS: Record<string, { label: string; more: string[] }> = {
+  "확정 수치와 분석 결과": { label: "핵심 수치", more: ["이번 달 주요 지표 변화를 요약해줘", "우리 팀 분석 결과 중 최근 것은?"] },
+  "모형 모니터링": { label: "모형 모니터링", more: ["예측 대비 실적 차이가 큰 등급은?", "최근 모형 점검 결과를 알려줘"] },
+  "목표 대비 현황": { label: "목표 대비", more: ["목표 대비 이탈이 큰 지표는?", "목표 달성률이 낮은 항목을 알려줘"] },
+  "정책 근거 문서": { label: "근거 문서", more: ["최근 반영된 정책 문서는?", "관련 규정 근거를 출처와 함께 알려줘"] },
+};
+/** 입력창 기본 문구 — 도킹 폭(440px)에서 한 줄에 들어가는 길이만 예시로 쓴다 */
+const PLACEHOLDER_MAX = 22;
+
+function buildTopics(examples: { q: string; hint: string }[]): { label: string; qs: string[] }[] {
+  const map = new Map<string, string[]>();
+  for (const ex of examples) {
+    const key = ex.hint || "기타";
+    map.set(key, [...(map.get(key) ?? []), ex.q]);
+  }
+  return [...map.entries()].slice(0, MAX_TOPICS).map(([hint, qs]) => {
+    const preset = TOPIC_PRESETS[hint];
+    const all = [...qs, ...(preset?.more ?? [])].filter((v, i, a) => a.indexOf(v) === i);
+    return { label: preset?.label ?? hint, qs: all.slice(0, MAX_TOPIC_QS) };
+  });
+}
 
 function relTime(ts: number): string {
   const min = Math.floor((Date.now() - ts) / 60000);
@@ -29,26 +51,19 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
   const { active, convs, busyId } = chat;
   // 예시 질문 — 관리자 [화면 설정 › 예시 질문] (Phase K · HC-02). 비어 있으면 예시를 그리지 않는다
   const examples = useUiConfig().examples.assist ?? [];
+  const topics = buildTopics(examples);
+  const [topic, setTopic] = useState<string | null>(null);
+  const openTopic = topics.find((t) => t.label === topic) ?? null;
+  const shortEx = examples.map((e) => e.q).filter((s) => s.length <= PLACEHOLDER_MAX).sort((a, b) => a.length - b.length)[0];
+  const placeholder = shortEx ? `예시) ${shortEx}` : "무엇이든 물어보세요";
   const messages = active?.messages ?? [];
   const busy = busyId !== null;
   const [q, setQ] = useState("");
   const [showList, setShowList] = useState(false);
-  const [scope, setScope] = useState<ScopeItem[] | null>(null);
   const [showJump, setShowJump] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
-
-  // 내가 질문할 수 있는 범위 — 현재 화면 기준(권한 밖 컬렉션은 응답에 없다)
-  useEffect(() => {
-    let alive = true;
-    apiGetC<{ collections: ScopeItem[] }>(`/assist/scope?screen=${encodeURIComponent(pathname || "/")}`)
-      .then((r) => alive && setScope(r.collections))
-      .catch(() => alive && setScope(null));
-    return () => {
-      alive = false;
-    };
-  }, [pathname]);
 
   // 열리면 입력칸으로
   useEffect(() => {
@@ -141,14 +156,14 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
         >
           <IconList />
         </button>
-        <h2 id={titleId} className="flex items-center gap-2 text-[15px] font-bold text-ink-deep">
+        <h2 id={titleId} className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[15px] font-bold text-ink-deep">
           <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-circle bg-primary text-white">
             <IconBot size={17} />
           </span>
           {ASSIST_NAME}
         </h2>
-        <span className="hidden truncate text-[11.5px] text-stone sm:inline">확정 수치(계산 커널) · 우리 팀 분석 결과 · 근거 문서만으로 답합니다</span>
-        <div className="ml-auto flex items-center gap-0.5">
+        <span className="hidden min-w-0 truncate text-[11.5px] text-stone sm:inline">확정 수치(계산 커널) · 우리 팀 분석 결과 · 근거 문서만으로 답합니다</span>
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
           <button
             type="button"
             onClick={() => {
@@ -157,7 +172,7 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
               taRef.current?.focus();
             }}
             disabled={busy}
-            className="flex items-center gap-1 rounded-lg px-2.5 py-2 text-[12.5px] font-bold text-charcoal hover:bg-surface-soft disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex items-center gap-1 whitespace-nowrap rounded-lg px-2.5 py-2 text-[12.5px] font-bold text-charcoal hover:bg-surface-soft disabled:cursor-not-allowed disabled:opacity-40"
           >
             <IconPlus size={15} /> 새 대화
           </button>
@@ -215,29 +230,43 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
                     <IconBot size={30} />
                   </span>
                   <p className="mt-4 text-[22px] font-bold text-ink-deep">안녕하세요, 무엇을 도와드릴까요?</p>
-                  <p className="mt-1 max-w-[520px] text-[13px] leading-relaxed text-steel">
-                    저는 {ASSIST_NAME}예요. 확정된 수치와 우리 팀 분석 결과, 근거 문서에서 찾아 출처와 함께 답해요. 권한이 있는 범위만 검색합니다.
-                  </p>
-                  {scope ? (
-                    <div className="mt-4 flex max-w-[600px] flex-wrap justify-center gap-1.5" role="group" aria-label="질문할 수 있는 범위">
-                      {scope.map((c) => (
-                        <Badge key={c.code} tone={c.owned ? "primary" : "neutral"}>
-                          {c.label}
-                          {c.owned ? " · 담당" : c.partial ? " · 일부" : ""}
-                        </Badge>
-                      ))}
+                  {/* 칩은 한 종류만 — 누르면 아래에 추천 질문이 열리는 주제 칩. (질문 범위 배지 줄은 헤더 안내문과 겹쳐 뺐다) */}
+                  {topics.length ? (
+                    <div className="mt-6 flex w-full max-w-[640px] flex-col items-center">
+                      <div className="flex flex-wrap justify-center gap-1.5" role="group" aria-label="질문 주제">
+                        {topics.map((t) => {
+                          const on = t.label === openTopic?.label;
+                          return (
+                            <button
+                              key={t.label}
+                              type="button"
+                              onClick={() => setTopic(on ? null : t.label)}
+                              aria-pressed={on}
+                              aria-expanded={on}
+                              aria-controls="assist-topic-qs"
+                              className={clsx(
+                                "whitespace-nowrap rounded-pill border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
+                                on ? "border-primary bg-info-soft text-primary" : "border-hairline-soft text-charcoal hover:border-hairline hover:bg-surface-soft",
+                              )}
+                            >
+                              {t.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {openTopic ? (
+                        <ul id="assist-topic-qs" aria-label={`${openTopic.label} 추천 질문`} className="mt-3 flex w-full flex-col gap-1 text-left">
+                          {openTopic.qs.map((qq) => (
+                            <li key={qq}>
+                              <button type="button" onClick={() => ask(qq)} disabled={busy} className="w-full rounded-xl px-3 py-2 text-left text-[13px] text-ink-deep transition-colors hover:bg-surface-soft disabled:opacity-50">
+                                {qq}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
                     </div>
                   ) : null}
-                  <ul className="mt-6 grid w-full max-w-[640px] grid-cols-1 gap-2 sm:grid-cols-2">
-                    {examples.map((ex) => (
-                      <li key={ex.q}>
-                        <button type="button" onClick={() => ask(ex.q)} disabled={busy} className="h-full w-full rounded-2xl border border-hairline-soft px-4 py-3 text-left transition-colors hover:border-hairline hover:bg-surface-soft disabled:opacity-50">
-                          <span className="block text-[13px] font-medium text-ink-deep">{ex.q}</span>
-                          <span className="mt-0.5 block text-[11.5px] text-stone">{ex.hint}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               ) : (
                 messages.map((m, i) =>
@@ -271,7 +300,7 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   onKeyDown={onKey}
-                  placeholder="무엇이든 물어보세요  (이어서 “그럼 증가율은?” 처럼 물어도 돼요)"
+                  placeholder={placeholder}
                   className="max-h-[168px] min-h-[28px] flex-1 resize-none border-0 bg-transparent py-1 text-[14px] leading-relaxed text-ink outline-none placeholder:text-stone"
                 />
                 {busy ? (

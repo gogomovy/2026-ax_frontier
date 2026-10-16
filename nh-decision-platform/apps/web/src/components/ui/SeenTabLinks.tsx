@@ -21,7 +21,7 @@ export interface SeenTabItem {
  * 링크형 밑줄 탭 + 레드닷 '봤음' 상태 — 열려 있는 탭은 점이 없고 봤음으로 기록, 다른 탭은 확인하지 않은 새 내용이 있을 때만 점.
  * 원래의 PillTabLinks 와 같은 모양(가이드 G04).
  */
-export function SeenTabLinks({ items, activeHref, label }: { items: SeenTabItem[]; activeHref: string; label: string }) {
+export function SeenTabLinks({ items, activeHref, label, after }: { items: SeenTabItem[]; activeHref: string; label: string; after?: ReactNode }) {
   const seen = useSeen();
   const { mark } = seen;
   const active = items.find((i) => i.href === activeHref);
@@ -48,6 +48,7 @@ export function SeenTabLinks({ items, activeHref, label }: { items: SeenTabItem[
           </Link>
         );
       })}
+      {after}
     </nav>
   );
 }

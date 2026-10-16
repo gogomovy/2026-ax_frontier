@@ -6,7 +6,7 @@ import { useCallback, useId, useRef, useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { useDismiss } from "@/lib/useDismiss";
 import type { NavItem } from "@/lib/nav";
-import { IconBell, IconChevronDown, IconLogout, IconShield } from "@/components/ui/icons";
+import { IconBell, IconDb, IconLogout } from "@/components/ui/icons";
 import { IconChevron } from "@/components/ui/primitives";
 import type { NavModel } from "./nav-model";
 
@@ -14,33 +14,63 @@ import type { NavModel } from "./nav-model";
 export const ICON_BUTTON =
   "relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-track text-ink-deep transition-colors hover:bg-hairline-soft";
 
-/** 참고 화면 모음 — 단계 흐름에는 들어가지 않는 보조 화면 */
-export function ReferenceMenu({ items, activeHref, hrefOf }: { items: NavItem[]; activeHref: string | null; hrefOf: (item: NavItem) => string }) {
+/**
+ * 참고 · 데이터베이스 — 중앙 내비의 '참고 ▾' 텍스트 메뉴 대신, 헤더 우측 DB 아이콘 버튼이 여는 팝오버.
+ * 참고 화면 목록(items) + (knowledgeHref가 있으면) '데이터베이스' 항목을 함께 보여 준다.
+ * 참고 항목이 없고 데이터베이스만 있으면 팝오버 없이 단순 링크로 동작한다(기존 DB 아이콘 링크와 동일).
+ */
+export function ReferenceDbMenu({
+  items,
+  activeHref,
+  hrefOf,
+  knowledgeHref,
+  knowledgeOn,
+}: {
+  items: NavItem[];
+  activeHref: string | null;
+  hrefOf: (item: NavItem) => string;
+  knowledgeHref: string | null;
+  knowledgeOn: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
   const close = useCallback(() => setOpen(false), []);
   useDismiss(ref, open, close);
-  if (!items.length) return null;
-  const inside = items.some((i) => i.href === activeHref);
+  if (!items.length && !knowledgeHref) return null;
+
+  // 참고 화면이 없고 데이터베이스만 있으면 — 기존처럼 DB 아이콘이 바로 그 화면으로 가는 단순 링크
+  if (!items.length && knowledgeHref) {
+    return (
+      <Link
+        href={knowledgeHref}
+        aria-label="데이터베이스"
+        title="데이터베이스"
+        aria-current={knowledgeOn ? "page" : undefined}
+        className={clsx(ICON_BUTTON, "hidden sm:inline-flex", knowledgeOn && "!bg-info-soft !text-primary")}
+      >
+        <IconDb />
+      </Link>
+    );
+  }
+
+  const inside = items.some((i) => i.href === activeHref) || knowledgeOn;
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative hidden sm:block">
       <button
         type="button"
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={id}
+        aria-label="참고 · 데이터베이스"
+        title="참고 · 데이터베이스"
         onClick={() => setOpen((v) => !v)}
-        className={clsx(
-          "inline-flex h-9 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2.5 text-[14px] transition-colors hover:bg-surface-soft",
-          inside ? "font-bold text-primary" : "font-medium text-steel hover:text-ink-deep",
-        )}
+        className={clsx(ICON_BUTTON, inside && "!bg-info-soft !text-primary")}
       >
-        참고
-        <IconChevronDown className={clsx("transition-transform", open && "rotate-180")} />
+        <IconDb />
       </button>
       {open ? (
-        <div id={id} className="absolute left-0 top-[calc(100%+8px)] z-50 w-[248px] animate-pop-in rounded-xl border border-hairline-soft bg-canvas p-1.5 shadow-tooltip">
+        <div id={id} className="absolute right-0 top-[calc(100%+8px)] z-50 w-[248px] animate-pop-in rounded-xl border border-hairline-soft bg-canvas p-1.5 shadow-tooltip">
           <p className="px-2.5 pb-1 pt-1.5 text-[12px] font-bold text-steel">참고 화면</p>
           <ul>
             {items.map((item) => {
@@ -62,6 +92,25 @@ export function ReferenceMenu({ items, activeHref, hrefOf }: { items: NavItem[];
                 </li>
               );
             })}
+            {knowledgeHref ? (
+              <li>
+                <Link
+                  href={knowledgeHref}
+                  onClick={close}
+                  aria-current={knowledgeOn ? "page" : undefined}
+                  className={clsx(
+                    "flex items-center justify-between gap-2 rounded-md px-2.5 py-2 text-[14px] hover:bg-surface-soft",
+                    knowledgeOn ? "bg-info-faint font-bold text-ink-deep" : "font-medium text-ink",
+                  )}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <IconDb size={16} className={knowledgeOn ? "text-primary" : "text-icon"} />
+                    데이터베이스
+                  </span>
+                  <IconChevron className="text-icon" />
+                </Link>
+              </li>
+            ) : null}
           </ul>
         </div>
       ) : null}
@@ -185,10 +234,7 @@ export function UserMenu({ model, compact }: { model: NavModel; compact?: boolea
               <p className="flex items-center gap-1.5 text-[14px] font-bold text-ink-deep">
                 {u.name} {u.position}
                 {u.isAdmin ? (
-                  <span className="inline-flex items-center gap-0.5 rounded-pill bg-info-soft px-2 py-[1px] text-[12px] font-bold text-primary">
-                    <IconShield size={12} />
-                    관리자
-                  </span>
+                  <span className="inline-flex items-center rounded-pill bg-info-soft px-2 py-[1px] text-[12px] font-bold text-primary">관리자</span>
                 ) : null}
               </p>
               <p className="truncate text-[12px] text-steel" title={u.orgPath}>

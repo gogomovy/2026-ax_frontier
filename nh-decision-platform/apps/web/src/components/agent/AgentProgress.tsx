@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
+import { IconRefresh } from "@/components/ui/icons";
 import { Button, IconCheck, IconWarn } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
 
@@ -63,7 +64,7 @@ export function AgentProgress({ progress }: { progress: Progress }) {
 /**
  * 온디맨드 분석 (F.9) — 버튼 → `POST /analysis/run` → `GET /analysis/stream` (SSE) 로 단계 진행 표시 → 완료 시 화면 새로고침.
  */
-export function OnDemandAnalysis({ workflow, label = "분석 다시 실행" }: { workflow: string; label?: string }) {
+export function OnDemandAnalysis({ workflow, label = "분석 다시 실행", variant = "button" }: { workflow: string; label?: string; variant?: "button" | "link" }) {
   const router = useRouter();
   const { showToast } = useUi();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -108,9 +109,22 @@ export function OnDemandAnalysis({ workflow, label = "분석 다시 실행" }: {
   const running = progress && (progress.phase === "queued" || progress.phase === "running");
   return (
     <div className="relative" data-on-demand={workflow}>
-      <Button size="sm" variant="ghost" disabled={Boolean(running)} onClick={start}>
-        {running ? `${PHASE_LABEL[progress.phase]}…` : label}
-      </Button>
+      {variant === "link" ? (
+        // Agent 해설 상자 안 — 테두리 없는 글자 단추(새로고침 아이콘 + 문구)
+        <button
+          type="button"
+          disabled={Boolean(running)}
+          onClick={start}
+          className="inline-flex h-[23px] items-center gap-1 rounded-md px-1 text-[12px] font-bold text-primary-deep hover:underline disabled:cursor-wait disabled:no-underline disabled:opacity-70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <IconRefresh size={13} className={running ? "animate-spin" : undefined} />
+          {running ? `${PHASE_LABEL[progress.phase]}…` : label}
+        </button>
+      ) : (
+        <Button size="sm" variant="ghost" disabled={Boolean(running)} onClick={start}>
+          {running ? `${PHASE_LABEL[progress.phase]}…` : label}
+        </Button>
+      )}
       {open && progress ? (
         <div
           role="status"

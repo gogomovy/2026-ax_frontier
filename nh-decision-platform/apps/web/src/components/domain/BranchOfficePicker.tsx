@@ -8,11 +8,11 @@ import type { BranchOfficeList } from "@/lib/types";
 export function BranchOfficePicker({ list, current, action }: { list: BranchOfficeList; current: string | null; action: string }) {
   if (list.offices.length < 2) return null;
   return (
-    <form method="get" action={action} className="flex flex-wrap items-center gap-2" data-office-picker>
-      <label htmlFor="branch_office" className="text-[12px] font-bold text-steel">
+    <form method="get" action={action} className="flex flex-nowrap items-center gap-2" data-office-picker>
+      <label htmlFor="branch_office" className="shrink-0 whitespace-nowrap text-[12px] font-bold text-steel">
         지점
       </label>
-      <select id="branch_office" name="office" defaultValue={current ?? list.default ?? ""} className="input max-w-[240px] py-1.5 text-[13px]">
+      <select id="branch_office" name="office" defaultValue={current ?? list.default ?? ""} className="input !h-8 w-[180px] py-1 text-[13px]">
         {list.offices.map((o) => (
           <option key={o.code} value={o.code}>
             {o.name}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { AsOfTools, ExportButton } from "@/components/layout/PageTools";
 import { Badge, Button, DataTable, ProgressBar, RowEmpty, SectionHead, Td } from "@/components/ui/primitives";
 import { getRegionKpi } from "@/lib/data";
 import type { RegionKpi, RegionKpiBranch } from "@/lib/types";
@@ -18,11 +19,11 @@ function regionParam(sp: Record<string, string | string[] | undefined>): string 
 function RegionPicker({ data }: { data: RegionKpi }) {
   if (data.regions.length < 2) return null;
   return (
-    <form method="get" action="/region" className="flex flex-wrap items-center gap-2" data-region-picker>
-      <label htmlFor="region_code" className="text-[12px] font-bold text-steel">
+    <form method="get" action="/region" className="flex flex-nowrap items-center gap-2" data-region-picker>
+      <label htmlFor="region_code" className="shrink-0 whitespace-nowrap text-[12px] font-bold text-steel">
         지역본부
       </label>
-      <select id="region_code" name="region" defaultValue={data.region?.code ?? ""} className="input max-w-[240px] py-1.5 text-[13px]">
+      <select id="region_code" name="region" defaultValue={data.region?.code ?? ""} className="input !h-8 w-[180px] py-1 text-[13px]">
         {data.regions.map((r) => (
           <option key={r.code} value={r.code}>
             {r.name}
@@ -118,10 +119,17 @@ export default async function RegionKpiPage(props: { searchParams: Promise<Recor
   return (
     <>
       <PageHeader
-        eyebrow="1단계 · 영업점 업적평가 통합"
+        compact
         title={`${name} 영업점 업적평가`}
         description={`${data.periodLabel ? `${data.periodLabel} ` : ""}지역 영업점의 업적평가 득점을 한 화면에서 비교합니다. 점수는 영업점별 분석 에이전트가 계산한 값이고, 순위 · 평균만 이 화면에서 셉니다.`}
-        actions={<RegionPicker data={data} />}
+        actions={
+          <>
+            <RegionPicker data={data} />
+            <AsOfTools key="page-tools">
+              <ExportButton />
+            </AsOfTools>
+          </>
+        }
       />
       <div className="shell flex flex-col gap-xxl">
         <section className="grid grid-cols-2 gap-sm md:grid-cols-4" data-region-summary>

@@ -6,6 +6,7 @@ import { Chart, PALETTE } from "@/components/charts/Chart";
 import { FigureText } from "@/components/data/FigureText";
 import { EvidenceChips } from "@/components/evidence/EvidenceChips";
 import { PillTabs, SEVERITY_TEXT, SectionHead, StatusDot } from "@/components/ui/primitives";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { pointCount } from "@/lib/loanView";
 import type { DefaultRateSeries, DefaultRateTrend } from "@/lib/types";
 
@@ -32,7 +33,12 @@ export function DefaultRatePanel({ trend }: { trend: DefaultRateTrend }) {
   return (
     <section>
       <SectionHead
-        title="월별 부도율 추이"
+        title={
+          <span className="flex items-center gap-1.5">
+            월별 부도율 추이
+            <InfoTooltip text="실제 부도율과 예측 부도율 대표값을 월별로 비교합니다. 실제 부도율이 대표값을 초과하면 등급계량화 재검토 신호입니다." />
+          </span>
+        }
         hint={`${months ? `최근 ${months}개월 · ` : ""}모형 성능 판단의 선행 지표`}
         right={
           <PillTabs

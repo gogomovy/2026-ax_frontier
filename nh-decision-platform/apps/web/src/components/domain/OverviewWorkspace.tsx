@@ -15,6 +15,7 @@ import { useUiConfig } from "@/components/providers/SessionProvider";
 import { useSeen } from "@/components/ui/useSeen";
 import { usePrinting } from "@/lib/printState";
 import { IconInfoCircle, IconSparkle } from "@/components/ui/icons";
+import { InfoTooltip } from "@/components/ui/InfoTooltip";
 import { EmptyCard } from "@/components/ui/StateViews";
 import { Badge, IconChevron, IconWarn, NextStep } from "@/components/ui/primitives";
 import { derivedFigure } from "@/lib/derived";
@@ -189,6 +190,7 @@ export function OverviewWorkspace({
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <BankCard
             title="총자산 증가율 목표"
+            hint="지주사 총자산 한도 기준으로 은행의 총자산 증가율 목표를 설정합니다. 한도 소진율 = 목표 ÷ 지주 한도 × 100."
             status={bankStatus}
             gauge={<SemiGauge percent={bankPct ?? 0} label="한도 소진율" tone={bankStatus.gauge} />}
             main={<BigFigure figure={bank.value} size="kpi" />}
@@ -201,6 +203,7 @@ export function OverviewWorkspace({
           {revenueGoal?.actual ? (
             <BankCard
               title="여신 이자마진 수익"
+              hint="여신에서 발생하는 이자마진 수익(NIM)의 연간 목표 대비 실적입니다. 누계 실적 기준으로 계산합니다."
               status={onPlan === null ? NO_STATUS : onPlan ? { label: "계획 수준", tone: "neutral" } : { label: "계획 미달", tone: "attention" }}
               gauge={<SemiGauge percent={revenueProgress ?? 0} label={revenueGoal.gapLabel ?? "목표 진행률"} tone={onPlan === false ? "warning" : "primary"} />}
               main={<BigFigure figure={revenueGoal.actual} size="kpi" />}
@@ -367,11 +370,11 @@ export function OverviewWorkspace({
                 {/* 핵심 지표 */}
                 <dl className={clsx("grid grid-cols-2 divide-hairline-soft overflow-hidden rounded-xl border border-hairline-soft lg:divide-x", nimRow ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
                   {nimRow ? (
-                    <Kpi label={`여신 이자마진 수익 (${monthCum})`} figure={nimRow.current} caption={<>전년 동기 <FigureText figure={nimRow.diffRate} signed plain className="text-ink-deep" /></>} />
+                    <Kpi label={`여신 이자마진 수익 (${monthCum})`} figure={nimRow.current} caption={<>전년 동기 <FigureText figure={nimRow.diffRate} signed plain className="text-ink-deep" /></>} hint="여신에서 발생한 이자수익에서 조달비용을 차감한 순이자마진(NIM) 수익입니다. 해당 월 누계 기준으로 집계합니다." />
                   ) : null}
-                  <Kpi label="전체 수익 중 비중" figure={loan.revenue.nimShare} caption={shareTrend ?? undefined} tone={shareStep === "축소" ? "attention" : undefined} />
-                  <Kpi label="기업여신 잔액" figure={loan.corporate.balance} caption={<>증가율 <FigureText figure={loan.corporate.growth} signed plain className="text-ink-deep" />{corpTarget ? <> · 목표 {corpTarget.targetLabel}</> : null}</>} />
-                  <Kpi label="가계여신 잔액" figure={loan.household.balance} caption={<>증가율 <FigureText figure={loan.household.growth} signed plain className="text-ink-deep" />{hhLimit ? <> · 한도 {hhLimit.toFixed(2)}{hhUnit}</> : null}</>} />
+                  <Kpi label="전체 수익 중 비중" figure={loan.revenue.nimShare} caption={shareTrend ?? undefined} tone={shareStep === "축소" ? "attention" : undefined} hint="전체 은행 이자수익 대비 여신 NIM 수익의 비중입니다. 비중 = 여신 NIM 수익 ÷ 전체 이자수익 × 100." />
+                  <Kpi label="기업여신 잔액" figure={loan.corporate.balance} caption={<>증가율 <FigureText figure={loan.corporate.growth} signed plain className="text-ink-deep" />{corpTarget ? <> · 목표 {corpTarget.targetLabel}</> : null}</>} hint="기업여신(대기업·외감·비외감·소기업·기업형소호) 전체 잔액의 기준일 기준 합계입니다. 증가율은 전년 동월 말 잔액 대비입니다." />
+                  <Kpi label="가계여신 잔액" figure={loan.household.balance} caption={<>증가율 <FigureText figure={loan.household.growth} signed plain className="text-ink-deep" />{hhLimit ? <> · 한도 {hhLimit.toFixed(2)}{hhUnit}</> : null}</>} hint="가계여신(주택담보·신용·기타) 전체 잔액의 기준일 기준 합계입니다. 증가율은 전년 동월 말 잔액 대비이며, 관리 목표 한도와 비교합니다." />
                 </dl>
 
                 {/* 추이 */}
@@ -506,7 +509,7 @@ function RwaCard({ rows, bands }: { rows: CapitalView["rwaAllocation"]; bands: B
       <header className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-[14px] text-steel">
           여신 신용RWA 소진
-          <IconInfoCircle className="text-icon" />
+          <InfoTooltip text="부문별 신용RWA 배분 한도 대비 실제 소진 비율입니다. 소진율 = 실제 신용RWA ÷ 배분 한도 × 100." />
         </h3>
         <Badge tone={status.tone}>{status.label}</Badge>
       </header>
@@ -556,12 +559,14 @@ function NimTrend({ points }: { points: TrendPoint[] }) {
 
 function BankCard({
   title,
+  hint,
   status,
   gauge,
   main,
   rows,
 }: {
   title: string;
+  hint?: string;
   status: Status;
   gauge: React.ReactNode;
   main: React.ReactNode;
@@ -572,7 +577,7 @@ function BankCard({
       <header className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-[14px] text-steel">
           {title}
-          <IconInfoCircle className="text-icon" />
+          {hint ? <InfoTooltip text={hint} /> : <IconInfoCircle className="text-icon" />}
         </h3>
         <Badge tone={status.tone}>{status.label}</Badge>
       </header>
@@ -594,12 +599,12 @@ function BankCard({
   );
 }
 
-function Kpi({ label, figure, caption, tone }: { label: string; figure: Figure; caption?: React.ReactNode; tone?: "attention" }) {
+function Kpi({ label, figure, caption, tone, hint }: { label: string; figure: Figure; caption?: React.ReactNode; tone?: "attention"; hint?: string }) {
   return (
     <div className="border-b border-hairline-soft px-6 py-5 last:border-b-0 lg:border-b-0">
       <dt className="flex items-center gap-1.5 text-[14px] text-steel">
         {label}
-        <IconInfoCircle className="text-icon" />
+        {hint ? <InfoTooltip text={hint} /> : <IconInfoCircle className="text-icon" />}
       </dt>
       <dd className="mt-2">
         <BigFigure figure={figure} size="kpi" />

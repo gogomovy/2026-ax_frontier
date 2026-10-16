@@ -76,6 +76,29 @@ class ReviewItemIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
 
 
+class GoalRevertIn(BaseModel):
+    goalId: str = Field(max_length=120)
+    toVersion: int | None = Field(None, ge=0)  # 비우면 현재 바로 앞 버전
+    reason: str | None = Field(None, max_length=1000)  # 필수 — 빈 값 · 짧은 값은 한국어 422 (_require_reason)
+
+
+class GoalDeleteIn(BaseModel):
+    goalId: str = Field(max_length=120)
+    reason: str | None = Field(None, max_length=1000)
+
+
+class GoalEditIn(BaseModel):
+    goalId: str = Field(max_length=120)
+    value: float
+    reason: str | None = Field(None, max_length=1000)
+    force: bool = False  # 정합성 경고(warn)를 확인하고 확정
+
+    @field_validator("value")
+    @classmethod
+    def _fin(cls, v):
+        return _finite(v)
+
+
 def _require_admin_reset(user: AppUser) -> None:
     """전체 초기화는 모든 사용자의 처리 이력을 지우므로 관리자만 (B.32)."""
     if user.role != "admin":
@@ -97,6 +120,46 @@ def _proposal(session: Session, pid: str) -> dict[str, Any]:
         if p["id"] == pid:
             return p
     raise HTTPException(404, "제안 없음")
+
+
+def _find_goal(session: Session, goal_id: str) -> dict[str, Any] | None:
+    for g in get_current(session, "goals") or []:
+        if g.get("id") == goal_id:
+            return g
+    return None
+
+
+def _reason_min(session: Session) -> int:
+    """사유 최소 글자 수 = [화면 설정 › 기준값 › 제안 사유 최소 글자 수] — 강제 확정 · 되돌리기 · 다시 수정 공통 (화면과 같은 값)."""
+    return max(1, int(value_of(session, "ui.thresholds").get("proposalReasonMin") or 1))
+
+
+def _require_reason(session: Session, reason: str | None) -> str:
+    min_len = _reason_min(session)
+    text = (reason or "").strip()
+    if len(text) < min_len:
+        raise HTTPException(422, {"message": f"사유를 {min_len}자 이상 입력하세요", "minLength": min_len})
+    return text
+
+
+def _versions(goal: dict[str, Any], override: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """목표 버전 사슬 — [기준(산출물) 버전, 확정 버전 …]. 이력은 지우지 않고 뒤에 덧붙이기만 한다.
+    사슬이 없는 예전 확정(값만 있는 override)은 '기준 + 1' 한 칸으로 본다 (화면 resolveGoal 과 같은 규칙)."""
+    base = {"version": int(goal.get("version") or 1), "value": goal.get("targetValue"), "mode": "base", "creationMode": goal.get("creationMode") or "existing"}
+    ov = override or {}
+    if ov.get("versions"):
+        return [base, *ov["versions"]]
+    tv = ov.get("targetValue")
+    if tv is not None and tv != base["value"]:
+        return [base, {"version": base["version"] + 1, "value": tv, "at": ov.get("updatedAt"), "actor": ov.get("confirmedBy"), "mode": "legacy", "creationMode": ov.get("creationMode") or "user_manual"}]
+    return [base]
+
+
+def _next_version(chain: list[dict[str, Any]], value: float | None, mode: str, creation_mode: str, reason: str, user: AppUser, **extra: Any) -> tuple[int, list[dict[str, Any]]]:
+    """새 버전 한 칸을 덧붙인 확정 버전 목록(기준 제외)과 새 버전 번호."""
+    nv = int(chain[-1]["version"]) + 1
+    entry = {"version": nv, "value": value, "at": S.today(), "actor": user.emp_no, "mode": mode, "creationMode": creation_mode, "reason": reason, **extra}
+    return nv, [*chain[1:], entry]
 
 
 def _update_goal_rule(session: Session, goal_id: str, value: float, actor: str) -> dict[str, Any] | None:
@@ -164,11 +227,32 @@ def goal_history(goal_id: str, session: Session = Depends(get_session), _: AppUs
 
     tz_s = session.get(Setting, "ui.timezone")
     tz = ZoneInfo(tz_s.value if tz_s and tz_s.value else "Asia/Seoul")
+    # 버전 번호 — 새 기록은 detail.version, 예전 확정 기록은 기준 버전부터 차례로 센다 (초기화하면 기준으로 돌아감)
+    goal = _find_goal(session, goal_id)
+    base_v = int(goal.get("version") or 1) if goal else None
+    counter = base_v
+    versions: dict[int, int | None] = {}
+    resets = sorted(session.execute(select(AuditLog.at).where(AuditLog.action == "goal.reset")).scalars().all())
+    for r in reversed(rows):
+        d = r.detail or {}
+        ver = d.get("version")
+        while resets and resets[0] < r.at:  # 전체 초기화(대상 없음 기록) 뒤의 확정은 기준 버전부터 다시 센다
+            resets.pop(0)
+            counter = base_v
+        if r.action in VALUE_ACTIONS:
+            if ver is None and counter is not None and (r.action != "goal.apply" or d.get("value") is not None):
+                ver = counter + 1
+            if ver is not None:
+                counter = ver
+        versions[r.id] = ver
     out = []
     for r in rows:
         d = r.detail or {}
-        out.append({"at": r.at.astimezone(tz).isoformat(timespec="seconds"), "action": r.action, "actor": r.actor, "actorName": names.get(r.actor or ""), "value": d.get("value"), "mode": d.get("mode"), "reason": d.get("reason"), "forced": bool(d.get("forced")), "issues": d.get("issues") or [], "rule": d.get("rule")})
+        out.append({"at": r.at.astimezone(tz).isoformat(timespec="seconds"), "action": r.action, "actor": r.actor, "actorName": names.get(r.actor or ""), "value": d.get("value"), "fromValue": d.get("fromValue"), "version": versions.get(r.id), "restoredVersion": d.get("restoredVersion"), "mode": d.get("mode"), "reason": d.get("reason"), "forced": bool(d.get("forced")), "issues": d.get("issues") or [], "rule": d.get("rule")})
     return out
+
+
+VALUE_ACTIONS = ("goal.apply", "goal.edit", "goal.revert", "goal.delete")  # 목표값 버전을 만드는 기록
 
 
 @router.post("/goals/apply")
@@ -186,9 +270,12 @@ def apply_proposal(body: ApplyIn, request: Request, session: Session = Depends(g
         if not body.force:
             raise HTTPException(409, {"message": "정합성 경고가 있습니다 — 사유를 입력하고 확정하세요", "issues": chk["issues"]})
         # 최소 글자 수 = [화면 설정 › 기준값 › 제안 사유 최소 글자 수] — 화면 버튼과 같은 값 (Phase K · HC-01)
-        min_len = int(value_of(session, "ui.thresholds").get("proposalReasonMin") or 1)
+        min_len = _reason_min(session)
         if len((body.reason or "").strip()) < min_len:
             raise HTTPException(422, {"message": f"강제 확정 사유를 {min_len}자 이상 입력하세요", "issues": chk["issues"]})
+    S.lock_item(session, S.NS_GOAL_OVERRIDE, p["targetGoalId"])
+    prev = S.get_ns(session, S.NS_GOAL_OVERRIDE).get(p["targetGoalId"])
+    goal = _find_goal(session, p["targetGoalId"])
     override = {
         "status": "active",
         "targetValue": resolved,
@@ -199,11 +286,18 @@ def apply_proposal(body: ApplyIn, request: Request, session: Session = Depends(g
     }
     if chk["issues"]:
         override["consistency"] = {"forced": body.force, "issues": chk["issues"]}
+    version_detail: dict[str, Any] = {}
+    if goal is not None:
+        # 확정할 때마다 버전 사슬에 한 칸 — 되돌리기 · 다시 수정이 이 사슬을 기준으로 동작한다
+        chain = _versions(goal, prev)
+        nv, override["versions"] = _next_version(chain, resolved, body.mode, override["creationMode"], override["changeReason"], user)
+        override["version"] = nv
+        version_detail = {"version": nv, "fromValue": chain[-1]["value"]}
     S.put(session, S.NS_GOAL_OVERRIDE, p["targetGoalId"], override, user.emp_no)
     S.put(session, S.NS_PROPOSAL_ACTION, p["id"], {"action": body.mode}, user.emp_no)
     rule_change = _update_goal_rule(session, p["targetGoalId"], resolved, user.emp_no) if resolved is not None else None
     emit(session, "goal.confirmed", {"goal": p["targetGoalId"], "proposal": p["id"], "mode": body.mode, "value": resolved}, user.emp_no)
-    audit(session, user.emp_no, "goal.apply", "goal", p["targetGoalId"], {"proposal": p["id"], "mode": body.mode, "value": resolved, "rule": rule_change, "reason": override["changeReason"], "forced": bool(chk["issues"] and body.force), "issues": chk["issues"]}, client_ip(request))
+    audit(session, user.emp_no, "goal.apply", "goal", p["targetGoalId"], {"proposal": p["id"], "mode": body.mode, "value": resolved, "rule": rule_change, "reason": override["changeReason"], "forced": bool(chk["issues"] and body.force), "issues": chk["issues"], **version_detail}, client_ip(request))
     session.commit()
     return S.goal_state(session)
 
@@ -212,10 +306,118 @@ def apply_proposal(body: ApplyIn, request: Request, session: Session = Depends(g
 def keep_goal(body: ProposalIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
     p = _proposal(session, body.proposalId)
     if p.get("targetGoalId"):
+        # 유지 결정은 예전과 같이 기록한다(확정 값 · 규칙 연결 동작을 바꾸지 않음 — 화면 시안 반영은 되돌리기 · 다시 수정 · 삭제 경로만 더함)
         S.put(session, S.NS_GOAL_OVERRIDE, p["targetGoalId"], {"status": "active", "updatedAt": S.today(), "changeReason": "기존 목표 유지 결정", "confirmedBy": user.emp_no}, user.emp_no)
     S.put(session, S.NS_PROPOSAL_ACTION, p["id"], {"action": "keep"}, user.emp_no)
     emit(session, "goal.confirmed", {"goal": p.get("targetGoalId"), "proposal": p["id"], "mode": "keep"}, user.emp_no)
     audit(session, user.emp_no, "goal.keep", "goal", p.get("targetGoalId"), {"proposal": p["id"]}, client_ip(request))
+    session.commit()
+    return S.goal_state(session)
+
+
+REOPEN_ACTIONS = ("adopt", "manual_edit", "keep")
+
+
+@router.post("/goals/revert")
+def revert_goal(body: GoalRevertIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
+    """확정한 목표 변경 되돌리기 — 고른 이전 버전(기본: 바로 앞 버전)의 목표값을 **새 버전**으로 다시 기록한다.
+    이력은 지우지 않는다. 기준(산출물) 버전으로 되돌리면 목표값이 기준값으로 돌아가지만 되돌린 기록은 새 버전으로 남는다.
+    이 목표를 대상으로 한 AI 제안의 처리(반영 · 직접 수정 · 유지)는 지워 다시 검토할 수 있게 한다 (신규 목표 추가 'added' 는 그대로)."""
+    goal = _find_goal(session, body.goalId)
+    if goal is None:
+        raise HTTPException(404, "목표 없음")
+    reason = _require_reason(session, body.reason)
+    S.lock_item(session, S.NS_GOAL_OVERRIDE, body.goalId)
+    prev = S.get_ns(session, S.NS_GOAL_OVERRIDE).get(body.goalId)
+    if not prev:
+        raise HTTPException(422, "되돌릴 확정 변경이 없습니다")
+    chain = _versions(goal, prev)
+    cur = chain[-1]
+    to_v = body.toVersion if body.toVersion is not None else int(chain[-2 if len(chain) > 1 else 0]["version"])
+    target = next((v for v in chain if int(v["version"]) == to_v), None)
+    if target is None:
+        raise HTTPException(422, f"v{to_v} 버전이 없습니다")
+    if len(chain) > 1 and target is cur:
+        raise HTTPException(422, "현재 버전으로는 되돌릴 수 없습니다 — 이전 버전을 고르세요")
+    restored = target.get("value")
+    to_base = target is chain[0]
+    creation = chain[0]["creationMode"] if to_base else (target.get("creationMode") or "user_manual")
+    nv, versions = _next_version(chain, restored, "revert", creation, reason, user, restoredVersion=to_v)
+    override: dict[str, Any] = {"status": "active", "updatedAt": S.today(), "changeReason": reason, "creationMode": creation, "confirmedBy": user.emp_no, "version": nv, "versions": versions, "revertedTo": to_v}
+    if restored is not None:
+        override["targetValue"] = restored
+    S.put(session, S.NS_GOAL_OVERRIDE, body.goalId, override, user.emp_no)
+    actions = S.get_ns(session, S.NS_PROPOSAL_ACTION)
+    reopened = [p["id"] for p in get_current(session, "proposals") or [] if p.get("targetGoalId") == body.goalId and (actions.get(p["id"]) or {}).get("action") in REOPEN_ACTIONS]
+    for pid in reopened:
+        S.remove(session, S.NS_PROPOSAL_ACTION, pid)
+    rule_change = _update_goal_rule(session, body.goalId, restored, user.emp_no) if restored is not None else None
+    emit(session, "goal.confirmed", {"goal": body.goalId, "mode": "revert", "value": restored, "version": nv}, user.emp_no)
+    audit(session, user.emp_no, "goal.revert", "goal", body.goalId, {"mode": "revert", "value": restored, "fromValue": cur.get("value"), "version": nv, "fromVersion": cur["version"], "restoredVersion": to_v, "toBase": to_base, "reason": reason, "rule": rule_change, "reopened": reopened}, client_ip(request))
+    session.commit()
+    return S.goal_state(session)
+
+
+@router.post("/goals/delete")
+def delete_goal(body: GoalDeleteIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
+    """목표 삭제(소프트) — 목표를 보관(archived) 상태로 바꾸는 새 버전을 쌓는다. 이력 · 버전 사슬은 지우지 않으며,
+    이력의 [이 버전으로 복원](/goals/revert)으로 삭제 전 버전을 새 버전으로 되살릴 수 있다.
+    직접 추가한 목표(goal.added)는 같은 항목에 보관 상태 · 사유 · 처리자를 덧붙인다."""
+    reason = _require_reason(session, body.reason)
+    goal = _find_goal(session, body.goalId)
+    if goal is None:
+        S.lock_item(session, S.NS_GOAL_ADDED, body.goalId)
+        added = S.get_ns(session, S.NS_GOAL_ADDED).get(body.goalId)
+        if not added:
+            raise HTTPException(404, "목표 없음")
+        if added.get("status") == "archived":
+            raise HTTPException(422, "이미 삭제된 목표입니다")
+        S.put(session, S.NS_GOAL_ADDED, body.goalId, {**added, "status": "archived", "archivedAt": S.today(), "archivedBy": user.emp_no, "archiveReason": reason, "prevStatus": added.get("status") or "active"}, user.emp_no)
+        detail: dict[str, Any] = {"mode": "delete", "creationMode": "delete", "reason": reason, "added": True}
+    else:
+        S.lock_item(session, S.NS_GOAL_OVERRIDE, body.goalId)
+        prev = S.get_ns(session, S.NS_GOAL_OVERRIDE).get(body.goalId) or {}
+        if prev.get("status") == "archived":
+            raise HTTPException(422, "이미 삭제된 목표입니다")
+        chain = _versions(goal, prev)
+        value = chain[-1].get("value")
+        nv, versions = _next_version(chain, value, "delete", "delete", reason, user, status="archived")
+        override: dict[str, Any] = {**prev, "status": "archived", "updatedAt": S.today(), "changeReason": reason, "creationMode": prev.get("creationMode") or chain[-1].get("creationMode") or "existing", "confirmedBy": user.emp_no, "version": nv, "versions": versions}
+        if value is not None:
+            override["targetValue"] = value
+        S.put(session, S.NS_GOAL_OVERRIDE, body.goalId, override, user.emp_no)
+        detail = {"mode": "delete", "creationMode": "delete", "value": value, "version": nv, "fromVersion": chain[-1]["version"], "reason": reason, "status": "archived"}
+    emit(session, "goal.confirmed", {"goal": body.goalId, "mode": "delete"}, user.emp_no)
+    audit(session, user.emp_no, "goal.delete", "goal", body.goalId, detail, client_ip(request))
+    session.commit()
+    return S.goal_state(session)
+
+
+@router.post("/goals/edit")
+def edit_goal(body: GoalEditIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("goal_actions"))):
+    """확정된(또는 적용 중인) 목표값 다시 수정 — 담당자 입력값을 새 버전으로 기록. 정합성 검증 · 강제 확정 규칙은 /goals/apply 의 직접 수정과 같다."""
+    goal = _find_goal(session, body.goalId)
+    if goal is None:
+        raise HTTPException(404, "목표 없음")
+    reason = _require_reason(session, body.reason)
+    S.lock_item(session, S.NS_GOAL_OVERRIDE, body.goalId)
+    prev = S.get_ns(session, S.NS_GOAL_OVERRIDE).get(body.goalId)
+    if (prev or {}).get("status") == "archived":
+        raise HTTPException(422, "삭제된 목표입니다 — 변경 이력에서 먼저 복원하세요")
+    chk = check_goal(session, body.goalId, body.value)
+    if chk["blocked"]:
+        raise HTTPException(422, {"message": "정합성 검증에서 확정할 수 없는 값입니다", "issues": chk["issues"]})
+    if not chk["passed"] and not body.force:
+        raise HTTPException(409, {"message": "정합성 경고가 있습니다 — 경고를 확인하고 확정하세요", "issues": chk["issues"]})
+    chain = _versions(goal, prev)
+    nv, versions = _next_version(chain, body.value, "edit", "user_manual", reason, user)
+    override: dict[str, Any] = {"status": "active", "targetValue": body.value, "updatedAt": S.today(), "changeReason": reason, "creationMode": "user_manual", "confirmedBy": user.emp_no, "version": nv, "versions": versions}
+    if chk["issues"]:
+        override["consistency"] = {"forced": body.force, "issues": chk["issues"]}
+    S.put(session, S.NS_GOAL_OVERRIDE, body.goalId, override, user.emp_no)
+    rule_change = _update_goal_rule(session, body.goalId, body.value, user.emp_no)
+    emit(session, "goal.confirmed", {"goal": body.goalId, "mode": "edit", "value": body.value, "version": nv}, user.emp_no)
+    audit(session, user.emp_no, "goal.edit", "goal", body.goalId, {"mode": "edit", "value": body.value, "fromValue": chain[-1].get("value"), "version": nv, "fromVersion": chain[-1]["version"], "reason": reason, "rule": rule_change, "forced": bool(chk["issues"] and body.force), "issues": chk["issues"]}, client_ip(request))
     session.commit()
     return S.goal_state(session)
 

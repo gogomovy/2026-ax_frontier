@@ -77,6 +77,8 @@
   --page-gutter: 32px;
   --header-h: 64px;
   --admin-nav-w: 248px;
+  /* AI 어시스턴트 우측 드로어 — UX Brief '근거 패널: 우측 드로어 440px' (12단 그리드 4단 ≈ 443) */
+  --assist-drawer-w: 440px;
 
   /* Radius — 버튼 6 · 내부 카드 8 · 카드 10 · 팝업 20 · 태그 999 */
   --radius-xs: 2px;

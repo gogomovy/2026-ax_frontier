@@ -3,7 +3,7 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { useState } from "react";
-import { IconChevronDown, IconShield } from "@/components/ui/icons";
+import { IconChevronDown } from "@/components/ui/icons";
 import { currentHref, type CountKey, type NavModel } from "./nav-model";
 
 /**
@@ -22,12 +22,7 @@ export function AdminNav({ model, onNavigate }: { model: NavModel; onNavigate?: 
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 pb-3 pt-6">
-        <p className="flex items-center gap-2 text-[16px] font-bold text-ink-deep">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-info-soft text-primary">
-            <IconShield size={16} />
-          </span>
-          관리자 콘솔
-        </p>
+        <p className="text-[16px] font-bold text-ink-deep">관리자 콘솔</p>
         <p className="mt-1 text-[12px] leading-normal text-steel">사용자 · 데이터 · AI · 운영을 관리해요</p>
       </div>
       <nav aria-label="관리자 메뉴" className="flex-1 overflow-y-auto px-3 pb-6">
@@ -65,7 +60,7 @@ export function AdminNav({ model, onNavigate }: { model: NavModel; onNavigate?: 
                           className={clsx(
                             "flex h-9 items-center gap-2 rounded-md px-3 text-[14px] transition-colors",
                             on
-                              ? "bg-info-faint font-bold text-ink-deep shadow-[inset_3px_0_0_var(--color-primary)]"
+                              ? "bg-info-soft font-bold text-primary-deep"
                               : "font-medium text-charcoal hover:bg-surface-soft hover:text-ink-deep",
                           )}
                         >

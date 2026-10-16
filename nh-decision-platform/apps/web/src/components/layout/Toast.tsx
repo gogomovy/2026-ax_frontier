@@ -16,7 +16,8 @@ export function Toast() {
   const error = toast?.tone === "error";
   return (
     <>
-      <div role="status" aria-live="polite" className="pointer-events-none fixed bottom-8 left-1/2 z-[60] -translate-x-1/2 no-print">
+      {/* 화면 가로 전체 폭 상자 + 가운데 정렬 — 토스트 폭과 상관없이 늘 화면 가운데 */}
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-8 z-[60] flex justify-center px-4 no-print">
         {toast && !error ? (
           <div
             key={toast.id}
@@ -37,7 +38,7 @@ export function Toast() {
           </div>
         ) : null}
       </div>
-      <div role="alert" className="pointer-events-none fixed bottom-8 left-1/2 z-[60] -translate-x-1/2 no-print">
+      <div role="alert" className="pointer-events-none fixed inset-x-0 bottom-8 z-[60] flex justify-center px-4 no-print">
         {toast && error ? (
           <div
             key={toast.id}

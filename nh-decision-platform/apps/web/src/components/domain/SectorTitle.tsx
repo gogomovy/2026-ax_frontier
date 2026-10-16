@@ -67,12 +67,13 @@ export function SectorTitle({ domains, title, flagged }: { domains: DomainCardIn
           aria-controls={id}
           onClick={() => setOpen((v) => !v)}
           className={clsx(
-            "-ml-2 inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-[24px] font-bold leading-[1.25] text-primary transition-colors hover:bg-info-faint",
+            // 1 · 2 · 3단계 화면 제목 — 현황·목표 '경영 현황·목표'와 같은 22px
+            "-ml-2 inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[22px] font-bold leading-[1.25] text-primary transition-colors hover:bg-info-faint",
             open && "bg-info-soft",
           )}
         >
           {domain?.name ?? "부문"}
-          <IconChevronDown size={16} className={clsx("transition-transform", open && "rotate-180")} />
+          <IconChevronDown size={14} className={clsx("transition-transform", open && "rotate-180")} />
         </button>
         {open ? (
           <ul
@@ -107,7 +108,7 @@ export function SectorTitle({ domains, title, flagged }: { domains: DomainCardIn
           </ul>
         ) : null}
       </div>
-      <span className="text-[24px] font-bold leading-[1.25] text-ink-deep">{title}</span>
+      <span className="text-[22px] font-bold leading-[1.25] text-ink-deep">{title}</span>
     </div>
   );
 }

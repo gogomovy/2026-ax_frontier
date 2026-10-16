@@ -4,6 +4,7 @@ import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
 import { UNIT_LABEL, formatSignedValue, formatValue } from "@/lib/format";
 import type { Figure } from "@/lib/types";
+import { decimalsOf, useRollingNumber } from "@/lib/useRollingNumber";
 
 const SIZE = {
   hero: "text-[32px] leading-[1.2]",
@@ -41,6 +42,10 @@ export function BigFigure({
   const { openDrawer } = useUi();
   const missing = figure.value === null || figure.value === undefined;
   const body = signed ? formatSignedValue(figure) : formatValue(figure);
+  // 화면에 그리는 숫자만 롤링 — 이름(aria-label)과 계산 추적은 언제나 최종 값
+  const rolling = useRollingNumber(missing ? null : figure.value, decimalsOf(body));
+  const shownFigure = rolling === null ? figure : { ...figure, value: rolling };
+  const shownBody = missing ? body : signed ? formatSignedValue(shownFigure) : formatValue(shownFigure);
   const unit = missing ? "" : UNIT_LABEL[figure.unit];
   return (
     <button
@@ -48,13 +53,13 @@ export function BigFigure({
       onClick={() => openDrawer({ kind: "calc", title: figure.label, figure })}
       aria-label={`${figure.label} ${body}${unit} — 계산 추적 보기`}
       className={clsx(
-        "tnum cursor-pointer text-left font-bold decoration-icon decoration-dotted underline-offset-[6px] hover:underline motion-safe:animate-fade-up",
+        "tnum cursor-pointer text-left font-bold decoration-icon decoration-dotted decoration-1 underline-offset-[6px] hover:underline",
         SIZE[size],
         missing ? "text-steel" : TONE[tone],
         className,
       )}
     >
-      {body}
+      <span aria-hidden="true">{shownBody}</span>
       {unit ? <span className="num-unit">{unit}</span> : null}
     </button>
   );

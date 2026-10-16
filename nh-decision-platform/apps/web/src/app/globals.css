@@ -51,6 +51,37 @@
     }
   }
 
+  /* 관리자 왼쪽 메뉴 — 메뉴 글자 시작점을 헤더 로고 시작점(.shell 왼쪽 여백)과 맞춘다.
+     헤더는 가운데 정렬된 .shell 안에 있어 화면이 넓으면 로고가 (화면 폭 − shell 폭)/2 + 32px 에서 시작한다.
+     메뉴 안쪽 글자는 이미 20px 들여 있으므로, 그만큼 뺀 거리를 메뉴 왼쪽에 더 비우고 폭도 그만큼 늘린다. */
+  .admin-aside {
+    --admin-inset: calc(max(0px, (100vw - var(--shell-max)) / 2) + var(--page-gutter) - 20px);
+    width: calc(var(--admin-nav-w) + var(--admin-inset));
+    padding-left: var(--admin-inset);
+  }
+
+  /* 관리자 본문 — 오른쪽 끝을 헤더(.shell) 오른쪽 끝과 맞춘다(종합기획부 화면과 같은 양옆 여백).
+     왼쪽은 메뉴와 32px 띄우고, 안쪽 화면이 쓰는 .shell 은 여기서는 폭 제한 · 여백을 다시 걸지 않는다. */
+  @media (min-width: 1024px) {
+    .admin-main {
+      padding-left: var(--page-gutter);
+      padding-right: calc(max(0px, (100vw - var(--shell-max)) / 2) + var(--page-gutter));
+    }
+    .admin-main .shell {
+      max-width: none;
+      margin-inline: 0;
+      padding-inline: 0;
+    }
+  }
+
+  /* AI 어시스턴트가 열리면(데스크톱) 본문을 가리지 않고 밀어낸다 — 드로어 440px + 본문과 24px 간격.
+     .shell 오른쪽 여백(32px)이 이미 있으므로 그만큼 뺀다. 좁은 화면에서는 드로어가 위에 덮인다. */
+  @media (min-width: 1024px) {
+    html[data-assist-open] .assist-push {
+      padding-right: calc(var(--assist-drawer-w) + var(--space-xl) - var(--page-gutter));
+    }
+  }
+
   /* text-input — 40px, 8px 반경, 포커스 시 보라 라인 */
   .input {
     height: 40px;
@@ -142,7 +173,7 @@
   /* 큰 숫자의 단위는 60% 크기 · neutral/600 (가이드 G02) */
   .num-unit {
     font-size: 0.6em;
-    font-weight: 500;
+    font-weight: 700;
     color: var(--color-steel);
     margin-left: 0.15em;
     letter-spacing: 0;
@@ -151,7 +182,7 @@
   /* 근거 있는 수치: 점선 밑줄로 추적 가능함을 알린다 */
   .figure-traceable {
     border-bottom: 1px dashed var(--color-hairline);
-    cursor: help;
+    cursor: pointer;
   }
   .figure-traceable:hover {
     border-bottom-color: var(--color-primary);
@@ -159,7 +190,7 @@
   /* 용어집 연결 용어 */
   .term-marked {
     border-bottom: 1px dotted var(--color-primary);
-    cursor: help;
+    cursor: pointer;
   }
 
   /* 스켈레톤 — 실제 레이아웃과 같은 위치에 neutral/100 블록 (가이드 G06) */

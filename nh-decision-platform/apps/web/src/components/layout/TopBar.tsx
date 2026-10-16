@@ -2,52 +2,40 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { IconChevronLeft, IconDb, IconGear } from "@/components/ui/icons";
+import { IconGear } from "@/components/ui/icons";
 import { IconMenu } from "@/components/ui/primitives";
 import { activeHref, type NavItem } from "@/lib/nav";
-import { ICON_BUTTON, NotificationBell, ReferenceMenu, UserMenu } from "./HeaderMenus";
+import { ICON_BUTTON, NotificationBell, ReferenceDbMenu, UserMenu } from "./HeaderMenus";
+import { NaviBrand } from "./NaviBrand";
 import { OrgChip, ScopeSwitcher } from "./ScopeSwitcher";
 import { officeHrefOf, type NavModel } from "./nav-model";
 
 
-export function Brand({ href = "/", compact }: { href?: string; compact?: boolean }) {
-  return (
-    // 링크 이름 = 보이는 글자 + ' 홈'(보이는 글자가 이름에 그대로 들어가야 한다 — WCAG 2.5.3). 좁은 화면에서는 글자 대신 화면 낭독용 글자
-    <Link href={href} className="flex shrink-0 items-center gap-2.5">
-      <span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-deep text-[12px] font-bold text-white">NH</span>
-      <span className={clsx("whitespace-nowrap text-[15px] font-bold text-ink-deep", compact ? "hidden sm:block" : "hidden xl:block")}>AI 경영 의사결정 플랫폼</span>
-      <span className={clsx("sr-only", compact ? "sm:hidden" : "xl:hidden")}>AI 경영 의사결정 플랫폼</span>
-      <span className="sr-only"> 홈</span>
-    </Link>
-  );
+/** 서비스 브랜드 — 어느 화면(업무 · 관리자 · 모바일 서랍)이든 NH NAVI 로고 하나만 쓴다 */
+export function Brand({ href = "/" }: { href?: string; compact?: boolean }) {
+  return <NaviBrand href={href} />;
 }
 
 /** 단계 링크 — 번호 원 + 이름. 선택하면 원이 보라로 채워지고 이름이 Bold (가이드 G04 헤더 단계) */
-export function StepLink({ item, href, active, count }: { item: NavItem; href: string; active: boolean; count?: number }) {
+export function StepLink({ item, href, active }: { item: NavItem; href: string; active: boolean }) {
   return (
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={clsx("group flex shrink-0 items-center gap-2 py-2 text-[14px] transition-colors", active ? "font-bold text-primary" : "font-medium text-steel hover:text-ink-deep")}
+      className={clsx("group flex shrink-0 items-center gap-2 py-2 text-[14px] transition-colors", active ? "font-bold text-ink-deep" : "font-medium text-steel hover:text-ink-deep")}
     >
       {item.step ? (
         <span
           aria-hidden="true"
           className={clsx(
             "flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-circle text-[12px] font-bold transition-colors",
-            active ? "bg-primary text-white" : "bg-track text-steel group-hover:bg-hairline-soft",
+            active ? "bg-ink-deep text-white" : "bg-track text-steel group-hover:bg-hairline-soft",
           )}
         >
           {item.step}
         </span>
       ) : null}
       <span className="whitespace-nowrap">{item.label}</span>
-      {count ? (
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-circle bg-primary px-1 text-[12px] font-bold leading-none text-white tnum">
-          {count}
-          <span className="sr-only">건 검토 필요</span>
-        </span>
-      ) : null}
     </Link>
   );
 }
@@ -57,8 +45,9 @@ export function PrimaryNav({ model, className }: { model: NavModel; className?: 
   const hrefOf = officeHrefOf(model);
   const scope = model.current;
   const flow = scope?.flow ?? [];
+  // 참고 메뉴는 우측 DB 아이콘(ReferenceDbMenu)으로 옮겼으므로, 단계 활성 계산도 참고를 포함해 기존과 동일하게 유지한다.
   const reference = [...(scope?.reference ?? []), ...model.sharedReference].filter((i) => i.href !== "/knowledge");
-  const refActive = activeHref([...flow, ...reference], model.pathname);
+  const flowActive = activeHref([...flow, ...reference], model.pathname);
 
   return (
     <nav aria-label="업무 단계" className={clsx("items-center gap-4 xl:gap-7", className)}>
@@ -67,22 +56,14 @@ export function PrimaryNav({ model, className }: { model: NavModel; className?: 
           key={item.href}
           item={item}
           href={hrefOf(item)}
-          active={item.href === refActive}
-          count={item.countKey ? model.counts[item.countKey] : undefined}
+          active={item.href === flowActive}
         />
       ))}
-      <ReferenceMenu items={reference} activeHref={refActive} hrefOf={hrefOf} />
-      {model.adminAvailable ? (
-        <>
-          <span aria-hidden="true" className="h-5 w-px bg-hairline-soft" />
-          <AdminLink active={model.inAdmin} />
-        </>
-      ) : null}
     </nav>
   );
 }
 
-/** 관리 — 눌러서 관리자 영역(별도 화면)으로 들어간다 */
+/** 관리 — 눌러서 관리자 영역(별도 화면)으로 들어간다. 관리자 영역 셸에서만 쓰인다(업무 영역 헤더는 스코프 드롭다운의 '관리자' 항목으로 들어간다). */
 export function AdminLink({ active }: { active: boolean }) {
   return (
     <Link
@@ -116,6 +97,9 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
   const flow = scope?.flow ?? [];
   const flowActive = activeHref(flow, model.pathname);
   const knowledgeOn = model.pathname.startsWith("/knowledge");
+  // 참고 화면(데이터베이스 제외) — 우측 DB 아이콘 팝오버로 보여 준다. 활성 계산은 기존 PrimaryNav 로직 그대로.
+  const reference = [...(scope?.reference ?? []), ...model.sharedReference].filter((i) => i.href !== "/knowledge");
+  const refActive = activeHref([...flow, ...reference], model.pathname);
 
   return (
     <header className="sticky top-0 z-30 border-b border-hairline-soft bg-canvas no-print">
@@ -125,48 +109,32 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
         </button>
         <Brand href={home} />
 
+        {/* 관리자 영역은 가운데 단계 메뉴가 없다 — 업무 영역으로는 오른쪽 영역 드롭다운에서 돌아간다.
+            업무 화면이 하나도 없으면(관리자가 모든 업무 화면을 끈 경우) 드롭다운이 없으므로 화면 권한으로 안내한다 */}
         {adminShell ? (
-          <div className="hidden items-center gap-5 lg:flex">
-            {scope ? (
-              <Link href={scope.home} className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-steel transition-colors hover:bg-surface-soft hover:text-ink-deep">
-                <IconChevronLeft />
-                업무 화면
-              </Link>
-            ) : (
-              // 업무 화면이 하나도 없다(관리자가 모든 업무 화면을 끈 경우) — '/' 는 관리자를 다시 관리자 홈으로 보내므로 화면 권한으로 안내한다
-              <Link
-                href="/admin/screens"
-                title="켜진 업무 화면이 없습니다 — [화면 권한]에서 화면을 켜세요"
-                data-no-business-screens
-                className="inline-flex h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-attention transition-colors hover:bg-surface-soft"
-              >
-                <IconChevronLeft />
-                업무 화면 없음
-              </Link>
-            )}
-            <span aria-hidden="true" className="h-5 w-px bg-hairline-soft" />
-            <AdminLink active />
-          </div>
+          scope ? null : (
+            <Link
+              href="/admin/screens"
+              title="켜진 업무 화면이 없습니다 — [화면 권한]에서 화면을 켜세요"
+              data-no-business-screens
+              className="hidden h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-attention transition-colors hover:bg-surface-soft lg:inline-flex"
+            >
+              업무 화면 없음
+            </Link>
+          )
         ) : (
           <PrimaryNav model={model} className="hidden lg:flex" />
         )}
 
+        {/* 모든 화면 같은 순서: 참고(DB 아이콘) → 알림 벨 → 영역 드롭다운 → 사용자 */}
         <div className="ml-auto flex items-center gap-2 lg:gap-3">
-          {!adminShell && scope ? (
-            <div className="hidden lg:block">{multi ? <ScopeSwitcher scopes={model.scopes} currentId={scope.id} admin={model.user?.isAdmin} /> : <OrgChip scope={scope} />}</div>
-          ) : null}
-          {!adminShell && model.knowledgeHref ? (
-            <Link
-              href={model.knowledgeHref}
-              aria-label="데이터베이스"
-              title="데이터베이스"
-              aria-current={knowledgeOn ? "page" : undefined}
-              className={clsx(ICON_BUTTON, "hidden sm:inline-flex", knowledgeOn && "!bg-info-soft !text-primary")}
-            >
-              <IconDb />
-            </Link>
-          ) : null}
+          <ReferenceDbMenu items={reference} activeHref={refActive} hrefOf={hrefOf} knowledgeHref={model.knowledgeHref} knowledgeOn={knowledgeOn} />
           <NotificationBell model={model} />
+          {scope ? (
+            <div className="hidden lg:block">
+              {multi || model.user?.isAdmin ? <ScopeSwitcher scopes={model.scopes} currentId={adminShell ? null : scope.id} admin={model.user?.isAdmin} inAdmin={model.inAdmin} /> : <OrgChip scope={scope} />}
+            </div>
+          ) : null}
           <UserMenu model={model} />
         </div>
       </div>
@@ -181,7 +149,6 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
                 item={item}
                 href={hrefOf(item)}
                 active={item.href === flowActive}
-                count={item.countKey ? model.counts[item.countKey] : undefined}
               />
             ))}
           </div>

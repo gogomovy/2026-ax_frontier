@@ -117,7 +117,8 @@ const config: Config = {
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
         "slide-in-right": { from: { transform: "translateX(24px)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
         "pop-in": { from: { transform: "translateY(8px) scale(0.98)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
-        "toast-in": { from: { transform: "translate(-50%, 8px)", opacity: "0" }, to: { transform: "translate(-50%, 0)", opacity: "1" } },
+        // 가운데 정렬은 감싸는 상자(left-1/2 · -translate-x-1/2)가 맡는다 — 여기서 가로로 또 -50% 옮기면 토스트가 왼쪽으로 반 폭만큼 치우쳤다
+        "toast-in": { from: { transform: "translateY(8px)", opacity: "0" }, to: { transform: "translateY(0)", opacity: "1" } },
         shimmer: { "0%,100%": { opacity: "1" }, "50%": { opacity: "0.55" } },
         // 데이터 등장 효과 (Phase K · ANI-01 · Q153) — 최종 값은 처음부터 DOM 에 있고 모양만 자란다(낭독 · 시험 안정)
         "grow-x": { from: { transform: "scaleX(0)" }, to: { transform: "scaleX(1)" } },

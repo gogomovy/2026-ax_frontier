@@ -5,12 +5,10 @@ export function AuthFrame({ title, description, children }: { title: string; des
   return (
     <div className="flex min-h-screen items-center justify-center px-base py-section">
       <div className="w-full max-w-[420px]">
-        <div className="mb-xl flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-ink-deep text-[12.5px] font-bold text-white">NH</span>
-          <span className="leading-tight">
-            <span className="block text-[14px] font-bold text-ink-deep">경영 의사결정</span>
-            <span className="block text-[11px] text-stone">AI Decision Platform</span>
-          </span>
+        {/* 서비스 로고 — 헤더와 같은 NH NAVI 가로형 로고 (로그인 전에도 보이도록 proxy 공개 경로에 등록됨) */}
+        <div className="mb-xl">
+          {/* eslint-disable-next-line @next/next/no-img-element -- 로그인 전 화면이라 이미지 최적화 경로 대신 공개 파일을 바로 쓴다 */}
+          <img src="/nh-navi-logo.png" alt="NH NAVI" width={686} height={160} className="h-8 w-auto" />
         </div>
         <h1 className="text-[24px] font-bold text-ink-deep">{title}</h1>
         {description ? <p className="mt-1.5 text-[13px] leading-relaxed text-steel">{description}</p> : null}

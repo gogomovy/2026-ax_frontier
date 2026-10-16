@@ -16,7 +16,10 @@ export function ShareBars({
   otherName,
   referenceAt = null,
   decimals = 2,
+  pair = false,
 }: {
+  /** 두 계열 모두 색으로 (기업 primary · 가계 옅은 보라) — 시안 304:2 기업·가계 비교 */
+  pair?: boolean;
   points: SeriesPoint[];
   targetName: string;
   otherName: string;
@@ -46,20 +49,20 @@ export function ShareBars({
                 onMouseEnter={() => setHover(i)}
                 onFocus={() => setHover(i)}
                 onBlur={() => setHover(null)}
-                className="flex h-9 w-full overflow-hidden rounded-md bg-track text-left"
+                className={clsx("flex w-full overflow-hidden rounded-md text-left", pair ? "h-8 bg-chart-5" : "h-9 bg-track")}
               >
                 {/* 버튼 이름 = 보이는 수치 + 낭독용 시점 · 계열 이름 (보이는 글자가 이름에 그대로 — WCAG 2.5.3) */}
                 <span className="sr-only">
                   {p.label} {targetName}{" "}
                 </span>
                 <span
-                  className={clsx("flex h-full origin-left items-center px-3 text-[14px] font-bold tnum motion-safe:animate-grow-x", latest ? "bg-primary text-white" : "bg-primary-soft text-primary")}
+                  className={clsx("flex h-full origin-left items-center px-3 text-[14px] font-bold tnum motion-safe:animate-grow-x", pair || latest ? "bg-primary text-white" : "bg-primary-soft text-primary")}
                   style={{ width: `${v}%`, "--i": i } as CSSProperties}
                 >
                   {fmt(v)}%
                 </span>
                 <span className="sr-only">, {otherName} </span>
-                <span className="ml-auto flex items-center px-3 text-[12px] text-steel tnum">{fmt(100 - v)}%</span>
+                <span className={clsx("ml-auto flex items-center px-3 tnum", pair ? "text-[11px] font-bold text-ink-deep" : "text-[12px] text-steel")}>{fmt(100 - v)}%</span>
               </button>
             </li>
           );

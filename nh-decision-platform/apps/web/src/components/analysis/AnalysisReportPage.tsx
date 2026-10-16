@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 import { DynamicTabBar } from "@/components/domain/DynamicTabBar";
 import { ReportActions, ReportView } from "@/components/domain/ReportView";
@@ -53,16 +52,11 @@ export function AnalysisReportPage({
         description={report.subtitle}
         actions={
           <>
-            {builderHref ? (
-              <Link href={builderHref} className="inline-flex h-9 items-center rounded-pill border border-hairline px-4 text-[13px] font-bold text-ink" data-builder-link>
-                분석 에이전트 만들기
-              </Link>
-            ) : null}
             <ReportActions report={report} tabKey={exportKey ?? activeKey} office={office ?? undefined} />
           </>
         }
       >
-        <DynamicTabBar tabs={tabs} previous={previous} activeKey={activeKey} basePath={basePath} query={query} lead={lead} />
+        <DynamicTabBar tabs={tabs} previous={previous} activeKey={activeKey} basePath={basePath} query={query} lead={lead} addHref={builderHref} />
       </PageHeader>
 
       {agent && agent.status === "paused" ? (

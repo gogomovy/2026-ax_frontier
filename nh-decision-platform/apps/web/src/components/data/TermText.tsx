@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
+import { FloatingTip } from "@/components/ui/FloatingTip";
 import { getTermSync } from "@/lib/terms";
 
 /**
@@ -20,6 +21,7 @@ export function TermText({
 }) {
   const { openDrawer } = useUi();
   const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLButtonElement>(null);
   const term = getTermSync(code);
 
   if (!term) return <span className={className}>{label ?? code}</span>;
@@ -27,6 +29,7 @@ export function TermText({
   return (
     <span className="relative inline-block">
       <button
+        ref={anchor}
         type="button"
         onClick={() => openDrawer({ kind: "term", title: `용어 — ${term.prefLabel}`, term })}
         onMouseEnter={() => setOpen(true)}
@@ -38,11 +41,8 @@ export function TermText({
       >
         {label ?? term.prefLabel}
       </button>
-      {open ? (
-        <span
-          role="tooltip"
-          className="absolute left-0 top-[calc(100%+6px)] z-40 block w-[320px] rounded-lg border border-hairline-soft bg-canvas p-3 text-left shadow-pop"
-        >
+      <FloatingTip anchor={anchor} open={open} width={320} className="block rounded-lg border border-hairline-soft bg-canvas p-3 text-left font-normal shadow-pop">
+        <span>
           <span className="flex items-center gap-1.5">
             <span className="text-[12px] font-bold text-ink-deep">{term.prefLabel}</span>
             <span className="rounded-pill bg-info-soft px-1.5 py-0.5 text-[9.5px] font-bold text-primary">
@@ -61,7 +61,7 @@ export function TermText({
           ) : null}
           <span className="mt-1 block text-[10.5px] font-bold text-primary">클릭 — 판단방법 · 근거 보기</span>
         </span>
-      ) : null}
+      </FloatingTip>
     </span>
   );
 }
