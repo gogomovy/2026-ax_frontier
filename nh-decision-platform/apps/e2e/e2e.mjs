@@ -766,7 +766,7 @@ try {
         ok("레드닷: 확인하지 않은 탭이 없으면 점도 없다", true);
       }
       const builder = await a.evaluate(() => document.querySelector("[data-builder-link]")?.innerText ?? "");
-      ok("이름: '분석 에이전트 만들기'", builder.includes("분석 에이전트 만들기"), builder);
+      ok("이름: '분석 에이전트 빌더'", builder.includes("분석 에이전트 빌더"), builder);
       // Phase K (ANI-01) — 차트 · 막대 · 수치에 등장 애니메이션(동작 줄이기 설정이면 꺼짐 · 이 시험은 동작 줄이기로 돈다)
       const anim = await a.evaluate(() => document.querySelectorAll('[class*="motion-safe:animate-"]').length);
       const reduced = await a.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches && getComputedStyle(document.querySelector('[class*="motion-safe:animate-"]') ?? document.body).animationName === "none");

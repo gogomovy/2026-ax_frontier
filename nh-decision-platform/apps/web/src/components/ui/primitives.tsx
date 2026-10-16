@@ -511,18 +511,19 @@ export function NextStep({
   );
 }
 
-/** 분석 탭 줄 끝의 [+] — 분석 에이전트 만들기 (시안 304:2 · 24px 흰 바탕 · 테두리) */
+/** 분석 탭 줄 끝의 [+ 분석 에이전트 빌더] — 분석 에이전트 만들기 (흰 바탕 · 테두리 · 아이콘 + 이름) */
 export function AddAgentTab({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      aria-label="분석 에이전트 만들기"
+      title="분석 에이전트 만들기"
       data-builder-link
-      className="mt-[6.5px] inline-flex h-6 w-6 shrink-0 items-center justify-center self-start rounded-md border border-hairline-soft bg-canvas text-steel hover:bg-surface-soft hover:text-ink-deep"
+      className="mt-[4px] inline-flex h-7 shrink-0 items-center gap-1 self-start whitespace-nowrap rounded-md border border-hairline-soft bg-canvas px-2.5 text-[12.5px] font-bold text-steel hover:bg-surface-soft hover:text-ink-deep"
     >
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
         <path d="M6 1.5v9M1.5 6h9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
+      분석 에이전트 빌더
     </Link>
   );
 }

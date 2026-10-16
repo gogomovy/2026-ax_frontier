@@ -59,7 +59,19 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <IconClose />
               </button>
             </div>
-            {adminShell ? <AdminNav model={model} onNavigate={() => setMenuAt(null)} /> : <DrawerBody model={model} />}
+            {adminShell ? (
+              <>
+                {/* 좁은 화면에서도 관리자 영역 → 업무 화면으로 돌아갈 수 있게 */}
+                {model.current ? (
+                  <Link href={model.current.home} onClick={() => setMenuAt(null)} className="mx-5 mt-4 flex h-10 items-center rounded-lg border border-hairline-soft px-3 text-[14px] font-medium text-ink hover:bg-surface-soft">
+                    ← 업무 화면
+                  </Link>
+                ) : null}
+                <AdminNav model={model} onNavigate={() => setMenuAt(null)} />
+              </>
+            ) : (
+              <DrawerBody model={model} />
+            )}
           </aside>
           <button type="button" aria-label="메뉴 닫기" tabIndex={-1} onClick={() => setMenuAt(null)} className="flex-1 bg-scrim" />
         </MobileMenu>

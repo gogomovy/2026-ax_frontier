@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import clsx from "clsx";
-import { IconGear } from "@/components/ui/icons";
+import { IconChevronLeft, IconGear } from "@/components/ui/icons";
 import { IconMenu } from "@/components/ui/primitives";
 import { activeHref, type NavItem } from "@/lib/nav";
 import { ICON_BUTTON, NotificationBell, ReferenceDbMenu, UserMenu } from "./HeaderMenus";
@@ -109,10 +109,19 @@ export function TopBar({ model, adminShell, onOpenMenu }: { model: NavModel; adm
         </button>
         <Brand href={home} />
 
-        {/* 관리자 영역은 가운데 단계 메뉴가 없다 — 업무 영역으로는 오른쪽 영역 드롭다운에서 돌아간다.
-            업무 화면이 하나도 없으면(관리자가 모든 업무 화면을 끈 경우) 드롭다운이 없으므로 화면 권한으로 안내한다 */}
+        {/* 관리자 영역은 가운데 단계 메뉴 대신 '업무 화면' 바로가기를 둔다(오른쪽 영역 드롭다운으로도 돌아갈 수 있다).
+            업무 화면이 하나도 없으면(관리자가 모든 업무 화면을 끈 경우) 화면 권한으로 안내한다 */}
         {adminShell ? (
-          scope ? null : (
+          scope ? (
+            <Link
+              href={scope.home}
+              data-to-business
+              className="hidden h-9 items-center gap-1 rounded-lg px-2.5 text-[14px] font-medium text-steel transition-colors hover:bg-surface-soft hover:text-ink-deep lg:inline-flex"
+            >
+              <IconChevronLeft />
+              업무 화면
+            </Link>
+          ) : (
             <Link
               href="/admin/screens"
               title="켜진 업무 화면이 없습니다 — [화면 권한]에서 화면을 켜세요"
