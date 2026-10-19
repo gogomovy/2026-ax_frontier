@@ -96,6 +96,9 @@ make preflight        # 운영 준비 점검 (관리자 [시스템 상태] 에�
 - 백업은 매일 권장 — `crontab -e` 에 `0 2 * * * cd <플랫폼 폴더> && make backup >> backups/cron.log 2>&1` (최근 14개 보관, `BACKUP_KEEP`). 복구는 `make restore FROM=backups/<시각> CONFIRM=yes`.
 - 최신 코드: `git pull && make up`. 서버를 재부팅해도 Docker · 컨테이너가 자동으로 다시 뜹니다.
 
+## 폐쇄망 쿠버네티스 배포 (Helm)
+외부에서 `bash infra/helm/scripts/bundle.sh` 로 이미지 · 차트를 tar 하나로 묶어 반입하고, 내부 Nexus 에 올린 뒤 `helm install` 합니다. 채울 값 · 순서 · 점검표는 [`infra/helm/폐쇄망_헬름배포_가이드.md`](infra/helm/폐쇄망_헬름배포_가이드.md). 헬름 배포는 `.env` 를 쓰지 않습니다(비밀값은 쿠버네티스 Secret) — 위 compose 배포는 그대로입니다.
+
 ---
 ## 2. 데이터 흐름
 

@@ -1,0 +1,92 @@
+{{- if .Values.postgres.enabled }}
+{{- $c := dict "root" . "component" "postgres" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-postgres-init
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+data:
+  # 최초 기동(빈 볼륨) 때 1회 — infra/postgres/init/01-litellm-db.sql 과 같다
+  01-litellm-db.sql: |
+    CREATE DATABASE litellm;
+    CREATE EXTENSION IF NOT EXISTS vector;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      containers:
+        - name: postgres
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.postgres) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.user | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgres.database | quote }}
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "POSTGRES_PASSWORD") | nindent 12 }}
+            # 볼륨 최상위에 lost+found 가 있어도 초기화되게 하위 폴더를 데이터 디렉터리로
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+              name: postgres
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+      volumes:
+        - name: data
+          {{- include "nhdip.dataVolume" (dict "root" . "dir" "pgdata") | trim | nindent 10 }}
+        - name: init
+          configMap:
+            name: {{ .Release.Name }}-postgres-init
+{{- end }}

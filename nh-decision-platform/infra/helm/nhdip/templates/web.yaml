@@ -1,0 +1,87 @@
+{{- $c := dict "root" . "component" "web" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+# web 파드 IP 목록(DNS) — api 가 X-Forwarded-For 를 믿을 바로 앞 프록시로 쓴다(app.trustedProxies 의 web-headless)
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-headless
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  replicas: {{ .Values.web.replicas }}
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      containers:
+        - name: web
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.web "own" true) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: "3000"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: API_INTERNAL_URL
+              value: http://api:8000
+            - name: TRUST_UPSTREAM_PROXY
+              value: {{ ternary "1" "0" .Values.app.trustUpstreamProxy | quote }}
+            - name: NC_SSO_AGENT_ORIGIN
+              value: {{ .Values.app.ncSso.agentOrigin | quote }}
+          ports:
+            - containerPort: 3000
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.web.resources | nindent 12 }}

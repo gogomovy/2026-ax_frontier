@@ -1,0 +1,70 @@
+{{- $c := dict "root" . "component" "worker" }}
+{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.api "own" true) }}
+# 아웃박스 디스패처 · 워크플로우 엔진 · 적재 · 그래프 투영 — api 와 같은 이미지
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+        # compose 의 depends_on(api 정상) — api 가 마이그레이션을 끝낸 뒤 시작
+        - name: wait-api
+          image: {{ $img }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+            - python
+            - -c
+            - |
+              import time, urllib.request
+              for i in range(180):
+                  try:
+                      urllib.request.urlopen("http://api:8000/health", timeout=3)
+                      print("api ready"); break
+                  except Exception as e:
+                      print("waiting for api", i + 1, e, flush=True); time.sleep(5)
+              else:
+                  raise SystemExit("api not ready")
+      containers:
+        - name: worker
+          image: {{ $img }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["worker"]
+          env:
+            {{- include "nhdip.apiEnv" . | nindent 12 }}
+          # 워커 심장박동(5초)이 60초 넘게 끊기면 비정상
+          startupProbe:
+            exec:
+              command: ["python", "-m", "nhdip.worker", "--health"]
+            periodSeconds: 20
+            timeoutSeconds: 15
+            failureThreshold: 15
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "nhdip.worker", "--health"]
+            periodSeconds: 30
+            timeoutSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            - name: files
+              mountPath: /data/files
+      volumes:
+        - name: files
+          {{- include "nhdip.dataVolume" (dict "root" . "dir" "files") | trim | nindent 10 }}

@@ -1,0 +1,19 @@
+NH NAVI(nhdip) {{ .Chart.AppVersion }} — 네임스페이스 {{ .Release.Namespace }}
+
+1) 기동 확인 (api 첫 기동은 마이그레이션 · 시드로 수 분 걸린다)
+   kubectl -n {{ .Release.Namespace }} get pods -w
+   kubectl -n {{ .Release.Namespace }} logs deploy/api -f
+
+2) 접속 주소: {{ include "nhdip.publicUrl" . | default "(ingress.host 미지정)" }}
+
+3) 최초 관리자: 사번 {{ .Values.app.bootstrapAdminEmpNo }} / 비밀번호는 Secret 에서
+   kubectl -n {{ .Release.Namespace }} get secret {{ .Values.secrets.name }} -o jsonpath='{.data.BOOTSTRAP_ADMIN_PASSWORD}' | base64 -d; echo
+   (첫 로그인 뒤 비밀번호를 바꾸세요)
+
+4) 운영 준비 점검
+   kubectl -n {{ .Release.Namespace }} exec deploy/api -- python -m nhdip.cli preflight
+{{- if .Values.app.ncSso.enabled }}
+
+5) 사내 SSO — SSO 담당 부서에 콜백 등록: {{ include "nhdip.publicUrl" . }}/backend/auth/nc/callback
+   검증기 상태: kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/name=sso-verifier
+{{- end }}

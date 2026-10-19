@@ -1,0 +1,70 @@
+{{- if .Values.ssoVerifier.enabled }}
+{{- $c := dict "root" . "component" "sso-verifier" }}
+# 사내 SSO 티켓 검증기 — 벤더 jar(ssoVerifier.libs)로 INISAFE Nexess 티켓을 푼다. 클러스터 안(api)에서만 부른다
+apiVersion: v1
+kind: Service
+metadata:
+  name: sso-verifier
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sso-verifier
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      containers:
+        - name: sso-verifier
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.ssoVerifier "own" true) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: PORT
+              value: "8090"
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "NC_SSO_VERIFIER_TOKEN" "name" "VERIFIER_TOKEN") | nindent 12 }}
+          ports:
+            - containerPort: 8090
+              name: http
+          # 벤더 jar 를 읽지 못하면 /health 가 503 — 준비 안 됨으로 보인다
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8090
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.ssoVerifier.resources | nindent 12 }}
+          volumeMounts:
+            - name: libs
+              mountPath: /app/libs
+              readOnly: true
+      volumes:
+        - name: libs
+          {{- include "nhdip.extVolume" .Values.ssoVerifier.libs | trim | nindent 10 }}
+{{- end }}

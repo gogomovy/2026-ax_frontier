@@ -1,0 +1,83 @@
+{{- if .Values.neo4j.enabled }}
+{{- $c := dict "root" . "component" "neo4j" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: neo4j
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: bolt
+      port: 7687
+      targetPort: 7687
+    - name: http
+      port: 7474
+      targetPort: 7474
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: neo4j
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  serviceName: neo4j
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      containers:
+        - name: neo4j
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.neo4j) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            # NEO4J_ 로 시작하는 변수는 Neo4j 설정으로 바뀌므로 비밀번호는 다른 이름으로 받아 NEO4J_AUTH 만 만든다
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "NEO4J_PASSWORD" "name" "NHDIP_NEO4J_PASSWORD") | nindent 12 }}
+            - name: NEO4J_AUTH
+              value: "neo4j/$(NHDIP_NEO4J_PASSWORD)"
+            - name: NEO4J_server_memory_heap_initial__size
+              value: {{ .Values.neo4j.heapInitial | quote }}
+            - name: NEO4J_server_memory_heap_max__size
+              value: {{ .Values.neo4j.heapMax | quote }}
+            - name: NEO4J_server_memory_pagecache_size
+              value: {{ .Values.neo4j.pageCache | quote }}
+          ports:
+            - containerPort: 7687
+              name: bolt
+            - containerPort: 7474
+              name: http
+          startupProbe:
+            tcpSocket:
+              port: 7687
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 7687
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 7687
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml .Values.neo4j.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          {{- include "nhdip.dataVolume" (dict "root" . "dir" "neo4j") | trim | nindent 10 }}
+{{- end }}

@@ -1,0 +1,213 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# NH NAVI (nhdip) Helm 기본값 — 폐쇄망 배포
+#
+# 직접 고칠 값은 이 파일이 아니라 infra/helm/values-closed.yaml 에 적어 -f 로 넘긴다.
+# [필수] 표시는 비어 있으면 helm install 이 이유를 알려 주고 멈춘다.
+#
+# 비밀값(DB 비밀번호 · 세션 키 · 암호화 키 · 관리자 비밀번호 · API 키 등)은 이 파일에도, .env 에도 두지 않는다.
+#   → scripts/create-secrets.sh 가 쿠버네티스 Secret(secrets.name)을 직접 만든다(디스크에 남지 않음).
+#
+# 한 네임스페이스에 이 차트는 하나만 설치한다. 서비스 이름(api · web · postgres · neo4j · elasticsearch · sso-verifier · litellm)은
+# 고정이다 — 웹 이미지가 빌드 때 백엔드 주소를 http://api:8000 으로 굳히기 때문(next.config rewrites).
+# ─────────────────────────────────────────────────────────────────────────────
+
+global:
+  # [필수] Nexus 도커 저장소 주소(경로 포함 가능) — 예: nexus.example.local:5000  또는  nexus.example.local:5000/nhdip
+  #        이미지 = <imageRegistry>/<images.*.repository>:<tag>  (scripts/push-images.sh 가 같은 규칙으로 올린다)
+  imageRegistry: ""
+  # 자체 이미지 태그 — 비우면 Chart.yaml appVersion
+  imageTag: ""
+  imagePullPolicy: IfNotPresent
+  # Nexus 가 익명 받기를 막으면 docker-registry Secret 이름 — 예: [nexus-pull]
+  imagePullSecrets: []
+  # [필수] 띄울 서버(노드) — 예: {kubernetes.io/hostname: nhnavi-node01}
+  #        모든 파드가 이 서버에만 뜬다(파일 저장소 RWO 볼륨을 api · worker 가 같이 쓰려면 같은 서버여야 한다)
+  nodeSelector: {}
+  # 서버에 taint 가 있으면 — 예: [{key: dedicated, operator: Equal, value: nhnavi, effect: NoSchedule}]
+  tolerations: []
+  # 노드 지정을 일부러 하지 않을 때만 true (여러 노드 · RWX 저장소일 때)
+  allowAnyNode: false
+  timezone: Asia/Seoul
+
+# 비밀값 Secret 이름 — scripts/create-secrets.sh 가 이 이름으로 만든다(helm 이 만들지 않음)
+secrets:
+  name: nhdip-secrets
+
+images:
+  # 자체 이미지 (bundle.sh 가 빌드) — tag 를 비우면 global.imageTag → appVersion
+  api: {repository: nhdip/api, tag: ""}
+  web: {repository: nhdip/web, tag: ""}
+  elasticsearch: {repository: nhdip/elasticsearch, tag: ""}
+  ssoVerifier: {repository: nhdip/sso-verifier, tag: ""}
+  # 외부 이미지 (bundle.sh 가 받아 같은 이름 · 태그로 저장)
+  postgres: {repository: pgvector/pgvector, tag: pg16}
+  neo4j: {repository: neo4j, tag: 5.26-community}
+  litellm: {repository: berriai/litellm, tag: main-stable}
+
+# ── 접속 주소 (인그레스) ─────────────────────────────────────────
+ingress:
+  enabled: true
+  # [필수] 인그레스 클래스 — 예: nginx  (kubectl get ingressclass)
+  className: ""
+  # [필수] 도메인 — 예: nhnavi.example.local
+  host: ""
+  tls:
+    enabled: true
+    # [필수 · tls.enabled] 인증서 Secret — kubectl -n <ns> create secret tls <이름> --cert=... --key=...
+    secretName: ""
+  # 업로드(최대 200MB) · LLM 응답 대기(최대 180초)에 맞춘 nginx 인그레스 값. 다른 컨트롤러면 그에 맞게 바꾼다
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "210m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+
+# ── 앱 설정 (비밀이 아닌 값) ─────────────────────────────────────
+app:
+  env: prod
+  # 사용자가 여는 주소 — 비우면 ingress.host 로(https 면 tls.enabled 또는 앞단 L7 에서 TLS 를 끝낼 때 직접 https://... 로)
+  publicUrl: ""
+  # 세션 쿠키 Secure — 비우면 publicUrl 이 https 일 때 켠다
+  cookieSecure: ""
+  # 변경 요청 Origin 허용 목록(쉼표) — 비우면 publicUrl
+  trustedOrigins: ""
+  # 사용자 IP 판정 — X-Forwarded-For 를 믿을 바로 앞 프록시. web-headless = web 파드 IP(헤드리스 서비스 DNS)
+  trustedProxies: "127.0.0.1/32,::1/128,web-headless"
+  # 인그레스(1) + web(1) = 2. 인그레스 앞에 X-Forwarded-For 를 붙이는 L7(로드밸런서)이 하나 더 있으면 3
+  trustedProxyHops: 2
+  # web 이 인그레스가 붙인 X-Forwarded-For 를 유지(인그레스 뒤에서는 true)
+  trustUpstreamProxy: true
+  apiDocs: ""
+  dbIdleTxTimeoutMs: 600000
+  # 최초 관리자 사번(비밀번호는 Secret 의 BOOTSTRAP_ADMIN_PASSWORD)
+  bootstrapAdminEmpNo: "00000001"
+  runMigrations: true
+  seedOnStart: true
+  # API 전용 DB 계정(DML 만) — Secret 에 APP_DB_PASSWORD 가 있으면 사용
+  appDbUser: nhdip_app
+  # 내부 LLM 게이트웨이(LiteLLM 등) — 최초 시드 때만 기본 연결로 등록(이후 관리자 [LLM 연동]). 키는 Secret 의 LLM_DEFAULT_API_KEY
+  llm:
+    baseUrl: ""
+    model: ""
+  # 업로드 백신 명령(선택) — 예: clamdscan --no-summary --fdpass {path}
+  uploadAvCommand: ""
+  # OIDC SSO(선택) — issuer 를 비우면 꺼짐. client secret 은 Secret 의 OIDC_CLIENT_SECRET
+  oidc:
+    issuer: ""
+    clientId: ""
+    redirectUri: ""      # 비우면 <publicUrl>/backend/auth/oidc/callback
+    empClaim: emp_no
+    localLogin: all
+  # 사내 SSO(INISAFE Nexess 티켓) — 켜면 ssoVerifier.enabled 도 켠다. 토큰은 Secret 의 NC_SSO_VERIFIER_TOKEN
+  ncSso:
+    enabled: false
+    label: "NH 통합 로그인(SSO)"
+    loginUrl: "https://sso.nonghyup.com:15502/nls/clientLogin.jsp"
+    allowedToa: "2,3"
+    localLogin: all
+    # PC 의 NC 에이전트 출처 (sso-proxy.html CSP 예외)
+    agentOrigin: "https://127.0.0.1:13015"
+    # 벤더 JS(NexessDemonFunc.js · json2.js · jquery-3.5.1(.min).js) 위치 — 셋 중 하나
+    assets:
+      hostPath: ""        # 서버 디렉터리 — 예: /opt/nhdip/sso/nc-js
+      configMap: ""       # kubectl create configmap <이름> --from-file=<폴더>/
+      existingClaim: ""
+  # 운영 알림 메일(선택) — 비밀번호는 Secret 의 ALERT_SMTP_PASSWORD, 웹훅 주소는 ALERT_WEBHOOK_URL
+  alerts:
+    smtp:
+      host: ""
+      port: 25
+      user: ""
+      from: ""
+      to: ""
+      starttls: true
+  esIndex: nhdip-kb-chunk
+  esDocIndex: nhdip-doc-chunk
+  # 추가 환경변수(비밀 아님) — api · worker 공통. 예: [{name: SESSION_TTL_HOURS, value: "8"}]
+  extraEnv: []
+
+# ── 저장소 ──────────────────────────────────────────────────────
+persistence:
+  # 채우면 PVC 대신 서버 디렉터리(hostPath)를 쓴다 — 예: /data/nhdip  (동적 저장소가 없는 단일 서버)
+  hostPathBase: ""
+  # PVC 모드 저장소 클래스 (kubectl get storageclass) — hostPathBase · storageClass 둘 다 비우면 설치를 멈춘다
+  storageClass: ""
+  # 저장소 클래스를 비운 채 클러스터 기본 저장소 클래스를 쓰려면 true
+  useDefaultStorageClass: false
+  # helm uninstall 해도 PVC(데이터)를 남긴다
+  keep: true
+  postgres: {size: 50Gi}
+  neo4j: {size: 20Gi}
+  elasticsearch: {size: 30Gi}
+  # 업로드 원본 · 업무 자료 요청 파일 — api · worker 가 같이 쓴다(같은 서버면 RWO, 여러 서버면 RWX 저장소)
+  files: {size: 100Gi, accessMode: ReadWriteOnce}
+
+# ── 구성 요소 ───────────────────────────────────────────────────
+postgres:
+  enabled: true          # false 면 아래 external 의 사내 DB 사용(비밀번호는 Secret 의 POSTGRES_PASSWORD)
+  user: nhdip
+  database: nhdip
+  external: {host: "", port: 5432}
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+
+neo4j:
+  enabled: true          # false 면 externalUri (예: bolt://neo4j.internal:7687)
+  externalUri: ""
+  heapInitial: 512m
+  heapMax: 1g
+  pageCache: 512m
+  resources:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: "2", memory: 3Gi}
+
+elasticsearch:
+  enabled: true          # false 면 externalUrl(비우면 검색을 PostgreSQL 로 축소 동작)
+  externalUrl: ""
+  user: elastic
+  heap: 1g
+  # 서버 커널 vm.max_map_count=262144 를 파드가 직접 맞춘다(특권 컨테이너 — 보안 정책이 막으면 false 로 두고 서버에서 sysctl)
+  sysctlInit: false
+  # hostPath · 새 볼륨 소유자를 ES 계정(1000)으로 맞춘다(root 초기화 컨테이너)
+  chownInit: true
+  diskWatermark: {low: 2gb, high: 1gb, flood: 500mb}
+  resources:
+    requests: {cpu: 250m, memory: 1536Mi}
+    limits: {cpu: "2", memory: 3Gi}
+
+api:
+  # 기동할 때 마이그레이션 · 시드를 하므로 1 로 둔다
+  replicas: 1
+  # 파일 저장소 소유자를 api 계정(10001)으로 맞춘다(root 초기화 컨테이너 — 보안 정책이 막으면 false, 볼륨 소유자를 미리 10001 로)
+  filesInit: true
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 4Gi}
+
+worker:
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 4Gi}
+
+web:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
+# 사내 SSO 티켓 검증기 — 벤더 jar 는 이미지에 넣지 않고 실행 때 읽는다(셋 중 하나)
+ssoVerifier:
+  enabled: false
+  libs:
+    hostPath: ""          # 서버 디렉터리 — 예: /opt/nhdip/sso/libs
+    existingClaim: ""
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+# 내장 LiteLLM 게이트웨이(선택) — 사내 LLM 게이트웨이가 있으면 끈 채로 app.llm.baseUrl 에 그 주소
+litellm:
+  enabled: false
+  resources:
+    requests: {cpu: 100m, memory: 512Mi}
+    limits: {cpu: "1", memory: 2Gi}

@@ -18,6 +18,8 @@ __pycache__/
 .pytest_cache/
 # 백업 산출물 (make backup)
 backups/
+# 폐쇄망 반입 묶음 (infra/helm/scripts/bundle.sh)
+/dist/
 # 사내 SSO 벤더 파일 (Phase R) — 저장소에 올리지 않는다
 infra/sso-verifier/libs/*.jar
 infra/sso/nc-js/*.js

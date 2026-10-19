@@ -1,0 +1,115 @@
+{{- if .Values.elasticsearch.enabled }}
+{{- $c := dict "root" . "component" "elasticsearch" }}
+{{- $es := .Values.elasticsearch }}
+{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.elasticsearch "own" true) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: http
+      port: 9200
+      targetPort: 9200
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      securityContext:
+        fsGroup: 1000
+      {{- if or $es.sysctlInit $es.chownInit }}
+      initContainers:
+        {{- if $es.sysctlInit }}
+        # 서버 커널 값 — ES 가 요구하는 vm.max_map_count (특권 컨테이너)
+        - name: sysctl
+          image: {{ $img }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["sh", "-c", "sysctl -w vm.max_map_count=262144 2>/dev/null || echo 262144 > /proc/sys/vm/max_map_count"]
+          securityContext:
+            privileged: true
+            runAsUser: 0
+        {{- end }}
+        {{- if $es.chownInit }}
+        # 볼륨 소유자를 ES 계정(1000)으로 — hostPath 는 fsGroup 이 적용되지 않는다
+        - name: chown
+          image: {{ $img }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["sh", "-c", "chown -R 1000:0 /usr/share/elasticsearch/data"]
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: elasticsearch
+          image: {{ $img }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            - name: discovery.type
+              value: single-node
+            - name: xpack.security.enabled
+              value: "true"
+            # 클러스터 안(api · worker)에서만 접근 — 서비스는 ClusterIP
+            - name: xpack.security.http.ssl.enabled
+              value: "false"
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "ES_PASSWORD" "name" "ELASTIC_PASSWORD") | nindent 12 }}
+            - name: ES_JAVA_OPTS
+              value: {{ printf "-Xms%s -Xmx%s" $es.heap $es.heap | quote }}
+            - name: bootstrap.memory_lock
+              value: "false"
+            - name: cluster.routing.allocation.disk.watermark.low
+              value: {{ $es.diskWatermark.low | quote }}
+            - name: cluster.routing.allocation.disk.watermark.high
+              value: {{ $es.diskWatermark.high | quote }}
+            - name: cluster.routing.allocation.disk.watermark.flood_stage
+              value: {{ $es.diskWatermark.flood | quote }}
+          ports:
+            - containerPort: 9200
+              name: http
+          startupProbe:
+            tcpSocket:
+              port: 9200
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: 9200
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9200
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            {{- toYaml $es.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+      volumes:
+        - name: data
+          {{- include "nhdip.dataVolume" (dict "root" . "dir" "esdata") | trim | nindent 10 }}
+{{- end }}

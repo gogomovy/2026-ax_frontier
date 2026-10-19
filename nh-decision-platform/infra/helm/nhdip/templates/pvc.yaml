@@ -1,0 +1,33 @@
+{{- include "nhdip.validate" . -}}
+{{- /* 데이터 볼륨 — persistence.hostPathBase 가 비어 있을 때만 PVC 를 만든다 (채우면 서버 디렉터리) */ -}}
+{{- if not .Values.persistence.hostPathBase }}
+{{- $root := . }}
+{{- $p := .Values.persistence }}
+{{- $items := list (dict "dir" "files" "size" $p.files.size "mode" ($p.files.accessMode | default "ReadWriteOnce") "on" true) }}
+{{- $items = append $items (dict "dir" "pgdata" "size" $p.postgres.size "mode" "ReadWriteOnce" "on" .Values.postgres.enabled) }}
+{{- $items = append $items (dict "dir" "neo4j" "size" $p.neo4j.size "mode" "ReadWriteOnce" "on" .Values.neo4j.enabled) }}
+{{- $items = append $items (dict "dir" "esdata" "size" $p.elasticsearch.size "mode" "ReadWriteOnce" "on" .Values.elasticsearch.enabled) }}
+{{- range $items }}
+{{- if .on }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nhdip.pvcName" (dict "root" $root "dir" .dir) }}
+  labels:
+    {{- include "nhdip.labels" $root | nindent 4 }}
+  {{- if $p.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes: [{{ .mode }}]
+  {{- if $p.storageClass }}
+  storageClassName: {{ $p.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}
+{{- end }}

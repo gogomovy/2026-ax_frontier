@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 폐쇄망 배포값 — 이 파일만 채워서 쓴다.  helm install nhdip ./nhdip-1.0.0.tgz -n nhdip -f values-closed.yaml
+#
+#  · "" 로 비워 둔 [채우기] 항목을 내부망 값으로 채운다 (설명: 폐쇄망_헬름배포_가이드.md §4)
+#  · 비밀값은 여기에 쓰지 않는다 — scripts/create-secrets.sh 가 Secret(nhdip-secrets)을 만든다
+#  · 비어 있는 [필수] 값이 있으면 helm install 이 무엇을 채울지 알려 주고 멈춘다
+# ─────────────────────────────────────────────────────────────────────────────
+
+global:
+  # [채우기·필수] Nexus 도커 저장소 주소 — push-images.sh 에 넣은 값과 같게. 예: nexus.example.local:5000  /  nexus.example.local:5000/nhdip
+  imageRegistry: ""
+  # [채우기·선택] Nexus 가 익명 받기를 막으면 docker-registry Secret 이름. 예: [nexus-pull]
+  imagePullSecrets: []
+  # [채우기·필수] 띄울 서버(노드) — kubectl get nodes 의 이름. 예: kubernetes.io/hostname: nhnavi-node01
+  nodeSelector:
+    kubernetes.io/hostname: ""
+  # [채우기·선택] 서버에 taint 가 있으면
+  tolerations: []
+
+# ── 접속 도메인 ──────────────────────────────────────────────────
+ingress:
+  # [채우기·필수] 인그레스 클래스 — kubectl get ingressclass. 예: nginx
+  className: ""
+  # [채우기·필수] 도메인 — 예: nhnavi.example.local  (DNS 를 인그레스 주소로 등록)
+  host: ""
+  tls:
+    # 인그레스에서 TLS 를 끝내면 true + secretName. 앞단 L7(로드밸런서)에서 끝내면 false 로 두고 app.publicUrl 에 https://<도메인>
+    enabled: true
+    # [채우기·필수 if enabled] 인증서 Secret — kubectl -n nhdip create secret tls nhnavi-tls --cert=<crt> --key=<key>
+    secretName: ""
+
+app:
+  # [채우기·선택] 앞단 L7 에서 TLS 를 끝낼 때만 — 예: https://nhnavi.example.local  (비우면 ingress 값으로)
+  publicUrl: ""
+  # 인그레스 앞에 X-Forwarded-For 를 붙이는 로드밸런서가 하나 더 있으면 3
+  trustedProxyHops: 2
+  # [채우기·선택] 내부 LLM 게이트웨이 주소 · 기본 모델(키는 Secret 의 LLM_DEFAULT_API_KEY). 비우면 관리자 [LLM 연동]에서 입력
+  llm:
+    baseUrl: ""
+    model: ""
+  # [채우기·선택] 사내 SSO(INISAFE Nexess) — 쓰면 enabled: true + 아래 ssoVerifier.enabled: true
+  ncSso:
+    enabled: false
+    loginUrl: "https://sso.nonghyup.com:15502/nls/clientLogin.jsp"
+    # 사번 · 비밀번호 로그인 — all(모두) · admin(관리자 비상 로그인만) · none
+    localLogin: all
+    assets:
+      # 서버에 벤더 JS 를 둔 디렉터리 — 예: /opt/nhdip/sso/nc-js
+      hostPath: ""
+  # [채우기·선택] 운영 알림 메일(비밀번호는 Secret 의 ALERT_SMTP_PASSWORD)
+  alerts:
+    smtp:
+      host: ""
+      port: 25
+      user: ""
+      from: ""
+      to: ""
+
+# ── 저장소 (둘 중 하나) ──────────────────────────────────────────
+persistence:
+  # [채우기·택1] 동적 저장소가 없으면 서버 디렉터리 — 예: /data/nhdip  (pgdata · neo4j · esdata · files 하위 폴더를 만든다)
+  hostPathBase: ""
+  # [채우기·택1] 저장소 클래스(PVC) — kubectl get storageclass. hostPathBase 를 채우면 쓰지 않는다
+  storageClass: ""
+  postgres: {size: 50Gi}
+  neo4j: {size: 20Gi}
+  elasticsearch: {size: 30Gi}
+  files: {size: 100Gi, accessMode: ReadWriteOnce}
+
+elasticsearch:
+  # 서버에서 sysctl vm.max_map_count=262144 를 직접 못 하면 true (특권 컨테이너 허용 필요)
+  sysctlInit: false
+
+# [채우기·선택] 사내 SSO 검증기 — 서버에 벤더 jar 를 둔 디렉터리
+ssoVerifier:
+  enabled: false
+  libs:
+    hostPath: ""

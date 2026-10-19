@@ -1,0 +1,99 @@
+{{- if .Values.litellm.enabled }}
+{{- $c := dict "root" . "component" "litellm" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-litellm
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+data:
+  # infra/litellm/config.yaml 과 같다 — 모델 · 키는 LiteLLM 관리 화면에서 등록
+  config.yaml: |
+    model_list: []
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      database_url: os.environ/DATABASE_URL
+      store_model_in_db: true
+    litellm_settings:
+      drop_params: true
+      request_timeout: 120
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nhdip.selector" $c | nindent 4 }}
+  ports:
+    - name: http
+      port: 4000
+      targetPort: 4000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  labels:
+    {{- include "nhdip.componentLabels" $c | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nhdip.selector" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nhdip.componentLabels" $c | nindent 8 }}
+    spec:
+      {{- include "nhdip.podCommon" . | nindent 6 }}
+      containers:
+        - name: litellm
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.litellm) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["--config", "/app/config.yaml", "--port", "4000"]
+          env:
+            - name: TZ
+              value: {{ .Values.global.timezone | quote }}
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "POSTGRES_PASSWORD") | nindent 12 }}
+            - name: DATABASE_URL
+              value: {{ printf "postgresql://%s:$(POSTGRES_PASSWORD)@postgres:5432/litellm" .Values.postgres.user | quote }}
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "LITELLM_MASTER_KEY") | nindent 12 }}
+            - name: STORE_MODEL_IN_DB
+              value: "True"
+            - name: UI_USERNAME
+              value: admin
+            {{- include "nhdip.secretEnv" (dict "root" . "key" "LITELLM_UI_PASSWORD" "name" "UI_PASSWORD") | nindent 12 }}
+            # 폐쇄망 — 모델 가격표를 인터넷에서 받지 않고 이미지 안의 것을 쓴다
+            - name: LITELLM_LOCAL_MODEL_COST_MAP
+              value: "True"
+          ports:
+            - containerPort: 4000
+              name: http
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 10
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 20
+            timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.litellm.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-litellm
+{{- end }}
