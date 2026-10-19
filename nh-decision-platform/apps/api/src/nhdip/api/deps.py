@@ -211,6 +211,8 @@ def user_json(session: Session, user: AppUser) -> dict[str, Any]:
         "orgPath": [{"code": o.code, "name": o.name, "level": o.level, "unitType": o.unit_type, "levelLabel": labels.get(o.unit_type or "", "조직")} for o in reversed(chain)],
         "lastLoginAt": user.last_login_at.isoformat() if user.last_login_at else None,
         "dataAdmin": is_data_admin(user),
+        # 계정 출처 (Phase R) — local(가입) · dat(인사 동기화 · SSO 전용) · sso(SSO 자동 생성)
+        "source": getattr(user, "source", None) or "local",
         **_steward_json(session, user),
     }
 

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { buildCsp, newNonce } from "@/lib/csp";
+import { buildCsp, buildSsoPageCsp, isSsoPagePath, newNonce } from "@/lib/csp";
 
 /**
  * 인증 게이트 (Next.js 16 proxy — 구 middleware) — 세션 쿠키가 없으면 로그인 화면으로 보낸다.
@@ -14,6 +14,10 @@ function withCsp(res: NextResponse, csp: string): NextResponse {
 }
 
 export function proxy(req: NextRequest) {
+  // 사내 SSO 중계 페이지 — 로그인 전에 열리고, 벤더 스크립트 · NC 에이전트 통신 전용 정책을 쓴다 (Phase R)
+  if (isSsoPagePath(req.nextUrl.pathname)) {
+    return withCsp(NextResponse.next(), buildSsoPageCsp());
+  }
   const nonce = newNonce();
   const csp = buildCsp(nonce);
   const headers = new Headers(req.headers);

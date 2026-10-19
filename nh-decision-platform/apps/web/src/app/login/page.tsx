@@ -7,15 +7,7 @@ import { AuthFrame, Field, FormError } from "@/components/auth/AuthFrame";
 import { Button } from "@/components/ui/primitives";
 import { api, apiPost } from "@/lib/api-client";
 import { safeNext } from "@/lib/safe-next";
-
-/** SSO 실패 사유 (서버 → /login?sso_error=) */
-const SSO_ERROR: Record<string, string> = {
-  denied: "SSO 로그인이 취소되었거나 거부되었습니다.",
-  state: "로그인 요청이 만료되었습니다. 다시 시도해 주세요.",
-  token: "SSO 인증 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-  account: "SSO 계정과 연결된 사용 가능한 사번이 없습니다. 가입 신청 또는 관리자 승인을 확인해 주세요.",
-  disabled: "SSO 로그인이 설정되어 있지 않습니다.",
-};
+import { SSO_ERROR, ssoStartHref, strictestLocalLogin, type SsoProvider } from "@/lib/sso";
 
 /** 로그인 — 사번 8자리 + 비밀번호 (요구사항 AUTH-06) */
 export default function LoginPage() {
@@ -32,15 +24,22 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sso, setSso] = useState<{ enabled: boolean; label: string; localLogin: string } | null>(null);
+  const [sso, setSso] = useState<SsoProvider | null>(null);
+  // 사내 SSO(INISAFE Nexess 티켓 · Phase R) — 꺼져 있으면 버튼 없음
+  const [nc, setNc] = useState<SsoProvider | null>(null);
   useEffect(() => {
-    api<{ enabled: boolean; label: string; localLogin: string }>("/auth/oidc/config")
+    api<SsoProvider>("/auth/oidc/config")
       .then(setSso)
       .catch(() => setSso(null));
+    api<SsoProvider>("/auth/nc/config")
+      .then(setNc)
+      .catch(() => setNc(null));
   }, []);
   const ssoError = params.get("sso_error");
   const nextParam = safeNext(params.get("next"));
-  const ssoHref = `/backend/auth/oidc/login${nextParam ? `?next=${encodeURIComponent(nextParam)}` : ""}`;
+  const ssoHref = ssoStartHref("/backend/auth/oidc/login", nextParam);
+  const ncHref = ssoStartHref("/backend/auth/nc/init", nextParam);
+  const localLogin = strictestLocalLogin([sso, nc]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -59,24 +58,35 @@ function LoginForm() {
 
   return (
     <AuthFrame title="로그인" description="사번과 비밀번호로 로그인합니다. 소속 부서의 권한에 따라 화면이 열립니다.">
-      {sso?.enabled ? (
+      {sso?.enabled || nc?.enabled ? (
         <div className="mb-lg flex flex-col gap-xs">
-          <a
-            href={ssoHref}
-            className="inline-flex w-full items-center justify-center rounded-pill bg-ink-deep px-6 py-2.5 text-[13px] font-bold text-white"
-            data-sso-login
-          >
-            {sso.label}
-          </a>
-          {sso.localLogin !== "all" ? (
+          {nc?.enabled ? (
+            <a
+              href={ncHref}
+              className="inline-flex w-full items-center justify-center rounded-pill bg-ink-deep px-6 py-2.5 text-[13px] font-bold text-white"
+              data-nc-sso-login
+            >
+              {nc.label}
+            </a>
+          ) : null}
+          {sso?.enabled ? (
+            <a
+              href={ssoHref}
+              className="inline-flex w-full items-center justify-center rounded-pill bg-ink-deep px-6 py-2.5 text-[13px] font-bold text-white"
+              data-sso-login
+            >
+              {sso.label}
+            </a>
+          ) : null}
+          {localLogin !== "all" ? (
             <p className="text-center text-[11.5px] text-steel">
-              {sso.localLogin === "admin" ? "사번 · 비밀번호 로그인은 관리자 비상 로그인에만 사용합니다." : "SSO 로 로그인합니다."}
+              {localLogin === "admin" ? "사번 · 비밀번호 로그인은 관리자 비상 로그인에만 사용합니다." : "SSO 로 로그인합니다."}
             </p>
           ) : null}
         </div>
       ) : null}
       {ssoError ? <FormError message={SSO_ERROR[ssoError] ?? "SSO 로그인에 실패했습니다."} /> : null}
-      {sso?.enabled && sso.localLogin === "none" ? null : (
+      {localLogin === "none" ? null : (
         <form onSubmit={submit} className="flex flex-col gap-base" noValidate>
         <Field label="사번" htmlFor="emp_no" hint="숫자 8자리">
           <input

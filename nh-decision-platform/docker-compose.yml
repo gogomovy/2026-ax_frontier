@@ -62,6 +62,15 @@ x-api-env: &api-env
   OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
   OIDC_EMP_CLAIM: ${OIDC_EMP_CLAIM:-emp_no}
   OIDC_LOCAL_LOGIN: ${OIDC_LOCAL_LOGIN:-all}
+  # 사내 SSO(INISAFE Nexess 티켓 · Phase R) — NC_SSO_ENABLED=1 이면 로그인 화면에 버튼. 티켓은 sso-verifier(--profile sso)가 푼다
+  NC_SSO_ENABLED: ${NC_SSO_ENABLED:-0}
+  NC_SSO_LABEL: ${NC_SSO_LABEL:-NH 통합 로그인(SSO)}
+  NC_SSO_LOGIN_URL: ${NC_SSO_LOGIN_URL:-https://sso.nonghyup.com:15502/nls/clientLogin.jsp}
+  NC_SSO_ALLOWED_TOA: ${NC_SSO_ALLOWED_TOA:-2,3}
+  NC_SSO_VERIFIER: ${NC_SSO_VERIFIER:-http}
+  NC_SSO_VERIFIER_URL: ${NC_SSO_VERIFIER_URL:-http://sso-verifier:8090}
+  NC_SSO_VERIFIER_TOKEN: ${NC_SSO_VERIFIER_TOKEN:-}
+  NC_SSO_LOCAL_LOGIN: ${NC_SSO_LOCAL_LOGIN:-all}
   # 운영 알림 채널(선택) — 비우면 알림은 기록만 (관리자 [운영 알림 · 비용])
   ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
   ALERT_SMTP_HOST: ${ALERT_SMTP_HOST:-}
@@ -217,6 +226,8 @@ services:
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
     volumes:
       - filestore:/data/files
+      # 사내 SSO 벤더 JS(NexessDemonFunc.js 등) — 웹 /nc/* 로 서빙 (Phase R · 비어 있어도 됨)
+      - ./infra/sso/nc-js:/opt/nc-js:ro
     ports:
       - "${ADMIN_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
     depends_on:
@@ -252,6 +263,22 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  sso-verifier:
+    # 사내 SSO 티켓 검증기 (Phase R) — 벤더 jar(infra/sso-verifier/libs)로 INISAFE Nexess 티켓을 푼다. 내부망 전용(포트를 열지 않음)
+    # 켜기: .env 에 COMPOSE_PROFILES=sso · NC_SSO_ENABLED=1 · NC_SSO_VERIFIER_TOKEN(16자 이상)
+    profiles: ["sso"]
+    build:
+      context: ./infra/sso-verifier
+    image: nhdip/sso-verifier:${IMAGE_TAG:-local}
+    logging: *logging
+    environment:
+      TZ: ${TZ:-Asia/Seoul}
+      VERIFIER_TOKEN: ${NC_SSO_VERIFIER_TOKEN:-}
+      PORT: "8090"
+    volumes:
+      - ./infra/sso-verifier/libs:/app/libs:ro
+    restart: unless-stopped
+
   web:
     build:
       context: ./apps/web
@@ -267,6 +294,8 @@ services:
       API_INTERNAL_URL: http://api:8000
       # 앞에 사내 L7 프록시가 있어 X-Forwarded-For 를 그 프록시가 채우면 1 (기본 0 = 사용자가 보낸 값은 지움)
       TRUST_UPSTREAM_PROXY: ${TRUST_UPSTREAM_PROXY:-0}
+      # 사내 SSO 중계 페이지(sso-proxy.html)가 통신할 PC NC 에이전트 출처 (Phase R · CSP 예외)
+      NC_SSO_AGENT_ORIGIN: ${NC_SSO_AGENT_ORIGIN:-https://127.0.0.1:13015}
     ports:
       - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-3000}:3000"
     depends_on:

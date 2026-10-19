@@ -54,7 +54,7 @@ class CollectionPatch(BaseModel):
 
 class SearchIn(BaseModel):
     query: str = Field(..., min_length=2, max_length=500)
-    as_emp_no: str | None = Field(None, alias="asEmpNo", max_length=8)
+    as_emp_no: str | None = Field(None, alias="asEmpNo", max_length=20)
     screen: str | None = Field(None, max_length=200)
 
 

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useIsDataAdmin } from "@/components/admin/DataDelete";
 import { AdminPage, C, Card, Check, Loading, Select, StatusBadge, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { useConfirm } from "@/components/providers/UiProvider";
-import { Button } from "@/components/ui/primitives";
+import { Badge, Button } from "@/components/ui/primitives";
 import { apiPatch, apiPost } from "@/lib/api-client";
 import { passwordRuleError } from "@/lib/password";
 
@@ -25,6 +25,8 @@ interface UserRow {
   stewardScope?: { code: string; name: string } | null;
   /** 데이터 관리자 — 업로드 자료 삭제 권한 (Phase J · DEL-01 · Q143) */
   dataAdmin?: boolean;
+  /** 계정 출처 (Phase R) — local(가입) · dat(인사 동기화 · SSO 전용) · sso(SSO 자동 생성) */
+  source?: "local" | "dat" | "sso";
 }
 interface OrgRow {
   code: string;
@@ -118,6 +120,11 @@ export default function UsersAdmin() {
               <C mono>{u.empNo}</C>
               <C>
                 <span className="font-bold text-ink-deep">{u.name}</span> {u.position ?? ""}
+                {u.source === "dat" || u.source === "sso" ? (
+                  <Badge tone="info" className="ml-1">
+                    {u.source === "dat" ? "인사 동기화" : "SSO 생성"}
+                  </Badge>
+                ) : null}
               </C>
               <C className="min-w-[220px]">
                 <Select ariaLabel={`${u.name} 소속`} value={u.org.code} options={orgOptions} onChange={(v) => void changeOrg(u, v)} />

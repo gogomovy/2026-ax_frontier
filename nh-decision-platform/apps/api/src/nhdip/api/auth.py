@@ -110,6 +110,12 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
             raise HTTPException(423, "로그인 실패 횟수 초과로 잠긴 계정입니다. 잠시 후 다시 시도하거나 관리자에게 잠금 해제를 요청하세요.")
     if user.status == "disabled":
         raise HTTPException(403, "사용 중지된 계정입니다")
+    if not user.password_hash:
+        # 인사 .dat 동기화 계정(SSO 전용 · 비밀번호 없음, Phase R) — 실패 횟수를 올리지 않는다(남이 사번으로 잠가 SSO 를 막지 못하게)
+        verify_password(body.password, "$2b$12$" + "x" * 53)
+        audit(session, user.emp_no, "auth.login_failed", "user", user.emp_no, {"reason": "sso_only"}, ip)
+        session.commit()
+        raise HTTPException(401, GENERIC_FAIL)
     if not verify_password(body.password, user.password_hash):
         user.failed_count += 1
         limit = int(_setting(session, "auth.max_failed_logins", 5))
@@ -131,10 +137,12 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
 def local_login_allowed(session: Session, user: AppUser) -> bool:
     """사번 · 비밀번호 로그인 허용 범위 — 배포 설정 OIDC_LOCAL_LOGIN: all(기본) · admin(관리자 비상 로그인만) · none."""
     st = get_settings()
-    if not st.oidc_issuer:
-        return True
-    mode = (st.oidc_local_login or "all").lower()
-    return mode == "all" or (mode == "admin" and user.role == "admin")
+    modes = []
+    if st.oidc_issuer:
+        modes.append((st.oidc_local_login or "all").lower())
+    if st.nc_sso_enabled:  # 사내 SSO(NC · Phase R) — NC_SSO_LOCAL_LOGIN
+        modes.append((st.nc_sso_local_login or "all").lower())
+    return all(m == "all" or (m == "admin" and user.role == "admin") for m in modes)
 
 
 def start_session(session: Session, user: AppUser, request: Request, response: Response, action: str, detail: dict | None = None) -> None:

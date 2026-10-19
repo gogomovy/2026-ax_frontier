@@ -32,7 +32,11 @@ const nextConfig = {
   },
   async rewrites() {
     // 브라우저 → 같은 출처 /backend/* → FastAPI (세션 쿠키를 같은 출처로 유지)
-    return [{ source: "/backend/:path*", destination: `${API_INTERNAL_URL}/:path*` }];
+    // /nc/* → 벤더 NC 스크립트(사내 SSO 중계 페이지용 · API 가 배포 폴더에서 내준다, Phase R)
+    return [
+      { source: "/backend/:path*", destination: `${API_INTERNAL_URL}/:path*` },
+      { source: "/nc/:name", destination: `${API_INTERNAL_URL}/auth/nc/assets/:name` },
+    ];
   },
 };
 export default nextConfig;

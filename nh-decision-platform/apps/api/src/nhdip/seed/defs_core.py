@@ -69,6 +69,8 @@ SCREENS = [
     dict(code="ADMIN_ORGS", path="/admin/orgs", label="조직", section="사용자 · 권한", kind="admin", sort=161, admin_only=True),
     dict(code="ADMIN_SCREENS", path="/admin/screens", label="화면 권한", section="사용자 · 권한", kind="admin", sort=162, admin_only=True),
     dict(code="ADMIN_AUDIT", path="/admin/audit", label="감사 로그", section="사용자 · 권한", kind="admin", sort=163, admin_only=True),
+    # Phase R — 조직 · 인사 .dat 업로드(조직 → 인사) · 필터 규칙 · 사내 SSO 상태
+    dict(code="ADMIN_DATA_SYNC", path="/admin/data-sync", label="조직 · 인사 동기화", section="사용자 · 권한", kind="admin", sort=164, admin_only=True),
 ]
 # Phase C(ADM-01) 기본 관리자 묶음 — 관리자가 바꾸지 않은 화면만 Phase P 묶음으로 옮긴다 (ADM2-04)
 ADMIN_SECTIONS_V1 = {"관리자 홈", "사용자와 권한", "데이터와 지식", "AI · 에이전트", "계산과 규칙", "운영 모니터링"}
@@ -145,6 +147,15 @@ SETTINGS = {
     "analysis.spaces": ({}, "부서 분석 공간(Phase C · DAG-07) — 기본(risk · branch · hq)에 덧붙이거나 바꿀 값. 공간 = {label, path, tabs(기존 탭 산출물), tabsResource, resource(보고서 열람 리소스), reportPrefix, scoped, builder(분석 에이전트 만들기 허용), domain, persona, enabled}. 새 공간은 관리자 [화면 권한] 화면 등록과 함께"),
     "upload.user_targets": ({"datasets": "*", "doc_classes": "*"}, "업무 화면 [자료 올리기]에서 올릴 수 있는 대상 — datasets · doc_classes 에 \"*\"(전체) 또는 코드 목록. 올린 자료는 관리자 [자료 승인] 후 반영 (Phase C · UPL)"),
     "obs.request_log_days": (30, "요청 추적 기록(ops.request_log) 보관 일수 — 지난 기록은 워커가 하루 1회 정리"),
+    # Phase R — 조직 · 인사 .dat 동기화 · 사내 SSO 계정 정책
+    "sync.filter_rules": ([], "조직 · 인사 동기화 대상 범위(= SSO 로그인 허용 범위) — 규칙끼리 OR, 규칙 안 키끼리 AND. 키: corpType · regionCode(s) · parent3Code(s) · parent2Code(s). 예: [{\"corpType\":\"1\",\"regionCode\":\"01\"}]. 빈 목록 = 전체"),
+    "sync.org_type_rules": ([{"pattern": "(지점|출장소|금융센터|지소|영업소)$", "type": "BRANCH"}, {"pattern": "(지역본부|영업본부)$", "type": "REGION"}, {"pattern": "본부$", "type": "HQ_DIV"},
+                             {"pattern": "[부단]$", "type": "DEPT"}, {"pattern": "국$", "type": "BUREAU"}, {"pattern": "팀$", "type": "TEAM"}],
+                            "조직 .dat 사무소명 → 조직 유형(앞 규칙부터). 영업점(BRANCH) · 지역본부(REGION)는 영업점 · 영업본부 화면 범위에 쓰인다"),
+    "sync.overwrite_manual_orgs": (False, "조직 .dat 에 관리자가 만든(수동) 조직과 같은 코드가 있을 때 상위 · 유형까지 덮어쓸지 — 끄면 이름 · 사용 여부만 맞춘다"),
+    "sso.auto_create_user": (False, "사내 SSO — 인사 동기화에 없는 사번을 자동으로 만들지(기본 끔: 동기화된 사람만 로그인). 켜면 sso.default_org 소속으로"),
+    "sso.reactivate_disabled": (False, "사내 SSO — 사용 중지(퇴직 · 관리자 중지)된 계정이 SSO 로 들어오면 다시 켤지(기본 끔: 거부)"),
+    "sso.default_org": ("", "사내 SSO 자동 생성 계정의 소속 조직 코드"),
     # Phase P (AGW-06 · TDB-02~03) — 분석 에이전트 기본 정기 실행 · 팀 데이터 범위
     "analysis_agents.default_cron": ("40 6 * * *", "분석 에이전트 기본 정기 실행(cron · 업무 시간대) — 승인 때 정기 실행을 정하지 않으면 이 값. 빈 값이면 정기 실행 없음(자료 변경 때만)"),
     "analysis_agents.team_context": ({"max_datasets": 6, "max_kpis": 6, "max_relations": 12}, "분석 에이전트 팀 데이터 — 입력 밖에서 더 볼 팀 · 공통 · 연관 자료 수, 상위 부서 KPI 수, 온톨로지 관계 수"),

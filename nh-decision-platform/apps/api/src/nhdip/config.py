@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     oidc_emp_claim: str = "emp_no"  # 사번이 담긴 ID 토큰 클레임
     oidc_label: str = "사내 통합 로그인(SSO)"
     oidc_local_login: str = "all"  # all · admin(관리자 비상 로그인만) · none
+    # 사내 SSO — INISAFE Nexess(NC) 티켓 방식 (Phase R). 기본 꺼짐. 티켓 복호화는 벤더 jar 를 쓰는 검증기(infra/sso-verifier)에 맡긴다
+    nc_sso_enabled: bool = False
+    nc_sso_label: str = "NH 통합 로그인(SSO)"
+    nc_sso_login_url: str = "https://sso.nonghyup.com:15502/nls/clientLogin.jsp"  # NLS 로그인 페이지(에이전트가 주소를 못 줄 때)
+    nc_sso_allowed_toa: str = "2,3"  # 2 운영 인증서 · 3 운영 ID/PW · 92 · 93 개발
+    nc_sso_verifier: str = "http"  # http(검증기 서비스) · stub(개발 전용 — 운영에서는 거부)
+    nc_sso_verifier_url: str = "http://sso-verifier:8090"
+    nc_sso_verifier_token: str = ""  # 검증기 호출 공유 비밀(검증기 VERIFIER_TOKEN 과 같게)
+    nc_sso_local_login: str = "all"  # 사번 · 비밀번호 로그인 — all · admin(관리자 비상 로그인만) · none
+    nc_sso_assets_dir: str = "/opt/nc-js"  # 벤더 JS(NexessDemonFunc.js · json2.js · jquery-3.5.1(.min).js) 위치 — /nc/* 로 서빙
 
     bootstrap_admin_emp_no: str = "00000001"
     bootstrap_admin_password: str = ""
@@ -87,6 +97,10 @@ def check_runtime(st: Settings) -> None:
     """운영 기동 전 점검 (B.32) — 기본 비밀값으로 운영 기동을 거부한다."""
     if st.nhdip_env == "prod" and (st.session_secret == DEFAULT_SESSION_SECRET or len(st.session_secret) < 32):
         raise RuntimeError("운영(NHDIP_ENV=prod)에서는 32자 이상의 SESSION_SECRET 이 필요합니다 (make env)")
+    if st.nhdip_env == "prod" and st.nc_sso_enabled and st.nc_sso_verifier == "stub":
+        raise RuntimeError("운영(NHDIP_ENV=prod)에서는 NC_SSO_VERIFIER=stub(개발용 SSO 흉내)을 쓸 수 없습니다 — http 검증기를 쓰세요")
+    if st.nhdip_env == "prod" and st.nc_sso_enabled and len(st.nc_sso_verifier_token) < 16:
+        raise RuntimeError("운영에서 사내 SSO 를 켜려면 16자 이상의 NC_SSO_VERIFIER_TOKEN 이 필요합니다")
 
 
 def docs_enabled(st: Settings) -> bool:

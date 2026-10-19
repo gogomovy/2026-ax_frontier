@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base, utcnow
@@ -22,6 +24,9 @@ class OrgUnit(Base):
     parent_code: Mapped[str | None] = mapped_column(ForeignKey("iam.org_unit.code"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
+    # 출처 (Phase R) — manual(관리자 · 업무 구성) · dat(조직 .dat 동기화). ext = 조직 .dat 원천 필드(법인 · 본부 · 시도 · 트리 레벨 등)
+    source: Mapped[str] = mapped_column(String(10), default="manual", server_default="manual")
+    ext: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
 
@@ -29,7 +34,8 @@ class AppUser(Base):
     __tablename__ = "app_user"
     __table_args__ = {"schema": "iam"}
 
-    emp_no: Mapped[str] = mapped_column(String(8), primary_key=True)
+    # 사번 — 가입 신청은 8자리, 인사 .dat · SSO 는 개인번호(9자리) · 외부 직원(영문 포함)까지 20자 (Phase R)
+    emp_no: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(String(50))
     password_hash: Mapped[str] = mapped_column(String(100))
     org_code: Mapped[str] = mapped_column(ForeignKey("iam.org_unit.code"))
@@ -44,6 +50,9 @@ class AppUser(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)
     approved_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # 출처 (Phase R) — local(가입 신청) · dat(인사 .dat 동기화 — SSO 전용, 비밀번호 없음) · sso(SSO 자동 생성). hr = 인사 원천 필드
+    source: Mapped[str] = mapped_column(String(10), default="local", server_default="local")
+    hr: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 

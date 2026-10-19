@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from nhdip.api import admin_agentic, admin_bizconfig, admin_core, admin_data, admin_home, admin_knowledge, analysis, analysis_agents, analysis_spaces, assist, auth, cascade, db_uploads, documents, oidc, reports, screens, state
+from nhdip.api import admin_agentic, admin_bizconfig, admin_core, admin_data, admin_home, admin_knowledge, admin_sync, analysis, analysis_agents, analysis_spaces, assist, auth, cascade, db_uploads, documents, nc_sso, oidc, reports, screens, state
 from nhdip import obs
 from nhdip.config import check_runtime, docs_enabled, get_settings
 from nhdip.db import SessionLocal, engine
@@ -32,6 +32,8 @@ app = FastAPI(
 )
 app.include_router(auth.router)
 app.include_router(oidc.router)
+app.include_router(nc_sso.router)
+app.include_router(admin_sync.router)
 app.include_router(screens.router)
 app.include_router(state.router)
 app.include_router(cascade.router)
