@@ -44,7 +44,8 @@ function LoginForm() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!/^\d{8}$/.test(empNo)) return setError("사번은 숫자 8자리입니다.");
+    // 가입 사번(8자리) 또는 인사 정보의 개인번호(Phase R · 9자리 등)
+    if (!/^\d{8,20}$/.test(empNo)) return setError("사번은 숫자 8자리 이상입니다.");
     setBusy(true);
     try {
       const res = await apiPost<{ home: string }>("/auth/login", { emp_no: empNo, password });
@@ -88,13 +89,13 @@ function LoginForm() {
       {ssoError ? <FormError message={SSO_ERROR[ssoError] ?? "SSO 로그인에 실패했습니다."} /> : null}
       {localLogin === "none" ? null : (
         <form onSubmit={submit} className="flex flex-col gap-base" noValidate>
-        <Field label="사번" htmlFor="emp_no" hint="숫자 8자리">
+        <Field label="사번" htmlFor="emp_no" hint="숫자 8자리 (인사 정보 개인번호도 가능)">
           <input
             id="emp_no"
             className="input tnum"
             inputMode="numeric"
             autoComplete="username"
-            maxLength={8}
+            maxLength={20}
             value={empNo}
             onChange={(e) => setEmpNo(e.target.value.replace(/\D/g, ""))}
             required

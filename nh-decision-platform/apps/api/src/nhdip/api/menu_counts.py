@@ -64,7 +64,10 @@ def admin_counts(session: Session) -> dict[str, int]:
     def n(model: Any, *where: Any) -> int:
         return int(session.scalar(select(func.count()).select_from(model).where(*where)) or 0)
 
-    users = n(AppUser, AppUser.status == "pending")
+    from sqlalchemy import or_
+
+    # 가입 승인 대기 + 인사 동기화 사번의 비밀번호 로그인 신청(Phase R · auth.PW_REQUEST)
+    users = n(AppUser, or_(AppUser.status == "pending", AppUser.hr.has_key("pwRequest")))
     uploads = n(UploadRequest, UploadRequest.status == "pending")
     analyses = n(AnalysisAgentVersion, AnalysisAgentVersion.status == "pending")
     return {"adminUsers": users, "adminUploads": uploads, "adminAnalyses": analyses, "adminTodo": users + uploads + analyses}

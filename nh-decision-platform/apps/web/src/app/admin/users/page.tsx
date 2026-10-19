@@ -27,7 +27,12 @@ interface UserRow {
   dataAdmin?: boolean;
   /** 계정 출처 (Phase R) — local(가입) · dat(인사 동기화 · SSO 전용) · sso(SSO 자동 생성) */
   source?: "local" | "dat" | "sso";
+  /** 인사 동기화 사번이 가입 화면에서 낸 사번 · 비밀번호 로그인 신청 시각 (Phase R) — 승인 전까지 비밀번호 로그인 불가, SSO 는 그대로 */
+  passwordRequestAt?: string | null;
 }
+
+/** 승인 대기 = 가입 승인 대기 + 인사 동기화 사번의 비밀번호 로그인 신청 */
+const isPending = (u: UserRow) => u.status === "pending" || Boolean(u.passwordRequestAt);
 interface OrgRow {
   code: string;
   name: string;
@@ -44,8 +49,8 @@ export default function UsersAdmin() {
   const users = useApiData<UserRow[]>("/admin/users");
   const orgs = useApiData<{ orgs: OrgRow[] }>("/admin/orgs");
   const { run, busy } = useAction();
-  const list = useMemo(() => (users.data ?? []).filter((u) => tab === "all" || u.status === tab), [users.data, tab]);
-  const count = (s: string) => (users.data ?? []).filter((u) => u.status === s).length;
+  const list = useMemo(() => (users.data ?? []).filter((u) => tab === "all" || (tab === "pending" ? isPending(u) : u.status === tab)), [users.data, tab]);
+  const count = (s: string) => (users.data ?? []).filter((u) => (s === "pending" ? isPending(u) : u.status === s)).length;
   const orgOptions = (orgs.data?.orgs ?? []).filter((o) => o.active).map((o) => ({ value: o.code, label: `${"　".repeat(o.level - 1)}${o.name}` }));
 
   const confirm = useConfirm();
@@ -83,7 +88,11 @@ export default function UsersAdmin() {
     if (ok) await act(u.empNo, "disable", "중지했습니다(세션 폐기)");
   };
   const reject = async (u: UserRow) => {
-    const ok = await confirm({ title: "가입 신청을 반려할까요?", body: `${u.name}(${u.empNo})의 가입 신청을 반려합니다. 다시 쓰려면 새로 가입해야 합니다.`, confirmLabel: "반려", tone: "danger" });
+    const ok = await confirm(
+      u.passwordRequestAt
+        ? { title: "비밀번호 로그인 신청을 반려할까요?", body: `${u.name}(${u.empNo})이(가) 정한 비밀번호를 지웁니다. 계정은 그대로라 사내 SSO 로그인은 계속 됩니다.`, confirmLabel: "반려", tone: "danger" }
+        : { title: "가입 신청을 반려할까요?", body: `${u.name}(${u.empNo})의 가입 신청을 반려합니다. 다시 쓰려면 새로 가입해야 합니다.`, confirmLabel: "반려", tone: "danger" },
+    );
     if (ok) await act(u.empNo, "reject", "반려했습니다");
   };
   const resetPassword = async (u: UserRow) => {
@@ -160,6 +169,11 @@ export default function UsersAdmin() {
               </C>
               <C>
                 <StatusBadge status={u.status} label={STATUS_LABEL[u.status]} />
+                {u.passwordRequestAt ? (
+                  <p className="mt-0.5" title={`신청 ${fmtTime(u.passwordRequestAt)}`}>
+                    <Badge tone="attention">비밀번호 로그인 신청</Badge>
+                  </p>
+                ) : null}
                 {u.failedCount ? <p className="mt-0.5 text-[10.5px] text-critical">실패 {u.failedCount}회</p> : null}
               </C>
               <C className="text-[11px] text-steel">
@@ -169,9 +183,9 @@ export default function UsersAdmin() {
               </C>
               <C>
                 <div className="flex flex-wrap gap-1">
-                  {u.status === "pending" ? (
+                  {isPending(u) ? (
                     <>
-                      <Button size="sm" variant="confirm" disabled={busy} onClick={() => act(u.empNo, "approve", "승인했습니다")}>
+                      <Button size="sm" variant="confirm" disabled={busy} onClick={() => act(u.empNo, "approve", u.passwordRequestAt ? "비밀번호 로그인을 승인했습니다" : "승인했습니다")}>
                         승인
                       </Button>
                       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reject(u)}>

@@ -168,3 +168,67 @@ def test_sso_disabled_and_assets(db, tmp_path, monkeypatch):
     assert c.get("/auth/nc/assets/NexessDemonFunc.js").status_code == 200
     assert c.get("/auth/nc/assets/..%2Fsecret.js").status_code == 404
     assert c.get("/auth/nc/assets/none.js").status_code == 404
+
+
+def test_signup_with_hr_prefill(db, nc):
+    """가입 화면 — 인사 동기화 사번이면 소속 자동 선택 · 가린 이름, 가입 = 비밀번호 로그인 신청(관리자 승인 · SSO 는 그대로)."""
+    from sqlalchemy import delete
+
+    from nhdip.models import AppUser, OrgUnit, UserSession
+
+    admin = _client()
+    _login(admin, *ADMIN)
+    assert _up(admin, "organization", ORGS).status_code == 200
+    assert not _up(admin, "employee", "\n".join(EMPS)).json()["errors"]
+    try:
+        c = _client()
+        lk = c.get("/auth/signup/lookup", params={"emp_no": "990000001"}).json()
+        assert lk == {"found": True, "name": "김*험", "orgCode": "990112", "orgPath": ["시험디지털본부", "시험전략부", "시험기획국", "시험AI팀"], "position": "팀장"}, lk
+        assert c.get("/auth/signup/lookup", params={"emp_no": "00000001"}).json() == {"found": False, "registered": True}
+        assert c.get("/auth/signup/lookup", params={"emp_no": "20999999"}).json() == {"found": False, "registered": False}
+        assert c.get("/auth/signup/lookup", params={"emp_no": "../x"}).json() == {"found": False, "registered": False}
+        body = {"emp_no": "990000001", "name": "김 시험", "password": "abcd1234", "org_code": "990201", "position": None}
+        # 이름이 인사 정보와 다르면 거부 — 남의 사번에 비밀번호를 걸지 못하게
+        assert c.post("/auth/signup", json={**body, "name": "홍길동"}).status_code == 422
+        r = c.post("/auth/signup", json=body)
+        assert r.status_code == 201 and r.json()["status"] == "pending", r.text
+        with db() as s:
+            u = s.get(AppUser, "990000001")
+            assert u.org_code == "990112" and u.status == "active" and u.password_hash and u.hr["pwRequest"]  # 소속은 인사 정보 그대로
+        assert c.post("/auth/signup", json=body).status_code == 409  # 두 번 신청 불가
+        assert c.get("/auth/signup/lookup", params={"emp_no": "990000001"}).json()["pending"] is True
+        assert _client().post("/auth/login", json={"emp_no": "990000001", "password": "abcd1234"}).status_code == 403  # 승인 대기
+        assert "sso_error" not in _sso(_client(), "990000001").headers["location"]  # 신청 중에도 SSO 는 그대로
+        row = next(x for x in admin.get("/admin/users").json() if x["empNo"] == "990000001")
+        assert row["passwordRequestAt"]
+        from nhdip.api.menu_counts import admin_counts
+
+        with db() as s:
+            assert admin_counts(s)["adminUsers"] >= 1  # 관리자 처리 대기 건수에 들어간다
+        # 인사 동기화를 다시 해도 신청은 남는다
+        _up(admin, "employee", "\n".join(EMPS))
+        assert admin.post("/admin/users/990000001/approve").status_code == 200
+        assert _client().post("/auth/login", json={"emp_no": "990000001", "password": "abcd1234"}).status_code == 200
+        # 반려 — 비밀번호만 지우고 계정(SSO)은 그대로
+        c2 = _client()
+        assert c2.post("/auth/signup", json={**body, "emp_no": "990000002", "name": "이시험"}).status_code == 201
+        assert admin.post("/admin/users/990000002/reject").status_code == 200
+        with db() as s:
+            u2 = s.get(AppUser, "990000002")
+            assert u2.status == "active" and u2.password_hash == "" and "pwRequest" not in u2.hr
+        # 잠김(남이 비밀번호를 틀림)이어도 SSO 로 들어오면 풀린다
+        with db() as s:
+            s.get(AppUser, "990000001").status = "locked"
+            s.commit()
+        assert "sso_error" not in _sso(_client(), "990000001").headers["location"]
+        with db() as s:
+            assert s.get(AppUser, "990000001").status == "active"
+        # 인사 정보에 없는 사번은 예전 그대로 8자리 규칙
+        assert _client().post("/auth/signup", json={**body, "emp_no": "9900001"}).status_code == 422
+    finally:
+        with db() as s:
+            s.execute(delete(UserSession).where(UserSession.emp_no.like("%99000%")))
+            s.execute(delete(AppUser).where(AppUser.emp_no.in_([x.split("|")[0] for x in EMPS])))
+            for code in ("990112", "990111", "990110", "990201", "990299", "990200", "990100"):
+                s.execute(delete(OrgUnit).where(OrgUnit.code == code))
+            s.commit()

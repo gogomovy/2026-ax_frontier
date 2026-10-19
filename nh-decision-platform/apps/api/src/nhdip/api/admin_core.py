@@ -36,6 +36,7 @@ from nhdip.models import (
 )
 from nhdip.security import decrypt_secret, encrypt_secret, hash_password, mask_secret, password_policy_error
 
+from .auth import PW_REQUEST
 from .deps import client_ip, is_data_admin, require_admin, user_json
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
@@ -110,7 +111,9 @@ def users(status: str | None = None, session: Session = Depends(get_session)):
     q = select(AppUser).order_by(AppUser.status != "pending", AppUser.created_at.desc())
     if status:
         q = q.where(AppUser.status == status)
-    return [{**user_json(session, u), "failedCount": u.failed_count, "createdAt": _iso(u.created_at), "approvedBy": u.approved_by, "approvedAt": _iso(u.approved_at)} for u in session.execute(q).scalars()]
+    return [{**user_json(session, u), "failedCount": u.failed_count, "createdAt": _iso(u.created_at), "approvedBy": u.approved_by, "approvedAt": _iso(u.approved_at),
+             # 인사 동기화 사번의 사번 · 비밀번호 로그인 신청 (Phase R — 가입 화면)
+             "passwordRequestAt": ((u.hr or {}).get(PW_REQUEST) or {}).get("at")} for u in session.execute(q).scalars()]
 
 
 def _user(session: Session, emp: str) -> AppUser:
@@ -130,6 +133,17 @@ def user_action(emp: str, action: str, request: Request, session: Session = Depe
     u = _user(session, emp)
     if emp == admin.emp_no and action in ("disable", "reject"):
         raise HTTPException(400, "본인 계정은 중지할 수 없습니다")
+    if action in ("approve", "reject") and (u.hr or {}).get(PW_REQUEST):
+        # 인사 동기화 사번의 비밀번호 로그인 신청 — 계정 상태(사내 SSO)는 그대로, 비밀번호만 승인 · 반려
+        hr = {k: v for k, v in (u.hr or {}).items() if k != PW_REQUEST}
+        if action == "approve":
+            u.approved_by, u.approved_at = admin.emp_no, utcnow()
+        else:
+            u.password_hash, u.failed_count = "", 0
+        u.hr = hr
+        audit(session, admin.emp_no, f"admin.user.password_{action}", "user", emp, None, client_ip(request))
+        session.commit()
+        return user_json(session, u)
     if action == "approve":
         u.status, u.approved_by, u.approved_at = "active", admin.emp_no, utcnow()
     elif action == "reject" or action == "disable":
@@ -194,6 +208,8 @@ def user_password(emp: str, body: PasswordReset, request: Request, session: Sess
     u.failed_count = 0
     if u.status == "locked":
         u.status = "active"
+    if (u.hr or {}).get(PW_REQUEST):  # 관리자가 직접 비밀번호를 정하면 신청은 끝난 것으로
+        u.hr = {k: v for k, v in u.hr.items() if k != PW_REQUEST}
     _revoke(session, emp)
     audit(session, admin.emp_no, "admin.user.password_reset", "user", emp, None, client_ip(request))
     session.commit()

@@ -21,7 +21,10 @@ from .menu_counts import menu_counts
 
 router = APIRouter(tags=["auth"])
 EMP_RE = re.compile(r"^\d{8}$")
+# 로그인 아이디 — 가입 사번(8자리) 또는 인사 .dat 개인번호(Phase R · 동기화 형식과 같음)
+LOGIN_ID_RE = re.compile(r"^[0-9A-Za-z]{1,20}$")
 GENERIC_FAIL = "사번 또는 비밀번호가 올바르지 않습니다"
+PW_REQUEST = "pwRequest"  # app_user.hr 안 — 인사 동기화 사번의 사번 · 비밀번호 로그인 신청(관리자 승인 대기)
 
 
 class SignupIn(BaseModel):
@@ -60,11 +63,81 @@ def signup_orgs(session: Session = Depends(get_session)):
     }
 
 
+def _hr_user(session: Session, emp_no: str | None) -> AppUser | None:
+    """인사 .dat 동기화로 들어온 사번(Phase R) — 가입 화면이 소속 · 이름을 인사 정보로 채운다."""
+    if not emp_no or not LOGIN_ID_RE.match(emp_no):
+        return None
+    u = session.get(AppUser, emp_no)
+    return u if u is not None and (u.source or "local") == "dat" else None
+
+
+def _same_name(a: str | None, b: str | None) -> bool:
+    return re.sub(r"\s+", "", a or "") == re.sub(r"\s+", "", b or "") != ""
+
+
+def _mask_name(name: str) -> str:
+    n = (name or "").strip()
+    return "*" if len(n) <= 1 else n[0] + "*" if len(n) == 2 else n[0] + "*" * (len(n) - 2) + n[-1]
+
+
+@router.get("/auth/signup/lookup")
+def signup_lookup(emp_no: str, request: Request, session: Session = Depends(get_session)):
+    """가입 화면 — 사번이 인사 정보(.dat 동기화)에 있으면 소속을 자동 선택한다 (공개 · 속도 제한).
+    이름은 가려서(홍*동) 본인 확인용으로만 보여 준다. 설정 auth.signup_hr_prefill=false 면 끈다."""
+    from nhdip.orgs import org_chain
+    from nhdip.ratelimit import check as rate_check
+
+    rate_check(session, "signup_lookup_ip", client_ip(request))
+    if not bool(_setting(session, "auth.signup_hr_prefill", True)):
+        return {"found": False}
+    u = _hr_user(session, emp_no)
+    if u is None:
+        return {"found": False, "registered": bool(LOGIN_ID_RE.match(emp_no or "") and session.get(AppUser, emp_no) is not None)}
+    if (u.hr or {}).get(PW_REQUEST):
+        return {"found": False, "registered": True, "pending": True}
+    if u.password_hash or u.status != "active":
+        return {"found": False, "registered": True}
+    org = session.get(OrgUnit, u.org_code) if u.org_code else None
+    if org is None or not org.active:
+        return {"found": False}
+    return {
+        "found": True,
+        "name": _mask_name(u.name),
+        "orgCode": org.code,
+        "orgPath": [o.name for o in reversed(org_chain(session, org.code))],  # 최상위 → 소속
+        "position": u.position,
+    }
+
+
+def _claim_hr_user(session: Session, u: AppUser, body: SignupIn, request: Request) -> dict[str, Any]:
+    """인사 동기화 사번의 가입 = 사번 · 비밀번호 로그인 신청. 소속 · 이름은 인사 정보 그대로(다음 동기화도 덮어쓴다).
+    남의 사번으로 비밀번호를 걸지 못하게 이름을 대조하고, 승인 설정과 무관하게 관리자 승인 후에만 비밀번호 로그인이 된다.
+    신청 중에도 계정은 사용 상태라 사내 SSO 로그인은 그대로 된다."""
+    if (u.hr or {}).get(PW_REQUEST):
+        raise HTTPException(409, "이미 가입 신청이 접수된 사번입니다 (관리자 승인 대기)")
+    if u.password_hash or u.status != "active":
+        raise HTTPException(409, "이미 가입된 사번입니다")
+    if not _same_name(body.name, u.name):
+        raise HTTPException(422, "인사 정보의 이름과 다릅니다 — 본인 이름을 그대로 입력하세요")
+    err = password_policy_error(body.password)
+    if err:
+        raise HTTPException(422, err)
+    u.password_hash = hash_password(body.password)
+    u.failed_count = 0
+    u.hr = {**(u.hr or {}), PW_REQUEST: {"at": utcnow().isoformat(), "ip": client_ip(request)}}
+    audit(session, u.emp_no, "user.signup_hr", "user", u.emp_no, {"org": u.org_code}, client_ip(request))
+    session.commit()
+    return {"empNo": u.emp_no, "status": "pending", "message": "인사 정보로 확인했습니다. 관리자 승인 후 사번 · 비밀번호로 로그인할 수 있습니다. (사내 SSO 로그인은 지금도 됩니다)"}
+
+
 @router.post("/auth/signup", status_code=201)
 def signup(body: SignupIn, request: Request, session: Session = Depends(get_session)):
     from nhdip.ratelimit import check as rate_check
 
     rate_check(session, "signup_ip", client_ip(request))
+    hr_user = _hr_user(session, body.emp_no)
+    if hr_user is not None:
+        return _claim_hr_user(session, hr_user, body, request)
     if not EMP_RE.match(body.emp_no):
         raise HTTPException(422, "사번은 숫자 8자리입니다")
     err = password_policy_error(body.password)
@@ -90,7 +163,7 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
     st = get_settings()
     ip = client_ip(request)
     rate_check(session, "login_ip", ip)
-    if not EMP_RE.match(body.emp_no or ""):
+    if not LOGIN_ID_RE.match(body.emp_no or ""):
         raise HTTPException(401, GENERIC_FAIL)
     rate_check(session, "login_emp", body.emp_no)
     user = session.get(AppUser, body.emp_no)
@@ -126,7 +199,7 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         if user.status == "locked":
             raise HTTPException(423, "로그인 실패 횟수 초과로 계정이 잠겼습니다. 관리자에게 잠금 해제를 요청하세요.")
         raise HTTPException(401, GENERIC_FAIL)  # 실패 횟수는 알려 주지 않는다(계정 존재 여부 추정 방지)
-    if user.status == "pending":
+    if user.status == "pending" or (user.hr or {}).get(PW_REQUEST):
         raise HTTPException(403, "관리자 승인 대기 중입니다")
     if not local_login_allowed(session, user):
         raise HTTPException(403, "이 계정은 SSO 로 로그인합니다")

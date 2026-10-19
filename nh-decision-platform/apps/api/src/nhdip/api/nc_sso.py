@@ -113,6 +113,11 @@ def nc_callback(request: Request, ticket: str | None = None, nlsurl: str | None 
         if not bool(_setting(session, "sso.reactivate_disabled", False)):
             return _fail(session, request, "account", "사용 중지된 계정", emp)
         user.status = "active"
+    # 잠김(locked)은 비밀번호 추측을 막는 장치라 SSO 는 막지 않는다 — 남이 사번으로 비밀번호를 틀려 SSO 까지 막지 못하게.
+    # SSO 로 본인이 확인되면 잠금을 푼다(시간 경과 해제와 같은 효과)
+    if user.status == "locked":
+        user.status, user.failed_count = "active", 0
+        audit(session, emp, "auth.unlock_sso", "user", emp, None, client_ip(request))
     if user.status != "active":
         return _fail(session, request, "account", f"계정 상태 {user.status}", emp)
     resp = RedirectResponse(flow.get("next") or _home(session, user), status_code=303)

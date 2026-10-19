@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { buildSsoPageCsp, isSsoPagePath, ncAgentOrigin } from "@/lib/csp";
 import { asRuleList, countsLine, syncActionLabel } from "@/lib/dataSync";
+import { orgChain } from "@/lib/orgChain";
 import { SSO_ERROR, ssoStartHref, strictestLocalLogin } from "@/lib/sso";
+
+describe("가입 화면 — 인사 정보 소속 자동 선택 경로", () => {
+  const orgs = [
+    { code: "HQ", parent: null },
+    { code: "D1", parent: "HQ" },
+    { code: "T1", parent: "D1" },
+    { code: "ORPHAN", parent: "GONE" },
+    { code: "A", parent: "B" },
+    { code: "B", parent: "A" },
+  ];
+  it("최상위 → 소속 순서", () => {
+    expect(orgChain(orgs, "T1")).toEqual(["HQ", "D1", "T1"]);
+    expect(orgChain(orgs, "HQ")).toEqual(["HQ"]);
+  });
+  it("없는 조직 · 상위가 목록에 없음 · 순환이면 빈 목록(수동 선택)", () => {
+    expect(orgChain(orgs, "NOPE")).toEqual([]);
+    expect(orgChain(orgs, "ORPHAN")).toEqual([]);
+    expect(orgChain(orgs, "A")).toEqual([]);
+  });
+});
 
 describe("사내 SSO 중계 페이지 CSP (Phase R)", () => {
   it("중계 페이지 경로만 해당", () => {
