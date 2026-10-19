@@ -21,12 +21,16 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 {{ include "nhdip.selector" . }}
 {{- end }}
 
-{{/* ── 이미지 — dict "root" . "image" .Values.images.api "own" true ── */}}
+{{/* ── 이미지 — dict "root" . "image" .Values.images.api "name" "api" "own" true
+     repository 는 Nexus 에 올린 경로를 그대로 적는다(global.imageRegistry 는 선택 — 채우면 앞에 붙인다) ── */}}
 {{- define "nhdip.image" -}}
 {{- $g := .root.Values.global -}}
+{{- if not .image.repository -}}
+{{- fail (printf "[필수] images.%s.repository — Nexus 에 올린 이미지 경로(태그 앞까지)를 values-closed.yaml 에 적으세요 (예: nexus.example.local:5000/<저장소 경로>/<이미지 이름>)" .name) -}}
+{{- end -}}
 {{- $tag := .image.tag -}}
 {{- if not $tag -}}
-{{- if .own -}}{{- $tag = $g.imageTag | default .root.Chart.AppVersion -}}{{- else -}}{{- fail (printf "images.%s.tag 가 비었습니다" .image.repository) -}}{{- end -}}
+{{- if .own -}}{{- $tag = $g.imageTag | default .root.Chart.AppVersion -}}{{- else -}}{{- fail (printf "[필수] images.%s.tag 가 비었습니다" .name) -}}{{- end -}}
 {{- end -}}
 {{- $reg := trimSuffix "/" ($g.imageRegistry | default "") -}}
 {{- if $reg -}}{{ printf "%s/%s:%s" $reg .image.repository (toString $tag) }}{{- else -}}{{ printf "%s:%s" .image.repository (toString $tag) }}{{- end -}}
@@ -227,9 +231,6 @@ hostPath:
 {{/* ── 설치 전 점검 — 비어 있으면 무엇을 채울지 알려 주고 멈춘다 ── */}}
 {{- define "nhdip.validate" -}}
 {{- $v := .Values -}}
-{{- if not $v.global.imageRegistry -}}
-{{- fail "[필수] global.imageRegistry — Nexus 도커 저장소 주소를 values-closed.yaml 에 적으세요 (예: nexus.example.local:5000)" -}}
-{{- end -}}
 {{- if and (not $v.global.nodeSelector) (not $v.global.allowAnyNode) -}}
 {{- fail "[필수] global.nodeSelector — 띄울 서버를 지정하세요 (예: {kubernetes.io/hostname: <노드 이름>} · kubectl get nodes --show-labels)" -}}
 {{- end -}}

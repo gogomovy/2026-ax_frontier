@@ -52,7 +52,7 @@ spec:
       {{- include "nhdip.podCommon" . | nindent 6 }}
       containers:
         - name: litellm
-          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.litellm) }}
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.litellm "name" "litellm") }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           args: ["--config", "/app/config.yaml", "--port", "4000"]
           env:

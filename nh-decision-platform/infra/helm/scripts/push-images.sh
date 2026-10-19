@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# [내부망 · Nexus 에 접근되는 서버] 반입한 이미지 tar 를 Nexus 도커 저장소에 올린다
+# [선택 · 내부망] 반입한 이미지 tar 를 Nexus 도커 저장소에 올리는 도우미 — 직접 올려도 된다(가이드 §3)
 #
 #   bash scripts/push-images.sh <Nexus 주소>                 # 예: nexus.example.local:5000  또는  nexus.example.local:5000/nhdip
 #   TOOL=skopeo bash scripts/push-images.sh <Nexus 주소>     # 도커 데몬 없이(skopeo) — 인증: skopeo login <주소>
 #
-# 올라가는 이름 = <Nexus 주소>/<이미지 이름:태그>  (values-closed.yaml 의 global.imageRegistry 에 같은 주소를 적는다)
+# 올라가는 이름 = <Nexus 주소>/<이미지 이름:태그>  (끝에 values-closed.yaml 의 images.*.repository 에 적을 경로를 보여 준다)
 # 먼저 로그인: docker login <Nexus 호스트:포트>   (HTTP · 사설 인증서면 docker 의 insecure-registries · CA 설정)
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -42,4 +42,5 @@ while read -r file ref; do
 done < "$LIST"
 
 echo
-echo "[push] 완료 — values-closed.yaml 의 global.imageRegistry: \"$REGISTRY\""
+echo "[push] 완료 — values-closed.yaml 의 images.*.repository 에 아래 경로(태그 앞까지)를 적으세요"
+while read -r _ ref; do if [ -n "$ref" ]; then echo "  $REGISTRY/$ref"; fi; done < "$LIST"

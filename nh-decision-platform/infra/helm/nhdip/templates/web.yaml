@@ -49,7 +49,7 @@ spec:
       {{- include "nhdip.podCommon" . | nindent 6 }}
       containers:
         - name: web
-          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.web "own" true) }}
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.web "name" "web" "own" true) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
             - name: TZ

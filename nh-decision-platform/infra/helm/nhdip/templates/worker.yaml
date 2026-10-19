@@ -1,5 +1,5 @@
 {{- $c := dict "root" . "component" "worker" }}
-{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.api "own" true) }}
+{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.api "name" "api" "own" true) }}
 # 아웃박스 디스패처 · 워크플로우 엔진 · 적재 · 그래프 투영 — api 와 같은 이미지
 apiVersion: apps/v1
 kind: Deployment

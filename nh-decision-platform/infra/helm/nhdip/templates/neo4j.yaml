@@ -38,7 +38,7 @@ spec:
       {{- include "nhdip.podCommon" . | nindent 6 }}
       containers:
         - name: neo4j
-          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.neo4j) }}
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.neo4j "name" "neo4j") }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
             - name: TZ

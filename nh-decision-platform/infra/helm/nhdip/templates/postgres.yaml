@@ -47,7 +47,7 @@ spec:
       {{- include "nhdip.podCommon" . | nindent 6 }}
       containers:
         - name: postgres
-          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.postgres) }}
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.postgres "name" "postgres") }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
             - name: TZ

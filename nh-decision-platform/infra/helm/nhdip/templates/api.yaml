@@ -1,5 +1,5 @@
 {{- $c := dict "root" . "component" "api" }}
-{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.api "own" true) }}
+{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.api "name" "api" "own" true) }}
 {{- $assets := .Values.app.ncSso.assets }}
 {{- $hasAssets := and .Values.app.ncSso.enabled (or $assets.hostPath $assets.configMap $assets.existingClaim) }}
 # 이름 'api' 고정 — 웹 이미지가 http://api:8000 으로 빌드되어 있다

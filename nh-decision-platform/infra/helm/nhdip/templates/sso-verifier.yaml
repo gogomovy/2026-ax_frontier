@@ -35,7 +35,7 @@ spec:
       {{- include "nhdip.podCommon" . | nindent 6 }}
       containers:
         - name: sso-verifier
-          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.ssoVerifier "own" true) }}
+          image: {{ include "nhdip.image" (dict "root" . "image" .Values.images.ssoVerifier "name" "ssoVerifier" "own" true) }}
           imagePullPolicy: {{ .Values.global.imagePullPolicy }}
           env:
             - name: TZ

@@ -6,9 +6,22 @@
 #  · 비어 있는 [필수] 값이 있으면 helm install 이 무엇을 채울지 알려 주고 멈춘다
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ── 이미지 (Nexus 에 올린 경로) ──────────────────────────────────
+# [채우기·필수] repository = Nexus 에 올린 이미지 경로(호스트:포트 포함, 태그 제외). 예: nexus.example.local:5000/nhdip/api
+#               tag = 올린 태그. 자체 이미지(api · web · elasticsearch · ssoVerifier)는 비우면 1.0.0(차트 appVersion)
+#               반입 묶음의 원래 이름 · 태그는 images/images.txt 에 있다
+images:
+  api: {repository: "", tag: ""}             # 원래 nhdip/api:1.0.0 (api · worker 공용)
+  web: {repository: "", tag: ""}             # 원래 nhdip/web:1.0.0
+  elasticsearch: {repository: "", tag: ""}   # 원래 nhdip/elasticsearch:1.0.0
+  postgres: {repository: "", tag: pg16}      # 원래 pgvector/pgvector:pg16
+  neo4j: {repository: "", tag: 5.26-community}   # 원래 neo4j:5.26-community
+  # 사내 SSO 를 켤 때만(ssoVerifier.enabled: true)
+  ssoVerifier: {repository: "", tag: ""}     # 원래 nhdip/sso-verifier:1.0.0
+  # 내장 LiteLLM 을 켤 때만(litellm.enabled: true)
+  litellm: {repository: "", tag: main-stable}    # 원래 berriai/litellm:main-stable
+
 global:
-  # [채우기·필수] Nexus 도커 저장소 주소 — push-images.sh 에 넣은 값과 같게. 예: nexus.example.local:5000  /  nexus.example.local:5000/nhdip
-  imageRegistry: ""
   # [채우기·선택] Nexus 가 익명 받기를 막으면 docker-registry Secret 이름. 예: [nexus-pull]
   imagePullSecrets: []
   # [채우기·필수] 띄울 서버(노드) — kubectl get nodes 의 이름. 예: kubernetes.io/hostname: nhnavi-node01

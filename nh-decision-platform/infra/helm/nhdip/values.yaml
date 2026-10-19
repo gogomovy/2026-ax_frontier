@@ -12,8 +12,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 global:
-  # [필수] Nexus 도커 저장소 주소(경로 포함 가능) — 예: nexus.example.local:5000  또는  nexus.example.local:5000/nhdip
-  #        이미지 = <imageRegistry>/<images.*.repository>:<tag>  (scripts/push-images.sh 가 같은 규칙으로 올린다)
+  # (선택) 저장소 공통 앞부분 — 채우면 이미지 = <imageRegistry>/<images.*.repository>:<tag>.
+  #        비우면 images.*.repository 를 Nexus 전체 경로로 그대로 쓴다(values-closed.yaml 은 이 방식)
   imageRegistry: ""
   # 자체 이미지 태그 — 비우면 Chart.yaml appVersion
   imageTag: ""
@@ -33,6 +33,7 @@ global:
 secrets:
   name: nhdip-secrets
 
+# 이미지 경로 — values-closed.yaml 에서 Nexus 에 올린 경로로 바꾼다(비우면 설치를 멈춘다)
 images:
   # 자체 이미지 (bundle.sh 가 빌드) — tag 를 비우면 global.imageTag → appVersion
   api: {repository: nhdip/api, tag: ""}

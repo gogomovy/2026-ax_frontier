@@ -1,7 +1,7 @@
 {{- if .Values.elasticsearch.enabled }}
 {{- $c := dict "root" . "component" "elasticsearch" }}
 {{- $es := .Values.elasticsearch }}
-{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.elasticsearch "own" true) }}
+{{- $img := include "nhdip.image" (dict "root" . "image" .Values.images.elasticsearch "name" "elasticsearch" "own" true) }}
 apiVersion: v1
 kind: Service
 metadata:
