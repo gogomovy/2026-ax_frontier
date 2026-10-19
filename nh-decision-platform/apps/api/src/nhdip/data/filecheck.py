@@ -16,7 +16,8 @@ import zipfile
 from typing import Any
 
 ALLOWED = {
-    "dataset": {".csv", ".tsv", ".xlsx", ".json"},
+    # .md — DRM 엑셀을 마크다운 표로 바꿔 올리는 경우(Phase Q · MD-01). 텍스트 검사(이진 데이터 · 인코딩)를 그대로 받는다
+    "dataset": {".csv", ".tsv", ".xlsx", ".json", ".md"},
     "document": {".pdf", ".hwpx", ".hwp", ".txt", ".md", ".html"},
     "contract": {".xlsx"},
 }
@@ -71,13 +72,19 @@ def _check_zip(content: bytes, cfg: dict[str, Any], kind: str) -> None:
             raise UploadRejected("외부 연결(External Link)이 포함된 엑셀은 올릴 수 없습니다")
 
 
-def _check_text(content: bytes) -> None:
+def _check_text(content: bytes, allow_cp949: bool = False) -> None:
     if b"\x00" in content[:65536]:
         raise UploadRejected("텍스트 파일에 이진 데이터가 섞여 있습니다")
     try:
         content.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise UploadRejected("텍스트 파일은 UTF-8 로 저장해 주세요") from exc
+        if allow_cp949:
+            try:
+                content.decode("cp949")
+                return
+            except UnicodeDecodeError:
+                pass
+        raise UploadRejected("텍스트 파일은 UTF-8 로 저장해 주세요" + (" (또는 CP949)" if allow_cp949 else "")) from exc
 
 
 def _antivirus(content: bytes, cfg: dict[str, Any]) -> None:
@@ -134,6 +141,7 @@ def check_upload(filename: str | None, content: bytes, purpose: str, cfg: dict[s
         if c["block_pdf_active"] and _PDF_ACTIVE.search(content):
             raise UploadRejected("스크립트 · 실행 동작 · 첨부 파일이 포함된 PDF 는 올릴 수 없습니다(인쇄 → PDF 로 다시 저장)")
     else:
-        _check_text(content)
+        # 마크다운은 내부망 변환기 기본값(CP949)도 받는다 — 읽을 때 UTF-8 → CP949 순 (data/mdtable.decode)
+        _check_text(content, allow_cp949=ext == ".md")
     _antivirus(content, c)
     return name

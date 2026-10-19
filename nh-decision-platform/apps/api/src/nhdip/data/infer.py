@@ -167,6 +167,16 @@ def _read(content: bytes, filename: str) -> tuple[list[dict[str, Any]], dict[str
             parser["header_row"] = idx + 1
         if wb.worksheets[0].title and len(wb.worksheets) > 1:
             parser["sheet"] = wb.worksheets[0].title
+    elif name.endswith((".md", ".markdown")):
+        # 마크다운 표(Phase Q · MD-02) — 표가 여럿이면 고른 표의 제목을 parser.sheet 로 남겨 다음 달 파일도 같은 표를 읽는다
+        from .mdtable import grid as md_grid
+
+        full, picked, n_tables = md_grid(content)
+        idx = _header_row(full[:40])
+        if idx:
+            parser["header_row"] = idx + 1
+        if n_tables > 1 and picked.title:
+            parser["sheet"] = picked.title
     elif name.endswith((".csv", ".txt", ".tsv")):
         text = content.decode("utf-8-sig", errors="replace")
         delim = "\t" if name.endswith(".tsv") else ","

@@ -43,7 +43,12 @@ def extract_text(filename: str, content: bytes) -> tuple[str, list[tuple[int, st
         text = "\n\n".join(line.strip() for line in text.splitlines() if line.strip())
         return text, [(1, text)]
     if name.endswith((".txt", ".md", ".csv", ".json", ".html")):
-        text = content.decode("utf-8-sig", errors="replace")
+        if name.endswith(".md"):
+            from .mdtable import decode as md_decode
+
+            text = md_decode(content)  # UTF-8 → CP949 (Phase Q · MD-05)
+        else:
+            text = content.decode("utf-8-sig", errors="replace")
         if name.endswith(".html"):
             text = re.sub(r"<[^>]+>", " ", text)
         return text, [(1, text)]

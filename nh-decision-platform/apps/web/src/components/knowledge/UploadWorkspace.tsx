@@ -10,7 +10,7 @@ import { FileDrop } from "@/components/ui/FileDrop";
 import { Advanced, EmptyState, KeyValueList, Notice } from "@/components/ui/Layout";
 import { Badge, Button } from "@/components/ui/primitives";
 import { api } from "@/lib/api-client";
-import { confidentSuggestion, kindOf, suggestDatasets, titleFromFile, type DatasetSuggestion } from "@/lib/upload-match";
+import { confidentSuggestion, kindOfContent, suggestDatasets, titleFromFile, type DatasetSuggestion } from "@/lib/upload-match";
 
 /*
  * 업무 자료 올리기 (Phase C · UPL-01~03 · Q99 → Phase E · UXF-01~05 · Q121)
@@ -382,7 +382,7 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
   }, [opts.datasets, q, sugMap, target]);
   const visible = showAll || q.trim() ? ordered : ordered.slice(0, LIST_HEAD);
 
-  const pickFile = (f: File | null) => {
+  const pickFile = async (f: File | null) => {
     setFailure(null);
     setFile(f);
     setProposing(false);
@@ -392,7 +392,9 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
       return;
     }
     setTextMode(false);
-    const k = kindOf(f.name, opts.accept) ?? "dataset";
+    // .md 는 내용으로 구분 — 표가 있으면 정형 자료(DRM 엑셀을 변환한 파일), 없으면 문서 (Phase Q · MD-04). 표 기호는 ASCII 라 인코딩과 관계없다
+    const mdText = /\.md$/i.test(f.name) ? await f.text().catch(() => null) : null;
+    const k = kindOfContent(f.name, mdText, opts.accept) ?? "dataset";
     if (k === "document") {
       if (kind !== "document") {
         setKind("document");
@@ -547,9 +549,11 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                   accept={acceptAll}
                   maxMb={opts.maxMb}
                   file={file}
-                  onFile={pickFile}
+                  onFile={(f) => void pickFile(f)}
                   label="올릴 파일을 여기로 끌어다 놓거나 눌러서 고르세요"
-                  hint={`정형 자료 ${fmt(opts.accept.dataset)} · 문서 ${fmt(opts.accept.document)}${opts.maxMb ? ` · 최대 ${opts.maxMb}MB` : ""} — 파일 이름으로 어떤 자료인지 추천합니다`}
+                  hint={`정형 자료 ${fmt(opts.accept.dataset)} · 문서 ${fmt(opts.accept.document)}${opts.maxMb ? ` · 최대 ${opts.maxMb}MB` : ""} — 파일 이름으로 어떤 자료인지 추천합니다${
+                    opts.accept.dataset.includes(".md") ? ". .md 는 표(| 열 | 아래 |---|)가 있으면 정형 자료, 없으면 문서로 올라갑니다(DRM 엑셀을 표로 바꾼 파일)" : ""
+                  }`}
                   data-testid="upload"
                 />
                 {!file ? (

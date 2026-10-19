@@ -17,7 +17,8 @@ import { api, apiDelete, apiGetC, apiPatch, apiPost } from "@/lib/api-client";
 import { confidentSuggestion, suggestDatasets, titleFromFile } from "@/lib/upload-match";
 
 /** 관리자 업로드 형식 — 안내 문구와 파일 입력의 accept 를 같은 값으로 (Phase E · F7) */
-const DATASET_ACCEPT = ".csv,.tsv,.xlsx,.json";
+// .md — 마크다운 표(DRM 엑셀을 변환한 파일 · Phase Q MD-01)
+const DATASET_ACCEPT = ".csv,.tsv,.xlsx,.json,.md";
 const DOCUMENT_ACCEPT = ".pdf,.hwpx,.hwp,.txt,.md,.html";
 const fmtAccept = (a: string) => a.replaceAll(",", " · ");
 

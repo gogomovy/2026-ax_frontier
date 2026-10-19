@@ -25,8 +25,16 @@ DATE_RE = re.compile(r"(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})
 ISSUERS = ("금융위원회", "금융감독원", "한국은행", "기획재정부", "예금보험공사", "신용보증기금", "서민금융진흥원", "농협중앙회", "NH농협은행", "농협금융지주", "금융결제원", "국토교통부")
 
 
-def is_structured(filename: str) -> bool:
-    return (filename or "").lower().endswith(STRUCTURED_EXT)
+def is_structured(filename: str, content: bytes | None = None) -> bool:
+    """정형 자료인가 — 표 파일 확장자, 또는 표(파이프 표)가 든 마크다운(.md · Phase Q MD-03). 표가 없는 .md 는 문서."""
+    name = (filename or "").lower()
+    if name.endswith(STRUCTURED_EXT):
+        return True
+    if name.endswith((".md", ".markdown")) and content is not None:
+        from .mdtable import is_md_table
+
+        return is_md_table(content)
+    return False
 
 
 # ═════════════════════════ 정형 ═════════════════════════

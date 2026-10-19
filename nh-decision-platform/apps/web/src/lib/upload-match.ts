@@ -39,6 +39,25 @@ export function kindOf(name: string, accept: { dataset: string; document: string
   return null;
 }
 
+/** 마크다운에 데이터 행이 있는 파이프 표('| a | b |' 아래 '|---|---|')가 있는가 — 서버 data/mdtable.is_md_table 과 같은 기준 (Phase Q · MD-04) */
+export function hasMdTable(text: string): boolean {
+  const sep = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i + 2 < lines.length; i++) {
+    if (lines[i].includes("|") && !sep.test(lines[i]) && sep.test(lines[i + 1]) && lines[i + 2].includes("|") && lines[i + 2].trim()) return true;
+  }
+  return false;
+}
+
+/** .md 는 내용으로 구분 — 표가 있으면 정형 자료, 없으면 문서. 그 밖은 확장자 (kindOf) */
+export function kindOfContent(name: string, text: string | null, accept: { dataset: string; document: string }): "dataset" | "document" | null {
+  if (ext(name) === ".md") {
+    if (text !== null && !hasMdTable(text)) return acceptsFile(name, accept.document) ? "document" : null;
+    return acceptsFile(name, accept.dataset) ? "dataset" : acceptsFile(name, accept.document) ? "document" : null;
+  }
+  return kindOf(name, accept);
+}
+
 /** 파일 이름에서 확장자를 뺀 제목 */
 export function titleFromFile(name: string): string {
   const base = name.replace(/\.[^.]+$/, "");

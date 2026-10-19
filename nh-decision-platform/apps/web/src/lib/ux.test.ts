@@ -109,3 +109,17 @@ describe("비밀번호 정책 (INT-01 · 서버 password_policy_error 와 같음
     expect(passwordRuleError(pw)).toBe(want);
   });
 });
+
+describe("마크다운 표 구분 (Phase Q · MD-04)", () => {
+  const A = { dataset: ".csv,.xlsx,.md", document: ".pdf,.md" };
+  const table = "## 시트1\n| 상품명 | 잔액 |\n|---|---:|\n| A | 1,234 |\n";
+  it("표가 있으면 정형 자료, 없으면 문서", async () => {
+    const { hasMdTable, kindOfContent } = await import("./upload-match");
+    expect(hasMdTable(table)).toBe(true);
+    expect(hasMdTable("# 제목\n\n본문만 있는 문서")).toBe(false);
+    expect(hasMdTable("| 머리글 | 만 |\n|---|---|\n")).toBe(false); // 데이터 행 없음
+    expect(kindOfContent("변환.md", table, A)).toBe("dataset");
+    expect(kindOfContent("메모.md", "그냥 글", A)).toBe("document");
+    expect(kindOfContent("a.xlsx", null, A)).toBe("dataset");
+  });
+});

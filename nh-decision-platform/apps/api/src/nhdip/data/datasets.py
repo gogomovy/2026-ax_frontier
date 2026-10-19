@@ -95,6 +95,21 @@ def _read_table(content: bytes, filename: str, parser: dict[str, Any], cands: se
                 continue
             out.append({header[i]: r[i] for i in range(min(len(header), len(r)))})
         return out
+    if name.endswith((".md", ".markdown")):
+        # 마크다운 표(Phase Q · MD-01) — DRM 엑셀을 .md 로 바꿔 올린 파일. 표 고르기 · 머리글 줄 찾기는 엑셀과 같은 규칙
+        from .mdtable import grid as md_grid
+
+        rows = md_grid(content, parser, cands)[0]
+        header_idx = int(parser["header_row"]) - 1 if parser.get("header_row") else _header_index(rows, cands)
+        if header_idx >= len(rows):
+            return []
+        header = [str(h).strip() if h is not None else f"col{i}" for i, h in enumerate(rows[header_idx])]
+        out = []
+        for r in rows[header_idx + 1 :]:
+            if _is_note(r):
+                continue
+            out.append({header[i]: r[i] for i in range(min(len(header), len(r)))})
+        return out
     if name.endswith((".csv", ".txt", ".tsv")):
         text = content.decode(parser.get("encoding", "utf-8-sig"), errors="replace")
         delim = "\t" if name.endswith(".tsv") else parser.get("delimiter", ",")
@@ -108,7 +123,7 @@ def _read_table(content: bytes, filename: str, parser: dict[str, Any], cands: se
             if not _is_note(r.values()):
                 out.append(r)
         return out
-    raise IngestError("지원 형식: .csv · .tsv · .xlsx · .json")
+    raise IngestError("지원 형식: .csv · .tsv · .xlsx · .json · .md(표)")
 
 
 def _coerce(value: Any, typ: str) -> Any:

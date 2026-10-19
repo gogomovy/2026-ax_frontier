@@ -159,7 +159,8 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
         "datasets": out,
         "docClasses": _doc_classes(session, user),
         "canPropose": bool(_targets(session).get("new_datasets", True)),
-        "accept": {"dataset": ".csv,.tsv,.xlsx,.json", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"},
+        # .md 는 두 쪽 모두 — 표가 있으면 정형 자료, 없으면 문서(화면이 내용을 보고 고른다 · Phase Q MD-04)
+        "accept": {"dataset": ".csv,.tsv,.xlsx,.json,.md", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"},
         # 파일 놓기 영역이 먼저 알려 주는 용량 한도(Phase E · UXF-01) — 실제 차단은 서버 보안 검사
         "maxMb": int(max_mb) if isinstance(max_mb, (int, float)) else 50,
     }
@@ -829,8 +830,11 @@ async def intake_create(
     if origin not in ("bank", "ext"):
         raise HTTPException(422, "origin 은 bank(당행) | ext(외부)")
     if file is not None and file.filename:
-        purpose = "dataset" if is_structured(file.filename) else "document"
+        purpose = "dataset" if is_structured(file.filename) or file.filename.lower().endswith(".md") else "document"
         name, content = await read_upload(file, purpose, session, request, user.emp_no)
+        if name.lower().endswith(".md"):
+            # 마크다운은 내용으로 — 표가 있으면 정형 자료, 없으면 문서 (Phase Q · MD-03)
+            purpose = "dataset" if is_structured(name, content) else "document"
     elif (text or "").strip():
         purpose = "document"
         name, content = f"{re.sub(r'[^0-9A-Za-z가-힣]+', '_', title or '붙여넣은_본문')[:60]}.txt", (text or "").encode("utf-8")
