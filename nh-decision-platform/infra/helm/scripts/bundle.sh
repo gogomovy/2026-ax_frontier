@@ -6,8 +6,10 @@
 #   bash infra/helm/scripts/bundle.sh                 # 결과: dist/nhdip-closed-<TAG>.tar
 #   TAG=1.0.1 bash infra/helm/scripts/bundle.sh       # 태그 지정(기본: Chart.yaml appVersion)
 #   WITH_SSO=0 WITH_LITELLM=1 bash infra/helm/scripts/bundle.sh
+#   DOCKER=podman bash infra/helm/scripts/bundle.sh   # 도커 대신 podman
 #
-# 필요: docker(BuildKit) · tar · sha256sum(또는 shasum) · helm(없으면 차트를 tar 로 묶는다)
+# 필요: docker(BuildKit) 또는 podman · tar · sha256sum(또는 shasum) · python3(MANIFEST) · helm(없으면 차트를 tar 로 묶는다)
+# 결과 묶음: images/*.tar · images/images.txt · MANIFEST.md · manifest.json · chart/*.tgz · values-closed.yaml · 가이드 · scripts/ · sso/(벤더 파일) · VERSION · SHA256SUMS
 # Windows 는 Git Bash 또는 WSL 에서 Docker Desktop 과 함께 실행한다. 비밀값은 이 묶음에 들어가지 않는다.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -21,6 +23,10 @@ TAG=${TAG:-$APP_VERSION}
 PLATFORM=${PLATFORM:-linux/amd64}
 WITH_SSO=${WITH_SSO:-1}
 WITH_LITELLM=${WITH_LITELLM:-0}
+# 사내 SSO 벤더 파일(infra/sso-verifier/libs/*.jar · infra/sso/nc-js/*.js)을 묶음 sso/ 에 넣는다(있을 때만 · 사내 반입용)
+WITH_SSO_FILES=${WITH_SSO_FILES:-1}
+# docker 또는 podman
+DOCKER=${DOCKER:-docker}
 DIST=${DIST:-dist}
 NAME="nhdip-closed-${TAG}"
 OUT="$DIST/$NAME"
@@ -33,18 +39,22 @@ LITELLM_IMAGE=${LITELLM_IMAGE:-docker.litellm.ai/berriai/litellm:main-stable@sha
 
 log() { printf '\n\033[1m[bundle] %s\033[0m\n' "$*"; }
 need() { command -v "$1" >/dev/null 2>&1 || { echo "[bundle] 오류: $1 이 필요합니다" >&2; exit 1; }; }
-need docker
+need "$DOCKER"
 need tar
+docker() { command "$DOCKER" "$@"; }
 
 rm -rf "$OUT"
 mkdir -p "$OUT/images" "$OUT/chart" "$OUT/scripts"
 : > "$OUT/images/images.txt"
 
-# 이미지 1개 저장 — images.txt 에 "<tar 파일> <이미지 이름:태그>" 를 적는다(push-images.sh 가 읽는다)
+# 이미지 1개 저장 — images.txt 에 "<tar 파일> <이미지 이름:태그>" 를 적는다(push-images.sh 가 읽는다).
+# 이름은 docker.io/ 를 붙여 저장한다 — podman 으로 만들어도 docker load 뒤 같은 이름(nhdip/api:1.0.0 등)이 된다
 save() {
-  local ref="$1" file="$2"
+  local ref="$1" file="$2" full="$1"
+  case "$ref" in */*/*) ;; */*) full="docker.io/$ref" ;; *) full="docker.io/library/$ref" ;; esac
   log "저장 $ref → images/$file"
-  docker save -o "$OUT/images/$file" "$ref"
+  [ "$full" = "$ref" ] || docker tag "$ref" "$full"
+  docker save -o "$OUT/images/$file" "$full"
   echo "$file $ref" >> "$OUT/images/images.txt"
 }
 
@@ -103,6 +113,16 @@ cp infra/helm/values-closed.yaml "$OUT/"
 cp "infra/helm/폐쇄망_헬름배포_가이드.md" "$OUT/"
 cp infra/helm/scripts/push-images.sh infra/helm/scripts/create-secrets.sh "$OUT/scripts/"
 chmod +x "$OUT/scripts/"*.sh
+if [ "$WITH_SSO_FILES" = "1" ]; then
+  if ls infra/sso-verifier/libs/*.jar >/dev/null 2>&1 && ls infra/sso/nc-js/*.js >/dev/null 2>&1; then
+    log "사내 SSO 벤더 파일 → sso/libs · sso/nc-js"
+    mkdir -p "$OUT/sso/libs" "$OUT/sso/nc-js"
+    cp infra/sso-verifier/libs/*.jar "$OUT/sso/libs/"
+    cp infra/sso/nc-js/*.js "$OUT/sso/nc-js/"
+  else
+    echo "[bundle] 주의: 사내 SSO 벤더 파일이 없어 sso/ 를 넣지 않습니다(infra/sso-verifier/libs · infra/sso/nc-js README 참고)"
+  fi
+fi
 cat > "$OUT/VERSION" <<EOF
 tag=$TAG
 chart=$CHART_VERSION
@@ -110,6 +130,12 @@ platform=$PLATFORM
 built=$(date '+%Y-%m-%d %H:%M:%S %z')
 commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
 EOF
+# 매니페스트 — 이미지 이름 · ID · 체크섬 · values 키 (MANIFEST.md · manifest.json, images.txt 도 다시 씀)
+if command -v python3 >/dev/null 2>&1; then
+  python3 infra/helm/scripts/manifest.py "$OUT"
+else
+  echo "[bundle] 주의: python3 가 없어 MANIFEST.md 를 만들지 않습니다(images/images.txt 만)"
+fi
 
 # ── 무결성 · 묶음 ──────────────────────────────────────────────
 log "체크섬"
