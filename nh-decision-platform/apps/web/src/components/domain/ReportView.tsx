@@ -257,7 +257,7 @@ export function ReportView({ report }: { report: ReportDoc }) {
 }
 
 /** 표 · 그래프를 다시 계산하지 못했을 때(자료 삭제 포함) — 수치의 '갱신 실패' 표시와 같은 취지로 이전 값임을 알린다 */
-function StaleNotice({ reason, what }: { reason?: string; what: string }) {
+export function StaleNotice({ reason, what }: { reason?: string; what: string }) {
   return (
     <p role="status" className="mb-2 rounded-lg bg-critical-faint px-md py-2 text-[12px] text-critical" data-report-stale>
       <strong className="font-bold">갱신 실패 — 이전 값</strong>입니다. 이 {what}은(는) 최근 계산에 실패해 마지막 값을 보여 주고 있습니다{reason ? ` (${reason})` : ""}.

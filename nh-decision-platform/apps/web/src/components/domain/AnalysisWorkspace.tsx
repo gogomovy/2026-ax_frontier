@@ -29,15 +29,11 @@ import type { AnalysisTab, ComparisonRow, ComparisonView, DomainCardInfo, Eviden
 import { goalByRole, threshold } from "@/lib/uiConfig";
 import { useUiConfig } from "@/components/providers/SessionProvider";
 import { useSeen } from "@/components/ui/useSeen";
+import { HQ_ANALYSIS_TABS, type HqAnalysisTabKey } from "@/lib/hqAnalysisTabs";
 
-type TabKey = "revenue" | "corporate" | "household" | "comparison";
+type TabKey = HqAnalysisTabKey;
 
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "revenue", label: "여신 종합수익" },
-  { key: "corporate", label: "기업여신" },
-  { key: "household", label: "가계여신" },
-  { key: "comparison", label: "기업·가계 비교" },
-];
+const TABS = HQ_ANALYSIS_TABS;
 
 /** 목표 판정 → 탭의 점 색 (미달 · 근접 = 주황, 초과 = 빨강) */
 function dotOf(goal?: Goal): Severity | undefined {
@@ -67,6 +63,7 @@ export function AnalysisWorkspace({
   workflow,
   custom = [],
   builderHref = null,
+  initialTab = "revenue",
 }: {
   overview: LoanOverview;
   comparison: ComparisonView;
@@ -80,8 +77,10 @@ export function AnalysisWorkspace({
   custom?: AnalysisTab[];
   /** 분석 에이전트 만들기 (권한 있을 때만) */
   builderHref?: string | null;
+  /** 처음 열 탭 (주소 ?tab= · 맞춤 분석 탭에서 돌아올 때) */
+  initialTab?: TabKey;
 }) {
-  const [tab, setTab] = useState<TabKey>("revenue");
+  const [tab, setTab] = useState<TabKey>(initialTab);
   const cfg = useUiConfig();
   const seen = useSeen();
   const { domain } = useSector(domains);

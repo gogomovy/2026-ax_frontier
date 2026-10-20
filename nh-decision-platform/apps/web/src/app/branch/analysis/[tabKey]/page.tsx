@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PrimeCorpReport } from "@/components/analysis/report/branch/PrimeCorpReport";
 import { SeominReport } from "@/components/analysis/report/branch/SeominReport";
 import { ReportShell } from "@/components/analysis/report/ReportShell";
+import { DynamicReport } from "@/components/analysis/report/DynamicReport";
 import { NextStep } from "@/components/ui/primitives";
 import { officeParam, withOffice } from "@/lib/branchOffice";
 import { getBranchReport, getBranchTabs } from "@/lib/data";
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 function bodyOf(report: ReportDoc) {
   if (report.kind === "branch_prime_corp") return <PrimeCorpReport report={report} rerun={report.workflow} />;
   if (report.kind === "branch_seomin") return <SeominReport report={report} rerun={report.workflow} />;
+  if (report.kind === "dynamic") return <DynamicReport report={report} rerun={report.workflow} />;
   return null;
 }
 /** 영업점 STEP 2 — 기준 변경 항목별 분석 결과 (시안 346:2 우량기업여신 · 348:2 서민금융) */

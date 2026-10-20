@@ -3,6 +3,7 @@ import { ReportShell } from "@/components/analysis/report/ReportShell";
 import { InclusiveRiskReport } from "@/components/analysis/report/risk/InclusiveRiskReport";
 import { ModelMonitoringReport } from "@/components/analysis/report/risk/ModelMonitoringReport";
 import { ProvisionShareReport } from "@/components/analysis/report/risk/ProvisionShareReport";
+import { DynamicReport } from "@/components/analysis/report/DynamicReport";
 import { NextStep } from "@/components/ui/primitives";
 import { getAnalysisTabs, getReport, getRiskDashboard } from "@/lib/data";
 import { isProvisionShareReport } from "@/lib/provisionShare";
@@ -30,6 +31,9 @@ export default async function AnalysisTabPage(props: { params: Promise<{ tabKey:
       <InclusiveRiskReport report={report} rerun={report.workflow} />
     ) : report.kind === "dynamic" && isProvisionShareReport(report) ? (
       <ProvisionShareReport report={report} />
+    ) : report.kind === "dynamic" ? (
+      // 그 밖의 분석 에이전트 탭 — 같은 시안 조각(kit)으로
+      <DynamicReport report={report} rerun={report.workflow} />
     ) : null;
   return (
     <ReportShell

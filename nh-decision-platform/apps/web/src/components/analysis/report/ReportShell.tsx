@@ -16,7 +16,7 @@ import type { AnalysisTab, ReportDoc } from "@/lib/types";
 /**
  * 2단계 분석 결과 화면 틀 (시안 346 · 348 · 350 · 352) — 영업점 · 신용리스크관리부.
  * 22px 제목 + 기준월 · 보고서 다운로드(내보내기 자리) → 밑줄 탭(짧은 이름 · 확인 안 한 점 · [+]) · 이전 분석 → 본문 → 다음 단계.
- * 본문을 그리지 않은 보고서 종류(분석 에이전트 · 이전 세대 등)는 기존 보고서 보기(목차 + 본문)로 보여 준다.
+ * 분석 에이전트 탭(kind dynamic)은 DynamicReport 본문(같은 kit), 본문을 그리지 않은 보고서(이전 세대 등)는 기존 보고서 보기(목차 + 본문)로 보여 준다.
  */
 export function ReportShell({
   title,
@@ -30,6 +30,7 @@ export function ReportShell({
   office,
   builderHref,
   next,
+  lead = [],
   children,
 }: {
   title: string;
@@ -45,6 +46,8 @@ export function ReportShell({
   /** 분석 에이전트 만들기 (권한 있을 때만) */
   builderHref?: string | null;
   next?: ReactNode;
+  /** 앞에 붙일 고정 탭 — 같은 화면의 기본 분석으로 돌아가는 링크(종합기획부 [데이터 분석] 탭 · Q109) */
+  lead?: { href: string; label: string }[];
   /** 시안대로 그린 본문 — 없으면 기존 보고서 보기 */
   children?: ReactNode;
 }) {
@@ -69,7 +72,7 @@ export function ReportShell({
           <SeenTabLinks
             label="분석 탭"
             activeHref={`${basePath}/${activeKey}${query}`}
-            items={tabs.map((tab) => ({
+            items={[...lead.map((l) => ({ href: l.href, label: l.label })), ...tabs.map((tab) => ({
               href: `${basePath}/${tab.tabKey}${query}`,
               label: tab.dynamic ? (
                 <>
@@ -82,7 +85,7 @@ export function ReportShell({
               dot: tab.severity,
               seenKey: tabSeenKey(tab),
               signature: tabSignature(tab),
-            }))}
+            }))]}
             after={
               <>
                 {builderHref ? <AddAgentTab href={builderHref} /> : null}

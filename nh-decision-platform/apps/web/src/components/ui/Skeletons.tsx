@@ -250,6 +250,8 @@ const REPORT_LAYOUT = {
   risk: { tiles: 4, lines: 2, opinion: 269, wide: "1.9fr", charts: [387, 436], guides: 401, guideRows: 4, twoCol: false, details: 355, detailRows: 6 },
   // 영업점 — 우량기업여신 탭: 지표 3칸 · 차트 1:1 · 가이드 2열 · 근거 7줄
   branch: { tiles: 3, lines: 3, opinion: 289, wide: "1fr", charts: [404, 483], guides: 190, guideRows: 2, twoCol: true, details: 399, detailRows: 7 },
+  // 분석 에이전트(맞춤 분석) 탭 — DynamicReport: 지표 3칸 · 절 카드 · 근거
+  dynamic: { tiles: 3, lines: 2, opinion: 269, wide: "1fr", charts: [360], guides: 300, guideRows: 4, twoCol: false, details: 160, detailRows: 1 },
 } as const;
 /** 2단계 분석 결과 화면 (영업점 · 신용리스크관리부 공통 ReportShell 구조) */
 export function SkelReportScreen({ space }: { space: keyof typeof REPORT_LAYOUT }) {

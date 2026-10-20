@@ -939,7 +939,9 @@ try {
       ok("데이터 분석: 기존 탭 줄에 맞춤 분석 탭", (await u.$(`[data-custom-tab="${tab.tabKey}"]`)) !== null);
       await Promise.all([u.waitForNavigation({ waitUntil: "networkidle0" }), u.click(`[data-custom-tab="${tab.tabKey}"]`)]);
       const t = await text(u);
-      ok("맞춤 분석 탭: 보고서(의견 · 지표 묶음) · 여신 실적 분석으로 돌아가는 탭", u.url().endsWith(`/hq/analysis/${tab.tabKey}`) && t.includes("맞춤") && t.includes("여신 실적 분석") && (await u.$$("[data-report-metrics] li")).length >= 1, u.url());
+      // 다른 분석 결과 화면과 같은 틀 · 본문(시안 kit) — Agent 의견 상자 · 절 카드, 예전 목차 보기는 없음 · 기본 탭으로 돌아가는 탭 줄
+      const kit = await u.evaluate(() => ({ opinion: !!document.querySelector('section[aria-label="Agent 의견"]'), toc: !!document.querySelector('nav[aria-label="보고서 목차"]') }));
+      ok("맞춤 분석 탭: 시안 본문(Agent 의견 · 지표 묶음) · 기본 탭(여신 종합수익)으로 돌아가는 탭", u.url().endsWith(`/hq/analysis/${tab.tabKey}`) && t.includes("맞춤") && t.includes("여신 종합수익") && kit.opinion && !kit.toc && (await u.$$("[data-report-metrics] li")).length >= 1, JSON.stringify(kit));
       await u.goto(`${BASE}/analysis/hq/${tab.tabKey}`, { waitUntil: "networkidle0" });
       ok("이전 주소 /analysis/hq/<탭> → /hq/analysis/<탭>", u.url().endsWith(`/hq/analysis/${tab.tabKey}`), u.url());
       await u.addScriptTag({ content: AXE });
