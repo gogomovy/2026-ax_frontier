@@ -72,6 +72,8 @@ def read_image(p: Path) -> dict:
 
 def main(out: Path) -> None:
     imgs = [read_image(p) for p in sorted((out / "images").glob("*.tar"))]
+    order = list(ROLES)
+    imgs.sort(key=lambda i: order.index(i["repository"]) if i["repository"] in order else len(order))
     for i in imgs:
         key, workload, cond = ROLES.get(i["repository"], ("-", "-", "-"))
         i.update(valuesKey=key, workload=workload, enabledWhen=cond)
@@ -105,7 +107,7 @@ def main(out: Path) -> None:
         L += [
             f"### `{i['image']}`",
             "",
-            f"- 이미지 ID: `{i['imageId']}` (docker load 뒤 `docker image inspect {i['image']} --format '{{{{.Id}}}}'` 와 같아야 함)",
+            f"- 이미지 ID(설정 다이제스트): `{i['imageId']}` — docker 기본 저장소면 load 뒤 `docker image inspect {i['image']} --format '{{{{.Id}}}}'` 와 같음(containerd 이미지 저장소는 매니페스트 다이제스트를 보여 줘 다를 수 있음)",
             f"- tar SHA256: `{i['sha256']}`",
             f"- {i['os']}/{i['arch']} · 레이어 {i['layers']}개 · 실행 계정 `{i['user']}` · 만든 시각 {i['created']}",
             f"- 시작 명령: entrypoint `{json.dumps(i['entrypoint'], ensure_ascii=False)}` · cmd `{json.dumps(i['cmd'], ensure_ascii=False)}` · 포트 {', '.join(i['ports']) or '-'}",
