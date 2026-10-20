@@ -81,12 +81,52 @@ persistence:
   elasticsearch: {size: 30Gi}
   files: {size: 100Gi, accessMode: ReadWriteOnce}
 
+# ── CPU · 메모리 (requests = 보장 · 스케줄 기준, limits = 상한) ─────────────
+# 아래 값은 차트 기본값과 같다 — 서버 사양 · 네임스페이스 ResourceQuota 에 맞게 바꾼다.
+# 기본 합계: requests 약 2 vCPU · 5.5GB / limits 약 15 vCPU · 17GB (사내 SSO · LiteLLM 켜면 조금 더)
+# 메모리를 바꾸면 자바 힙도 함께: elasticsearch.heap ≤ limits 의 절반 정도 · neo4j heapMax + pageCache < limits
+api:
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 4Gi}
+
+worker:
+  resources:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "4", memory: 4Gi}
+
+web:
+  replicas: 1
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
+postgres:
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 2Gi}
+
+neo4j:
+  heapInitial: 512m
+  heapMax: 1g
+  pageCache: 512m
+  resources:
+    requests: {cpu: 250m, memory: 1Gi}
+    limits: {cpu: "2", memory: 3Gi}
+
 elasticsearch:
   # 서버에서 sysctl vm.max_map_count=262144 를 직접 못 하면 true (특권 컨테이너 허용 필요)
   sysctlInit: false
+  heap: 1g
+  resources:
+    requests: {cpu: 250m, memory: 1536Mi}
+    limits: {cpu: "2", memory: 3Gi}
 
 # [채우기·선택] 사내 SSO 검증기 — 서버에 벤더 jar 를 둔 디렉터리
 ssoVerifier:
   enabled: false
   libs:
     hostPath: ""
+  resources:
+    requests: {cpu: 50m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
