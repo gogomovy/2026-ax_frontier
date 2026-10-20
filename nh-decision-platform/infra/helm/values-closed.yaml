@@ -37,13 +37,14 @@ ingress:
   # [채우기·필수] 도메인 — 예: nhnavi.example.local  (DNS 를 인그레스 주소로 등록)
   host: ""
   tls:
-    # 인그레스에서 TLS 를 끝내면 true + secretName. 앞단 L7(로드밸런서)에서 끝내면 false 로 두고 app.publicUrl 에 https://<도메인>
-    enabled: true
-    # [채우기·필수 if enabled] 인증서 Secret — kubectl -n nhdip create secret tls nhnavi-tls --cert=<crt> --key=<key>
+    # 기본은 HTTP(인증서 없음) — 접속 주소 http://<도메인>, 세션 쿠키 Secure 자동 꺼짐.
+    # HTTPS 로 바꿀 때: 인그레스에서 TLS 를 끝내면 true + secretName / 앞단 L7(로드밸런서)에서 끝내면 false 그대로 + app.publicUrl 에 https://<도메인>
+    enabled: false
+    # [채우기·HTTPS 때만] 인증서 Secret — kubectl -n nhdip create secret tls nhnavi-tls --cert=<crt> --key=<key>
     secretName: ""
 
 app:
-  # [채우기·선택] 앞단 L7 에서 TLS 를 끝낼 때만 — 예: https://nhnavi.example.local  (비우면 ingress 값으로)
+  # [채우기·선택] 앞단 L7 에서 TLS 를 끝낼 때만 — 예: https://nhnavi.example.local  (비우면 ingress 값으로 · HTTP 면 http://<도메인>)
   publicUrl: ""
   # 인그레스 앞에 X-Forwarded-For 를 붙이는 로드밸런서가 하나 더 있으면 3
   trustedProxyHops: 2
