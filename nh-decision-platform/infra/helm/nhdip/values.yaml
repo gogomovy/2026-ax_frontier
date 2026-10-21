@@ -12,13 +12,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 global:
-  # (선택) 저장소 공통 앞부분 — 채우면 이미지 = <imageRegistry>/<images.*.repository>:<tag>.
-  #        비우면 images.*.repository 를 Nexus 전체 경로로 그대로 쓴다(values-closed.yaml 은 이 방식)
+  # [필수] 이미지를 올린 레지스트리 주소/프로젝트 — 이미지 = <imageRegistry>/<images.*.repository>:<tag>
+  #        예: 16.24.113.77/nhnavi  →  16.24.113.77/nhnavi/nhdip/api:1.0.0  (values-closed.yaml 은 이 방식)
+  #        비우면 images.*.repository 에 레지스트리 전체 경로(호스트 포함)를 적어야 한다
   imageRegistry: ""
   # 자체 이미지 태그 — 비우면 Chart.yaml appVersion
   imageTag: ""
+  # 같은 태그로 이미지를 다시 올렸으면 Always (노드에 받아 둔 예전 이미지를 쓰지 않게)
   imagePullPolicy: IfNotPresent
-  # Nexus 가 익명 받기를 막으면 docker-registry Secret 이름 — 예: [nexus-pull]
+  # Harbor 프로젝트가 비공개(private)면 docker-registry Secret 이름 — 예: [harbor-pull]
   imagePullSecrets: []
   # [필수] 띄울 서버(노드) — 예: {kubernetes.io/hostname: nhnavi-node01}
   #        모든 파드가 이 서버에만 뜬다(파일 저장소 RWO 볼륨을 api · worker 가 같이 쓰려면 같은 서버여야 한다)
@@ -33,7 +35,7 @@ global:
 secrets:
   name: nhdip-secrets
 
-# 이미지 경로 — values-closed.yaml 에서 Nexus 에 올린 경로로 바꾼다(비우면 설치를 멈춘다)
+# 이미지 이름 — 반입 묶음의 원래 이름(images/images.txt). push-images.sh 로 올리면 그대로 두고 global.imageRegistry 만 채운다
 images:
   # 자체 이미지 (bundle.sh 가 빌드) — tag 를 비우면 global.imageTag → appVersion
   api: {repository: nhdip/api, tag: ""}
@@ -57,6 +59,8 @@ ingress:
     # [필수 · tls.enabled] 인증서 Secret — kubectl -n <ns> create secret tls <이름> --cert=... --key=...
     secretName: ""
   # 업로드(최대 200MB) · LLM 응답 대기(최대 180초)에 맞춘 nginx 인그레스 값. 다른 컨트롤러면 그에 맞게 바꾼다
+  # HTTP(tls.enabled=false · publicUrl 이 https 가 아님)로 띄우면 차트가 nginx ssl-redirect · force-ssl-redirect "false" 를 자동으로 붙인다
+  # (컨트롤러 전역 설정이 https 로 돌려보내지 않게). 여기 같은 키를 적으면 그 값이 우선
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "210m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"

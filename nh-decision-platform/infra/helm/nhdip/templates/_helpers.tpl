@@ -22,18 +22,28 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 {{- end }}
 
 {{/* ── 이미지 — dict "root" . "image" .Values.images.api "name" "api" "own" true
-     repository 는 Nexus 에 올린 경로를 그대로 적는다(global.imageRegistry 는 선택 — 채우면 앞에 붙인다) ── */}}
+     이미지 = <global.imageRegistry>/<images.*.repository>:<tag>  (예: 16.24.113.77/nhnavi + nhdip/api → 16.24.113.77/nhnavi/nhdip/api:1.0.0)
+     global.imageRegistry 를 비우면 repository 를 레지스트리 전체 경로로 적어야 한다 ── */}}
 {{- define "nhdip.image" -}}
 {{- $g := .root.Values.global -}}
 {{- if not .image.repository -}}
-{{- fail (printf "[필수] images.%s.repository — Nexus 에 올린 이미지 경로(태그 앞까지)를 values-closed.yaml 에 적으세요 (예: nexus.example.local:5000/<저장소 경로>/<이미지 이름>)" .name) -}}
+{{- fail (printf "[필수] images.%s.repository 가 비었습니다 — 원래 이름(images/images.txt) 그대로 두고 global.imageRegistry 에 Harbor 주소/프로젝트를 적으세요" .name) -}}
 {{- end -}}
 {{- $tag := .image.tag -}}
 {{- if not $tag -}}
 {{- if .own -}}{{- $tag = $g.imageTag | default .root.Chart.AppVersion -}}{{- else -}}{{- fail (printf "[필수] images.%s.tag 가 비었습니다" .name) -}}{{- end -}}
 {{- end -}}
 {{- $reg := trimSuffix "/" ($g.imageRegistry | default "") -}}
-{{- if $reg -}}{{ printf "%s/%s:%s" $reg .image.repository (toString $tag) }}{{- else -}}{{ printf "%s:%s" .image.repository (toString $tag) }}{{- end -}}
+{{- if $reg -}}
+{{ printf "%s/%s:%s" $reg .image.repository (toString $tag) }}
+{{- else -}}
+{{- /* 레지스트리 없이 nhdip/api 같은 이름만 있으면 폐쇄망에서 docker.io 로 받으러 가 실패한다 → 설치 전에 멈춤 */ -}}
+{{- $first := first (splitList "/" .image.repository) -}}
+{{- if not (and (contains "/" .image.repository) (or (contains "." $first) (contains ":" $first) (eq $first "localhost"))) -}}
+{{- fail (printf "[필수] global.imageRegistry — 이미지를 올린 Harbor 주소/프로젝트를 적으세요 (예: 16.24.113.77/nhnavi). 지금 images.%s = %s 는 레지스트리 주소가 없어 내부망에서 받을 수 없습니다" .name .image.repository) -}}
+{{- end -}}
+{{ printf "%s:%s" .image.repository (toString $tag) }}
+{{- end -}}
 {{- end }}
 
 {{/* ── 파드 공통 (노드 지정 · 받기 Secret · 서비스 링크 끄기) ── */}}

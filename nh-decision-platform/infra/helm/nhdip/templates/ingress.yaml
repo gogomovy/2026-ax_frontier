@@ -6,7 +6,13 @@ metadata:
   name: nhdip
   labels:
     {{- include "nhdip.labels" . | nindent 4 }}
-  {{- with .Values.ingress.annotations }}
+  {{- $ann := deepCopy (.Values.ingress.annotations | default dict) }}
+  {{- if not (hasPrefix "https://" (include "nhdip.publicUrl" .)) }}
+  {{- /* HTTP 배포 — 컨트롤러 전역 https 전환을 이 인그레스에서 끈다(값에 같은 키가 있으면 그 값) */}}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/ssl-redirect" (get $ann "nginx.ingress.kubernetes.io/ssl-redirect" | default "false") }}
+  {{- $_ := set $ann "nginx.ingress.kubernetes.io/force-ssl-redirect" (get $ann "nginx.ingress.kubernetes.io/force-ssl-redirect" | default "false") }}
+  {{- end }}
+  {{- with $ann }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}

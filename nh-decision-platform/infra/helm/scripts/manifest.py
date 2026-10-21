@@ -96,7 +96,7 @@ def main(out: Path) -> None:
         "",
         "## 1. 이미지 목록",
         "",
-        "`docker load -i images/<tar 파일>` 하면 아래 **원래 이름** 으로 들어옵니다. Nexus 에 올린 경로를 values-closed.yaml 의 **values 키** 에 적습니다.",
+        "`docker load -i images/<tar 파일>` 하면 아래 **원래 이름** 으로 들어옵니다. Harbor 에 `<Harbor 주소>/<프로젝트>/<원래 이름>` 으로 올리면 values-closed.yaml 에는 `global.imageRegistry` 만 적습니다(§4).",
         "",
         "| tar 파일 | 원래 이름 (docker load 후) | values 키 | 쓰는 곳 | 켜는 조건 | 크기 |",
         "|---|---|---|---|---|---|",
@@ -114,31 +114,32 @@ def main(out: Path) -> None:
             "",
         ]
     L += [
-        "## 3. Nexus 에 올리기 (예)",
+        "## 3. Harbor 에 올리기 (예)",
         "",
         "```bash",
-        "NEXUS=<Nexus 호스트:포트>/<저장소 경로>     # 예: nexus.example.local:5000/nhnavi",
-        "docker login <Nexus 호스트:포트>",
+        "HARBOR=<Harbor 주소>/<프로젝트>     # 예: 16.24.113.77/nhnavi  (프로젝트는 Harbor 화면에서 먼저 생성)",
+        "docker login <Harbor 주소>",
     ]
     for i in imgs:
-        L += [f"docker load -i images/{i['file']} && docker tag {i['image']} $NEXUS/{i['image']} && docker push $NEXUS/{i['image']}"]
+        L += [f"docker load -i images/{i['file']} && docker tag {i['image']} $HARBOR/{i['image']} && docker push $HARBOR/{i['image']}"]
     L += [
         "```",
         "",
-        "또는 `bash scripts/push-images.sh $NEXUS` (같은 이름 규칙으로 전체를 올리고, 적을 경로를 보여 줌).",
+        "또는 `bash scripts/push-images.sh $HARBOR` (같은 이름 규칙으로 전체를 올리고, 적을 값을 보여 줌).",
         "",
         "## 4. values-closed.yaml 에 적을 값 (위 규칙으로 올렸을 때)",
         "",
         "```yaml",
-        "images:",
+        "global:",
+        "  imageRegistry: \"<Harbor 주소>/<프로젝트>\"   # 예: 16.24.113.77/nhnavi",
+        "# images.* 는 values-closed.yaml 에 적힌 원래 이름 그대로 — 실제로 받는 주소:",
     ]
     for i in imgs:
-        k = i["valuesKey"].split(".", 1)[-1]
-        L += [f"  {k}: {{repository: \"<NEXUS>/{i['repository']}\", tag: \"{i['tag']}\"}}"]
+        L += [f"#   {i['valuesKey']}: <Harbor 주소>/<프로젝트>/{i['repository']}:{i['tag']}"]
     L += [
         "```",
         "",
-        "다른 경로 · 이름으로 올렸다면 `repository` 를 실제 경로로(태그 앞까지), 태그를 바꿨다면 `tag` 를 바꿉니다.",
+        "다른 경로 · 이름으로 올렸다면 `images.*.repository` 를 프로젝트 뒤 경로로, 태그를 바꿨다면 `tag` 를 바꿉니다.",
         "",
         "## 5. 무결성 확인",
         "",

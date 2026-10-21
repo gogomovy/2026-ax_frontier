@@ -7,9 +7,11 @@ metadata:
   labels:
     {{- include "nhdip.componentLabels" $c | nindent 4 }}
 data:
-  # 최초 기동(빈 볼륨) 때 1회 — infra/postgres/init/01-litellm-db.sql 과 같다
+  # 최초 기동(빈 볼륨) 때 1회 — infra/postgres/init/01-litellm-db.sql 과 같다(litellm DB 는 내장 LiteLLM 을 켤 때만)
   01-litellm-db.sql: |
+    {{- if .Values.litellm.enabled }}
     CREATE DATABASE litellm;
+    {{- end }}
     CREATE EXTENSION IF NOT EXISTS vector;
 ---
 apiVersion: v1

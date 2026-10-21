@@ -1,28 +1,33 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# 폐쇄망 배포값 — 이 파일만 채워서 쓴다.  helm install nhdip ./nhdip-1.0.0.tgz -n nhdip -f values-closed.yaml
+# 폐쇄망 배포값 — 이 파일만 채워서 쓴다.  helm install nhdip chart/nhdip-1.0.0.tgz -n nhdip -f values-closed.yaml
+#  · 꼭 채울 것 4가지: global.imageRegistry(Harbor) · global.nodeSelector(서버) · ingress.host(도메인) · persistence(저장소)
 #
 #  · "" 로 비워 둔 [채우기] 항목을 내부망 값으로 채운다 (설명: 폐쇄망_헬름배포_가이드.md §4)
 #  · 비밀값은 여기에 쓰지 않는다 — scripts/create-secrets.sh 가 Secret(nhdip-secrets)을 만든다
 #  · 비어 있는 [필수] 값이 있으면 helm install 이 무엇을 채울지 알려 주고 멈춘다
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── 이미지 (Nexus 에 올린 경로) ──────────────────────────────────
-# [채우기·필수] repository = Nexus 에 올린 이미지 경로(호스트:포트 포함, 태그 제외). 예: nexus.example.local:5000/nhdip/api
-#               tag = 올린 태그. 자체 이미지(api · web · elasticsearch · ssoVerifier)는 비우면 1.0.0(차트 appVersion)
-#               반입 묶음의 원래 이름 · 태그는 images/images.txt 에 있다
+# ── 이미지 (Harbor) ─────────────────────────────────────────────
+# 이미지 = <global.imageRegistry>/<images.*.repository>:<tag>
+#   scripts/push-images.sh <Harbor 주소>/<프로젝트> 로 올리면 아래 이름은 그대로 두고 global.imageRegistry 만 채운다
+#   예) imageRegistry 16.24.113.77/nhnavi → 16.24.113.77/nhnavi/nhdip/api:1.0.0
+#   다른 경로 · 이름으로 올렸다면 repository 를 프로젝트 뒤 경로로 바꾼다(태그를 바꿨으면 tag 도)
 images:
-  api: {repository: "", tag: ""}             # 원래 nhdip/api:1.0.0 (api · worker 공용)
-  web: {repository: "", tag: ""}             # 원래 nhdip/web:1.0.0
-  elasticsearch: {repository: "", tag: ""}   # 원래 nhdip/elasticsearch:1.0.0
-  postgres: {repository: "", tag: pg16}      # 원래 pgvector/pgvector:pg16
-  neo4j: {repository: "", tag: 5.26-community}   # 원래 neo4j:5.26-community
-  # 사내 SSO 를 켤 때만(ssoVerifier.enabled: true)
-  ssoVerifier: {repository: "", tag: ""}     # 원래 nhdip/sso-verifier:1.0.0
-  # 내장 LiteLLM 을 켤 때만(litellm.enabled: true)
-  litellm: {repository: "", tag: main-stable}    # 원래 berriai/litellm:main-stable
+  api: {repository: nhdip/api, tag: ""}                 # 비운 tag = 1.0.0(차트 appVersion) · api · worker 공용
+  web: {repository: nhdip/web, tag: ""}
+  elasticsearch: {repository: nhdip/elasticsearch, tag: ""}
+  postgres: {repository: pgvector/pgvector, tag: pg16}
+  neo4j: {repository: neo4j, tag: 5.26-community}
+  ssoVerifier: {repository: nhdip/sso-verifier, tag: ""}   # 사내 SSO 를 켤 때만 받음
+  # LiteLLM 은 띄우지 않는다 — 사내에서 운영 중인 LiteLLM 을 app.llm.baseUrl 로 연결(차트 기본 litellm.enabled: false)
 
 global:
-  # [채우기·선택] Nexus 가 익명 받기를 막으면 docker-registry Secret 이름. 예: [nexus-pull]
+  # [채우기·필수] Harbor 주소/프로젝트 (태그 · 이미지 이름 제외) — 예: 16.24.113.77/nhnavi
+  #   프로젝트는 Harbor 화면에서 먼저 만든다. 사내 다른 솔루션도 같은 Harbor(예: 16.24.113.77/litellm/litellm)를 쓴다
+  imageRegistry: ""
+  # 같은 태그(1.0.0)로 이미지를 다시 올렸다면 Always — 노드에 받아 둔 예전 이미지를 쓰지 않게
+  imagePullPolicy: IfNotPresent
+  # [채우기·선택] Harbor 프로젝트가 비공개(private)면 docker-registry Secret 이름. 예: [harbor-pull]  (공개 프로젝트면 비워 둠)
   imagePullSecrets: []
   # [채우기·필수] 띄울 서버(노드) — kubectl get nodes 의 이름. 예: kubernetes.io/hostname: nhnavi-node01
   nodeSelector:
@@ -32,10 +37,16 @@ global:
 
 # ── 접속 도메인 ──────────────────────────────────────────────────
 ingress:
-  # [채우기·필수] 인그레스 클래스 — kubectl get ingressclass. 예: nginx
-  className: ""
-  # [채우기·필수] 도메인 — 예: nhnavi.example.local  (DNS 를 인그레스 주소로 등록)
+  # 인그레스 클래스 — 사내 K8s 는 nginx (kubectl get ingressclass 로 한 번 확인)
+  className: "nginx"
+  # [채우기·필수] 도메인 — 방화벽이 열린 인그레스 VIP 에 연결(DNS 등록)된 이름. 예: nhnavi.nbaihub.nhbank
+  #   (사내 다른 솔루션 예: dev-aidriven-gw.nbaihub.nhbank)
   host: ""
+  # nginx 인그레스 값 — 업로드(최대 200MB) · LLM 응답 대기(최대 180초) 기준. HTTP 면 ssl-redirect "false" 는 차트가 자동으로 붙임
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "210m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
   tls:
     # 기본은 HTTP(인증서 없음) — 접속 주소 http://<도메인>, 세션 쿠키 Secure 자동 꺼짐.
     # HTTPS 로 바꿀 때: 인그레스에서 TLS 를 끝내면 true + secretName / 앞단 L7(로드밸런서)에서 끝내면 false 그대로 + app.publicUrl 에 https://<도메인>
@@ -48,7 +59,9 @@ app:
   publicUrl: ""
   # 인그레스 앞에 X-Forwarded-For 를 붙이는 로드밸런서가 하나 더 있으면 3
   trustedProxyHops: 2
-  # [채우기·선택] 내부 LLM 게이트웨이 주소 · 기본 모델(키는 Secret 의 LLM_DEFAULT_API_KEY). 비우면 관리자 [LLM 연동]에서 입력
+  # [채우기·권장] 사내 운영 중인 LiteLLM — 최초 기동 때 기본 LLM 연결로 등록(이후 관리자 [LLM 연동]에서 바꿈 · 비우면 거기서 입력)
+  #   baseUrl 예: http://dev-aidriven-gw.nbaihub.nhbank  (같은 클러스터면 http://<litellm 서비스>.<네임스페이스>.svc.cluster.local:4000 도 됨)
+  #   model  = LiteLLM 에 등록된 모델 이름 · 키는 values 에 쓰지 않고 Secret 으로: NS=nhdip bash scripts/create-secrets.sh add LLM_DEFAULT_API_KEY
   llm:
     baseUrl: ""
     model: ""
