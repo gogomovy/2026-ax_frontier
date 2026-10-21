@@ -166,6 +166,16 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
     }
 
 
+def _branch_scope(session: Session, emp_no: str | None, org: str | None) -> str | None:
+    """영업점 자료를 대신 올릴 수 있는 범위 — 관리자 '*', 영업본부 · 그 밖 조직은 자기 조직(그 아래 영업점), 영업점 직원은 None(자기 지점 그대로)."""
+    from nhdip.orgs import is_branch
+
+    u = session.get(AppUser, emp_no) if emp_no else None
+    if u is not None and u.role == "admin":
+        return "*"
+    return None if not org or is_branch(session, org) else org
+
+
 @router.get("/db/datasets/{code}/periods")
 def dataset_periods(code: str, user: AppUser = Depends(require_resource("db_upload")), session: Session = Depends(get_session)):
     """보관 중인 기준일 (Phase P · UPV-07) — 같은 자료를 날짜만 바꿔 올릴 때 어떤 기준일 판이 있는지(판 · 행 · 메모 · 반영일 · 소유)와 최근 판 이력."""
@@ -266,7 +276,7 @@ async def request_dataset(
         proposal = inferred_proposal(session, name, content, origin)
         return _proposal_request(session, request, user, proposal, name, content, data_origin, as_of, note, auto=True)
     try:
-        pv = check_file(session, d, name, content, as_of=as_of, owner_org=user.org_code, place=True)
+        pv = check_file(session, d, name, content, as_of=as_of, owner_org=user.org_code, place=True, branch_owner_scope=_branch_scope(session, user.emp_no, user.org_code))
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, f"파일을 읽을 수 없습니다 — {exc}") from exc
     if (pv.get("placement") or {}).get("error"):
@@ -377,7 +387,7 @@ def _proposal_request(session: Session, request: Request, user: AppUser, d: dict
     code = str(d["code"])
     ds = Dataset(**d, mapping={}, active=True)  # 저장하지 않는 임시 정의 — 같은 검사를 통과하는지 본다
     try:
-        pv = check_file(session, ds, fname, content, as_of=as_of, owner_org=user.org_code, place=True)
+        pv = check_file(session, ds, fname, content, as_of=as_of, owner_org=user.org_code, place=True, branch_owner_scope=_branch_scope(session, user.emp_no, user.org_code))
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, f"파일을 이 정의로 읽을 수 없습니다 — {exc}") from exc
     if (pv.get("placement") or {}).get("error"):
@@ -529,6 +539,8 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
                 created = True
             v = ingest_file(session, d, r.file_name, content, as_of=meta.get("asOf") or None, data_origin=meta.get("dataOrigin") or "actual", actor=actor.emp_no, note=note, force=bool(body.force),
                             owner_org=r.requested_org,  # 소유 = 요청한 사람의 소속 팀(승인한 사람이 아니라)
+                            # 요청자가 영업점 소속이 아니고(관리자 · 영업본부) 파일 행이 모두 한 영업점 것이면 그 영업점 판으로 — 다른 영업점 판을 교체하지 않게
+                            branch_owner_scope=_branch_scope(session, r.requested_by, r.requested_org),
                             memo=meta.get("note") or None, requested_by=r.requested_by)  # 요청자 메모 · 요청자는 판에 따로 (UPV-06)
             result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current, **({"createdDataset": d.code} if created else {})}
             if v.status != "committed":

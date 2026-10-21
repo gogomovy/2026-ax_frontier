@@ -725,8 +725,14 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
   const [dataOrigin, setDataOrigin] = useState("actual");
   const [asOf, setAsOf] = useState("");
   const [force, setForce] = useState(false);
-  // 자료를 둘 팀 · 영업점 — 기본은 현재 버전의 소유 조직(같은 팀이 새 판을 올리는 경우가 대부분)
-  const [owner, setOwner] = useState<string>(ds.versions.find((v) => v.isCurrent)?.owner?.code ?? "");
+  // 자료를 둘 팀 · 영업점 — 현재 판이 모두 같은 팀 소유면 그 팀(같은 팀이 새 판을 올리는 경우가 대부분).
+  // 영업점별 판이 있거나 소유가 여럿이면 기본을 두지 않는다 — 첫 영업점이 기본으로 잡혀 다른 영업점 파일이 그 판을 '교체'하지 않게(파일 행 · 이름으로 다시 고른다)
+  const [owner, setOwner] = useState<string>(() => {
+    const cur = ds.versions.filter((v) => v.isCurrent);
+    const owners = new Set(cur.map((v) => v.owner?.code ?? ""));
+    const only = cur[0]?.owner;
+    return owners.size === 1 && only && only.unitType !== "BRANCH" ? only.code : "";
+  });
   const [preview, setPreview] = useState<UploadResult | null>(null);
   const [ownerAuto, setOwnerAuto] = useState<string | null>(null);
   const [rows, setRows] = useState<{ columns: string[]; rows: Record<string, unknown>[] } | null>(null);
@@ -804,7 +810,7 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
                 setPreview(null);
               }}
             />
-            {ownerAuto ? <p className="mt-1 text-[11px] font-bold text-info">파일 이름에 있는 {ownerAuto}(으)로 골랐습니다 — 다르면 바꾸세요.</p> : null}
+            {ownerAuto ? <p className="mt-1 text-[11px] font-bold text-info">파일 행 · 이름에 있는 {ownerAuto}(으)로 골랐습니다 — 다르면 바꾸세요.</p> : null}
             <p className="mt-1 text-[11px] text-stone">영업점을 고르면 그 영업점 화면에서 계산되고, 다른 영업점 자료를 밀어내지 않습니다(버전 번호는 자료 전체에서 이어 붙습니다).</p>
           </div>
           <div className="flex flex-wrap items-center gap-xs">

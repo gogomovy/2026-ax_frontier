@@ -28,6 +28,7 @@ export function ReportShell({
   query = "",
   exportKey,
   office,
+  picker,
   builderHref,
   next,
   lead = [],
@@ -43,6 +44,8 @@ export function ReportShell({
   /** 내려받기 키 (영업점: branch-<탭>) */
   exportKey?: string;
   office?: string | null;
+  /** 지점 선택(영업점 — 관리자 · 영업본부만 보인다) */
+  picker?: ReactNode;
   /** 분석 에이전트 만들기 (권한 있을 때만) */
   builderHref?: string | null;
   next?: ReactNode;
@@ -61,6 +64,7 @@ export function ReportShell({
         title={title}
         actions={
           <AsOfTools key="page-tools">
+            {picker}
             {report.workflow ? <RefreshStatus workflow={report.workflow} /> : null}
             {/* 시안 본문은 의견 상자 안에 '분석 다시 실행'이 있다 — 기존 보고서 보기(분석 에이전트 탭 등)는 여기에 */}
             {!children && report.workflow ? <OnDemandAnalysis workflow={report.workflow} /> : null}

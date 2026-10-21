@@ -335,15 +335,25 @@ def office_list(session: Session, user: Any) -> dict[str, Any]:
     from nhdip.orgs import branch_of, office_code_of
     from nhdip.scopes import computed_offices
 
-    primary, offices = office_scope(session)
-    ready = set(computed_offices(session))
+    from sqlalchemy import select
+
+    from nhdip.models import OrgUnit
+
+    primary, _ = office_scope(session)
+    computed = computed_offices(session)
+    ready = set(computed)
     br = branch_of(session, user.org_code) if getattr(user, "org_code", None) else None
     mine = office_code_of(session, br.code) if br is not None else None
+    # 영업점 직원 — 자기 지점 하나. 관리자 · 영업본부 — 볼 수 있는 모든 영업점(조직표)을 고를 수 있게:
+    # 자료로 계산된 지점을 먼저(기본 지점 후보), 나머지는 '자료 대기'로 뒤에. 설정 규칙의 기본 지점이 자료 없이 먼저 보이지 않는다
+    if mine:
+        cands = [mine]
+    else:
+        org_offices = [office_code_of(session, c) for c in session.execute(
+            select(OrgUnit.code).where(OrgUnit.unit_type == "BRANCH", OrgUnit.active).order_by(OrgUnit.sort, OrgUnit.code)).scalars()]
+        cands = [*computed, *org_offices]  # 규칙에만 있고 조직표에 없는 지점 코드는 넣지 않는다
     out = []
-    # 자료로 계산된 지점 + 내 영업점(자료 전이어도 이름은 보인다) — 설정에만 있고 자료가 없는 지점은 목록에 두지 않는다
-    for code in dict.fromkeys([*offices, *([mine] if mine else [])]):
-        if code not in ready and code != mine:
-            continue
+    for code in dict.fromkeys(c for c in cands if c):
         if not can_view_office(session, user, code):
             continue
         v = get_current(session, scoped_key("branch_dashboard", code, primary))

@@ -1293,8 +1293,9 @@ def test_branch_multi_office_scope(db):
         assert e.status_code == 200 and "가상지점" in e.text  # 지점 x 산출물로 만든 보고서
         assert "가상지점" not in admin.get("/reports/branch-prime-corp/export", params={"format": "html"}).text
         offs = admin.get("/screens/branch/offices").json()
-        # 자료로 계산된 지점만 목록에 — 규칙에만 있고 자료가 없는 지점(009999)은 나타나지 않는다
-        assert [(o["code"], o["available"], o["primary"]) for o in offs["offices"]] == [("001068", True, True), (x, True, False)]
+        # 관리자는 조직표의 영업점을 모두 고를 수 있다 — 계산된 지점이 먼저, 나머지는 자료 대기. 규칙에만 있고 조직표에 없는 지점(009999)은 없다
+        assert [(o["code"], o["available"], o["primary"]) for o in offs["offices"][:2]] == [("001068", True, True), (x, True, False)]
+        assert len(offs["offices"]) > 2 and not any(o["available"] for o in offs["offices"][2:]) and "009999" not in {o["code"] for o in offs["offices"]}
         assert offs["default"] == "001068"  # 영업점 소속이 아닌 관리자 — 계산된 지점 가운데 첫 지점
 
         # 열람 범위 — 영업점 직원은 자기 지점만, 지역본부는 소속 지점들
@@ -1321,7 +1322,7 @@ def test_branch_multi_office_scope(db):
         assert [t["tabKey"] for t in xs.get("/screens/branch/tabs").json()["current"]] == ["prime-corp", "seomin"]
         assert xs.get("/me/menu").json()["counts"]["branchAnalyses"] == 2
         ro = region.get("/screens/branch/offices").json()["offices"]
-        assert [o["code"] for o in ro] == ["001068", x]
+        assert [o["code"] for o in ro][:2] == ["001068", x] and all(o["code"] not in ("BR401", "BR402", "BR501") for o in ro)  # 자기 지역본부 영업점만
         assert region.get("/screens/branch/dashboard", params={"office": x}).json()["available"] is True
         # 상한(BRM-07) — 기본 지점 포함 2곳까지만 계산, 나머지는 실행 요약 · 운영 알림
         with db() as s:

@@ -34,7 +34,8 @@ def _org_label(session: Session, code: str | None) -> str:
 
 
 def file_owner_hint(session: Session, file_name: str | None) -> str | None:
-    """파일 이름 안의 영업점 코드(예: Oblg_grd_def_202608_BR302.csv → BR302) — 조직표에 있는 영업점일 때만. 기준월 같은 숫자는 조직이 아니면 무시."""
+    """파일 이름 안의 영업점 — 코드(예: Oblg_grd_def_202608_BR302.csv → BR302) 또는 조직표의 영업점 이름(예: …_서초지점.xlsx).
+    조직표에 있는 영업점일 때만. 기준월 같은 숫자는 조직이 아니면 무시."""
     if not file_name:
         return None
     stem = re.sub(r"\.[^.]+$", "", file_name)
@@ -43,7 +44,67 @@ def file_owner_hint(session: Session, file_name: str | None) -> str | None:
             o = session.get(OrgUnit, tok.upper()) or session.get(OrgUnit, tok)
             if o is not None and o.active and o.unit_type == "BRANCH":
                 return o.code
-    return None
+    names = [(o.name, o.code) for o in session.execute(select(OrgUnit).where(OrgUnit.unit_type == "BRANCH", OrgUnit.active)).scalars() if o.name and len(o.name) >= 3]
+    hits = [code for name, code in sorted(names, key=lambda x: -len(x[0])) if name in stem]
+    return hits[0] if len(set(hits)) == 1 else None
+
+
+CONTENT_MAX_DISTINCT = 40  # 영업점 코드 열로 볼 수 있는 서로 다른 값의 상한 — 넘으면 그 열은 영업점 열이 아니다
+
+
+def content_branches(session: Session, ds: Dataset, rows: list[dict[str, Any]]) -> list[str]:
+    """파일 행 안의 영업점 — 값이 모두 조직표의 영업점(사무소 코드 매핑 포함)인 열이 있으면 그 영업점 조직 코드들(조직표 순서).
+    예: 득점 현황의 사무소코드 열이 전부 BR302 → ['BR302']. 영업점 열이 없으면 빈 목록(판단하지 않음)."""
+    from nhdip.orgs import org_of_office
+
+    if not rows:
+        return []
+    names = [c.get("name") for c in (ds.columns or []) if c.get("name")] or list(rows[0].keys())
+    cache: dict[str, str | None] = {}
+
+    def branch(v: str) -> str | None:
+        if v not in cache:
+            o = org_of_office(session, v)
+            cache[v] = o.code if o is not None and o.active and o.unit_type == "BRANCH" else None
+        return cache[v]
+
+    found: set[str] = set()
+    for col in names:
+        if str(col).startswith("__"):
+            continue
+        vals: set[str] = set()
+        for r in rows:
+            v = r.get(col)
+            if v in (None, ""):
+                continue
+            vals.add(str(v).strip())
+            if len(vals) > CONTENT_MAX_DISTINCT:
+                break
+        if not vals or len(vals) > CONTENT_MAX_DISTINCT:
+            continue
+        codes = [branch(v) for v in vals]
+        if all(codes):
+            found |= {c for c in codes if c}
+    if not found:
+        return []
+    order = {c: i for i, c in enumerate(session.execute(select(OrgUnit.code).where(OrgUnit.code.in_(found)).order_by(OrgUnit.sort, OrgUnit.code)).scalars())}
+    return sorted(found, key=lambda c: order.get(c, 10**6))
+
+
+def owner_conflict(session: Session, ds: Dataset, rows: list[dict[str, Any]], owner_org: str | None) -> str | None:
+    """영업점 소유로 올리는데 행이 다른 영업점 것(또는 여러 영업점이 섞임)이면 이유 — 다른 영업점 판을 밀어내거나 같은 행이 두 구획에 겹쳐 두 번 계산되는 것을 막는다.
+    전행 공통 · 팀 소유는 막지 않는다(전행 추출 · 마스터는 여러 영업점 행이 정상)."""
+    from nhdip.orgs import is_branch
+
+    if not owner_org or getattr(ds, "common", False) or not is_branch(session, owner_org):
+        return None
+    got = content_branches(session, ds, rows)
+    if not got or got == [owner_org]:
+        return None
+    label = _org_label(session, owner_org)
+    if owner_org not in got:
+        return f"파일 행이 {', '.join(_org_label(session, c) for c in got[:3])} 자료인데 자료를 둘 곳이 {label} 입니다 — 그 영업점을 골라 올리세요(다른 영업점 판을 밀어내지 않게)"
+    return f"파일에 {label} 외 다른 영업점 행({', '.join(_org_label(session, c) for c in got if c != owner_org)[:120]})이 섞여 있습니다 — 영업점마다 나눠 올리거나 전행 공통으로 올리세요(같은 행이 두 번 계산되지 않게)"
 
 
 def placement(session: Session, ds: Dataset, rows: list[dict[str, Any]], *, as_of: str | None, owner_org: str | None, file_sha: str | None = None, file_name: str | None = None) -> dict[str, Any]:
@@ -91,13 +152,20 @@ def placement(session: Session, ds: Dataset, rows: list[dict[str, Any]], *, as_o
     out["nextVersion"] = (session.execute(select(t.version.version).where(t.version.dataset_code == ds.code).order_by(t.version.version.desc()).limit(1)).scalar() or 0) + 1
     out["kept"] = [{"version": v.version, "asOf": v.as_of.isoformat() if v.as_of else None, "owner": v.owner_org, "ownerLabel": _org_label(session, v.owner_org)}
                    for v in cur if not (out["replaces"] and v.version == out["replaces"]["version"])][:24]
-    hint = file_owner_hint(session, file_name)
-    out["fileOwnerHint"] = {"code": hint, "label": _org_label(session, hint)} if hint else None
+    # 자료를 둘 곳 추천 — 파일 행의 영업점(사무소코드 열 등)이 한 곳이면 그 영업점이 먼저, 없으면 파일 이름의 영업점
+    inside = content_branches(session, ds, rows) if not getattr(ds, "common", False) else []
+    out["contentBranches"] = [{"code": c, "label": _org_label(session, c)} for c in inside[:20]]
+    hint = inside[0] if len(inside) == 1 else (None if len(inside) > 1 else file_owner_hint(session, file_name))
+    out["fileOwnerHint"] = {"code": hint, "label": _org_label(session, hint), "by": "content" if len(inside) == 1 else "name"} if hint else None
     out["ownerMismatch"] = bool(hint and hint != owner_org)
+    conflict = owner_conflict(session, ds, rows, owner_org)
+    if conflict and not out["error"]:
+        out["error"] = conflict
     m = out["messages"]
     who = out["owner"]["label"]
     if out["ownerMismatch"]:
-        m.append(f"파일 이름에 {out['fileOwnerHint']['label']} 가 있는데 자료를 둘 곳이 {who} 입니다 — 맞는지 확인하세요.")
+        where = "파일 행" if out["fileOwnerHint"]["by"] == "content" else "파일 이름"
+        m.append(f"{where}이 {out['fileOwnerHint']['label']} 자료인데 자료를 둘 곳이 {who} 입니다 — {out['fileOwnerHint']['label']}(으)로 바꾸세요.")
     if out["action"] == "add":
         if not cur:
             m.append(f"이 자료의 첫 판입니다({who}).")

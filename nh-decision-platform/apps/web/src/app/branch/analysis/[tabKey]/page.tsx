@@ -5,7 +5,8 @@ import { ReportShell } from "@/components/analysis/report/ReportShell";
 import { DynamicReport } from "@/components/analysis/report/DynamicReport";
 import { NextStep } from "@/components/ui/primitives";
 import { officeParam, withOffice } from "@/lib/branchOffice";
-import { getBranchReport, getBranchTabs } from "@/lib/data";
+import { BranchOfficePicker } from "@/components/domain/BranchOfficePicker";
+import { getBranchOffices, getBranchReport, getBranchTabs } from "@/lib/data";
 import type { ReportDoc } from "@/lib/types";
 export const dynamic = "force-dynamic";
 /** 시안대로 그린 본문 (보고서 종류별) — 그 밖의 종류는 기존 보고서 보기 */
@@ -19,8 +20,10 @@ function bodyOf(report: ReportDoc) {
 export default async function BranchAnalysisTabPage(props: { params: Promise<{ tabKey: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const params = await props.params;
   const office = officeParam(await props.searchParams);
-  const [tabs, report] = await Promise.all([getBranchTabs(office), getBranchReport(params.tabKey, office)]);
+  const [tabs, report, offices] = await Promise.all([getBranchTabs(office), getBranchReport(params.tabKey, office), getBranchOffices().catch(() => ({ offices: [], default: null }))]);
   if (!report) notFound();
+  // 지점 선택은 분석 첫 화면으로 — 고른 지점의 첫 분석 탭으로 이동한다
+  const picker = <BranchOfficePicker list={offices} current={office ?? report.office?.code ?? offices.default} action="/branch/analysis" />;
   const others = tabs.current.filter((t) => t.tabKey !== params.tabKey);
   const officeName = report.office?.name ?? tabs.office?.name;
   return (
@@ -34,6 +37,7 @@ export default async function BranchAnalysisTabPage(props: { params: Promise<{ t
       query={office ? `?office=${encodeURIComponent(office)}` : ""}
       exportKey={`branch-${params.tabKey}`}
       office={office}
+      picker={picker}
       next={
         others.length > 0 ? (
           <NextStep step={2} title={others[0].label} description="다음 기준 변경 항목의 분석과 AI 영업 가이드를 확인합니다." href={withOffice(`/branch/analysis/${others[0].tabKey}`, office)} />

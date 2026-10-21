@@ -105,8 +105,10 @@ def test_admin_preview_placement_by_branch(db):
         # 파일 이름은 BR302 인데 BR301 로 올리려 하면 — 교체 + 이름 불일치 경고
         q = pv("배치시험_202608_BR302.csv", "BR301")
         assert q["action"] == "replace" and q["ownerMismatch"] and "BR302" in q["messages"][0], q
-        # 영업점 코드가 없는 이름(기준월 숫자만) — 힌트 없음
-        assert pv("배치시험_202608.csv", "BR302")["fileOwnerHint"] is None
+        assert q["error"] and "BR302" in q["error"], q  # 행이 BR302 것 — BR301 판을 서초 행으로 바꾸지 못하게 반영도 막힌다
+        # 영업점 코드가 없는 이름(기준월 숫자만) — 이름 대신 행(영업점 열 값)으로 알아본다
+        h = pv("배치시험_202608.csv", "BR302")["fileOwnerHint"]
+        assert h["code"] == "BR302" and h["by"] == "content", h
     finally:
         from nhdip.models import source
 

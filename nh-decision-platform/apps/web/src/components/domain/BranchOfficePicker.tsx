@@ -16,7 +16,7 @@ export function BranchOfficePicker({ list, current, action }: { list: BranchOffi
         {list.offices.map((o) => (
           <option key={o.code} value={o.code}>
             {o.name}
-            {o.available ? "" : " (준비 중)"}
+            {o.available ? "" : " (자료 대기)"}
           </option>
         ))}
       </select>

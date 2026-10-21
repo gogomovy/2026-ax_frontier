@@ -459,6 +459,12 @@ def ingest_rows(
     t = source(ds.origin)
     if getattr(ds, "common", False):
         owner_org = None  # 공통 통합 DB(§38 CMN) — 소유 팀 없이 전행 공통. 팀 소유로 올라가 다른 부서 자료처럼 갈리지 않게
+    from .placement import owner_conflict
+
+    # 영업점 소유인데 행이 다른 영업점 것이면 거절 — 그 영업점 판을 '교체'하거나 같은 행이 두 영업점 구획에 겹쳐 두 번 계산되는 일을 막는다(품질 강제 확정으로도 넘기지 않음)
+    conflict = owner_conflict(session, ds, rows, owner_org)
+    if conflict:
+        raise IngestError(conflict)
     lock(session, f"ds:{ds.origin}:{ds.code}")  # 동시 업로드 · 되돌리기 직렬화 — 버전 번호 · 현재 버전 교체가 겹치지 않도록 (B.32)
     last = session.execute(
         select(t.version.version).where(t.version.dataset_code == ds.code).order_by(t.version.version.desc()).limit(1)
@@ -561,11 +567,32 @@ def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **
     quality = quality_check(view, rows, errors, previous=prev, privacy=privacy_policy(session), unmapped=unmapped_headers(view, raw), added=added, warnings=warns)
     if source:
         quality["source"] = source  # 원본 양식 · 머리글 메타(조회일자 · 조회사무소 · 기준일 · 단위) · 변환 메모
+    scope = kw.pop("branch_owner_scope", None)
+    if scope is not None:
+        kw["owner_org"] = branch_owner_from_rows(session, ds, rows, kw.get("owner_org"), scope)
     sha, path = _store_file(ds.origin, ds.code, filename, content)
     v = ingest_rows(session, ds, rows, quality=quality, file_name=filename, file_sha=sha, file_path=path, **kw)
     if added and v.status == "committed":
         extend_definition(session, ds, added, kw.get("actor"), filename)
     return v
+
+
+def branch_owner_from_rows(session: Session, ds: Dataset, rows: list[dict[str, Any]], owner_org: str | None, scope: str) -> str | None:
+    """요청 소속이 영업점이 아닌데(관리자 · 영업본부 · 팀) 파일 행이 모두 한 영업점 것이면 그 영업점을 소유로 — 영업점 자료가 요청자 팀 구획으로 들어가
+    같은 기준일의 다른 영업점 판을 교체하지 않게. scope='*' = 어느 영업점이든(관리자), 조직 코드 = 그 조직 아래 영업점만(영업본부)."""
+    from nhdip.orgs import is_branch, org_chain
+
+    from .placement import content_branches
+
+    if getattr(ds, "common", False) or is_branch(session, owner_org):
+        return owner_org
+    got = content_branches(session, ds, rows)
+    if len(got) != 1:
+        return owner_org
+    # 영업본부 — 요청 조직의 상위 경로와 그 영업점의 상위 경로가 겹칠 때만(지점 열람 범위 can_view_office 와 같은 기준)
+    if scope != "*" and not ({o.code for o in org_chain(session, scope)} & {o.code for o in org_chain(session, got[0])[1:]}):
+        return owner_org
+    return got[0]
 
 
 def preview_file(ds: Dataset, filename: str, content: bytes, session: Session | None = None, *, place: bool = False, as_of: str | None = None, owner_org: str | None = None) -> dict[str, Any]:
@@ -580,7 +607,8 @@ def preview_file(ds: Dataset, filename: str, content: bytes, session: Session | 
     return out
 
 
-def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10, *, as_of: str | None = None, owner_org: str | None = None, place: bool = False) -> dict[str, Any]:
+def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10, *, as_of: str | None = None, owner_org: str | None = None, place: bool = False,
+               branch_owner_scope: str | None = None) -> dict[str, Any]:
     """업무 사용자 자료 요청의 사전 검사(Phase C · UPL-01) — 확정과 같은 품질 검사(직전 현재 버전 대비 · 개인정보 정책), 저장 없음.
     정의에 없는 열은 반영(승인) 때 정의에 더해 저장된다 — 여기서는 무엇이 더해지는지만 알린다(M.24).
     place=True 면 반영 미리보기(Phase P · UPV-02 — 새 기준일 추가 / 같은 기준일 교체 · 기간 겹침 · 같은 파일)를 함께 돌려준다."""
@@ -592,6 +620,8 @@ def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sam
     if source:
         quality["source"] = source
     out = {"headers": list(raw[0].keys()) if raw else [], "columns": [c["name"] for c in view.columns], "sample": rows[:sample], "rows": len(rows), "quality": quality, "columnsAdded": added}
+    if branch_owner_scope is not None:
+        owner_org = branch_owner_from_rows(session, view, rows, owner_org, branch_owner_scope)  # 승인 때와 같은 소유(영업점 행이면 그 영업점)
     if place:
         from .placement import placement
 
