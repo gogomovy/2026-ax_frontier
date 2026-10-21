@@ -10,7 +10,7 @@ export interface NavItem {
   /** 업무 흐름 단계 번호 */
   step?: number;
   /** 사이드바에 건수를 표시할 대상 (admin* — 관리자 처리 건수 · Phase E NAV-02) */
-  countKey?: "goalProposals" | "analyses" | "proposedPlans" | "branchAnalyses" | "adminTodo" | "adminUsers" | "adminUploads" | "adminAnalyses";
+  countKey?: "goalProposals" | "analyses" | "proposedPlans" | "branchAnalyses" | "adminTodo" | "adminUsers" | "adminUploads" | "adminAnalyses" | "stewardTodo";
   /** 경로가 정확히 같을 때만 활성 (하위 경로와 겹치는 상위 화면) */
   exact?: boolean;
 }

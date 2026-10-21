@@ -1110,3 +1110,5 @@ from . import onto_nodes as _onto_nodes  # noqa: E402,F401
 from . import evidence_nodes as _evidence_nodes  # noqa: E402,F401
 # 새 지표 제안(지표가 없는 자료의 측정 열 → 승인 대기 지표) 등록
 from . import metric_nodes as _metric_nodes  # noqa: E402,F401
+# 새 자료 → 개념 연결 · 분석 화면 제안(데이터 책임자 승인 대기 · §40 STW) 등록
+from . import proposal_nodes as _proposal_nodes  # noqa: E402,F401

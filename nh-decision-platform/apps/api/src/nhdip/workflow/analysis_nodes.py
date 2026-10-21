@@ -52,7 +52,13 @@ def n_team_context(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     spec, _token, _v = _load(ctx, node)
     cfg = node.config or {}
     actor = ctx.state.get("team_actor")
-    team = team_of_user(ctx.session, actor) if actor else team_of_agent(ctx.session, cfg.get("agent"))
+    org = ctx.state.get("team_org")
+    if org:
+        from nhdip.analysis_agents.team import team_of
+
+        team = team_of(ctx.session, str(org))  # 에이전트 제안 분석의 미리보기 — 자료 소유 조직의 팀 (§40 STW)
+    else:
+        team = team_of_user(ctx.session, actor) if actor else team_of_agent(ctx.session, cfg.get("agent"))
     tc = build_context(ctx.session, spec, team, inputs=input_datasets(spec), own_workflow=ctx.workflow.code, use_graph=cfg.get("graph", True))
     ctx.state["team_context"] = tc
     ctx.state["context_concepts"] = tc.get("concepts") or []

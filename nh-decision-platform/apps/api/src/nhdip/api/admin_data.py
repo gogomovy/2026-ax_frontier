@@ -969,15 +969,13 @@ def metric_proposals(session: Session = Depends(get_session)):
 
 @router.post("/metric-proposals/{code}/approve")
 def metric_proposal_approve(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    from nhdip.workflow.metric_nodes import PROPOSED, WORKFLOW
+    # 판정 · 반영은 데이터 책임자 승인함과 같은 함수(§40 STW) — 켜고 config.changed · 바로 계산(manual) 이벤트
+    from nhdip.stewardship import StewardError, decide_metric
 
-    m = session.get(Metric, code)
-    if not m or m.workflow_code != WORKFLOW or not (m.description or "").startswith(PROPOSED):
-        raise HTTPException(404, "제안 지표 없음")
-    m.enabled = True
-    m.description = "[승인] " + (m.description or "").removeprefix(PROPOSED).strip()
-    _config_changed(session, "metric", code, admin.emp_no)
-    emit(session, "manual", {"workflow": WORKFLOW, "reason": f"제안 지표 승인 {code}"}, admin.emp_no)  # 바로 계산
+    try:
+        decide_metric(session, session.get(Metric, code), admin.emp_no, approve=True)
+    except StewardError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
     audit(session, admin.emp_no, "admin.metric.proposal_approve", "metric", code, None, client_ip(request))
     session.commit()
     return {"ok": True}
@@ -985,12 +983,12 @@ def metric_proposal_approve(code: str, request: Request, session: Session = Depe
 
 @router.post("/metric-proposals/{code}/reject")
 def metric_proposal_reject(code: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    from nhdip.workflow.metric_nodes import PROPOSED, REJECTED, WORKFLOW
+    from nhdip.stewardship import StewardError, decide_metric
 
-    m = session.get(Metric, code)
-    if not m or m.workflow_code != WORKFLOW or not (m.description or "").startswith(PROPOSED):
-        raise HTTPException(404, "제안 지표 없음")
-    m.description = f"{REJECTED} " + (m.description or "").removeprefix(PROPOSED).strip()  # 지우지 않는다 — 같은 열을 다시 제안하지 않게
+    try:
+        decide_metric(session, session.get(Metric, code), admin.emp_no, approve=False)  # 지우지 않는다 — 같은 열을 다시 제안하지 않게
+    except StewardError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
     audit(session, admin.emp_no, "admin.metric.proposal_reject", "metric", code, None, client_ip(request))
     session.commit()
     return {"ok": True}

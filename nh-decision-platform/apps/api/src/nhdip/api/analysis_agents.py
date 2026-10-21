@@ -39,6 +39,11 @@ def _iso(v):
     return v.isoformat() if v else None
 
 
+def _agent_name(actor: str | None) -> str | None:
+    """사람이 아닌 요청자(에이전트 제안 · §40 STW)의 표시 이름."""
+    return "분석 제안 에이전트" if (actor or "").startswith("agent:") else None
+
+
 def _builder_space(session: Session, user: AppUser, key: str) -> dict[str, Any]:
     sp = get_space(session, key)
     if sp is None or not sp.get("builder"):
@@ -137,13 +142,13 @@ def _agent_json(session: Session, a: AnalysisAgent, names: dict[str, str] | None
     sp = get_space(session, a.space) or {}
     out: dict[str, Any] = {
         "code": a.code, "space": a.space, "spaceLabel": sp.get("label") or a.space, "title": a.title, "status": a.status, "statusLabel": STATUS_LABEL.get(a.status, a.status),
-        "version": a.version, "tabKey": a.tab_key, "workflow": a.workflow_code, "requestedBy": a.requested_by, "requestedByName": names.get(a.requested_by or ""),
+        "version": a.version, "tabKey": a.tab_key, "workflow": a.workflow_code, "requestedBy": a.requested_by, "requestedByName": names.get(a.requested_by or "") or _agent_name(a.requested_by),
         "approvedBy": a.approved_by, "approvedAt": _iso(a.approved_at), "updatedAt": _iso(a.updated_at), "createdAt": _iso(a.created_at),
         "href": (f"{sp.get('path')}/{a.tab_key}" if sp.get("path") else f"/analysis/{a.space}/{a.tab_key}") if a.status in ("active", "paused") else None,
         "lastRun": {"id": run.id, "status": run.status, "startedAt": _iso(run.started_at), "finishedAt": _iso(run.finished_at)} if run else None,
         "pendingVersion": next((v.version for v in vs if v.status == "pending"), None),
         "versions": [{
-            "version": v.version, "status": v.status, "statusLabel": VSTATUS_LABEL.get(v.status, v.status), "requestedBy": v.requested_by, "requestedByName": names.get(v.requested_by or ""),
+            "version": v.version, "status": v.status, "statusLabel": VSTATUS_LABEL.get(v.status, v.status), "requestedBy": v.requested_by, "requestedByName": names.get(v.requested_by or "") or _agent_name(v.requested_by),
             "reviewedBy": v.reviewed_by, "reviewedByName": names.get(v.reviewed_by or ""), "reviewedAt": _iso(v.reviewed_at), "reviewNote": v.review_note, "createdAt": _iso(v.created_at),
             "counts": (v.validation or {}).get("counts"), "issues": len((v.validation or {}).get("issues") or []),
             **({"sourceText": v.source_text, "spec": v.spec, "validation": v.validation, "preview": v.preview} if full else {}),

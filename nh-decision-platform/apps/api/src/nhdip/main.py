@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from nhdip.api import admin_agentic, admin_bizconfig, admin_core, admin_data, admin_home, admin_knowledge, admin_sync, analysis, analysis_agents, analysis_spaces, assist, auth, cascade, db_uploads, documents, nc_sso, oidc, reports, screens, state
+from nhdip.api import admin_agentic, admin_bizconfig, admin_core, admin_data, admin_home, admin_knowledge, admin_sync, analysis, analysis_agents, analysis_spaces, assist, auth, cascade, db_uploads, documents, nc_sso, oidc, reports, screens, state, steward_proposals
 from nhdip import obs
 from nhdip.config import check_runtime, docs_enabled, get_settings
 from nhdip.db import SessionLocal, engine
@@ -50,6 +50,7 @@ app.include_router(admin_bizconfig.router)  # /admin/datasets/auto-upload 이 /a
 app.include_router(admin_data.router)
 app.include_router(admin_home.router)
 app.include_router(admin_knowledge.router)
+app.include_router(steward_proposals.router)  # 데이터 책임자 승인함(§40 STW) — /db/steward/proposals
 app.include_router(db_uploads.router)
 app.include_router(db_uploads.admin_router)
 

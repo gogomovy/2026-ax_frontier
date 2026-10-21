@@ -1663,7 +1663,8 @@ def test_analysis_agent_builder_flow(db, monkeypatch):
         prompt = s.execute(select(Prompt).where(Prompt.agent_code == code)).scalar()
         assert s.get(Agent, code).kind == "llm"
     # Phase P (TDB-02~05) — 팀 데이터 · 근거 검색(팀 문서 · 그래프 개념)이 명세의 근거 설정과 관계없이 들어간다
-    assert impls == ["load_inputs", "compute_metrics", "team_context", "retrieve_evidence", "dynamic_task", "render_report", "critic", "publish"], impls
+    # §40 STW(Q225) — 계산 뒤 변화 감지(변화 피드 · change.detected → 오케스트레이터)
+    assert impls == ["load_inputs", "compute_metrics", "detect_changes", "team_context", "retrieve_evidence", "dynamic_task", "render_report", "critic", "publish"], impls
     with db() as s:
         kinds = {(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == wf)).scalars()}
     assert ("common", "*") in kinds and any(k == "team" for k, _ in kinds) and any(k == "cron" for k, _ in kinds), kinds  # 팀 · 공통 조건 · 기본 정기 실행(AGW-06)

@@ -73,6 +73,9 @@ def index_dataset_cards(session: Session, codes: list[str] | None = None) -> dic
     if codes:
         q = q.where(Dataset.code.in_(codes))
     seen: set[str] = set()
+    from nhdip.data.sources import Resolver
+
+    res = Resolver(session)
     for ds in session.execute(q).scalars():
         key = f"{KIND}:{ds.code}"
         got = card_text(session, ds)
@@ -84,7 +87,14 @@ def index_dataset_cards(session: Session, codes: list[str] | None = None) -> dic
         # 공통 통합 DB(§38 CMN)는 전행 공개 컬렉션 — 모든 부서 질의에서 찾는다. 소유 팀은 카드에도 남긴다(ES kb 색인 owner_org)
         common = bool(getattr(ds, "common", False)) and session.get(KbCollection, COMMON_COLLECTION) is not None
         owner = None if common else _owner_of(session, ds)
-        h = hashlib.sha1(f"{text}\n{'common' if common else ''}|{owner or ''}".encode("utf-8")).hexdigest()[:40]
+        # 이어진 업무 개념(데이터 책임자가 승인한 연결 · 업무 구성의 연결) — 카드 본문 한 줄 + 검색 개념 태그(ES concepts · 근거 검색 그래프 필터)
+        from nhdip.stewardship import linked_concepts
+
+        linked = linked_concepts(session, ds, res)
+        if linked:
+            text = f"{text}\n연결 개념: {', '.join(c['name'] for c in linked[:12])}"
+        concept_keys = sorted({c["key"] for c in linked})[:30]
+        h = hashlib.sha1(f"{text}\n{'common' if common else ''}|{owner or ''}|{','.join(concept_keys)}".encode("utf-8")).hexdigest()[:40]
         cur = session.execute(select(KbChunk).where(KbChunk.source_key == key)).scalars().all()
         if len(cur) == 1 and cur[0].unit_hash == h:
             out["kept"] += 1
@@ -94,7 +104,7 @@ def index_dataset_cards(session: Session, codes: list[str] | None = None) -> dic
         session.flush()
         session.add(KbChunk(collection_code=COMMON_COLLECTION if common else COLLECTION, source_kind=KIND, source_key=key, unit_hash=h, ordinal=0, title=f"{'공통 · ' if common else ''}데이터셋 · {ds.name}"[:300], text=text,
                             required_resource=None if common else RESOURCE, owner_org=owner,
-                            concepts=[], meta={"artifactTitle": ds.name, "dataset": ds.code, "rows": rows, "href": "/knowledge", **({"common": True} if common else {})}, as_of=as_of))
+                            concepts=concept_keys, meta={"artifactTitle": ds.name, "dataset": ds.code, "rows": rows, "href": "/knowledge", **({"common": True} if common else {})}, as_of=as_of))
         out["inserted"] += 1
     if not codes:
         stale = [k for (k,) in session.execute(select(KbChunk.source_key).where(KbChunk.source_kind == KIND).distinct()).all() if k not in seen]

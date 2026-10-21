@@ -129,6 +129,8 @@ function useCounts(): Record<CountKey, number> {
     adminUsers: c.adminUsers ?? 0,
     adminUploads: c.adminUploads ?? 0,
     adminAnalyses: c.adminAnalyses ?? 0,
+    // 데이터 책임자 승인함(에이전트 제안 · 부서 분석 요청) — 서버가 책임자 · 관리자에게만 계산 (§40 STW)
+    stewardTodo: c.stewardTodo ?? 0,
   };
 }
 

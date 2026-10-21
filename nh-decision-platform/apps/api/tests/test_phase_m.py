@@ -120,7 +120,8 @@ def test_ontology_build_workflow_profiles_and_proposes_then_admin_applies(db):
     with db() as s:
         assert s.get(Workflow, "wf_ontology_build") is not None
         impls = [n.impl for n in s.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == "wf_ontology_build").order_by(WorkflowNode.seq)).scalars()]
-        assert impls == ["profile_datasets", "design_object_types", "discover_links", "resolve_entities", "check_ontology", "propose_ontology", "propose_metrics"]
+        # §40 STW — 끝에 개념 연결 · 분석 화면 제안(데이터 책임자 승인 대기)
+        assert impls == ["profile_datasets", "design_object_types", "discover_links", "resolve_entities", "check_ontology", "propose_ontology", "propose_metrics", "propose_concepts", "propose_analysis"]
         before = active_schema(s).version
         run = run_workflow(s, "wf_ontology_build", [{"type": "manual", "payload": {"workflow": "wf_ontology_build"}}])
         assert run.status in ("succeeded", "degraded"), run.error

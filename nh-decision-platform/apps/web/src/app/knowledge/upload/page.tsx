@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
 import type { ReviewData } from "@/components/knowledge/StewardReview";
-import { UploadPageTabs } from "@/components/knowledge/UploadPageTabs";
+import { UploadPageTabs, type UploadTab } from "@/components/knowledge/UploadPageTabs";
 import type { Uploadable } from "@/components/knowledge/UploadWorkspace";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { apiTry } from "@/lib/api-server";
+import type { ProposalsData } from "@/lib/stewardProposals";
+
+const TABS: UploadTab[] = ["upload", "intake", "review", "proposals", "data"];
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +16,14 @@ export const dynamic = "force-dynamic";
  */
 export default async function KnowledgeUploadPage(props: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await props.searchParams;
-  const [options, review] = await Promise.all([apiTry<Uploadable>("/db/uploadable"), apiTry<ReviewData>("/db/uploads/review?status=pending")]);
-  if (!options && !review) redirect("/forbidden?from=/knowledge/upload");
+  // 에이전트 제안 승인함(§40 STW)은 부서 데이터 책임자 · 관리자만 — 다른 사용자는 403 → null(탭 없음)
+  const [options, review, proposals] = await Promise.all([
+    apiTry<Uploadable>("/db/uploadable"),
+    apiTry<ReviewData>("/db/uploads/review?status=pending"),
+    apiTry<ProposalsData>("/db/steward/proposals?status=pending"),
+  ]);
+  if (!options && !review && !proposals) redirect("/forbidden?from=/knowledge/upload");
+  const tab = typeof sp.tab === "string" && (TABS as string[]).includes(sp.tab) ? (sp.tab as UploadTab) : "upload";
   return (
     <>
       <PageHeader
@@ -23,7 +32,7 @@ export default async function KnowledgeUploadPage(props: { searchParams: Promise
         description="업무 자료(정형 자료의 새 버전 · 문서)를 올려 데이터베이스 반영을 요청합니다. 올리는 즉시 검사 결과를 보여 주고, 부서 데이터 책임자나 관리자가 승인하면 관련 화면 수치와 분석이 다시 계산됩니다."
       />
       <div className="shell pb-section">
-        <UploadPageTabs options={options} review={review} initialTab={sp.tab === "review" ? "review" : sp.tab === "data" ? "data" : sp.tab === "intake" ? "intake" : "upload"} initialTarget={typeof sp.target === "string" ? sp.target : undefined} />
+        <UploadPageTabs options={options} review={review} proposals={proposals} initialTab={tab} initialTarget={typeof sp.target === "string" ? sp.target : undefined} />
       </div>
     </>
   );

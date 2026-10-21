@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AdminPage, C, Card, Check, Collapse, JsonEditor, JsonView, Loading, Select, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
 import { ValueView } from "@/components/admin/ValueView";
@@ -219,7 +220,13 @@ function MetricProposals({ onChanged }: { onChanged: () => Promise<void> }) {
   };
   return (
     <Card title={`에이전트 제안 지표 ${rows.length}개 — 승인 대기`}>
-      <p className="mb-md text-[12.5px] text-steel">새로 올라온 자료 가운데 아직 어떤 지표도 읽지 않는 자료의 측정 열로 지표 제안 에이전트가 만든 후보입니다. 승인하면 계산 커널이 바로 계산해 지표 이력에 남기고, 반려하면 같은 열을 다시 제안하지 않습니다.</p>
+      <p className="mb-md text-[12.5px] text-steel">
+        새로 올라온 자료 가운데 아직 어떤 지표도 읽지 않는 자료의 측정 열로 지표 제안 에이전트가 만든 후보입니다. 승인하면 계산 커널이 바로 계산해 지표 이력에 남기고, 반려하면 같은 열을 다시 제안하지 않습니다. 자료를 소유한 부서의 데이터 책임자도{" "}
+        <Link href="/knowledge/upload?tab=proposals" className="font-bold text-primary underline">
+          에이전트 제안 승인함
+        </Link>
+        에서 같은 제안(분석 화면 · 개념 연결 포함)을 승인할 수 있습니다.
+      </p>
       <Table head={["지표", "수식", "이유 · 자료", ""]}>
         {rows.map((m) => (
           <tr key={m.code} data-metric-proposal={m.code}>

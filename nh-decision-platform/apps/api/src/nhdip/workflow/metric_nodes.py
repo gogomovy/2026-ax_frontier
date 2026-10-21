@@ -21,6 +21,7 @@ from .llm_judge import ask_json, clean_reason
 
 WORKFLOW = "wf_data_metrics"
 PROPOSED = "[에이전트 제안]"
+APPROVED = "[승인]"
 REJECTED = "[반려]"
 TASK = (
     "자료의 측정 열로 만든 지표 후보 목록이다. 경영 의사결정 화면에서 추적할 만한 것만 고르고(최대 max 개), 후보마다 한국어 지표 이름(label, 20자 이내)과 "

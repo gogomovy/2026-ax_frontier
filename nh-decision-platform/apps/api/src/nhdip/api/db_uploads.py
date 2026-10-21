@@ -608,18 +608,10 @@ def _steward(user: AppUser = Depends(current_user)) -> AppUser:
 
 
 def _scope_orgs(session: Session, steward: AppUser) -> tuple[OrgUnit | None, set[str]]:
-    """책임자 부서와 그 아래 조직 코드 전체."""
-    from nhdip.orgs import steward_scope
+    """책임자 부서와 그 아래 조직 코드 전체 — 데이터 책임자 승인함(§40 STW)과 같은 기준."""
+    from nhdip.stewardship import scope_orgs
 
-    scope = steward_scope(session, steward.org_code)
-    if scope is None:
-        return None, set()
-    out, frontier = {scope.code}, [scope.code]
-    while frontier:
-        kids = session.execute(select(OrgUnit.code).where(OrgUnit.parent_code.in_(frontier))).scalars().all()
-        frontier = [k for k in kids if k not in out]
-        out.update(frontier)
-    return scope, out
+    return scope_orgs(session, steward)
 
 
 @router.get("/db/uploads/review")

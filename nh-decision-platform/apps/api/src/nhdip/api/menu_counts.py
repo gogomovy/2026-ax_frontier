@@ -50,6 +50,18 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
         if not can(res):
             for k in keys:
                 out[k] = 0
+    # 데이터 책임자 승인함(§40 STW) — 에이전트 제안 · 부서 분석 요청 중 내가 처리할 것(책임자는 부서 범위, 관리자는 전체)
+    if user.role == "admin" or getattr(user, "data_steward", False):
+        from nhdip.stewardship import pending_total
+
+        try:
+            out["stewardTodo"] = pending_total(session, user)
+        except Exception:  # noqa: BLE001 — 건수 계산 실패가 메뉴를 막지 않는다(승인함 화면이 직접 다시 센다)
+            import logging
+
+            logging.getLogger(__name__).exception("데이터 책임자 승인함 건수 계산 실패")
+            session.rollback()
+            out["stewardTodo"] = 0
     if user.role == "admin":
         out.update(admin_counts(session))
     return out

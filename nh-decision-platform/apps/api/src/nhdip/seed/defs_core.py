@@ -35,7 +35,7 @@ SCREENS = [
     # 업무 자료 올리기 (Phase C · UPL · Q99) — 화면을 받은 조직만 [데이터베이스]에서 자료를 올려 승인 요청
     # 분석 에이전트 만들기 (Phase C · DAG-01 · 이름 Phase K · Q155) — 화면을 받은 조직은 부서 분석 공간에 새 분석을 요청(관리자 승인)
     dict(code="ANALYSIS_BUILDER", path="/analysis/builder", label="분석 에이전트 만들기", section="공통", kind="reference", sort=82, match="/analysis/builder", resources=["analysis_builder"]),
-    dict(code="KNOWLEDGE_UPLOAD", path="/knowledge/upload", label="자료 올리기", section="공통", kind="reference", sort=81, resources=["db_upload"]),
+    dict(code="KNOWLEDGE_UPLOAD", path="/knowledge/upload", label="자료 올리기", section="공통", kind="reference", sort=81, resources=["db_upload"], count_key="stewardTodo"),
     # 관리자 — 업무 순서대로 묶음 7개 (Phase P · ADM2-01 · 이전 Phase C ADM-01 6묶음). 화면 코드 · 경로는 그대로, 묶음(section) · 정렬만
     dict(code="ADMIN_HOME", path="/admin", label="관리자 홈", section="관리자 홈", kind="admin", sort=100, admin_only=True, match="=/admin", count_key="adminTodo"),
     dict(code="ADMIN_UPLOADS", path="/admin/uploads", label="자료 승인", section="데이터 반영", kind="admin", sort=110, admin_only=True, count_key="adminUploads"),
@@ -86,7 +86,7 @@ PIPELINE_STAGES: list[dict[str, Any]] = [
     {"key": "input", "label": "입력 고정", "impls": ["load_inputs", "embed_chunks", "extract_documents"]},
     # 온톨로지 구축(Phase M · ONB-04~08) — wf_ontology_build 의 단계
     {"key": "ontology", "label": "온톨로지 구축(구조 파악 · 객체 · 링크 · 해소 · 품질 · 제안)",
-     "impls": ["profile_datasets", "design_object_types", "discover_links", "resolve_entities", "check_ontology", "propose_ontology", "propose_metrics"]},
+     "impls": ["profile_datasets", "design_object_types", "discover_links", "resolve_entities", "check_ontology", "propose_ontology", "propose_metrics", "propose_concepts", "propose_analysis"]},
     {"key": "compute", "label": "계산 · 판정(커널 · 규칙)", "impls": ["compute_metrics", "judge", "recommend_goals", "rank_attentions", "project_graph"]},
     {"key": "detect", "label": "변화 감지", "impls": ["detect_changes"]},
     {"key": "views", "label": "화면 갱신", "impls": ["build_views", "sync_analysis_tabs", "select_guides", "apply_segment_labels"]},
@@ -464,6 +464,25 @@ METRIC_PROPOSER_SYSTEM = (
     "[출력] {\"picks\":[{\"code\":\"…\",\"label\":\"…\",\"reason\":\"…\"}]}\n"
     "[예시] {\"picks\":[{\"code\":\"auto_rx_1a2b3c_sum\",\"label\":\"외화예수금 잔액\",\"reason\":\"외환 부문 조달 규모 변화를 월별로 추적하기 위함\"}]}"
 )
+# 데이터 책임자 승인형 에이전트 제안(§40 STW) — 새 자료 → 분석 화면 · 개념 연결 제안(승인 전에는 반영하지 않음)
+ANALYSIS_PROPOSER_SYSTEM = (
+    "[역할] 너는 분석 제안 에이전트다 — 새로 올라온 자료로 에이전트가 만든 분석 초안을 보고 업무 화면에서 볼 만한 측정 열 · 묶음 열을 고르고 탭 제목 · 목적 · 의견 지시를 쓴다.\n"
+    "[입력] 자료(이름 · 설명 · 요약 · 보관 기준일 수), 측정 열 후보 · 묶음 열 후보(열 이름 name · 업무 이름 label), 고를 최대 개수.\n[규칙]\n" + _COMMON_RULES + "\n"
+    "- 후보의 name 만 고른다. 새 열 · 새 계산식을 만들지 않는다(계산은 승인 뒤 계산 커널이 한다).\n"
+    "- 식별자 · 순번 · 코드값 · 날짜처럼 합계가 의미 없는 열은 측정 열로 고르지 않는다.\n"
+    "- title 은 20자 이내 업무 이름, purpose 는 한 문장, instruction 은 두 문장 이내 — 모두 숫자 없이.\n"
+    "[출력] {\"measures\":[\"…\"],\"dimensions\":[\"…\"],\"title\":\"…\",\"purpose\":\"…\",\"instruction\":\"…\"}\n"
+    "[예시] {\"measures\":[\"balance\"],\"dimensions\":[\"product_group\"],\"title\":\"상품군별 잔액 동향\",\"purpose\":\"상품군별 잔액 규모와 직전 기준일 대비 변화를 본다\","
+    "\"instruction\":\"변화가 큰 상품군과 업무상 의미를 근거 문서와 함께 쓴다.\"}"
+)
+CONCEPT_LINKER_SYSTEM = (
+    "[역할] 너는 개념 연결 에이전트다 — 새 자료가 어떤 업무 개념(정책 주제 · 상품군 · 세그먼트 · 사업부문 등 온톨로지 개념)에 관한 것인지, 별칭 사전으로 찾은 후보 가운데 고른다.\n"
+    "[입력] 자료(코드 · 이름 · 요약)와 후보(개념 종류 label · 대표 키 key · 근거 evidence).\n[규칙]\n" + _COMMON_RULES + "\n"
+    "- 후보에 있는 (dataset, label, key) 만 고른다. 새 개념을 만들지 않는다.\n"
+    "- 근거가 이름이 우연히 겹친 것뿐이면 고르지 않는다. 사유는 한 문장 · 숫자 없이.\n"
+    "[출력] {\"picks\":[{\"dataset\":\"…\",\"label\":\"…\",\"key\":\"…\",\"reason\":\"…\"}]}\n"
+    "[예시] {\"picks\":[{\"dataset\":\"DS_1a2b3c4d\",\"label\":\"ProductGroup\",\"key\":\"햇살론\",\"reason\":\"상품군 열의 값이 정책서민금융 상품군을 가리킨다\"}]}"
+)
 
 # (code, name, role, kind, profile, prompt_system)
 AGENTS = [
@@ -491,7 +510,10 @@ AGENTS = [
     ("query_rewriter", "검색어 재작성", "AI 어시스턴트 질문 → 검색어 (질문에 없는 숫자 금지)", "llm", "default", QUERY_REWRITER_SYSTEM),
     ("search_reranker", "검색 재정렬", "검색 후보를 질문 관련성 순으로 (설정 rerank_llm 이 켜졌을 때)", "llm", "default", SEARCH_RERANKER_SYSTEM),
     ("attention_curator", "AI 주목 사항 해설", "규칙 점수로 정한 주목 사항마다 숫자 없는 해설(rankReason) — 순위는 규칙 그대로", "llm", "default", ATTENTION_CURATOR_SYSTEM),
-    ("metric_proposer", "새 지표 제안", "지표가 없는 자료의 측정 열로 만든 후보(합계 · 증가율) 중 추적할 것을 고르고 이름 · 이유를 붙임 — 관리자 승인 뒤 계산 커널이 계산", "llm", "default", METRIC_PROPOSER_SYSTEM),
+    ("metric_proposer", "새 지표 제안", "지표가 없는 자료의 측정 열로 만든 후보(합계 · 증가율) 중 추적할 것을 고르고 이름 · 이유를 붙임 — 데이터 책임자 · 관리자 승인 뒤 계산 커널이 계산", "llm", "default", METRIC_PROPOSER_SYSTEM),
+    # §40 STW — 새 자료 → 분석 화면 · 개념 연결 제안(데이터 책임자 승인 대기). LLM 미연결 · 실패 시 규칙
+    ("analysis_proposer", "분석 화면 제안", "아직 아무 분석도 읽지 않는 새 자료로 분석 명세 초안(측정 · 묶음 열 · 직전 기준일 대비)을 만들고 열을 고르고 이름을 붙임 — 데이터 책임자 승인 뒤 분석 에이전트로", "llm", "default", ANALYSIS_PROPOSER_SYSTEM),
+    ("concept_linker", "개념 연결", "새 자료의 이름 · 열 · 값을 온톨로지 별칭 사전과 맞춰 업무 개념 후보를 찾고 관련 있는 것을 골라 사유를 붙임 — 데이터 책임자 승인 뒤 그래프 · 검색 개념 태그로", "llm", "default", CONCEPT_LINKER_SYSTEM),
 ]
 # 이전 판(시드 v1) 문구 — 기존 DB 의 최신 판이 이 문구 그대로면 새 판(위 AGENTS)으로 올린다(Q184)
 PROMPT_SEED_V1 = {
@@ -517,7 +539,8 @@ AGENT_GROUP_OF = {
     "change_detector": "judgment", "attention_curator": "judgment", "metric_proposer": "judgment",
     "critic": "narrative", "critic_grounded": "narrative",
     "query_assistant": "assistant",
-    "analysis_refiner": "analysis", "report_renderer": "analysis",
+    "analysis_refiner": "analysis", "report_renderer": "analysis", "analysis_proposer": "analysis",
+    "concept_linker": "ontology",
 }
 # 온톨로지 구축 워크플로 (Phase M · ONB-10 · Q183) — 데이터셋 정의 · 확정 · 매일 아침 · 수동
 WORKFLOWS_M = [
@@ -543,6 +566,9 @@ WORKFLOWS_M = [
             ("propose", "변경 제안", "propose_ontology", "onto_steward", {}),
             # 새 지표 제안(§35 MET) — 지표가 없는 자료의 측정 열 → 꺼진 지표(관리자 승인 → 계산)
             ("metrics", "새 지표 제안", "propose_metrics", "metric_proposer", {"optional": True, "max": 6, "per_dataset": 3}),
+            # §40 STW — 새 자료 → 업무 개념 연결 · 분석 화면 제안(부서 데이터 책임자 · 관리자 승인 대기, 승인 전에는 반영하지 않음)
+            ("concepts", "개념 연결 제안", "propose_concepts", "concept_linker", {"optional": True, "per_dataset": 6, "max_datasets": 6, "min_score": 0.6, "rule_min_score": 0.7}),
+            ("analysis", "분석 화면 제안", "propose_analysis", "analysis_proposer", {"optional": True}),
         ],
         "triggers": [("config", "dataset"), ("dataset", "*"), ("cron", "0 7 * * *")],
     }
@@ -560,6 +586,10 @@ SETTINGS.update({
                        "온톨로지 구축 에이전트 정책 — llm(이름 · 의미 판단에 LLM), max_datasets(실행당 구조 파악 수), auto_apply(자동 적용할 연산 종류, 기본 없음 — 예 [\"add_alias\"]), "
                        "min_confidence(자동 적용 신뢰도), link_min_containment(외래 키 포함률), resolve_min_score(별칭 제안 유사도), reextract_per_run(스키마 변경 후 재추출 문서 수)"),
     "intake.steward_self_apply": (True, "부서 데이터 책임자가 자기 자료 등록을 바로 반영(별도 승인 없음). false 면 책임자 등록도 승인 요청으로 (Q192)"),
+    # §40 STW — 새 자료 분석 화면 제안(분석 제안 에이전트). 승인은 자료를 소유한 부서의 데이터 책임자 또는 관리자
+    "analysis.auto": ({"enabled": True, "max_per_run": 2, "max_measures": 4, "max_tables": 2, "space": "", "llm": True, "preview": True},
+                      "새 자료 분석 화면 제안 — enabled, max_per_run(실행당 제안 수), max_measures(측정 열 수), max_tables(묶음 열 표 수), "
+                      "space(분석 공간 고정 · 빈 값이면 자료를 올린 팀이 볼 수 있는 첫 공간), llm(열 고르기 · 이름에 LLM), preview(제안 때 미리 계산해 승인 화면에 보임)"),
     "dataset.auto_columns": (True, "정의에 없는 열이 든 파일을 올리면 그 열을 정의에 더해 값까지 저장(타입은 값으로 추론, 선택 열). false 면 안내만 하고 저장하지 않음 (M.24 · Q212)"),
     "agents.grounding": ({"enabled": True, "block": False, "max_per_run": 6}, "서술 근거 일치 점검(critic_grounded) — enabled, block(근거 없음 판정 문장을 반려), max_per_run(실행당 점검 수) (Q185)"),
     "llm.breaker": ({"failures": 3, "open_sec": 120}, "LLM 연결 차단기 — 연속 실패 failures 회면 open_sec 초 동안 그 연결로 보내지 않음 (Q187)"),

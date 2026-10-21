@@ -72,10 +72,17 @@ def team_of_user(session: Session, emp_no: str | None) -> Team:
 
 
 def team_of_agent(session: Session, agent_code: str | None) -> Team:
-    from nhdip.models import AnalysisAgent
+    """분석 에이전트의 팀 — 요청자 소속. 에이전트가 제안한 분석(§40 STW)은 사람이 요청하지 않았으므로 자료를 소유한 조직의 팀."""
+    from nhdip.models import AnalysisAgent, AnalysisAgentVersion
 
     a = session.get(AnalysisAgent, agent_code) if agent_code else None
-    return team_of_user(session, a.requested_by if a else None)
+    if a is None:
+        return team_of_user(session, None)
+    spec = a.spec or session.execute(select(AnalysisAgentVersion.spec).where(AnalysisAgentVersion.agent_code == a.code).order_by(AnalysisAgentVersion.version.desc()).limit(1)).scalar() or {}
+    owner = ((spec or {}).get("auto") or {}).get("ownerOrg") if isinstance(spec, dict) else None
+    if owner:
+        return team_of(session, str(owner))
+    return team_of_user(session, a.requested_by)
 
 
 def dataset_scopes(session: Session, team_orgs: set[str]) -> dict[str, dict[str, Any]]:

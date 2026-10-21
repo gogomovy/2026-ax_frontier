@@ -119,6 +119,9 @@ def _nodes(spec: dict[str, Any], agent: str) -> list[tuple[str, str, str, str | 
     nodes: list[tuple[str, str, str, str | None, dict[str, Any]]] = [
         ("load", "입력 고정", "load_inputs", None, {"datasets": input_datasets(spec)}),
         ("compute", "지표 계산(커널)", "compute_metrics", None, {}),
+        # 변화 감지(§40 STW) — 이 분석의 지표 · 입력 자료가 직전 실행보다 바뀐 것을 변화 감지 에이전트가 판단해 변화 피드 · change.detected 로
+        # (오케스트레이터가 영향받는 다른 흐름을 잇는다). 판단 실패가 보고서를 막지 않게 선택 단계
+        ("detect", "변화 감지", "detect_changes", "change_detector", {"optional": True}),
         # 팀 데이터(Phase P · TDB-02~05) — 명세에 적힌 자료만이 아니라 요청 팀의 정형 자료 · 상위 KPI · 온톨로지 관계를 실행마다 다시 본다
         ("team", "팀 데이터(정형 · KPI · 온톨로지)", "team_context", None, {"agent": agent, "optional": True}),
     ]
@@ -362,9 +365,12 @@ def preview(session: Session, spec: dict[str, Any], space: str, actor: str) -> d
         ctx.state["preview"] = True
         ctx.state["analysis_spec"] = {"spec": spec, "token": token, "version": 0}
         ctx.state["team_actor"] = actor  # 미리보기의 팀 = 요청자 소속 (TDB-09)
+        owner = ((spec.get("auto") or {}).get("ownerOrg")) if isinstance(spec.get("auto"), dict) else None
+        if owner:
+            ctx.state["team_org"] = owner  # 에이전트 제안 분석(§40 STW)의 팀 = 자료를 소유한 조직
         for key, _name, impl, agent, cfg in _nodes(spec, i["agent"]):
-            if impl in ("critic", "publish"):
-                continue
+            if impl in ("critic", "publish", "detect_changes"):
+                continue  # 미리보기는 게시 · 변화 피드를 남기지 않는다
             node = WorkflowNode(workflow_code=wf.code, seq=0, key=key, name=_name, impl=impl, agent_code=None, enabled=True, config=cfg)
             try:
                 res = NODE_IMPLS[impl](ctx, node)

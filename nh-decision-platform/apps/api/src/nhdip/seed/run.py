@@ -193,14 +193,18 @@ def _upgrade_workflow(s: Session, w: dict[str, Any]) -> None:
     """운영 중인 공통 흐름에 새로 정의된 노드 · 트리거만 추가(관리자가 바꾼 기존 노드 · 트리거는 유지)."""
     have = {n.key for n in s.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == w["code"])).scalars()}
     nodes = w["nodes"]
+    tail = s.execute(select(func.max(WorkflowNode.seq)).where(WorkflowNode.workflow_code == w["code"])).scalar() or 0
     for i, (key, name, impl, agent, cfg) in enumerate(nodes):
         if key in have:
             continue
         nxt = next((n for n in nodes[i + 1 :] if n[0] in have), None)
-        seq = 999
         if nxt:
             nseq = s.execute(select(WorkflowNode.seq).where(WorkflowNode.workflow_code == w["code"], WorkflowNode.key == nxt[0])).scalar()
             seq = (nseq or 1000) - 5
+        else:
+            # 맨 뒤에 새로 붙는 노드가 여럿이면 정의 순서대로 이어 붙인다(같은 순번이면 실행 순서가 정해지지 않는다)
+            tail += 10
+            seq = tail
         s.add(WorkflowNode(workflow_code=w["code"], seq=seq, key=key, name=name, impl=impl, agent_code=agent, enabled=True, config=cfg))
     trig = {(t.kind, t.target) for t in s.execute(select(WorkflowTrigger).where(WorkflowTrigger.workflow_code == w["code"])).scalars()}
     for kind, target in w["triggers"]:
@@ -405,6 +409,31 @@ def admin_counts_upgrade(s: Session, out: dict[str, Any]) -> None:
     out["admin_counts_upgrade"] = done
 
 
+def steward_inbox_upgrade(s: Session, out: dict[str, Any]) -> None:
+    """§40 STW — 1회. [자료 올리기] 메뉴에 데이터 책임자 승인함 건수를 달고(관리자가 바꾼 건수 키는 그대로),
+    이미 승인된 분석 에이전트 흐름에 변화 감지 단계를 더한다(새 승인은 lifecycle._nodes 가 넣는다)."""
+    if _applied(s, "steward-inbox-v1"):
+        return
+    sc = s.get(Screen, "KNOWLEDGE_UPLOAD")
+    if sc is not None and not sc.count_key:
+        sc.count_key = "stewardTodo"
+    from nhdip.models import AnalysisAgent
+
+    added = []
+    for a in s.execute(select(AnalysisAgent).where(AnalysisAgent.status.in_(("active", "paused")), AnalysisAgent.workflow_code.is_not(None))).scalars():
+        nodes = s.execute(select(WorkflowNode).where(WorkflowNode.workflow_code == a.workflow_code).order_by(WorkflowNode.seq)).scalars().all()
+        if not nodes or any(n.impl == "detect_changes" for n in nodes):
+            continue
+        comp = next((n for n in nodes if n.impl == "compute_metrics"), None)
+        after = next((n for n in nodes if comp is not None and n.seq > comp.seq), None)
+        if comp is None:
+            continue
+        seq = (comp.seq + after.seq) // 2 if after is not None and after.seq - comp.seq > 1 else comp.seq + 1
+        s.add(WorkflowNode(workflow_code=a.workflow_code, seq=seq, key="detect", name="변화 감지", impl="detect_changes", agent_code="change_detector", enabled=True, config={"optional": True}))
+        added.append(a.workflow_code)
+    out["steward_inbox_upgrade"] = {"count_key": bool(sc is not None and sc.count_key == "stewardTodo"), "detect_added": added}
+
+
 def data_admin_upgrade(s: Session, out: dict[str, Any]) -> None:
     """Phase J (DEL-01 · Q143) — 데이터 관리자가 한 명도 없으면 부트스트랩 관리자를 지정(1회)."""
     if _applied(s, "data-admin-v1"):
@@ -452,6 +481,8 @@ def run_seed(s: Session, with_precompute: bool = False) -> dict[str, Any]:  # no
     admin_counts_upgrade(s, out)
     data_admin_upgrade(s, out)
     analysis_agents_team_upgrade(s, out)
+    s.flush()
+    steward_inbox_upgrade(s, out)
     s.flush()
     # 기본 업무 구성(3개 부서 화면 · 흐름 · 지표 산식 · 화면 연결 · 조직 · 화면 권한 — 값 없음). 값은 올린 원천 자료로 계산한다
     from .pack import seed_business_pack

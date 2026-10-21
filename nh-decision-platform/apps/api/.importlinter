@@ -24,6 +24,7 @@ source_modules =
     nhdip.knowledge
     nhdip.ui_config
     nhdip.bizconfig
+    nhdip.stewardship
 forbidden_modules =
     nhdip.api
     nhdip.main
