@@ -89,6 +89,48 @@ def _check_text(content: bytes, allow_cp949: bool = False) -> None:
         raise UploadRejected("텍스트 파일은 UTF-8 로 저장해 주세요" + (" (또는 CP949)" if allow_cp949 else "")) from exc
 
 
+# 텍스트로 볼 수 없는 바이트(제어문자 — 탭 · 줄바꿈 제외). 이진 파일 판별에 쓴다
+_NONTEXT = bytes(b for b in range(0x20) if b not in (0x09, 0x0A, 0x0D)) + b"\x7f"
+NONTEXT_MAX_PCT = 2
+
+
+def _check_hr_text(content: bytes) -> None:
+    """조직 · 인사 .dat — 호스트 연계 파일의 모양 차이를 받아들인다 (Phase R).
+
+    받는 것: UTF-8(BOM 무관) · EUC-KR(CP949) · UTF-16(LE · BE) · 고정길이 레코드의 NUL 패딩.
+    실제 정리는 파서(orgsync.decode)가 하고 바꾼 내용을 동기화 결과의 '참고'에 남긴다.
+    여기서는 '텍스트로 읽을 수 있는 파일인지'만 본다 — NUL 하나로 막지 않되, 진짜 이진 파일은 계속 거절한다.
+    """
+    # UTF-16 은 글자마다 NUL 이 들어가므로 NUL 비율로 판단하지 않고 먼저 걸러낸다
+    if content[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        for cand in ("utf-16", "utf-16-le", "utf-16-be"):
+            try:
+                content.decode(cand)
+                return
+            except UnicodeDecodeError:
+                continue
+        raise UploadRejected("UTF-16 파일로 보이지만 읽을 수 없습니다 — UTF-8 로 다시 저장해 주세요")
+
+    body = content.replace(b"\x00", b"")  # 빈 자리 채움(NUL) 제거 후 판단
+    if not body.strip():
+        raise UploadRejected("내용이 없습니다")
+    sample = body[:65536]
+    bad = sum(sample.count(b) for b in _NONTEXT)
+    if bad * 100 / len(sample) > NONTEXT_MAX_PCT:
+        raise UploadRejected("텍스트 파일이 아닙니다 — '|' 로 구분된 조직 · 인사 .dat 를 올려 주세요")
+    for cand in ("utf-8-sig", "cp949", "utf-16-le", "utf-16-be"):
+        try:
+            content.decode(cand)
+            return
+        except UnicodeDecodeError:
+            continue
+    # 어느 인코딩으로도 깨끗이 읽히지 않음 — 파서가 CP949 로 대체 문자를 넣어 읽을 수 있으므로
+    # 글자 깨짐이 적으면 통과시키고(동기화 결과에 안내가 남는다), 많으면 거절한다
+    repl = body.decode("cp949", errors="replace").count("\ufffd")
+    if repl * 100 / max(len(body), 1) > NONTEXT_MAX_PCT:
+        raise UploadRejected("인코딩을 알 수 없습니다 — UTF-8 또는 EUC-KR(CP949) 로 저장해 주세요")
+
+
 def _antivirus(content: bytes, cfg: dict[str, Any]) -> None:
     cmd = os.environ.get("UPLOAD_AV_COMMAND", "").strip()
     if not cmd:
@@ -142,8 +184,11 @@ def check_upload(filename: str | None, content: bytes, purpose: str, cfg: dict[s
             raise UploadRejected("PDF 파일이 아닙니다")
         if c["block_pdf_active"] and _PDF_ACTIVE.search(content):
             raise UploadRejected("스크립트 · 실행 동작 · 첨부 파일이 포함된 PDF 는 올릴 수 없습니다(인쇄 → PDF 로 다시 저장)")
+    elif purpose == "hr_sync":
+        # 조직 · 인사 .dat — 호스트 연계 파일의 인코딩 · NUL 패딩 차이를 받아들인다(파서가 정리)
+        _check_hr_text(content)
     else:
         # 마크다운은 내부망 변환기 기본값(CP949)도 받는다 — 읽을 때 UTF-8 → CP949 순 (data/mdtable.decode)
-        _check_text(content, allow_cp949=ext == ".md" or purpose == "hr_sync")
+        _check_text(content, allow_cp949=ext == ".md")
     _antivirus(content, c)
     return name

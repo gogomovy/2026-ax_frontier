@@ -542,6 +542,8 @@ class ConnPatch(BaseModel):
 
 class TestIn(BaseModel):
     model: str | None = None
+    # 임베딩 모델 — 넣으면 /embeddings 를 1건 호출해 차원까지 확인한다
+    embedding_model: str | None = None
 
 
 class ProfileIn(BaseModel):
@@ -622,9 +624,11 @@ def llm_setup(body: LlmSetupIn, request: Request, session: Session = Depends(get
             session.add(emb)
         emb.connection_id, emb.model = conn.id, body.embedding_model.strip()
     session.flush()
-    res = test_connection(conn.base_url, decrypt_secret(conn.api_key_enc), prof.model or None)
+    # 채팅 모델과 임베딩 모델을 함께 확인한다 — 임베딩은 /embeddings 규격이라 채팅 시험으로는 드러나지 않는다
+    res = test_connection(conn.base_url, decrypt_secret(conn.api_key_enc), prof.model or None,
+                          embedding_model=(emb.model or None) if emb else None)
     conn.last_test = {**res, "models": (res.get("models") or [])[:50], "at": utcnow().isoformat()}
-    audit(session, admin.emp_no, "admin.llm.setup", "llm_connection", str(conn.id), {"base_url": url, "api_key": "변경" if body.api_key is not None else "유지", "model": prof.model, "embedding_model": emb.model if emb else None, "ok": res.get("ok")}, client_ip(request))
+    audit(session, admin.emp_no, "admin.llm.setup", "llm_connection", str(conn.id), {"base_url": url, "api_key": "변경" if body.api_key is not None else "유지", "model": prof.model, "embedding_model": emb.model if emb else None, "ok": res.get("ok"), "embed_ok": res.get("embed_ok")}, client_ip(request))
     session.commit()
     from nhdip.workflow.llm_judge import reset_cooldown
 
@@ -677,9 +681,9 @@ def conn_test(cid: int, body: TestIn, request: Request, session: Session = Depen
     if not c:
         raise HTTPException(404, "연결 없음")
     _check_base_url(c.base_url)
-    res = test_connection(c.base_url, decrypt_secret(c.api_key_enc), body.model)
+    res = test_connection(c.base_url, decrypt_secret(c.api_key_enc), body.model, embedding_model=body.embedding_model)
     c.last_test = {**res, "models": (res.get("models") or [])[:50], "at": utcnow().isoformat()}
-    audit(session, admin.emp_no, "admin.llm.connection_test", "llm_connection", str(cid), {"ok": res.get("ok"), "model": body.model}, client_ip(request))
+    audit(session, admin.emp_no, "admin.llm.connection_test", "llm_connection", str(cid), {"ok": res.get("ok"), "model": body.model, "embedding_model": body.embedding_model}, client_ip(request))
     session.commit()
     return res
 

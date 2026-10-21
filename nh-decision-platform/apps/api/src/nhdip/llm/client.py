@@ -517,8 +517,13 @@ def embed(session: Session, cfg: ResolvedLlm, texts: list[str], *, workflow_run_
         _save_call(call)
 
 
-def test_connection(base_url: str, api_key: str, model: str | None = None, timeout: float = 15.0) -> dict[str, Any]:
-    """GET /models 로 키에 허용된 모델 목록·지연을 확인하고, 모델이 주어지면 1토큰 호출까지 확인."""
+def test_connection(base_url: str, api_key: str, model: str | None = None, timeout: float = 15.0,
+                    embedding_model: str | None = None) -> dict[str, Any]:
+    """연결 확인 — GET /models(모델 목록 · 지연) + 채팅 모델 1토큰 호출 + 임베딩 모델 1건 호출.
+
+    임베딩은 채팅과 호출 규격이 달라(`/embeddings`) 채팅 시험만으로는 확인되지 않는다.
+    모델 이름 오타 · 키 권한 부족 · 게이트웨이 미등록을 저장 시점에 바로 알 수 있게 함께 호출한다.
+    """
     out: dict[str, Any] = {"ok": False, "base_url": base_url}
     t0 = time.monotonic()
     try:
@@ -544,8 +549,43 @@ def test_connection(base_url: str, api_key: str, model: str | None = None, timeo
             if c.status_code != 200:
                 out["chat_error"] = c.text[:300]
             out["ok"] = out["ok"] and out["chat_ok"]
+        if embedding_model:
+            out.update(_test_embedding(base_url, api_key, embedding_model, timeout))
+            out["ok"] = out["ok"] and bool(out.get("embed_ok"))
     except httpx.HTTPError as exc:
         out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
+def _test_embedding(base_url: str, api_key: str, model: str, timeout: float) -> dict[str, Any]:
+    """임베딩 모델 1건 호출 — 차원 · 지연을 돌려준다(검색 품질은 차원이 맞아야 유지된다)."""
+    out: dict[str, Any] = {"embed_model": model, "embed_ok": False}
+    t0 = time.monotonic()
+    try:
+        r = httpx.post(
+            _url(base_url.rstrip("/"), "/embeddings"),
+            headers=_headers(api_key),
+            json={"model": model, "input": "연결 확인"},
+            timeout=timeout * 2,
+        )
+    except httpx.HTTPError as exc:
+        out["embed_error"] = f"{type(exc).__name__}: {exc}"
+        return out
+    out["embed_status"] = r.status_code
+    out["embed_latency_ms"] = int((time.monotonic() - t0) * 1000)
+    if r.status_code != 200:
+        out["embed_error"] = r.text[:300]
+        return out
+    try:
+        vec = ((r.json().get("data") or [{}])[0] or {}).get("embedding") or []
+    except ValueError as exc:
+        out["embed_error"] = f"응답을 읽을 수 없습니다: {exc}"
+        return out
+    if not isinstance(vec, list) or not vec:
+        out["embed_error"] = "임베딩 벡터가 비어 있습니다 — 임베딩 모델이 아닐 수 있습니다"
+        return out
+    out["embed_dim"] = len(vec)
+    out["embed_ok"] = True
     return out
 
 

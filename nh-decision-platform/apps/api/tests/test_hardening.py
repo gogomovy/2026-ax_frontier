@@ -592,9 +592,10 @@ def test_external_litellm_quick_setup(db, monkeypatch):
 
     seen = {}
 
-    def fake_test(base_url, api_key, model=None, timeout=15.0):
-        seen.update(url=base_url, key=api_key, model=model)
-        return {"ok": True, "models": ["gpt-x", "embed-x"], "latency_ms": 12, "chat_ok": True, "chat_latency_ms": 30}
+    def fake_test(base_url, api_key, model=None, timeout=15.0, embedding_model=None):
+        seen.update(url=base_url, key=api_key, model=model, embedding_model=embedding_model)
+        return {"ok": True, "models": ["gpt-x", "embed-x"], "latency_ms": 12, "chat_ok": True, "chat_latency_ms": 30,
+                "embed_model": embedding_model, "embed_ok": True, "embed_dim": 1024, "embed_latency_ms": 40}
 
     monkeypatch.setattr(admin_core, "test_connection", fake_test)
     admin = _admin()
@@ -616,7 +617,9 @@ def test_external_litellm_quick_setup(db, monkeypatch):
         body = r.json()
         assert body["test"]["ok"] and body["model"] == "gpt-x" and body["embeddingModel"] == "embed-x"
         assert "sk-test-123" not in r.text and body["connection"]["hasKey"]  # 키는 돌려주지 않는다
-        assert seen == {"url": "https://litellm.example.test/v1", "key": "sk-test-123", "model": "gpt-x"}
+        # 임베딩 모델도 연결 확인에 함께 넘어간다(채팅 시험만으로는 /embeddings 규격이 확인되지 않는다)
+        assert seen == {"url": "https://litellm.example.test/v1", "key": "sk-test-123", "model": "gpt-x", "embedding_model": "embed-x"}
+        assert body["test"]["embed_ok"] and body["test"]["embed_dim"] == 1024
         # 키를 비우면 유지
         assert admin.post("/admin/llm/setup", json={"base_url": "https://litellm.example.test/v1", "model": "gpt-x"}).status_code == 200
         with db() as s:

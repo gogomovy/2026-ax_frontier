@@ -79,24 +79,73 @@ class SyncResult:
 
 
 # ═════════════════════════ 읽기 ═════════════════════════
-def decode(content: bytes) -> tuple[str, str]:
-    """(본문, 인코딩) — UTF-8 BOM · 유효한 UTF-8 이면 UTF-8, 아니면 EUC-KR(CP949 상위 호환)."""
-    if content.startswith(b"\xef\xbb\xbf"):
-        return content[3:].decode("utf-8"), "utf-8-sig"
+def decode(content: bytes) -> tuple[str, str, list[str]]:
+    """(본문, 인코딩, 안내) — 호스트 연계 파일이 어떤 모양으로 와도 읽는다.
+
+    사내 인사 · 조직 .dat 는 내려주는 시스템에 따라 모양이 섞여 온다. 아래를 모두 받아 같은 텍스트로 만든다.
+      · UTF-8 (BOM 있거나 없거나) · EUC-KR(CP949) — 두 파일이 서로 다른 인코딩으로 와도 각각 알아서 읽는다
+      · UTF-16 (LE · BE, BOM 없어도 NUL 패턴으로 알아낸다)
+      · 고정길이 레코드의 NUL(0x00) 패딩 — 제거한다(값에 남으면 코드 · 사번 비교가 조용히 틀린다)
+      · 줄바꿈 CRLF · CR · LF 섞임
+    바꾼 내용은 안내로 돌려주어 동기화 결과의 '참고'에 남긴다(조용히 고치지 않는다).
+    """
+    notes: list[str] = []
+    raw = content
+
+    # ── UTF-16 — BOM 또는 NUL 이 절반 가까이면(ASCII 본문의 UTF-16 특징) ──
+    utf16 = None
+    if raw[:2] == b"\xff\xfe":
+        utf16 = "utf-16-le"
+    elif raw[:2] == b"\xfe\xff":
+        utf16 = "utf-16-be"
+    else:
+        head = raw[:4096]
+        if head and head.count(0) * 100 // max(len(head), 1) >= 25:
+            for cand in ("utf-16-le", "utf-16-be"):
+                try:
+                    probe = raw[: 4096 * 2].decode(cand)
+                except UnicodeDecodeError:
+                    continue
+                if "|" in probe:
+                    utf16 = cand
+                    break
+    if utf16:
+        text = raw.decode(utf16, errors="replace").lstrip("\ufeff")
+        notes.append(f"{utf16.upper()} 로 저장된 파일을 읽었습니다 — 가능하면 UTF-8 로 내려 주세요")
+        return text, utf16, notes
+
+    # ── NUL 패딩 제거 (고정길이 레코드) ──
+    nul = raw.count(0)
+    if nul:
+        raw = raw.replace(b"\x00", b"")
+        notes.append(f"빈 자리 채움 문자(NUL) {nul:,}개를 지우고 읽었습니다")
+
+    # ── UTF-8 → EUC-KR(CP949) ──
+    if raw.startswith(b"\xef\xbb\xbf"):
+        return raw[3:].decode("utf-8", errors="replace"), "utf-8-sig", notes
     try:
-        return content.decode("utf-8"), "utf-8"
+        return raw.decode("utf-8"), "utf-8", notes
     except UnicodeDecodeError:
-        return content.decode("cp949", errors="replace"), "euc-kr"
+        text = raw.decode("cp949", errors="replace")
+        if "\ufffd" in text:
+            notes.append("읽을 수 없는 글자가 있어 일부를 물음표로 바꿨습니다 — 인코딩을 확인해 주세요")
+        return text, "euc-kr", notes
 
 
-def lines(content: bytes) -> tuple[list[tuple[int, list[str]]], str]:
-    text, enc = decode(content)
+# 줄바꿈 · 탭만 남기고 제어문자를 지운다. splitlines() 는 \x0b · \x0c · \x85 에서도 줄을 쪼개므로 split("\n") 을 쓴다
+_CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def lines(content: bytes) -> tuple[list[tuple[int, list[str]]], str, list[str]]:
+    text, enc, notes = decode(content)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     out = []
-    for i, ln in enumerate(text.splitlines(), start=1):
+    for i, ln in enumerate(text.split("\n"), start=1):
         if not ln.strip():
             continue
-        out.append((i, [c.strip() for c in ln.split("|")]))  # 빈 끝 칸 유지(split 기본)
-    return out, enc
+        # 빈 끝 칸 유지(split 기본) · 칸마다 제어문자 제거 후 공백 정리
+        out.append((i, [_CTRL.sub("", c).strip() for c in ln.split("|")]))
+    return out, enc, notes
 
 
 def _v(p: list[str], i: int) -> str | None:
@@ -183,7 +232,9 @@ def sync_organizations(session: Session, content: bytes, *, dry_run: bool = Fals
 
     res = SyncResult("organization", dry_run)
     rules = filter_rules(session)
-    rows, res.encoding = lines(content)
+    rows, res.encoding, notes = lines(content)
+    for n in notes:
+        res.warn(n)
     if not rows:
         raise SyncError("빈 파일입니다")
     parsed: dict[str, list[str]] = {}
@@ -309,7 +360,9 @@ def _revoke(session: Session, emp: str) -> None:
 def sync_employees(session: Session, content: bytes, *, dry_run: bool = False) -> SyncResult:
     res = SyncResult("employee", dry_run)
     rules = filter_rules(session)
-    rows, res.encoding = lines(content)
+    rows, res.encoding, notes = lines(content)
+    for n in notes:
+        res.warn(n)
     if not rows:
         raise SyncError("빈 파일입니다")
     sp = session.begin_nested() if dry_run else None

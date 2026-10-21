@@ -47,6 +47,12 @@ interface TestResult {
   error?: string;
   chat_error?: string;
   models_status?: number;
+  // 임베딩 모델 확인 — /embeddings 1건 호출 결과(차원이 맞아야 검색이 동작한다)
+  embed_ok?: boolean;
+  embed_dim?: number;
+  embed_latency_ms?: number;
+  embed_error?: string;
+  embed_model?: string;
 }
 
 /** 외부 LiteLLM 간단 설정 (B.36) — 주소 · 키 · 모델을 넣고 저장하면 바로 연결을 확인한다 */
@@ -101,12 +107,17 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
             {shown.ok ? <Badge tone="success">연결 성공</Badge> : <Badge tone="critical">연결 실패</Badge>}{" "}
             {shown.latency_ms !== undefined ? `모델 목록 ${shown.latency_ms}ms` : ""}
             {shown.chat_ok !== undefined ? ` · 모델 호출 ${shown.chat_ok ? `성공 ${shown.chat_latency_ms}ms` : "실패"}` : ""}
+            {shown.embed_ok !== undefined
+              ? ` · 임베딩 ${shown.embed_ok ? `성공 ${shown.embed_dim}차원 ${shown.embed_latency_ms}ms` : "실패"}`
+              : ""}
           </span>
         ) : null}
       </div>
       {shown && !shown.ok ? (
         <p className="mt-xs break-all text-[12px] text-critical">
-          {shown.error || shown.chat_error || `HTTP ${shown.models_status ?? "-"}`} — 주소(…/v1 포함 여부) · 키 · 서버에서 그 주소로 나갈 수 있는지(보안 그룹 · 방화벽)를 확인하세요.
+          {shown.embed_ok === false && !shown.error && shown.chat_ok !== false
+            ? `임베딩 모델(${shown.embed_model}) 호출 실패: ${shown.embed_error} — 게이트웨이에 그 모델이 임베딩으로 등록돼 있는지, 키에 임베딩 권한이 있는지 확인하세요.`
+            : `${shown.error || shown.chat_error || `HTTP ${shown.models_status ?? "-"}`} — 주소(…/v1 포함 여부) · 키 · 서버에서 그 주소로 나갈 수 있는지(보안 그룹 · 방화벽)를 확인하세요.`}
         </p>
       ) : null}
       {shown?.models?.length ? (
