@@ -45,6 +45,77 @@ def test_prev_year_end_token():
         resolve_token([], "ym", "$latest")
 
 
+# ── 보관 기간 기반 토큰 — 올린 기준일이 띄어 있어도 비교가 되게 ──
+def test_prev_token_picks_stored_period_not_calendar_month():
+    from nhdip.calc.metrics import resolve_token
+
+    # 1월 · 8월만 올린 경우 — 달력상 전월(202607)은 없지만 '직전 보관 기간'은 202601
+    jan_aug = [{"ym": "202601"}, {"ym": "202608"}]
+    assert resolve_token(jan_aug, "ym", "$latest") == "202608"
+    assert resolve_token(jan_aug, "ym", "$prev") == "202601"
+    assert resolve_token(jan_aug, "ym", "$prev-1") == "202601"
+    # 달 수로 세는 토큰은 뜻을 바꾸지 않는다 — 그 달이 없으면 그 달을 그대로 돌려주고(맞는 행이 없어) 계산이 오류가 된다
+    assert resolve_token(jan_aug, "ym", "$latest-1") == "202607"
+    assert resolve_token(jan_aug, "ym", "$latest-12") == "202508"
+
+
+def test_prev_token_steps_back_and_clamps():
+    from nhdip.calc.metrics import resolve_token
+
+    rows = [{"ym": "202601"}, {"ym": "202604"}, {"ym": "202608"}]
+    assert resolve_token(rows, "ym", "$prev") == "202604"
+    assert resolve_token(rows, "ym", "$prev-2") == "202601"
+    assert resolve_token(rows, "ym", "$prev-9") == "202601"  # 더 과거가 없으면 가장 이른 기간
+
+
+def test_prev_token_collapses_to_latest_for_single_period():
+    from nhdip.calc.metrics import resolve_token
+
+    # 첫 업로드(기간 하나) — '갱신 실패'로 화면을 덮지 않도록 $latest 와 같게 떨어진다(증감 0)
+    one = [{"ym": "202608"}]
+    assert resolve_token(one, "ym", "$prev") == "202608" == resolve_token(one, "ym", "$latest")
+
+
+def test_nearest_token_picks_closest_stored_period():
+    from nhdip.calc.metrics import ResolveError, resolve_token
+
+    rows = [{"ym": "202502"}, {"ym": "202510"}, {"ym": "202601"}, {"ym": "202608"}]
+    # 12개월 전 = 202508 → 그 달은 없고 그보다 이전 중 가장 늦은 202502
+    assert resolve_token(rows, "ym", "$nearest-12") == "202502"
+    assert resolve_token(rows, "ym", "$nearest-10") == "202510"  # 목표와 정확히 같은 기간이 있으면 그것
+    assert resolve_token(rows, "ym", "$nearest-0") == "202608"
+    # 목표가 보관 기간보다 더 과거면 가장 가까운 기간
+    assert resolve_token(rows, "ym", "$nearest-120") == "202502"
+    assert resolve_token([{"d": "2026-01-31"}, {"d": "2026-08-31"}], "d", "$nearest-7") == "2026-01-31"
+    with pytest.raises(ResolveError):  # 개월 수가 없으면 뜻이 정해지지 않는다
+        resolve_token(rows, "ym", "$nearest")
+
+
+def test_resolve_period_uses_anchor_dataset():
+    from nhdip.calc.metrics import resolve_period
+
+    prov = [{"기준년월": "202601"}, {"기준년월": "202608"}]
+    pool = [{"기준년월": "202603"}, {"기준년월": "202609"}]
+    ctx = SimpleNamespace(dataset=lambda ref: (None, prov, SimpleNamespace(as_of_column="기준년월")))
+    # 규칙이 기준 자료를 정해 두면 이 질의의 행이 아니라 그 자료의 보관 기간에서 고른다
+    # (분석 하나의 기준시점은 하나 — 라벨이 말하는 기간과 실제 견준 기간이 어긋나지 않게)
+    assert resolve_period(ctx, "$prev", anchor="상품별 충당금(7790)", rows=pool, col="기준년월") == "202601"
+    # 기준 자료가 없으면 이 질의의 행에서 고른다(예전 동작)
+    assert resolve_period(ctx, "$prev", anchor=None, rows=pool, col="기준년월") == "202603"
+    # 토큰이 아니면 그대로 — 고정 연월을 적은 구성은 그대로 동작한다
+    assert resolve_period(ctx, "202605", anchor=None, rows=pool, col="기준년월") == "202605"
+    assert resolve_period(ctx, "202605", anchor="상품별 충당금(7790)", rows=pool, col="기준년월") == "202605"
+
+
+def test_analysis_spec_allows_stored_period_tokens():
+    from nhdip.analysis_agents.spec import TOKEN_RE
+
+    for ok in ("$latest", "$prev", "$prev-2", "$earliest", "$latest-12", "$nearest-12"):
+        assert TOKEN_RE.match(ok), ok
+    for bad in ("$nearest", "$prev_year_end", "$next", "$latest-", "latest"):
+        assert not TOKEN_RE.match(bad), bad
+
+
 # ── 일반 표 파서: 머리글 자동 탐지 · 주석 건너뜀 (RD-09) ──
 def test_read_table_csv_detects_header_and_skips_notes():
     from nhdip.data.datasets import _read_table

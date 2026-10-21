@@ -192,6 +192,22 @@ def _inclusive_diff(ctx: EvalContext, p: dict[str, Any]) -> Decimal | None:
     return rows[0].get("prov_share_diff_pp") if rows else None
 
 
+def _base_period(ctx: EvalContext, p: dict[str, Any], prov: list[dict[str, Any]]) -> str | None:
+    """기준시점 — 행 생성기 설정 base_ym 또는 규칙(share_trend)의 base_ym. 기간 토큰($prev · $earliest …)이면 실제 기준일로 푼다:
+    규칙이 기준 자료(base_ym_source)를 정해 두면 그 자료의 보관 기간에서(지표 · 화면과 같은 기준시점), 아니면 이 충당금 자료에서."""
+    from nhdip.calc.metrics import TOKEN_RE, ResolveError, anchor_dataset, resolve_period
+
+    raw = p.get("base_ym") or _rule_of(ctx, p, "share_trend").get("base_ym")
+    if isinstance(raw, str) and TOKEN_RE.match(raw):
+        code = (p.get("rules") or {}).get("share_trend")
+        try:
+            anchor = None if p.get("base_ym") or not code else anchor_dataset(ctx, {"rule": code, "path": "base_ym"})
+            raw = resolve_period(ctx, raw, anchor=anchor, rows=prov, col="ym")
+        except ResolveError:
+            return None
+    return str(raw) if raw else None
+
+
 @row_builder("risk_product_rows", "사업부서 T03 — 포용금융 상품별 당기 · 기준월 충당금, 비중 · 증가율 (7790 X컬럼)")
 def risk_product_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any]]:
     prov = _rows(ctx, _src(p, "provision"))
@@ -199,7 +215,7 @@ def risk_product_rows(ctx: EvalContext, p: dict[str, Any]) -> list[dict[str, Any
     yms = sorted({str(r.get("ym")) for r in prov})
     if not yms:
         return []
-    base_ym = str(p.get("base_ym") or (_rule_of(ctx, p, "share_trend").get("base_ym")) or yms[0])
+    base_ym = _base_period(ctx, p, prov) or yms[0]
     now_ym = resolve_token(prov, "ym", "$latest")
     now = {r["product_code"]: r for r in prov if str(r["ym"]) == now_ym and not r.get("is_total")}
     jan = {r["product_code"]: r for r in prov if str(r["ym"]) == base_ym and not r.get("is_total")}

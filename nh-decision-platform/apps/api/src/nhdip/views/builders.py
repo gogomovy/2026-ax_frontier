@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Any, Callable
 
 from nhdip.calc import execute, round_display
-from nhdip.calc.metrics import EvalContext, _match, resolve_ref, resolve_token, resolve_where
+from nhdip.calc.metrics import EvalContext, ResolveError, _match, anchor_dataset, resolve_period, resolve_ref, resolve_token, resolve_where
 
 BUILDERS: dict[str, Callable[[EvalContext, dict[str, Any]], Any]] = {}
 DESCRIPTIONS: dict[str, str] = {}
@@ -106,6 +106,10 @@ def b_grade_series(ctx: EvalContext, p: dict[str, Any]):
 def _psi_parts(ctx: EvalContext, p: dict[str, Any]):
     base = _rows(ctx, p["dataset"], p["base_where"], p.get("order_by", "grade_seq"))
     cur = _rows(ctx, p["dataset"], p["current_where"], p.get("order_by", "grade_seq"))
+    # 한쪽 기간의 분포가 비어 있으면 빈 표 · 0 으로 그리지 않고 '갱신 실패'로 올린다 (그 기간 자료가 아직 없다는 뜻)
+    for rows_, label in ((base, "기준시점"), (cur, "비교시점")):
+        if not rows_:
+            raise ResolveError(f"{p['dataset']}: {label} 분포 자료가 없습니다 — 그 기간 자료가 올라오면 채워집니다")
     col = p.get("share_col", "obs_share")
     res = execute("PSI", {"base": [r[col] for r in base], "current": [r[col] for r in cur], "eps": p.get("eps", 1e-6)})
     return base, cur, col, res
@@ -146,16 +150,27 @@ def b_psi_series(ctx: EvalContext, p: dict[str, Any]):
 # ═════════════════════════ 포용금융 충당금 ═════════════════════════
 def _inclusive(ctx: EvalContext, p: dict[str, Any]):
     master = {r["product_code"]: r for r in _rows(ctx, p["master"])}
-    prov = _rows(ctx, p["dataset"])
+    _, prov, prov_ds = ctx.dataset(p["dataset"])
+    ym_col = prov_ds.as_of_column or "ym"
     amt = p.get("amount_col", "provision")
     p = dict(p)
     for k in ("base_ym", "now_ym"):
+        anchor = None
         if isinstance(p[k], dict) and "ref" in p[k]:
-            p[k] = resolve_ref(ctx, p[k]["ref"])[0]
-        p[k] = resolve_token(prov, "ym", p[k])
+            ref = p[k]["ref"]
+            p[k] = resolve_ref(ctx, ref)[0]
+            anchor = anchor_dataset(ctx, ref)  # 규칙이 기준 자료를 정해 두면 그 자료의 보관 기간에서 (지표와 같은 기준시점)
+        p[k] = resolve_period(ctx, p[k], anchor=anchor, rows=prov, col=ym_col)
+    # 고른 기간이 자료에 아예 없으면 0 으로 그리지 않는다 — 그 기간에 충당금이 0 이었던 것처럼 보이면 안 되므로
+    # 오류로 올려 '갱신 실패'로 표시되게 한다(build_views → patch_figures · mark_binding_stale)
+    have = {str(r.get(ym_col)) for r in prov}
+    for k in ("base_ym", "now_ym"):
+        if str(p[k]) not in have:
+            raise ResolveError(f"{prov_ds.code}: {'기준시점' if k == 'base_ym' else '비교시점'} {p[k]} 자료가 없습니다 "
+                               f"(올라온 기간: {', '.join(sorted(have)) or '없음'})")
 
     def by_ym(ym):
-        return {r["product_code"]: r for r in prov if str(r.get("ym")) == str(ym) and not r.get("is_total")}
+        return {r["product_code"]: r for r in prov if str(r.get(ym_col)) == str(ym) and not r.get("is_total")}
 
     base, now = by_ym(p["base_ym"]), by_ym(p["now_ym"])
     items = []
@@ -169,7 +184,7 @@ def _inclusive(ctx: EvalContext, p: dict[str, Any]):
     items.sort(key=lambda i: i["diff"], reverse=True)
     totals = {}
     for ym in (p["base_ym"], p["now_ym"]):
-        t = [r for r in prov if str(r.get("ym")) == str(ym) and r.get("is_total")]
+        t = [r for r in prov if str(r.get(ym_col)) == str(ym) and r.get("is_total")]
         totals[str(ym)] = Decimal(str(t[0][amt])) if t else None
     unmatched = sorted(set(now) - set(master)) if p.get("report_unmatched") else []
     return items, totals, unmatched

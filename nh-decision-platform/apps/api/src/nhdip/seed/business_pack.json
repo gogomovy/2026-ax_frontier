@@ -1457,7 +1457,7 @@
    "code": "INC_PROVISION_SHARE_TREND",
    "name": "포용금융 충당금 비중 추이",
    "kind": "threshold",
-   "description": "기준시점 · 비중 증감 임계(%p)",
+   "description": "기준시점 · 비중 증감 임계(%p). base_ym 은 기간 토큰($prev = 직전 보관 기간 · $earliest = 가장 이른 기간) 또는 고정 연월(예: 202601). 토큰이면 base_ym_source 자료의 보관 기간에서 고르고 화면 라벨도 그 기간을 따른다",
    "body": {
     "bands": [
      {
@@ -1476,7 +1476,8 @@
       "severity": "caution"
      }
     ],
-    "base_ym": "202601"
+    "base_ym": "$prev",
+    "base_ym_source": "상품별 충당금(7790)"
    }
   },
   {
@@ -23874,7 +23875,7 @@
         "text": "",
         "tone": "info",
         "type": "callout",
-        "textTpl": "기준시점은 규칙(INC_PROVISION_SHARE_TREND)의 기준월 [[rule:INC_PROVISION_SHARE_TREND.base_ym|kor]]입니다."
+        "textTpl": "기준시점은 규칙(INC_PROVISION_SHARE_TREND)이 정한 [[rule:INC_PROVISION_SHARE_TREND.base_ym|kor]]이고, 비교시점은 올라온 자료의 최신 기준일입니다."
        }
       ],
       "heading": "2. 데이터 및 산출 기준"

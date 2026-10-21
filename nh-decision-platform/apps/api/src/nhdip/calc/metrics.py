@@ -6,6 +6,8 @@
        where 값: 스칼라(=) · {"in": [...]} · {"nin": [...]} · {"ne": v} · {"not": v} · {"path_endswith": "상위>이름"}
                  · {"startswith" | "endswith" | "contains": 글자} · {"ref": 참조} · {"in_dataset": {"dataset": 자료, "col": 컬럼, "where": {...}}}
                  (코드 비교는 글자로 · 모르는 연산자는 오류)
+       기준일 열에는 기간 토큰을 쓴다 — 보관 기간에서 고르는 것: $latest · $prev(직전 보관 기간) · $prev-N · $earliest · $nearest-N(N개월 전에 가장 가까운 기간),
+                 달 수로 세는 것(그 달이 없으면 값 없음 오류): $latest-N(예: $latest-12 = 전년 동기) · $prev_year_end. 자세한 뜻은 resolve_token 참고
   {"metric": 지표코드, "field": "value"|추가필드}    다른 지표 결과 (같은 실행 또는 최근 값)
   {"rule": 규칙코드, "path": "a.b"}                  활성 규칙 버전 본문 값
   {"setting": 키}                                     cfg.setting 값
@@ -173,7 +175,7 @@ def _match(row: dict[str, Any], where: dict[str, Any], ctx: EvalContext) -> bool
     return True
 
 
-TOKEN_RE = __import__("re").compile(r"^\$(latest|earliest|prev_year_end)(?:-(\d+))?$")
+TOKEN_RE = __import__("re").compile(r"^\$(latest|earliest|prev|prev_year_end|nearest)(?:-(\d+))?$")
 
 
 def _shift(value: str, months: int) -> str:
@@ -193,32 +195,105 @@ def _shift(value: str, months: int) -> str:
     raise ResolveError(f"기간 이동을 지원하지 않는 값: {value}")
 
 
+def _month_index(value: Any) -> int | None:
+    """YYYYMM · YYYY-MM-DD → 월 순번(연*12 + 월-1). 연월로 읽을 수 없으면 None."""
+    s = str(value)
+    if len(s) == 6 and s.isdigit():
+        y, mo = int(s[:4]), int(s[4:])
+    elif len(s) == 10 and s[4] == "-":
+        y, mo = int(s[:4]), int(s[5:7])
+    else:
+        return None
+    return y * 12 + (mo - 1) if 1 <= mo <= 12 else None
+
+
+def periods_of(rows: list[dict[str, Any]], col: str) -> list[str]:
+    """이 자료에 올라와 있는 기준일 값(오름차순 · 중복 제거) — '보관 기간'."""
+    return sorted({str(r.get(col)) for r in rows if r.get(col) is not None})
+
+
 def resolve_token(rows: list[dict[str, Any]], col: str, token: Any) -> Any:
-    """'$latest' · '$earliest' · '$latest-12'(12개월 전) · '$prev_year_end'(최근 기간의 전년 12월) 을 실제 값으로."""
+    """기간 토큰을 실제 기준일 값으로.
+
+    보관 기간에서 고른다 — 올린 기준일이 띄어 있어도(예: 1월 · 8월만 올림) 비교가 된다:
+      $latest      가장 늦은 기준일
+      $earliest    가장 이른 기준일
+      $prev        최신 바로 직전 기준일. 기간이 하나뿐이면 $latest 와 같다 — 첫 업로드에서 화면이 '갱신 실패'로 덮이지 않게
+      $prev-N      최신에서 N번째 직전 기준일 (더 과거가 없으면 가장 이른 기준일)
+      $nearest-N   'N개월 전'에 가장 가까운 보관 기간 (목표 이전을 먼저, 그런 기간이 없으면 가장 가까운 것)
+
+    달 수로 센다 — 그 달이 없으면 맞는 행이 없어 오류가 난다(뜻을 조용히 바꾸지 않는다):
+      $latest-N      정확히 N개월 전 (예: $latest-12 = 전년 동기)
+      $prev_year_end 최근 기간의 전년 12월
+    """
     if not isinstance(token, str):
         return token
     m = TOKEN_RE.match(token)
     if not m:
         return token
-    vals = sorted({str(r.get(col)) for r in rows if r.get(col) is not None})
+    vals = periods_of(rows, col)
     if not vals:
         raise ResolveError(f"{col}: 값 없음")
-    base = vals[-1] if m.group(1) in ("latest", "prev_year_end") else vals[0]
-    if m.group(1) == "prev_year_end":
+    kind, n = m.group(1), int(m.group(2)) if m.group(2) else None
+    if kind == "prev":
+        return vals[max(len(vals) - 1 - max(n or 1, 1), 0)]
+    if kind == "nearest":
+        if n is None:
+            raise ResolveError(f"$nearest 는 개월 수가 필요합니다(예: $nearest-12) — {token}")
+        target = _month_index(_shift(vals[-1], n))
+        cand = [(mi, v) for v, mi in ((x, _month_index(x)) for x in vals) if mi is not None]
+        if target is None or not cand:
+            raise ResolveError(f"{col}: 기준일을 연월로 읽을 수 없어 {token} 을 쓸 수 없습니다")
+        before = [c for c in cand if c[0] <= target]
+        return max(before)[1] if before else min(cand, key=lambda c: abs(c[0] - target))[1]
+    base = vals[-1] if kind in ("latest", "prev_year_end") else vals[0]
+    if kind == "prev_year_end":
         base = _shift(base, int(str(base).replace("-", "")[4:6]))  # 같은 해 1월의 한 달 전 = 전년 12월(YYYYMM · YYYY-MM-DD)
-    return _shift(base, int(m.group(2))) if m.group(2) else base
+    return _shift(base, n) if n else base
+
+
+def anchor_dataset(ctx: "EvalContext", ref: dict[str, Any]) -> str | None:
+    """규칙 · 설정이 기간 토큰을 주면 그 토큰을 어느 자료의 보관 기간에서 고를지 — 본문의 '<경로>_source'(자료 이름).
+
+    기준시점은 분석 하나에 하나여야 한다. 자료마다 올라온 기간이 다를 수 있으므로, 기준 자료를 정해 두면
+    그 자료를 쓰지 않는 지표 · 화면 라벨도 같은 기준시점을 쓴다(라벨이 말하는 기간과 실제 견준 기간이 어긋나지 않게).
+    """
+    if not (ref.get("rule") or ref.get("setting")) or not ref.get("path"):
+        return None
+    src = resolve_ref(ctx, {**{k: ref[k] for k in ("rule", "setting") if k in ref}, "path": f"{ref['path']}_source"})[0]
+    return src.strip() if isinstance(src, str) and src.strip() else None
+
+
+def resolve_period(ctx: "EvalContext", value: Any, *, anchor: str | None, rows: list[dict[str, Any]], col: str) -> Any:
+    """기간 토큰을 실제 기준일로 — 기준 자료(anchor)가 정해져 있으면 그 자료의 보관 기간에서 고른다."""
+    if not (isinstance(value, str) and TOKEN_RE.match(value)):
+        return value
+    if anchor:
+        _, a_rows, a_ds = ctx.dataset(anchor)
+        return resolve_token(a_rows, a_ds.as_of_column or col, value)
+    return resolve_token(rows, col, value)
 
 
 def resolve_where(ctx: "EvalContext", rows: list[dict[str, Any]], where: dict[str, Any] | None) -> dict[str, Any]:
     """조건의 토큰·참조를 확정 값으로 치환 (토큰은 다른 확정 조건으로 거른 행 기준)."""
     where = dict(where or {})
+    anchors: dict[str, str] = {}
     for k, v in list(where.items()):
         if isinstance(v, dict) and "ref" in v:
             where[k] = resolve_ref(ctx, v["ref"])[0]
+            if isinstance(where[k], str) and TOKEN_RE.match(where[k]):
+                a = anchor_dataset(ctx, v["ref"])
+                if a:
+                    anchors[k] = a
     fixed = {k: v for k, v in where.items() if not (isinstance(v, str) and TOKEN_RE.match(v))}
     base_rows = [r for r in rows if _match(r, fixed, ctx)]
     for k, v in where.items():
         if isinstance(v, str) and TOKEN_RE.match(v):
+            if k in anchors:
+                # 기준 자료가 정해진 토큰 — 이 질의의 행이 아니라 그 자료의 보관 기간에서 고른다.
+                # 고른 기간이 이 자료에 없으면 맞는 행이 없어 '값 없음' 오류가 나고 화면은 '갱신 실패'로 표시된다(조용히 다른 달과 견주지 않게)
+                where[k] = resolve_period(ctx, v, anchor=anchors[k], rows=base_rows, col=k)
+                continue
             if rows and not base_rows:
                 # 자료는 있는데 다른 조건에 맞는 행이 없음(예: 연체 차주가 없는 지점 · B.47) — 토큰은 그대로 두어
                 # 빈 선택(list → [], count → 0)이 되게 한다. 자료 자체가 없으면 아래에서 '값 없음' 오류 그대로.
@@ -319,8 +394,13 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
         if refs and len(refs) <= 3:
             src += f"!{'/'.join(refs)}"
         src += f" · {_fmt_where(q.get('where') or {})}" + (f" · {col}" if col else "") + (f" ({agg} {len(sel)}행)" if agg in ("sum", "list", "count") else "")
-        latest = {k: q["where"][k] for k, t in (ref["q"].get("where") or {}).items() if t == "$latest" and k in (q.get("where") or {}) and q["where"][k] != t}
-        return value, src, {"dataset": ds.code, "version": v.version, "rows": len(sel), **({"latest": latest} if latest else {})}
+        # 기간 토큰이 실제로 어느 기준일로 풀렸는지 — 계산 근거에 남겨 어떤 두 시점을 견줬는지 보이게 한다
+        picked = {k: (t, q["where"][k]) for k, t in (ref["q"].get("where") or {}).items()
+                  if isinstance(t, str) and TOKEN_RE.match(t) and k in (q.get("where") or {}) and q["where"][k] != t}
+        periods = {f"{k}@{t}": val for k, (t, val) in picked.items()}
+        latest = {k: val for k, (t, val) in picked.items() if t == "$latest"}
+        return value, src, {"dataset": ds.code, "version": v.version, "rows": len(sel),
+                            **({"periods": periods} if periods else {}), **({"latest": latest} if latest else {})}
     if "metric" in ref:
         code = ref["metric"]
         field_ = ref.get("field", "value")
@@ -498,14 +578,15 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
                     error = msg
                 else:
                     warnings.append(msg)
-        # 기준 시점 검사 — 입력마다 '$latest' 가 가리키는 기간이 다르면 경고
-        latest: dict[str, set[str]] = {}
+        # 기준 시점 검사 — 같은 기간 토큰이 입력마다 다른 기준일을 가리키면 경고(자료별로 올라온 기간이 달라서 생긴다)
+        seen: dict[str, set[str]] = {}
         for src_ in sources:
-            for col, val in (src_.get("latest") or {}).items():
-                latest.setdefault(col, set()).add(str(val))
-        for col, vals in latest.items():
+            for key, val in (src_.get("periods") or {}).items():
+                seen.setdefault(key, set()).add(str(val))
+        for key, vals in seen.items():
             if len(vals) > 1:
-                warnings.append(f"기준 시점 불일치 — {col}: {', '.join(sorted(vals))} (데이터셋별 최신 기간이 다름)")
+                col, _, tok = key.partition("@")
+                warnings.append(f"기준 시점 불일치 — {col} {tok}: {', '.join(sorted(vals))} (자료별로 올라온 기간이 다름)")
         rounding = m.rounding or rounding_default
         run, result, display = run_and_record(
             ctx.session,

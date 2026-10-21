@@ -26,7 +26,9 @@ BLOCKS = ("metrics", "table", "chart", "text")
 CHART_KINDS = ("bar", "line")
 LIMITS = {"metrics": 20, "tables": 8, "sections": 10, "blocks": 10, "insights": 6, "title": 80, "purpose": 400, "domain_knowledge": 4000, "task": 2000, "text": 600, "instruction": 600, "label": 60, "in": 50}
 KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,29}$")
-TOKEN_RE = re.compile(r"^\$(latest|earliest)(?:-\d{1,3})?$")
+# 기간 토큰 허용 목록 — 커널(calc.metrics.TOKEN_RE)보다 좁게 둔다(LLM 이 만든 명세라 뜻이 분명한 것만).
+# $prev = 직전 보관 기간(올린 기준일이 띄어 있어도 비교가 됨) · $nearest-N = N개월 전에 가장 가까운 보관 기간
+TOKEN_RE = re.compile(r"^\$(?:(?:latest|earliest|prev)(?:-\d{1,3})?|nearest-\d{1,3})$")
 # 개인정보로 보이는 열 — 명세 · 정제 자료에서 뺀다 (DAG-09). 데이터셋 정의 mapping.pii 로 더할 수 있다
 PII_RE = re.compile(r"(rrn|jumin|resident|ssn|phone|mobile|tel_no|email|card_no|acct_no|account_no|cust_nm|cust_name|borrower_nm|person_nm|성명|주민|전화|휴대|이메일|카드번호|계좌번호|고객명)", re.I)
 LITERAL_NUM = re.compile(r"\d")
@@ -170,7 +172,7 @@ def catalog(session: Session, space: str, datasets: list[str] | None = None, tea
         "docClasses": doc_classes(session),
         "kpis": kpi_catalog(session),
         "limits": LIMITS,
-        "whereTokens": ["$latest", "$latest-1", "$latest-12", "$earliest"],
+        "whereTokens": ["$latest", "$prev", "$earliest", "$latest-1", "$latest-12", "$nearest-12"],
     }
 
 
@@ -233,7 +235,7 @@ class _V:
                 if vals:
                     out[k] = {"nin": [(_s(x, 60) if isinstance(x, str) else x) for x in vals]}
             else:
-                self.issue(f"{path}.{k}", "지원하지 않는 조건 값이라 뺐습니다(값 · $latest · {in: [...]} · {ne: 값})")
+                self.issue(f"{path}.{k}", "지원하지 않는 조건 값이라 뺐습니다(값 · $latest · $prev · $earliest · $latest-N · $nearest-N · {in: [...]} · {ne: 값})")
         return out
 
     def query(self, raw: Any, path: str) -> dict[str, Any] | None:

@@ -7,7 +7,7 @@
   [[fig:ID]]            수치 표시(값 · 자릿수 · 단위) — 값이 없으면 '–'
   [[fig:ID|signed]]     부호 붙임(+3.49%)      [[fig:ID|num]]  단위 없는 숫자      [[fig:ID|verdict]]  판정 문구(BAND · 검정)
   [[fig:ID|abs]]        절댓값                [[fig:ID|unit]]  단위만
-  [[ym:데이터셋:토큰|형식]]  현재 행의 기간(`$latest` · `$latest-12` · `$earliest` …) — dot(2026.08) · month(8월) · year(2026) · ym · date(2026.08.31) · kor(2026년 8월)
+  [[ym:데이터셋:토큰|형식]]  그 자료의 기간(`$latest` · `$prev` · `$earliest` · `$latest-12` · `$nearest-12` …) — dot(2026.08) · month(8월) · year(2026) · ym · date(2026.08.31) · kor(2026년 8월)
   [[rule:코드.경로|형식]]   규칙 값 — d0~d3(소수 자릿수) · +d1(부호) · pct0(0.95 → 95%) · 기간 형식(dot · month …) 또는 그대로
   [[if:A>B|참 문구|거짓 문구|값 없음 문구]]  수치 비교로 문구를 고른다 — A · B 는 수치 id 또는 숫자, 비교 > < >= <= = != (값이 없으면 넷째 문구, 없으면 빈 문구)
   [[at:경로]]            같은 산출물의 값(예: office.name — 바인딩이 채운 영업점 이름)
@@ -288,14 +288,25 @@ def _period(ctx: Any, arg: str, mode: str | None) -> str:
 def _rule(ctx: Any, arg: str, mode: str | None) -> str:
     if ctx is None:
         return DASH
-    from nhdip.calc.metrics import ResolveError, resolve_ref
+    from nhdip.calc.metrics import TOKEN_RE, ResolveError, anchor_dataset, resolve_period, resolve_ref
 
     code, _, path = arg.partition(".")
+    ref = {"rule": code.strip(), "path": path.strip()}
     try:
-        v = resolve_ref(ctx, {"rule": code.strip(), "path": path.strip()})[0]
+        v = resolve_ref(ctx, ref)[0]
     except (ResolveError, ValueError, KeyError):
         return DASH
     if mode in ("dot", "month", "year", "ym", "date", "kor"):
+        # 규칙 값이 기간 토큰($prev · $earliest · $latest …)이면 실제 기준일로 푼다 — 라벨이 고정 연월이 아니라
+        # 이번에 견준 기간을 보여 주게. 어느 자료의 보관 기간에서 고를지는 규칙 본문의 '<키>_source'(자료 이름)
+        if isinstance(v, str) and TOKEN_RE.match(v):
+            try:
+                anchor = anchor_dataset(ctx, ref)
+                if not anchor:
+                    return DASH  # 기준 자료가 없으면 어느 기간인지 말할 수 없다 — 토큰을 글자로 찍지 않는다
+                v = resolve_period(ctx, v, anchor=anchor, rows=[], col="")
+            except (ResolveError, ValueError, KeyError, TypeError):
+                return DASH
         return fmt_period(v, mode)  # 기준월 같은 기간 규칙 값
     if mode == "pct0" and isinstance(v, (int, float)) and not isinstance(v, bool):
         return f"{_num(v * 100, 0)}%"  # 0.95 → 95%
@@ -303,6 +314,8 @@ def _rule(ctx: Any, arg: str, mode: str | None) -> str:
     if m and isinstance(v, (int, float)) and not isinstance(v, bool):
         s = _num(v, int(m.group(2)))
         return ("+" + s) if m.group(1) and v > 0 else s
+    if isinstance(v, str) and TOKEN_RE.match(v):
+        return DASH  # 기간 토큰은 기간 형식(dot · month …)으로만 쓴다 — '$prev' 가 화면에 글자로 나가지 않게
     return DASH if v is None else str(v)
 
 
