@@ -118,9 +118,9 @@ services:
       NEO4J_server_memory_heap_initial__size: 512m
       NEO4J_server_memory_heap_max__size: 1g
       NEO4J_server_memory_pagecache_size: 512m
-      # 폐쇄망 — 사용 통계 전송(dbms.usage_report.enabled, 기본 켜짐) · Neo4j Browser 의 외부 접속(가이드 · 업데이트 확인)을 끈다
+      # 폐쇄망 — 사용 통계 전송(dbms.usage_report.enabled, 기본 켜짐)을 끈다.
+      # browser.allow_outgoing_connections 는 5.26 Community 에 없는 설정이라 넣지 않는다(엄격 검증으로 기동 실패 — validate-config 로 확인)
       NEO4J_dbms_usage__report_enabled: "false"
-      NEO4J_browser_allow__outgoing__connections: "false"
     ports:
       # 관리용 포트는 기본으로 이 컴퓨터에서만 (외부 공개는 ADMIN_BIND=0.0.0.0)
       - "${ADMIN_BIND:-127.0.0.1}:${NEO4J_HTTP_PORT:-7474}:7474"

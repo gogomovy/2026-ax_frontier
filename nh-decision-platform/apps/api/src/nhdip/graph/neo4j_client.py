@@ -7,7 +7,7 @@ import threading
 from typing import Any
 
 from neo4j import GraphDatabase
-from neo4j.exceptions import Neo4jError, ServiceUnavailable
+from neo4j.exceptions import DriverError, Neo4jError, ServiceUnavailable
 
 from nhdip.config import get_settings
 
@@ -32,11 +32,13 @@ def driver():
 
 
 def run(cypher: str, **params: Any) -> list[dict[str, Any]]:
+    # DriverError — 연결이 끊긴 세션(SessionExpired) · 커밋 불명(IncompleteCommit) 등 드라이버 오류. ServiceUnavailable · Neo4jError 와
+    # 다른 갈래라 따로 잡는다 — Neo4j 가 재시작 · 대량 삭제 중이면 풀의 끊긴 연결에서 나며, 잡지 않으면 화면이 500 이 된다(그래프는 축소 동작이 맞다)
     try:
         with driver().session() as s:
             return [r.data() for r in s.run(cypher, **params)]
-    except (ServiceUnavailable, Neo4jError, OSError) as exc:
-        raise GraphUnavailable(str(exc)) from exc
+    except (ServiceUnavailable, Neo4jError, DriverError, OSError) as exc:
+        raise GraphUnavailable(f"{type(exc).__name__}: {exc}") from exc
 
 
 def safe_name(name: str) -> str:
