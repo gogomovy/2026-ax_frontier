@@ -148,6 +148,8 @@ export default function LlmAdmin() {
   const { run, busy } = useAction();
   const [newConn, setNewConn] = useState({ name: "", base_url: "", api_key: "" });
   const [testModel, setTestModel] = useState<Record<number, string>>({});
+  // 임베딩 모델도 함께 확인한다 — /embeddings 는 채팅과 호출 규격이 달라 채팅 시험만으로는 드러나지 않는다
+  const [testEmb, setTestEmb] = useState<Record<number, string>>({});
   const [testResult, setTestResult] = useState<Record<number, unknown>>({});
   const conns = data.data?.connections ?? [];
 
@@ -167,8 +169,10 @@ export default function LlmAdmin() {
               busy={busy}
               testModel={testModel[c.id] ?? ""}
               setTestModel={(v) => setTestModel({ ...testModel, [c.id]: v })}
+              testEmb={testEmb[c.id] ?? ""}
+              setTestEmb={(v) => setTestEmb({ ...testEmb, [c.id]: v })}
               result={testResult[c.id]}
-              onTest={() => run(() => apiPost(`/admin/llm/connections/${c.id}/test`, { model: testModel[c.id] || null }), undefined, undefined).then((r) => r && setTestResult({ ...testResult, [c.id]: r }))}
+              onTest={() => run(() => apiPost(`/admin/llm/connections/${c.id}/test`, { model: testModel[c.id] || null, embedding_model: testEmb[c.id] || null }), undefined, undefined).then((r) => r && setTestResult({ ...testResult, [c.id]: r }))}
               onSave={(patch) => run(() => apiPatch(`/admin/llm/connections/${c.id}`, patch), "저장했습니다", data.reload)}
             />
           ))}
@@ -198,7 +202,20 @@ export default function LlmAdmin() {
   );
 }
 
-function ConnRow({ conn, busy, onSave, onTest, testModel, setTestModel, result }: { conn: Conn; busy: boolean; onSave: (p: Record<string, unknown>) => void; onTest: () => void; testModel: string; setTestModel: (v: string) => void; result: unknown }) {
+/** 연결 테스트 결과를 한 줄로 — 모델 목록 · 모델 호출 · 임베딩 호출을 따로 보여 준다 */
+function TestSummary({ result }: { result: TestResult }) {
+  return (
+    <div className="mb-xs text-[12px]" role="status">
+      {result.ok ? <Badge tone="success">연결 성공</Badge> : <Badge tone="critical">연결 실패</Badge>}{" "}
+      {result.latency_ms !== undefined ? `모델 목록 ${result.latency_ms}ms` : ""}
+      {result.chat_ok !== undefined ? ` · 모델 호출 ${result.chat_ok ? `성공 ${result.chat_latency_ms}ms` : "실패"}` : ""}
+      {result.embed_ok !== undefined ? ` · 임베딩 ${result.embed_ok ? `성공 ${result.embed_dim}차원 ${result.embed_latency_ms}ms` : "실패"}` : ""}
+      {result.embed_ok === false && result.embed_error ? <span className="block break-all text-critical">임베딩 모델({result.embed_model}) 호출 실패: {result.embed_error}</span> : null}
+    </div>
+  );
+}
+
+function ConnRow({ conn, busy, onSave, onTest, testModel, setTestModel, testEmb, setTestEmb, result }: { conn: Conn; busy: boolean; onSave: (p: Record<string, unknown>) => void; onTest: () => void; testModel: string; setTestModel: (v: string) => void; testEmb: string; setTestEmb: (v: string) => void; result: unknown }) {
   const [url, setUrl] = useState(conn.baseUrl);
   const [key, setKey] = useState("");
   const confirm = useConfirm();
@@ -237,12 +254,14 @@ function ConnRow({ conn, busy, onSave, onTest, testModel, setTestModel, result }
       </div>
       <div className="mt-md flex flex-wrap items-end gap-xs">
         <TextInput label="연결 테스트 — 모델(선택, 입력 시 1토큰 호출)" value={testModel} onChange={setTestModel} mono className="min-w-[280px]" />
+        <TextInput label="임베딩 모델(선택, 입력 시 1건 호출)" value={testEmb} onChange={setTestEmb} mono className="min-w-[240px]" />
         <Button size="sm" variant="quiet" disabled={busy} onClick={onTest}>
           테스트
         </Button>
       </div>
       {result ? (
         <div className="mt-md">
+          <TestSummary result={result as TestResult} />
           <JsonView value={result} maxHeight={220} />
         </div>
       ) : null}
