@@ -175,6 +175,35 @@ def test_deleted_input_clears_instead_of_stale(db):
             s.rollback()
 
 
+def test_report_without_its_data_is_not_stamped_computed():
+    """같은 흐름의 다른 자료만 남았을 때 — 자료가 없는 보고서에는 기준일을 찍지 않는다(빈 탭이 '계산됨'으로 나타나지 않게)."""
+    from datetime import date
+
+    from nhdip.views.readiness import report_ready, tabs_gate
+    from nhdip.workflow.nodes import _as_of_stamp
+
+    fig = lambda i, v=None: {"id": i, "label": i, "value": v, "unit": "PCT"}  # noqa: E731
+    arts = {
+        "report.inclusive-risk": {"title": "포용금융", "asOf": "2026-08-31", "figures": {"a": fig("inc_share", 9.1)}},  # 지난번 계산 · 이번에는 자료 없음
+        "report.model-monitoring": {"title": "모형", "asOf": None, "figures": {"b": fig("psi")}},
+        "report.table-only": {"title": "표", "asOf": None, "figures": {"c": fig("t1")}},
+        "analysis_tabs": {"asOf": None, "current": []},  # 수치 자리가 없는 산출물
+    }
+    ctx = SimpleNamespace(eval=SimpleNamespace(rows={"MODEL": (SimpleNamespace(as_of=date(2026, 9, 30)), [], None)}),
+                          workflow=SimpleNamespace(outputs=list(arts)), state={"bound_artifacts": ["report.table-only"]}, changed=set())
+    _as_of_stamp(ctx, arts, {"psi"})
+    assert arts["report.model-monitoring"]["asOf"] == "2026-09-30"  # 이번 실행이 수치를 계산함
+    assert arts["report.table-only"]["asOf"] == "2026-09-30"  # 표 · 차트를 채움
+    assert arts["analysis_tabs"]["asOf"] == "2026-09-30"
+    assert arts["report.inclusive-risk"]["asOf"] is None  # 자료가 없어 계산하지 않음 — 지난 기준일도 뗀다
+    # 탭 목록 — 기준일이 없고 값도 없는 보고서 탭은 빠진다
+    arts["report.inclusive-risk"]["figures"]["a"]["value"] = None
+    tabs = {"current": [{"tabKey": "inclusive-risk"}, {"tabKey": "model-monitoring"}], "previous": []}
+    out = tabs_gate(tabs, lambda k: arts.get(k))
+    assert [t["tabKey"] for t in out["current"]] == ["model-monitoring"]
+    assert not report_ready(lambda k: arts.get(k), "report.inclusive-risk")
+
+
 def test_no_data_resets_goal_and_plan_state(db):
     from nhdip.models import Workflow
     from nhdip.views import user_state as S

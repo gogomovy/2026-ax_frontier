@@ -10,6 +10,7 @@ DB 에 올리는 upload · selftest 는 NHDIP_SAMPLE_UPLOAD=1 일 때만 돈다(
   python -m nhdip.sample selftest --user 사번 [--password-env 변수] [--json 파일]
                                                                          현재 DB(정의 시드만)에서 업로드 → 대조 → 교란 검사(하드코딩이 남으면 종료 코드 1)
   python -m nhdip.sample check --dir sample-data/202608                  저장소 사본이 생성기와 같은지(셀 값 · 문서 글)
+  python -m nhdip.sample branches --out test-data/branches               영업점 3곳 시험 자료(공통 + 지점별 폴더 · 안내.txt)
 비밀번호는 환경변수로만 받는다(기본 BOOTSTRAP_ADMIN_PASSWORD).
 """
 from __future__ import annotations
@@ -46,7 +47,14 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--json")
     c = sub.add_parser("check")
     c.add_argument("--dir", required=True)
+    br = sub.add_parser("branches", help="영업점 3곳 시험 자료(공통 + 지점별 폴더 · 안내.txt) — 파일로만 쓴다")
+    br.add_argument("--out", required=True)
     args = ap.parse_args(argv)
+    if args.cmd == "branches":
+        from .branches import write
+
+        print(json.dumps(write(args.out), ensure_ascii=False))
+        return 0
 
     from .build import build
 

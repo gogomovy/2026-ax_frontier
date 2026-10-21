@@ -30,7 +30,7 @@ def menu_counts(session: Session, user: AppUser) -> dict[str, Any]:
     target = resolve_office(session, user, None)
     btabs = get_current(session, scoped_key("branch_tabs", target, office_scope(session)[0])) or {}
     code = (btabs.get("office") or {}).get("code")
-    branch_n = len(btabs.get("current") or []) if code and (not target or str(code) == str(target)) and can_view_office(session, user, code) else 0
+    branch_n = len(btabs.get("current") or []) if target and code and str(code) == str(target) and can_view_office(session, user, code) else 0
     # 볼 수 있는 화면의 건수만 (B.32 — 다른 부서 업무량 비노출)
     from .deps import user_resources
 

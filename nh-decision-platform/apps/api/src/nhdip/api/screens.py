@@ -225,6 +225,8 @@ def branch_artifact(session: Session, user: AppUser, key: str, office: str | Non
 
     primary, _ = office_scope(session)
     target = resolve_office(session, user, office)
+    if target is None:
+        return None  # 볼 지점이 없다(영업점 소속이 아니고 자료로 계산된 지점도 없음) — 설정의 기본 지점을 대신 보이지 않는다
     if office and not can_view_office(session, user, office):
         # 열람 범위 밖 지점을 주소로 요청 — 감사에 남기고 없는 것처럼 응답 (BRM-04)
         from nhdip.events import audit

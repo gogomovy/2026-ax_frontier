@@ -60,6 +60,8 @@ def export_report(
         from nhdip.orgs import can_view_office as _can_view
 
         target = resolve_office(session, user, office)
+        if target is None:
+            raise HTTPException(404, "보고서 없음")  # 볼 지점이 없다 — 설정의 기본 지점 보고서를 대신 내려 주지 않는다
         if office and not _can_view(session, user, office):
             audit(session, user.emp_no, "branch.office_denied", "office", office, {"artifact": key, "format": format}, client_ip(request))
             session.commit()

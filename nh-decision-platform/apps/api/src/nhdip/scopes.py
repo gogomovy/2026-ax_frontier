@@ -131,13 +131,29 @@ def scoped_key(key: str, value: str | None, primary: str | None) -> str:
     return key if not value or value == primary else f"{key}@{value}"
 
 
+def computed_offices(session: Session) -> list[str]:
+    """계산 대상 지점 가운데 영업점 화면(branch_dashboard)이 실제 자료로 계산된 지점 — 계산 대상 순서대로."""
+    from nhdip.views.readiness import computed
+    from nhdip.views.store import get_current
+
+    primary, offices = office_scope(session)
+    out = []
+    for code in offices:
+        v = get_current(session, scoped_key("branch_dashboard", code, primary))
+        if isinstance(v, dict) and str((v.get("office") or {}).get("code") or "") == code and computed(v):
+            out.append(code)
+    return out
+
+
 def resolve_office(session: Session, user: Any, office: str | None) -> str | None:
-    """화면이 볼 지점 — 주소 인자 → 사용자 소속 영업점 → 기본 지점. 열람 가능 여부는 호출하는 쪽이 can_view_office 로 검사."""
-    from nhdip.orgs import branch_of, office_code_of
+    """화면이 볼 지점 — 주소 인자 → 사용자 소속 영업점 → 자료로 계산된 지점 가운데 볼 수 있는 첫 지점. 없으면 None(영업점 화면은 '준비 중').
+    설정 규칙의 기본 지점(BRANCH_SCOPE.office_code)을 그냥 보여 주지 않는다 — 자료가 올라오지 않은 지점이 고정으로 나타나지 않게.
+    열람 가능 여부는 호출하는 쪽이 can_view_office 로 검사."""
+    from nhdip.orgs import branch_of, can_view_office, office_code_of
 
     if office:
         return str(office)
     br = branch_of(session, user.org_code)
     if br is not None:
         return office_code_of(session, br.code)
-    return office_scope(session)[0]
+    return next((c for c in computed_offices(session) if can_view_office(session, user, c)), None)

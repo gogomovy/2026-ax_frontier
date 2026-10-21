@@ -153,8 +153,8 @@ def _scope_suffixes(session: Session, user: AppUser) -> dict[str, str | None]:
             continue
         primary, _ = scope_values(session, spec)
         target = resolve_office(session, user, None)
-        if target and not can_view_office(session, user, target):
-            out[wf] = None
+        if target is None or not can_view_office(session, user, target):
+            out[wf] = None  # 볼 지점이 없다(자료로 계산된 지점 없음) · 볼 수 없는 지점 — 설정의 기본 지점 값을 대신 쓰지 않는다
         else:
             out[wf] = f"@{target}" if target and target != primary else ""
     return out

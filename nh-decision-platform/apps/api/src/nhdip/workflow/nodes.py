@@ -117,18 +117,27 @@ def mark_binding_stale(payload: Any, path: str, targets: list[tuple[str, str]], 
 
 
 def _as_of_stamp(ctx: RunContext, arts: dict[str, Any], computed: set[str]) -> None:
-    """산출물 기준일(asOf) = 입력 데이터셋 현재 버전 기준일 중 가장 늦은 날 (RD-06). 출력 산출물 최상위 + 이번 실행이 수치를 고친 의견."""
+    """산출물 기준일(asOf) = 입력 데이터셋 현재 버전 기준일 중 가장 늦은 날 (RD-06). 출력 산출물 최상위 + 이번 실행이 수치를 고친 의견.
+
+    최상위 기준일은 그 산출물에 이번 실행이 계산한 것(수치 · 바인딩 표 · 차트)이 있을 때만 찍는다 — 같은 흐름의 다른 자료만 남았을 때
+    자료가 없는 보고서(예: 포용금융 자료를 지운 뒤의 포용금융 탭)에 기준일이 찍혀 '계산됨'으로 보이고 빈 탭이 나타나지 않게.
+    수치 · 바인딩이 모두 없으면 기준일을 비운다(화면 · 탭 목록에서 계산 전으로 빠진다). 수치 자리가 없는 산출물은 그대로 찍는다."""
+    from nhdip.knowledge.render import collect_figures
+
     dates = [vs.as_of for vs, _, _ in ctx.eval.rows.values() if getattr(vs, "as_of", None)]
     if not dates:
         return
     iso = max(dates).isoformat()
     outputs = set(ctx.workflow.outputs or [])
+    bound = set(ctx.state.get("bound_artifacts") or [])
     for key, payload in arts.items():
         if key not in outputs or not isinstance(payload, dict):
             continue
         hit = False
-        if "asOf" in payload and payload["asOf"] != iso:
-            payload["asOf"] = iso
+        figs = set(collect_figures(payload))
+        mine = key in bound or not figs or bool(figs & computed)
+        if "asOf" in payload and payload["asOf"] != (iso if mine else None):
+            payload["asOf"] = iso if mine else None
             hit = True
         stack = list(payload.values())
         while stack:
@@ -258,6 +267,8 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                 obj[fld] = value
                 ctx.changed.add(b.artifact_key)
         bind_out.append({"id": b.id, "artifact": b.artifact_key, "builder": b.builder, "targets": len(targets)})
+    # 이번 실행이 표 · 차트를 채운 산출물 — 수치가 없어도 기준일을 찍는다(_as_of_stamp)
+    ctx.state["bound_artifacts"] = sorted({x["artifact"] for x in bind_out if "error" not in x and x.get("artifact") and x.get("targets")})
     ctx.changes += changes
     # 기준일 · 서식 문구(Tpl) — 수치 · 기간이 든 평문(캡션 · 근거 · 판정 근거 · 표 머리글 · 라벨)을 계산 결과로 (설계 §25.4)
     from nhdip.views.template import apply_metric_fields, figure_index, render_templates, template_figure_ids
@@ -272,7 +283,7 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                     refresh.add(d["id"])
         ctx.state["refreshed"] = sorted(refresh)
 
-    _as_of_stamp(ctx, arts, {fid for oc in ctx.eval.outcomes.values() if not oc.error for fid in oc.figure_ids})
+    _as_of_stamp(ctx, arts, {fid for oc in ctx.eval.outcomes.values() if not oc.error and oc.display is not None for fid in oc.figure_ids})
     for key, payload in arts.items():
         if apply_metric_fields(payload, ctx.eval.outcomes):
             ctx.changed.add(key)

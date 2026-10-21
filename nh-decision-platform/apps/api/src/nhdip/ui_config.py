@@ -332,15 +332,24 @@ def office_list(session: Session, user: Any) -> dict[str, Any]:
     from nhdip.scopes import office_scope, resolve_office, scoped_key
     from nhdip.views.store import get_current
 
+    from nhdip.orgs import branch_of, office_code_of
+    from nhdip.scopes import computed_offices
+
     primary, offices = office_scope(session)
+    ready = set(computed_offices(session))
+    br = branch_of(session, user.org_code) if getattr(user, "org_code", None) else None
+    mine = office_code_of(session, br.code) if br is not None else None
     out = []
-    for code in offices:
+    # 자료로 계산된 지점 + 내 영업점(자료 전이어도 이름은 보인다) — 설정에만 있고 자료가 없는 지점은 목록에 두지 않는다
+    for code in dict.fromkeys([*offices, *([mine] if mine else [])]):
+        if code not in ready and code != mine:
+            continue
         if not can_view_office(session, user, code):
             continue
         v = get_current(session, scoped_key("branch_dashboard", code, primary))
         org = org_of_office(session, code)
         name = ((v or {}).get("office") or {}).get("name") if isinstance(v, dict) else None
-        out.append({"code": code, "name": name or (org.name if org else code), "available": isinstance(v, dict), "primary": code == primary})
+        out.append({"code": code, "name": name or (org.name if org else code), "available": code in ready, "primary": code == primary})
     return {"offices": out, "default": resolve_office(session, user, None)}
 
 

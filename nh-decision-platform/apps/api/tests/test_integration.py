@@ -1293,8 +1293,9 @@ def test_branch_multi_office_scope(db):
         assert e.status_code == 200 and "가상지점" in e.text  # 지점 x 산출물로 만든 보고서
         assert "가상지점" not in admin.get("/reports/branch-prime-corp/export", params={"format": "html"}).text
         offs = admin.get("/screens/branch/offices").json()
-        assert [(o["code"], o["available"], o["primary"]) for o in offs["offices"]] == [("001068", True, True), (x, True, False), ("009999", False, False)]
-        assert offs["default"] == "001068"
+        # 자료로 계산된 지점만 목록에 — 규칙에만 있고 자료가 없는 지점(009999)은 나타나지 않는다
+        assert [(o["code"], o["available"], o["primary"]) for o in offs["offices"]] == [("001068", True, True), (x, True, False)]
+        assert offs["default"] == "001068"  # 영업점 소속이 아닌 관리자 — 계산된 지점 가운데 첫 지점
 
         # 열람 범위 — 영업점 직원은 자기 지점만, 지역본부는 소속 지점들
         def user(emp: str, org: str):

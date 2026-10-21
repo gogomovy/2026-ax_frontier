@@ -85,10 +85,12 @@ def dynamic_tabs(session: Session, space_key: str) -> list[dict[str, Any]]:
     """그 공간의 분석 에이전트 탭 — 보고서가 게시된(첫 실행이 끝난) 활성 · 일시 중지 에이전트."""
     out = []
     agents = session.execute(select(AnalysisAgent).where(AnalysisAgent.space == space_key, AnalysisAgent.status.in_(LIVE)).order_by(AnalysisAgent.approved_at, AnalysisAgent.code)).scalars().all()
+    from nhdip.views.readiness import computed
+
     for a in agents:
         row = get_current_row(session, f"report.{a.tab_key}")
-        if row is None:
-            continue
+        if row is None or not computed(row.payload):
+            continue  # 보고서가 없거나 값 없는 틀(자료를 지움 · 아직 계산 전) — 기존 탭과 같이 빼고 보인다
         p = row.payload or {}
         out.append({
             "tabKey": a.tab_key,
