@@ -125,8 +125,7 @@ def main(out: Path) -> None:
     L += [
         "```",
         "",
-        "또는 `bash scripts/push-images.sh $HARBOR` (같은 이름 규칙으로 전체를 올리고, 적을 값을 보여 줌).",
-        "",
+
         "## 4. values-closed.yaml 에 적을 값 (위 규칙으로 올렸을 때)",
         "",
         "```yaml",

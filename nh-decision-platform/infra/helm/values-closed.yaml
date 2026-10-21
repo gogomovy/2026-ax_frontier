@@ -3,13 +3,13 @@
 #  · 꼭 채울 것 4가지: global.imageRegistry(Harbor) · global.nodeSelector(서버) · ingress.host(도메인) · persistence(저장소)
 #
 #  · "" 로 비워 둔 [채우기] 항목을 내부망 값으로 채운다 (설명: 폐쇄망_헬름배포_가이드.md §4)
-#  · 비밀값은 여기에 쓰지 않는다 — scripts/create-secrets.sh 가 Secret(nhdip-secrets)을 만든다
+#  · 비밀값은 여기에 쓰지 않는다 — helm install 이 Secret(nhdip-secrets)을 무작위 값으로 만든다(별도 스크립트 없음)
 #  · 비어 있는 [필수] 값이 있으면 helm install 이 무엇을 채울지 알려 주고 멈춘다
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── 이미지 (Harbor) ─────────────────────────────────────────────
 # 이미지 = <global.imageRegistry>/<images.*.repository>:<tag>
-#   scripts/push-images.sh <Harbor 주소>/<프로젝트> 로 올리면 아래 이름은 그대로 두고 global.imageRegistry 만 채운다
+#   Harbor 에 <Harbor 주소>/<프로젝트>/<원래 이름:태그> 로 올리면(docker load → tag → push) 아래 이름은 그대로 두고 global.imageRegistry 만 채운다
 #   예) imageRegistry 16.24.113.77/nhnavi → 16.24.113.77/nhnavi/nhdip/api:1.0.0
 #   다른 경로 · 이름으로 올렸다면 repository 를 프로젝트 뒤 경로로 바꾼다(태그를 바꿨으면 tag 도)
 images:
@@ -61,7 +61,7 @@ app:
   trustedProxyHops: 2
   # [채우기·권장] 사내 운영 중인 LiteLLM — 최초 기동 때 기본 LLM 연결로 등록(이후 관리자 [LLM 연동]에서 바꿈 · 비우면 거기서 입력)
   #   baseUrl 예: http://dev-aidriven-gw.nbaihub.nhbank  (같은 클러스터면 http://<litellm 서비스>.<네임스페이스>.svc.cluster.local:4000 도 됨)
-  #   model  = LiteLLM 에 등록된 모델 이름 · 키는 values 에 쓰지 않고 Secret 으로: NS=nhdip bash scripts/create-secrets.sh add LLM_DEFAULT_API_KEY
+  #   model  = LiteLLM 에 등록된 모델 이름 · 키는 values 에 쓰지 않고 설치 뒤 관리자 [LLM 연동] 화면에서 입력(DB 에 암호화 저장)
   llm:
     baseUrl: ""
     model: ""
@@ -74,7 +74,7 @@ app:
     assets:
       # 서버에 벤더 JS 를 둔 디렉터리 — 예: /opt/nhdip/sso/nc-js
       hostPath: ""
-  # [채우기·선택] 운영 알림 메일(비밀번호는 Secret 의 ALERT_SMTP_PASSWORD)
+  # [채우기·선택] 운영 알림 메일(비밀번호가 필요하면 설치 뒤 Secret 에 ALERT_SMTP_PASSWORD 추가 — 가이드 §5)
   alerts:
     smtp:
       host: ""

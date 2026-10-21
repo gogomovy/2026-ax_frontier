@@ -5,7 +5,7 @@
 # [필수] 표시는 비어 있으면 helm install 이 이유를 알려 주고 멈춘다.
 #
 # 비밀값(DB 비밀번호 · 세션 키 · 암호화 키 · 관리자 비밀번호 · API 키 등)은 이 파일에도, .env 에도 두지 않는다.
-#   → scripts/create-secrets.sh 가 쿠버네티스 Secret(secrets.name)을 직접 만든다(디스크에 남지 않음).
+#   → helm install 이 쿠버네티스 Secret(secrets.name)을 무작위 값으로 만든다(templates/secret.yaml · 디스크에 남지 않음).
 #
 # 한 네임스페이스에 이 차트는 하나만 설치한다. 서비스 이름(api · web · postgres · neo4j · elasticsearch · sso-verifier · litellm)은
 # 고정이다 — 웹 이미지가 빌드 때 백엔드 주소를 http://api:8000 으로 굳히기 때문(next.config rewrites).
@@ -31,11 +31,14 @@ global:
   allowAnyNode: false
   timezone: Asia/Seoul
 
-# 비밀값 Secret 이름 — scripts/create-secrets.sh 가 이 이름으로 만든다(helm 이 만들지 않음)
+# 비밀값 Secret — helm install 이 무작위 값으로 만들고, upgrade 때는 있는 값을 그대로 쓴다(templates/secret.yaml)
+#   값은 어떤 파일에도 남지 않는다. uninstall 해도 지우지 않는다(데이터와 비밀번호가 맞게)
+#   이미 만든 Secret 을 쓰려면 create: false (같은 키 이름)
 secrets:
+  create: true
   name: nhdip-secrets
 
-# 이미지 이름 — 반입 묶음의 원래 이름(images/images.txt). push-images.sh 로 올리면 그대로 두고 global.imageRegistry 만 채운다
+# 이미지 이름 — 반입 묶음의 원래 이름(images/images.txt). Harbor 에 <주소>/<프로젝트>/<원래 이름> 으로 올리면 그대로 두고 global.imageRegistry 만 채운다
 images:
   # 자체 이미지 (bundle.sh 가 빌드) — tag 를 비우면 global.imageTag → appVersion
   api: {repository: nhdip/api, tag: ""}

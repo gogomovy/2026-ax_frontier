@@ -9,7 +9,7 @@
 #   DOCKER=podman bash infra/helm/scripts/bundle.sh   # 도커 대신 podman
 #
 # 필요: docker(BuildKit) 또는 podman · tar · sha256sum(또는 shasum) · python3(MANIFEST) · helm(없으면 차트를 tar 로 묶는다)
-# 결과 묶음: images/*.tar · images/images.txt · MANIFEST.md · manifest.json · chart/*.tgz · values-closed.yaml · 가이드 · scripts/ · sso/(벤더 파일) · VERSION · SHA256SUMS
+# 결과 묶음: images/*.tar · images/images.txt · MANIFEST.md · manifest.json · chart/*.tgz · values-closed.yaml · 가이드 · sso/(벤더 파일) · VERSION · SHA256SUMS
 # Windows 는 Git Bash 또는 WSL 에서 Docker Desktop 과 함께 실행한다. 비밀값은 이 묶음에 들어가지 않는다.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -44,10 +44,10 @@ need tar
 docker() { command "$DOCKER" "$@"; }
 
 rm -rf "$OUT"
-mkdir -p "$OUT/images" "$OUT/chart" "$OUT/scripts"
+mkdir -p "$OUT/images" "$OUT/chart"
 : > "$OUT/images/images.txt"
 
-# 이미지 1개 저장 — images.txt 에 "<tar 파일> <이미지 이름:태그>" 를 적는다(push-images.sh 가 읽는다).
+# 이미지 1개 저장 — images.txt 에 "<tar 파일> <이미지 이름:태그>" 를 적는다(Harbor 에 올릴 때 참고).
 # 이름은 docker.io/ 를 붙여 저장한다 — podman 으로 만들어도 docker load 뒤 같은 이름(nhdip/api:1.0.0 등)이 된다
 save() {
   local ref="$1" file="$2" full="$1"
@@ -111,8 +111,7 @@ fi
 # ── 값 파일 · 가이드 · 내부용 스크립트 ───────────────────────────
 cp infra/helm/values-closed.yaml "$OUT/"
 cp "infra/helm/폐쇄망_헬름배포_가이드.md" "$OUT/"
-cp infra/helm/scripts/push-images.sh infra/helm/scripts/create-secrets.sh "$OUT/scripts/"
-chmod +x "$OUT/scripts/"*.sh
+# 내부망에서 돌릴 sh 는 넣지 않는다 — 이미지는 docker load · tag · push, 비밀값은 helm install 이 만든다
 if [ "$WITH_SSO_FILES" = "1" ]; then
   if ls infra/sso-verifier/libs/*.jar >/dev/null 2>&1 && ls infra/sso/nc-js/*.js >/dev/null 2>&1; then
     log "사내 SSO 벤더 파일 → sso/libs · sso/nc-js"
