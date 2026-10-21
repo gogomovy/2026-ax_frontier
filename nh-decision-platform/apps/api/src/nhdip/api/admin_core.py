@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from nhdip.db import get_session
 from nhdip.events import audit, emit
 from nhdip.graph.neo4j_client import health as graph_health
-from nhdip.llm import LlmError, LlmUnavailable, resolve, test_connection
+from nhdip.llm import LlmError, LlmUnavailable, resolve, test_connection, test_embedding
 from nhdip.models import (
     Agent,
     AgentGroup,
@@ -622,11 +622,15 @@ def llm_setup(body: LlmSetupIn, request: Request, session: Session = Depends(get
         if emb is None:
             emb = LlmProfile(name="embedding", connection_id=conn.id, model="", timeout_sec=60, retries=2, extra={})
             session.add(emb)
-        emb.connection_id, emb.model = conn.id, body.embedding_model.strip()
+        emb.model = body.embedding_model.strip()
+        # 임베딩 전용 연결을 따로 둔 경우에는 건드리지 않는다 ([LLM 연동] 임베딩 카드가 관리한다)
+        if emb.connection_id is None or (own := session.get(LlmConnection, emb.connection_id)) is None or own.name != EMB_CONN_NAME:
+            emb.connection_id = conn.id
     session.flush()
-    # 채팅 모델과 임베딩 모델을 함께 확인한다 — 임베딩은 /embeddings 규격이라 채팅 시험으로는 드러나지 않는다
+    # 임베딩이 같은 연결을 쓸 때만 함께 확인한다 — 주소가 다르면 임베딩 카드에서 따로 확인한다
+    share = emb is not None and emb.connection_id == conn.id
     res = test_connection(conn.base_url, decrypt_secret(conn.api_key_enc), prof.model or None,
-                          embedding_model=(emb.model or None) if emb else None)
+                          embedding_model=(emb.model or None) if share else None)
     conn.last_test = {**res, "models": (res.get("models") or [])[:50], "at": utcnow().isoformat()}
     audit(session, admin.emp_no, "admin.llm.setup", "llm_connection", str(conn.id), {"base_url": url, "api_key": "변경" if body.api_key is not None else "유지", "model": prof.model, "embedding_model": emb.model if emb else None, "ok": res.get("ok"), "embed_ok": res.get("embed_ok")}, client_ip(request))
     session.commit()
@@ -634,6 +638,142 @@ def llm_setup(body: LlmSetupIn, request: Request, session: Session = Depends(get
 
     reset_cooldown()  # 연결을 바꿨으므로 판단 에이전트의 '최근 오류 쉼'을 푼다
     return {"connection": _conn_json(conn), "model": prof.model, "embeddingModel": emb.model if emb else "", "test": res}
+
+
+EMB_PROFILE = "embedding"  # 임베딩 전용 LLM 프로필 이름 (embedder 에이전트가 쓴다)
+EMB_CONN_NAME = "litellm-embedding"  # 임베딩만 다른 주소 · 키를 쓸 때 만드는 연결
+
+
+class EmbSetupIn(BaseModel):
+    """임베딩 모델 설정 — 채팅과 따로 둔다 (게이트웨이가 임베딩을 목록에서 숨기거나 주소가 다를 수 있다)."""
+
+    model: str | None = None  # None = 유지, "" = 끔(키워드 검색만)
+    separate: bool = False  # True = 아래 주소 · 키를 쓴다, False = 기본 연결 공유
+    base_url: str | None = None  # separate=True 일 때만 씀 (None = 유지)
+    api_key: str | None = None  # None = 유지, "" = 삭제
+
+
+class EmbTestIn(BaseModel):
+    """저장하지 않고 확인만 — 넣은 값이 있으면 그것으로, 없으면 저장된 설정으로 호출한다."""
+
+    model: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+def _default_conn(session: Session) -> LlmConnection | None:
+    """기본 프로필이 쓰는 연결(없으면 가장 먼저 만든 연결)."""
+    prof = session.execute(select(LlmProfile).where(LlmProfile.is_default)).scalars().first()
+    if prof and prof.connection_id:
+        c = session.get(LlmConnection, prof.connection_id)
+        if c:
+            return c
+    return session.execute(select(LlmConnection).order_by(LlmConnection.id)).scalars().first()
+
+
+def _emb_profile(session: Session) -> LlmProfile | None:
+    return session.execute(select(LlmProfile).where(LlmProfile.name == EMB_PROFILE)).scalars().first()
+
+
+def _emb_state(session: Session) -> dict[str, Any]:
+    """임베딩 카드가 보여 줄 현재 상태 — 실제 호출에 쓰이는 주소 · 키 · 모델과 마지막 확인 결과."""
+    emb = _emb_profile(session)
+    default = _default_conn(session)
+    own = session.get(LlmConnection, emb.connection_id) if emb and emb.connection_id else None
+    separate = bool(own is not None and default is not None and own.id != default.id)
+    eff = own or default
+    key = ""
+    if eff is not None:
+        try:
+            key = decrypt_secret(eff.api_key_enc)
+        except Exception:  # noqa: BLE001 — 키가 깨져 있어도 화면은 떠야 한다
+            key = ""
+    lt = (eff.last_test or {}) if eff is not None else {}
+    return {
+        "model": emb.model if emb else "",
+        "separate": separate,
+        "baseUrl": eff.base_url if eff is not None else "",
+        "apiKeyMasked": mask_secret(key),
+        "hasKey": bool(key),
+        "defaultBaseUrl": default.base_url if default is not None else "",
+        "connectionName": eff.name if eff is not None else None,
+        # 임베딩 확인 결과만 골라 돌려준다 — 채팅 확인 결과와 섞이지 않게
+        "lastTest": {k: v for k, v in lt.items() if k.startswith("embed")} or None,
+    }
+
+
+def _emb_call(session: Session, model: str, base_url: str | None, api_key: str | None, *, persist_on: LlmConnection | None) -> dict[str, Any]:
+    """임베딩을 1건 호출하고, 연결이 주어지면 그 연결의 last_test 에 임베딩 항목만 덮어쓴다."""
+    res = test_embedding(_check_base_url(base_url) or "", api_key or "", model)
+    res["embed_at"] = utcnow().isoformat()
+    if persist_on is not None:
+        persist_on.last_test = {**(persist_on.last_test or {}), **res}
+    return res
+
+
+@router.get("/llm/embedding")
+def llm_embedding_get(session: Session = Depends(get_session)):
+    """임베딩 모델 설정 화면 — 채팅 모델과 분리 (게이트웨이 목록에 안 보이는 임베딩도 직접 확인한다)."""
+    return _emb_state(session)
+
+
+@router.post("/llm/embedding")
+def llm_embedding_save(body: EmbSetupIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """임베딩 모델 · 주소 · 키를 저장하고 바로 /embeddings 를 1건 호출해 차원까지 확인한다."""
+    default = _default_conn(session)
+    emb = _emb_profile(session)
+    if emb is None:
+        emb = LlmProfile(name=EMB_PROFILE, connection_id=default.id if default else None, model="", timeout_sec=60, retries=2, extra={})
+        session.add(emb)
+        session.flush()
+    if body.model is not None:
+        emb.model = body.model.strip()
+
+    if body.separate:
+        url = _check_base_url(body.base_url) if body.base_url else None
+        own = session.execute(select(LlmConnection).where(LlmConnection.name == EMB_CONN_NAME)).scalars().first()
+        if own is None:
+            if not url:
+                raise HTTPException(422, "임베딩을 따로 두려면 주소를 넣어야 합니다")
+            own = LlmConnection(name=EMB_CONN_NAME, base_url=url, api_key_enc=encrypt_secret(body.api_key or ""), active=True, note="임베딩 전용 (채팅과 주소 · 키가 다를 때)")
+            session.add(own)
+            session.flush()
+        else:
+            if url:
+                own.base_url = url
+            if body.api_key is not None:
+                own.api_key_enc = encrypt_secret(body.api_key)
+            own.active = True
+        emb.connection_id = own.id
+    elif default is not None:
+        # 기본 연결 공유 — 주소 · 키는 [간단 설정] 한 곳에서만 관리한다
+        emb.connection_id = default.id
+    session.flush()
+
+    eff = session.get(LlmConnection, emb.connection_id) if emb.connection_id else None
+    res: dict[str, Any] | None = None
+    if emb.model and eff is not None and eff.base_url:
+        res = _emb_call(session, emb.model, eff.base_url, decrypt_secret(eff.api_key_enc), persist_on=eff)
+    audit(session, admin.emp_no, "admin.llm.embedding_setup", "llm_profile", EMB_PROFILE,
+          {"model": emb.model, "separate": body.separate, "base_url": eff.base_url if eff else None,
+           "api_key": "변경" if body.api_key is not None else "유지", "embed_ok": (res or {}).get("embed_ok")}, client_ip(request))
+    session.commit()
+    return {**_emb_state(session), "test": res}
+
+
+@router.post("/llm/embedding/test")
+def llm_embedding_test(body: EmbTestIn, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """저장하지 않고 임베딩만 확인한다 — 모델 이름 · 주소를 바꿔 가며 찾아볼 때 쓴다."""
+    emb = _emb_profile(session)
+    eff = session.get(LlmConnection, emb.connection_id) if emb and emb.connection_id else _default_conn(session)
+    model = (body.model or (emb.model if emb else "") or "").strip()
+    if not model:
+        raise HTTPException(422, "확인할 임베딩 모델 이름을 넣어 주세요")
+    url = (body.base_url or "").strip() or (eff.base_url if eff is not None else "")
+    if not url:
+        raise HTTPException(422, "LLM 주소가 아직 없습니다 — [간단 설정] 에서 먼저 저장하세요")
+    key = body.api_key if body.api_key else (decrypt_secret(eff.api_key_enc) if eff is not None else "")
+    return _emb_call(session, model, url, key, persist_on=None)
 
 
 @router.post("/llm/connections", status_code=201)

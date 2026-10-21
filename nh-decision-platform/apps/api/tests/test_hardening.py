@@ -642,6 +642,81 @@ def test_external_litellm_quick_setup(db, monkeypatch):
             s.commit()
 
 
+def test_embedding_setup_card(db, monkeypatch):
+    """임베딩 모델은 채팅과 따로 확인한다 — 게이트웨이가 목록에서 숨겨도(discoverable: false) 이름으로 확인된다.
+
+    같은 연결 공유 · 임베딩 전용 주소 두 가지를 모두 확인하고, 전용 주소를 써도 채팅 연결은 건드리지 않는다.
+    """
+    from nhdip.api import admin_core
+    from nhdip.models import LlmConnection, LlmProfile
+    from nhdip.security import decrypt_secret, encrypt_secret
+
+    seen: list[tuple[str, str, str]] = []
+
+    def fake_embed(base_url, api_key, model, timeout=15.0):
+        seen.append((base_url, api_key, model))
+        return {"embed_model": model, "embed_ok": True, "embed_status": 200, "embed_dim": 1024, "embed_latency_ms": 40}
+
+    monkeypatch.setattr(admin_core, "test_embedding", fake_embed)
+    admin = _admin()
+    with db() as s:
+        prof = s.query(LlmProfile).filter(LlmProfile.is_default).first()
+        conn = s.get(LlmConnection, prof.connection_id)
+        before = (conn.id, conn.base_url, conn.api_key_enc, conn.last_test)
+        conn.base_url, conn.api_key_enc = "https://gw.example.test/v1", encrypt_secret("sk-gw")
+        s.commit()
+    try:
+        assert _client().get("/admin/llm/embedding").status_code != 500
+        assert _client().post("/admin/llm/embedding", json={"model": "kure-v1"}).status_code == 401
+
+        # ── 기본 연결 공유 — 채팅과 같은 주소 · 키로 /embeddings 를 호출한다 ──
+        r = admin.post("/admin/llm/embedding", json={"model": "kure-v1", "separate": False})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["model"] == "kure-v1" and body["separate"] is False
+        assert body["test"]["embed_ok"] and body["test"]["embed_dim"] == 1024
+        assert seen[-1] == ("https://gw.example.test/v1", "sk-gw", "kure-v1")
+        assert "sk-gw" not in r.text  # 키는 돌려주지 않는다
+        g = admin.get("/admin/llm/embedding").json()
+        assert g["lastTest"]["embed_ok"] and g["lastTest"]["embed_at"] and g["baseUrl"] == "https://gw.example.test/v1"
+        assert all(k.startswith("embed") for k in g["lastTest"])  # 채팅 확인 결과와 섞이지 않는다
+
+        # ── 임베딩만 다른 주소 · 키 — 게이트웨이가 임베딩을 안 열어 줄 때 ──
+        assert admin.post("/admin/llm/embedding", json={"model": "kure-v1", "separate": True, "base_url": "http://169.254.169.254/v1"}).status_code == 422
+        r = admin.post("/admin/llm/embedding", json={"model": "kure-v1", "separate": True, "base_url": "http://vllm.example.test:8000/v1", "api_key": "sk-emb"})
+        assert r.status_code == 200, r.text
+        assert seen[-1] == ("http://vllm.example.test:8000/v1", "sk-emb", "kure-v1")
+        g = admin.get("/admin/llm/embedding").json()
+        assert g["separate"] is True and g["baseUrl"] == "http://vllm.example.test:8000/v1" and g["hasKey"]
+        assert g["defaultBaseUrl"] == "https://gw.example.test/v1"  # 채팅 연결은 그대로
+        with db() as s:
+            chat = s.get(LlmConnection, before[0])
+            assert chat.base_url == "https://gw.example.test/v1" and decrypt_secret(chat.api_key_enc) == "sk-gw"
+
+        # ── 저장하지 않고 확인만 — 이름을 바꿔 가며 찾아볼 때 ──
+        r = admin.post("/admin/llm/embedding/test", json={"model": "bge-m3"})
+        assert r.status_code == 200 and r.json()["embed_ok"]
+        assert seen[-1] == ("http://vllm.example.test:8000/v1", "sk-emb", "bge-m3")
+        assert admin.get("/admin/llm/embedding").json()["model"] == "kure-v1"  # 저장은 안 됐다
+        with db() as s:
+            emb = s.query(LlmProfile).filter(LlmProfile.name == "embedding").first()
+            emb.model = ""
+            s.commit()
+        assert admin.post("/admin/llm/embedding/test", json={}).status_code == 422  # 확인할 이름이 없다
+    finally:
+        with db() as s:
+            cid, url, key_enc, lt = before
+            chat = s.get(LlmConnection, cid)
+            chat.base_url, chat.api_key_enc, chat.last_test = url, key_enc, lt
+            emb = s.query(LlmProfile).filter(LlmProfile.name == "embedding").first()
+            if emb:
+                emb.model, emb.connection_id = "", cid
+            own = s.query(LlmConnection).filter(LlmConnection.name == "litellm-embedding").first()
+            if own:
+                s.delete(own)
+            s.commit()
+
+
 def test_bundled_litellm_default_is_cleared():
     from types import SimpleNamespace
 

@@ -557,6 +557,15 @@ def test_connection(base_url: str, api_key: str, model: str | None = None, timeo
     return out
 
 
+def test_embedding(base_url: str, api_key: str, model: str, timeout: float = 15.0) -> dict[str, Any]:
+    """임베딩 모델만 확인한다 — 관리자 [LLM 연동] 의 임베딩 카드 전용.
+
+    게이트웨이가 임베딩 모델을 `GET /models` 에서 숨기는 경우(LiteLLM `model_info.discoverable: false`)
+    목록으로는 확인할 수 없다. 채팅 모델과 주소 · 키가 다를 수도 있어 따로 확인한다.
+    """
+    return _test_embedding(base_url, api_key, model, timeout)
+
+
 def _test_embedding(base_url: str, api_key: str, model: str, timeout: float) -> dict[str, Any]:
     """임베딩 모델 1건 호출 — 차원 · 지연을 돌려준다(검색 품질은 차원이 맞아야 유지된다)."""
     out: dict[str, Any] = {"embed_model": model, "embed_ok": False}

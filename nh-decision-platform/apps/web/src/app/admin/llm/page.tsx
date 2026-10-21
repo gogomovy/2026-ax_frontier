@@ -61,10 +61,10 @@ interface TestResult {
 function QuickSetup({ onSaved }: { onSaved: () => void }) {
   const cur = useApiData<SetupState>("/admin/llm/setup");
   const { run, busy } = useAction();
-  const [f, setF] = useState<{ url: string; key: string; model: string; emb: string } | null>(null);
+  const [f, setF] = useState<{ url: string; key: string; model: string } | null>(null);
   const [test, setTest] = useState<TestResult | null>(null);
   const c = cur.data;
-  const form = f ?? { url: c?.connection?.baseUrl ?? "", key: "", model: c?.model ?? "", emb: c?.embeddingModel ?? "" };
+  const form = f ?? { url: c?.connection?.baseUrl ?? "", key: "", model: c?.model ?? "" };
   const set = (patch: Partial<typeof form>) => setF({ ...form, ...patch });
   const last = (c?.connection?.lastTest ?? null) as TestResult | null;
   const shown = test ?? last;
@@ -75,7 +75,6 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
           base_url: form.url.trim(),
           ...(form.key ? { api_key: form.key } : {}),
           model: form.model.trim(),
-          embedding_model: form.emb.trim(),
         }),
       (r) => (r?.test?.ok ? "저장했습니다 — 연결 확인 성공" : "저장했습니다 — 연결 확인 실패(아래 결과 확인)"),
       () => {
@@ -98,7 +97,6 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
         <TextInput label="LiteLLM 주소 (예: https://litellm.example.com 또는 …/v1)" value={form.url} onChange={(v) => set({ url: v })} mono placeholder="https://" />
         <TextInput label={c?.connection?.hasKey ? "API 키 (비우면 유지)" : "API 키"} type="password" value={form.key} onChange={(v) => set({ key: v })} />
         <TextInput label="기본 모델 (서술 · 판단 · 질의)" value={form.model} onChange={(v) => set({ model: v })} mono placeholder="예: coder.general.multimodal" />
-        <TextInput label="임베딩 모델 (선택 — 비우면 키워드 검색만)" value={form.emb} onChange={(v) => set({ emb: v })} mono />
       </div>
       <div className="mt-md flex flex-wrap items-center gap-xs">
         <Button size="sm" variant="confirm" disabled={busy || !/^https?:\/\/.+/.test(form.url.trim())} onClick={save}>
@@ -109,20 +107,10 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
             {shown.ok ? <Badge tone="success">연결 성공</Badge> : <Badge tone="critical">연결 실패</Badge>}{" "}
             {shown.latency_ms !== undefined ? `모델 목록 ${shown.latency_ms}ms` : ""}
             {shown.chat_ok !== undefined ? ` · 모델 호출 ${shown.chat_ok ? `성공 ${shown.chat_latency_ms}ms` : "실패"}` : ""}
-            {shown.embed_ok !== undefined
-              ? ` · 임베딩 ${shown.embed_ok ? `성공 ${shown.embed_dim}차원 ${shown.embed_latency_ms}ms` : "실패"}`
-              : form.emb.trim()
-                ? " · 임베딩 미확인"
-                : ""}
             {!test && shown.at ? <span className="text-stone"> (예전 기록 {fmtTime(shown.at)})</span> : null}
           </span>
         ) : null}
       </div>
-      {shown && shown.embed_ok === undefined && form.emb.trim() ? (
-        <p className="mt-xs text-[12px] text-steel">
-          임베딩 모델({form.emb.trim()})은 아직 확인한 적이 없습니다 — 위 결과는 임베딩 확인이 없던 때 저장된 기록입니다. [저장하고 연결 확인]을 누르면 /embeddings 를 1건 호출해 차원까지 확인합니다.
-        </p>
-      ) : null}
       {shown && !shown.ok ? (
         <p className="mt-xs break-all text-[12px] text-critical">
           {shown.embed_ok === false && !shown.error && shown.chat_ok !== false
@@ -152,6 +140,128 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
   );
 }
 
+interface EmbTest {
+  embed_model?: string;
+  embed_ok?: boolean;
+  embed_dim?: number;
+  embed_status?: number;
+  embed_latency_ms?: number;
+  embed_error?: string;
+  embed_at?: string;
+}
+interface EmbState {
+  model: string;
+  separate: boolean;
+  baseUrl: string;
+  apiKeyMasked: string;
+  hasKey: boolean;
+  defaultBaseUrl: string;
+  connectionName: string | null;
+  lastTest: EmbTest | null;
+}
+
+/** 임베딩 모델 — 채팅 모델과 따로 둔다.
+ *
+ * 게이트웨이가 임베딩을 모델 목록에서 숨기는 일이 흔해(LiteLLM `model_info.discoverable: false`)
+ * 목록으로는 확인할 수 없다. 이름을 직접 적고 /embeddings 를 1건 호출해 차원까지 확인한다.
+ * 임베딩만 다른 주소 · 키로 나가야 할 때(게이트웨이가 임베딩을 안 열어 줄 때)도 여기서 잡는다.
+ */
+function EmbeddingSetup() {
+  const cur = useApiData<EmbState>("/admin/llm/embedding");
+  const { run, busy } = useAction();
+  const [f, setF] = useState<{ model: string; separate: boolean; url: string; key: string } | null>(null);
+  const [test, setTest] = useState<EmbTest | null>(null);
+  const c = cur.data;
+  const form = f ?? { model: c?.model ?? "", separate: c?.separate ?? false, url: c?.separate ? c?.baseUrl ?? "" : "", key: "" };
+  const set = (patch: Partial<typeof form>) => setF({ ...form, ...patch });
+  const shown = test ?? c?.lastTest ?? null;
+  const fresh = test !== null;
+  const payload = () => ({
+    model: form.model.trim(),
+    ...(form.separate && form.url.trim() ? { base_url: form.url.trim() } : {}),
+    ...(form.key ? { api_key: form.key } : {}),
+  });
+  const save = () =>
+    run(
+      () => apiPost<EmbState & { test: EmbTest | null }>("/admin/llm/embedding", { ...payload(), separate: form.separate }),
+      (r) => (!r?.test ? "저장했습니다 — 모델 이름이 비어 있어 확인은 건너뜁니다" : r.test.embed_ok ? `저장했습니다 — 임베딩 확인 성공 ${r.test.embed_dim}차원` : "저장했습니다 — 임베딩 확인 실패(아래 사유 확인)"),
+      cur.reload,
+    ).then((r) => {
+      if (r) {
+        setTest(r.test ?? null);
+        setF({ ...form, key: "" });
+      }
+    });
+  const only = () =>
+    run(
+      () => apiPost<EmbTest>("/admin/llm/embedding/test", payload()),
+      (r) => (r?.embed_ok ? `임베딩 확인 성공 — ${r.embed_dim}차원 ${r.embed_latency_ms}ms` : "임베딩 확인 실패(아래 사유 확인)"),
+    ).then((r) => r && setTest(r));
+  return (
+    <Card
+      title="임베딩 모델"
+      actions={shown?.embed_ok ? <Badge tone="success">확인됨 {shown.embed_dim}차원</Badge> : shown?.embed_ok === false ? <Badge tone="critical">확인 실패</Badge> : <Badge tone="attention">미확인</Badge>}
+    >
+      <p className="mb-md text-[12.5px] text-steel">
+        문서 · 분석 결과를 벡터로 바꿔 뜻으로 찾게 하는 모델입니다. 비워 두면 키워드 검색만 씁니다. 게이트웨이가 임베딩 모델을 위 모델 목록에서 숨기는 일이 흔하니(목록에 없어도 호출은 됩니다) 이름을 그대로 적고 확인하세요. 채팅과 호출 규격(/embeddings)이 달라 위 연결 확인으로는 드러나지 않습니다.
+      </p>
+      <Loading error={cur.error} loading={!c && cur.loading} />
+      <div className="grid grid-cols-1 gap-md md:grid-cols-2">
+        <TextInput label="임베딩 모델 이름" value={form.model} onChange={(v) => set({ model: v })} mono placeholder="예: kure-v1 · amazon.titan-embed-text-v2:0" />
+        <div className="flex items-end">
+          <Check label="임베딩만 다른 주소 · 키 사용" checked={form.separate} onChange={(v) => set({ separate: v, url: v ? form.url || c?.baseUrl || "" : "" })} />
+        </div>
+        {form.separate ? (
+          <>
+            <TextInput label="임베딩 주소 (예: http://vllm:8000/v1)" value={form.url} onChange={(v) => set({ url: v })} mono placeholder="https://" />
+            <TextInput label={c?.hasKey ? "임베딩 API 키 (비우면 유지)" : "임베딩 API 키"} type="password" value={form.key} onChange={(v) => set({ key: v })} />
+          </>
+        ) : null}
+      </div>
+      <p className="mt-xs text-[12px] text-stone">
+        지금 호출에 쓰는 주소 <span className="font-mono">{c?.baseUrl || "(아직 없음 — 위 간단 설정에서 먼저 저장하세요)"}</span>
+        {c?.separate ? " · 임베딩 전용 연결" : " · 기본 연결 공유"}
+        {c?.hasKey ? ` · 키 ${c.apiKeyMasked}` : " · 키 없음"}
+      </p>
+      <div className="mt-md flex flex-wrap items-center gap-xs">
+        <Button size="sm" variant="confirm" disabled={busy} onClick={save}>
+          {busy ? "확인 중…" : "저장하고 임베딩 확인"}
+        </Button>
+        <Button size="sm" variant="quiet" disabled={busy || !form.model.trim()} onClick={only}>
+          임베딩 확인 (저장 안 함)
+        </Button>
+        {shown ? (
+          <span className="text-[12px]" role="status">
+            {shown.embed_ok ? (
+              <>
+                <Badge tone="success">임베딩 성공</Badge> {shown.embed_dim}차원 · {shown.embed_latency_ms}ms
+              </>
+            ) : (
+              <>
+                <Badge tone="critical">임베딩 실패</Badge> {shown.embed_status ? `HTTP ${shown.embed_status}` : ""}
+              </>
+            )}
+            {!fresh && shown.embed_at ? <span className="text-stone"> (지난 확인 {fmtTime(shown.embed_at)})</span> : null}
+          </span>
+        ) : null}
+      </div>
+      {shown && shown.embed_ok === false ? (
+        <p className="mt-xs break-all text-[12px] text-critical">
+          {shown.embed_model ? `모델 ${shown.embed_model} — ` : ""}
+          {shown.embed_error}
+          <br />
+          게이트웨이에 그 이름이 임베딩으로 등록돼 있는지, 키에 임베딩 권한이 있는지 확인하세요. 게이트웨이가 임베딩을 안 열어 주면 [임베딩만 다른 주소 · 키 사용] 으로 모델 서버에 직접 붙일 수 있습니다.
+        </p>
+      ) : null}
+      {shown?.embed_ok ? (
+        <p className="mt-xs text-[12px] text-steel">
+          차원이 바뀌면 이미 만들어 둔 벡터와 맞지 않아 다시 임베딩합니다. 모델을 바꾸기 전에 쌓인 분석 결과 · 문서 수를 확인하세요.
+        </p>
+      ) : null}
+    </Card>
+  );
+}
+
 /** LiteLLM 연결 · 키 · 기본 프로필 (ADM-05, LLM-01~03) */
 export default function LlmAdmin() {
   const data = useApiData<{ connections: Conn[]; profiles: Profile[] }>("/admin/llm");
@@ -169,6 +279,7 @@ export default function LlmAdmin() {
       description="외부 LiteLLM(OpenAI 호환) 게이트웨이의 주소 · 키 · 모델을 등록합니다. 키는 암호화(AES-GCM) 저장되고 화면에는 가려서 표시됩니다. 보통은 위 '간단 설정' 만으로 충분하고, 연결을 여러 개 두거나 에이전트별로 다른 모델 · 파라미터를 쓸 때 아래 상세 설정과 [에이전트]를 씁니다."
     >
       <QuickSetup onSaved={data.reload} />
+      <EmbeddingSetup />
       <Loading error={data.error} loading={!data.data && data.loading} />
       <Card title="연결 (상세)">
         <div className="flex flex-col gap-lg">
