@@ -7,7 +7,8 @@ import { useConfirm } from "@/components/providers/UiProvider";
 import { EmptyState, KeyValueList, Notice } from "@/components/ui/Layout";
 import { Badge, Button, PillTabs } from "@/components/ui/primitives";
 import { apiPost } from "@/lib/api-client";
-import { KIND_LABEL, STATUS_LABEL, groupByKind, previewValue, reasonError, scoreText, type ProposalItem, type ProposalsData } from "@/lib/stewardProposals";
+import { opText } from "@/components/admin/ontology/opText";
+import { KIND_LABEL, STATUS_LABEL, groupByKind, impactText, previewValue, reasonError, scoreText, type ProposalItem, type ProposalsData } from "@/lib/stewardProposals";
 
 type Status = "pending" | "approved" | "rejected" | "";
 
@@ -25,8 +26,8 @@ export function StewardProposals({ initial }: { initial: ProposalsData }) {
   return (
     <section aria-label="데이터 책임자 승인함" className="flex flex-col gap-md" data-steward-proposals>
       <Notice tone="info" title={`${d?.scope?.name ?? initial.scope?.name ?? "소속 부서"} 승인함`}>
-        새 자료가 올라오면 에이전트가 자료 구조를 보고 분석 화면 · 추적 지표 · 업무 개념 연결을 제안합니다. 승인하면 계산 커널이 계산하고 분석 · 변화 감지 에이전트가 의견과 변화를 붙여 화면 · 검색 · 그래프에 반영되고, 반려하면 같은 제안을 다시 만들지
-        않습니다. 승인 전에는 어디에도 나가지 않습니다.
+        새 자료가 올라오면 에이전트가 자료 구조를 보고 분석 화면 · 추적 지표 · 업무 개념 연결 · 온톨로지 변경(객체 유형 · 링크)을 제안합니다. 승인하면 계산 커널이 계산하고 분석 · 변화 감지 에이전트가 의견과 변화를 붙여 화면 · 검색 · 그래프에
+        반영되고, 반려하면 같은 제안을 다시 만들지 않습니다. 승인 전에는 어디에도 나가지 않습니다.
       </Notice>
       <PillTabs
         size="sm"
@@ -52,6 +53,7 @@ export function StewardProposals({ initial }: { initial: ProposalsData }) {
           {g.kind === "analysis" ? g.items.map((it) => <AnalysisCard key={it.id} it={it} spaces={d?.spaces ?? []} reload={data.reload} />) : null}
           {g.kind === "metric" ? <MetricTable items={g.items} reload={data.reload} /> : null}
           {g.kind === "concept" ? <ConceptTable items={g.items} reload={data.reload} /> : null}
+          {g.kind === "ontology" ? g.items.map((it) => <OntologyCard key={it.id} it={it} reload={data.reload} />) : null}
         </div>
       ))}
     </section>
@@ -286,6 +288,94 @@ function ConceptTable({ items, reload }: { items: ProposalItem[]; reload: () => 
           </tr>
         ))}
       </Table>
+    </Card>
+  );
+}
+
+function OntologyCard({ it, reload }: { it: ProposalItem; reload: () => Promise<void> }) {
+  const { run, busy } = useAction();
+  const confirm = useConfirm();
+  const reject = useReject();
+  const ops = it.ops ?? [];
+  const base = `/db/steward/proposals/ontology/${it.pid}`;
+  const datasets = (it.datasets ?? []).map((x) => x.name || x.code).join(", ");
+  const approve = async () => {
+    const ok = await confirm({
+      title: "온톨로지 변경을 적용할까요?",
+      confirmLabel: "승인하고 적용",
+      body: (
+        <p className="text-[12.5px]">
+          연산 {it.opCount ?? ops.length}개를 활성 스키마에 적용해 새 판을 만듭니다. 그래프가 다시 투영되고(예상 {impactText(it.impact)}) 문서 추출이 새 판으로 다시 돕니다. 일부 연산만 적용하려면 관리자에게 요청하세요.
+        </p>
+      ),
+    });
+    if (ok) await run(() => apiPost(`${base}/approve`, {}), "적용했습니다 — 그래프를 다시 투영합니다", reload);
+  };
+  return (
+    <Card
+      title={
+        <span className="flex flex-wrap items-center gap-xs" data-proposal={it.id}>
+          {it.title}
+          <StatusTag it={it} />
+        </span>
+      }
+    >
+      <div className="grid grid-cols-1 gap-lg lg:grid-cols-[minmax(0,340px)_1fr]">
+        <KeyValueList
+          columns={1}
+          dense
+          items={[
+            { label: "원천 자료", value: datasets || "-" },
+            ...(it.linkedDatasets?.length ? [{ label: "잇는 객체 유형의 자료", value: it.linkedDatasets.map((x) => x.name || x.code).join(", ") }] : []),
+            { label: "변경", value: it.summary || `연산 ${it.opCount ?? ops.length}개` },
+            { label: "그래프 영향(예상)", value: impactText(it.impact) },
+            { label: "제안", value: `${it.createdByName ?? it.createdBy ?? "-"} · ${fmtTime(it.createdAt)}` },
+            ...(it.baseVersion ? [{ label: "기준 판", value: `v${it.baseVersion}${it.appliedVersion ? ` → 적용 v${it.appliedVersion}` : ""}` }] : []),
+            ...(it.decidedAt ? [{ label: "처리", value: `${it.decidedByName ?? "-"} · ${fmtTime(it.decidedAt)}` }] : []),
+            ...(it.note ? [{ label: "처리 메모", value: it.note }] : []),
+          ]}
+        />
+        <div className="min-w-0">
+          <p className="mb-xs text-[12px] font-bold text-steel">변경 연산</p>
+          <ul className="flex flex-col gap-1 text-[12.5px]" data-ontology-ops>
+            {ops.map((o) => (
+              <li key={o.key} className="border-b border-hairline-soft py-0.5">
+                <span className="text-ink-deep">{opText(o.op)}</span>
+                {o.why ? <p className="text-[11.5px] text-steel">{o.why}</p> : null}
+              </li>
+            ))}
+          </ul>
+          {(it.opCount ?? 0) > ops.length ? <p className="mt-xs text-[11.5px] text-stone">외 {(it.opCount ?? 0) - ops.length}개 — 관리자 [온톨로지 › 변경 제안]에서 모두 볼 수 있습니다.</p> : null}
+          {it.warnings?.length ? (
+            <Collapse label={`검증 경고 ${it.warnings.length}건`}>
+              <ul className="text-[11.5px] text-attention">
+                {it.warnings.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            </Collapse>
+          ) : null}
+        </div>
+      </div>
+      {it.status === "pending" && !it.canReview ? <p className="mt-md text-[12px] text-stone">본인이 만든 제안입니다 — 다른 책임자나 관리자가 처리합니다.</p> : null}
+      {it.status === "pending" && it.canReview ? (
+        <div className="mt-lg flex flex-wrap gap-xs border-t border-hairline-soft pt-md" data-proposal-review={it.id}>
+          <Button size="sm" variant="confirm" disabled={busy} onClick={approve}>
+            승인하고 적용
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={async () => {
+              const reason = await reject("온톨로지 변경 제안을 반려할까요?", "반려하면 구축 에이전트가 같은 연산을 다시 제안하지 않습니다. 관리자가 [온톨로지 › 변경 제안]에서 다시 검토로 되돌릴 수 있습니다.");
+              if (typeof reason === "string" && reason) await run(() => apiPost(`${base}/reject`, { note: reason }), "반려했습니다", reload);
+            }}
+          >
+            반려…
+          </Button>
+        </div>
+      ) : null}
     </Card>
   );
 }

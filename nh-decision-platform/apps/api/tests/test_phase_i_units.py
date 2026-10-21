@@ -36,10 +36,13 @@ def test_prev_year_end_token():
     rows = [{"ym": "202512"}, {"ym": "202607"}, {"ym": "202608"}]
     assert resolve_token(rows, "ym", "$prev_year_end") == "202512"
     assert resolve_token(rows, "ym", "$latest") == "202608"
-    assert resolve_token(rows, "ym", "$latest-12") == "202508"
+    # 전년 동기(202508)가 없으면 최신보다 앞선 가장 가까운 보관 기간(202512 — 4개월 차이)으로 대체 · strict 면 그대로
+    assert resolve_token(rows, "ym", "$latest-12") == "202512"
+    assert resolve_token(rows, "ym", "$latest-12", fallback=False) == "202508"
     assert resolve_token(rows, "ym", "$earliest") == "202512"
     days = [{"d": "2026-03-31"}, {"d": "2026-08-31"}]
-    assert resolve_token(days, "d", "$prev_year_end") == "2025-12-31"
+    assert resolve_token(days, "d", "$prev_year_end", fallback=False) == "2025-12-31"
+    assert resolve_token(days, "d", "$prev_year_end") == "2026-03-31"  # 전년 말이 없으면 가장 가까운 앞선 기준일(3개월 차이)
     assert resolve_token(rows, "ym", "plain") == "plain" and resolve_token(rows, "ym", 7) == 7
     with pytest.raises(ResolveError):
         resolve_token([], "ym", "$latest")
@@ -54,9 +57,69 @@ def test_prev_token_picks_stored_period_not_calendar_month():
     assert resolve_token(jan_aug, "ym", "$latest") == "202608"
     assert resolve_token(jan_aug, "ym", "$prev") == "202601"
     assert resolve_token(jan_aug, "ym", "$prev-1") == "202601"
-    # 달 수로 세는 토큰은 뜻을 바꾸지 않는다 — 그 달이 없으면 그 달을 그대로 돌려주고(맞는 행이 없어) 계산이 오류가 된다
-    assert resolve_token(jan_aug, "ym", "$latest-1") == "202607"
-    assert resolve_token(jan_aug, "ym", "$latest-12") == "202508"
+    # 달 수로 세는 토큰은 그 달이 없으면 가장 가까운 앞선 보관 기간으로 대체한다(설정 calc.period_fallback=nearest) — strict 면 그 달 그대로(값 없음 오류)
+    assert resolve_token(jan_aug, "ym", "$latest-1") == "202601"
+    assert resolve_token(jan_aug, "ym", "$latest-12") == "202601"
+    assert resolve_token(jan_aug, "ym", "$latest-1", fallback=False) == "202607"
+    assert resolve_token(jan_aug, "ym", "$latest-12", fallback=False) == "202508"
+
+
+def test_month_tokens_fall_back_to_nearest_earlier_period_and_report_it():
+    from nhdip.calc.metrics import fallback_note, resolve_token_info, token_name
+
+    jan_aug = [{"ym": "202601"}, {"ym": "202608"}]
+    assert resolve_token_info(jan_aug, "ym", "$latest-12") == ("202601", "202508")
+    # 정확한 달이 있으면 대체가 아니다
+    full = [{"ym": "202508"}, {"ym": "202601"}, {"ym": "202608"}]
+    assert resolve_token_info(full, "ym", "$latest-12") == ("202508", None)
+    # 거리가 같으면 앞선 기간 — 202508 기준 ±2개월(202506 · 202510)
+    tie = [{"ym": "202506"}, {"ym": "202510"}, {"ym": "202608"}]
+    assert resolve_token_info(tie, "ym", "$latest-12") == ("202506", "202508")
+    # 대신할 기간은 최신보다 그 달에 더 가까워야 한다 — 1월 · 8월이면 2년 전(202408) 자리에 1월(최신에서 7개월)은 안 된다
+    assert resolve_token_info(jan_aug, "ym", "$latest-24") == ("202408", None)
+    assert resolve_token_info([{"ym": "202606"}, {"ym": "202608"}], "ym", "$latest-12") == ("202508", None)
+    # 최신 하나뿐이면 자기 자신과 견주지 않는다 — 대체 없이 그 달(값 없음 오류로 '갱신 실패')
+    assert resolve_token_info([{"ym": "202608"}], "ym", "$latest-12") == ("202508", None)
+    # 전년 말(202512)이 없으면 가장 가까운 앞선 기간
+    assert resolve_token_info([{"ym": "202601"}, {"ym": "202608"}], "ym", "$prev_year_end") == ("202601", "202512")
+    # 날짜 기준일 — 같은 달의 다른 날(영업일 말일)은 같은 기간
+    days = [{"d": "2025-08-29"}, {"d": "2026-08-31"}]
+    assert resolve_token_info(days, "d", "$latest-12") == ("2025-08-29", None)
+    # 보관 기간 토큰($prev · $nearest-N)은 대체 개념이 없다
+    assert resolve_token_info(jan_aug, "ym", "$prev")[1] is None and resolve_token_info(jan_aug, "ym", "$nearest-12")[1] is None
+    assert token_name("$latest-12") == "전년 동기" and token_name("$prev_year_end") == "전년 말" and token_name("$latest-3") == "3개월 전"
+    assert fallback_note({"token": "$latest-12", "wanted": "202508", "used": "202601"}) == "전년 동기(2025.08) 자료가 없어 가장 가까운 기준일 2026.01 과 비교"
+
+
+def test_period_basis_relabels_figure_and_restores_when_exact_period_arrives():
+    from nhdip.views.period_words import relabel
+    from nhdip.views.store import patch_figures
+    from nhdip.views.template import render_templates, strip_figure
+
+    yoy = [{"col": "ym", "token": "$latest-12", "wanted": "202508", "used": "202601"}]
+    assert relabel("전년 동기 대비 증가율", yoy) == "2026.01 대비 증가율"
+    assert relabel("전년동기 잔액", yoy) == "2026.01 잔액"
+    assert relabel("전년 말 잔액", yoy) == "전년 말 잔액"  # 대체되지 않은 토큰의 낱말은 그대로
+    assert relabel("전년말 대비", [{"token": "$prev_year_end", "used": "202601"}]) == "2026.01 대비"
+    assert relabel("2년 전 동기 잔액", [{"token": "$latest-24", "used": "202501"}]) == "2025.01 잔액"
+    fig = {"id": "g", "label": "전년 동기 대비 증가율", "unit": "PCT", "value": None}
+    art = {"figures": [fig], "statementTpl": "증가율은 전년 동기 대비 [[fig:g]] 입니다", "titleTpl": "전년 동기 대비 [[if:g>0|늘었다|줄었다]]"}
+    changes: list = []
+    patch_figures(art, {"g": {"value": 3.2, "basis": yoy}}, changes, "a")
+    assert fig["label"] == "2026.01 대비 증가율" and fig["labelBase"] == "전년 동기 대비 증가율" and fig["basis"] == yoy
+    from nhdip.views.template import figure_index
+
+    render_templates(art, figure_index({"a": art}))
+    assert art["statement"] == "증가율은 2026.01 대비 [[fig:g]] 입니다" and art["title"] == "2026.01 대비 늘었다"
+    # 정확한 달이 올라와 대체가 풀리면 원래 라벨 · 문구로
+    patch_figures(art, {"g": {"value": 2.0, "basis": []}}, changes, "a")
+    assert fig["label"] == "전년 동기 대비 증가율" and "labelBase" not in fig and "basis" not in fig
+    render_templates(art, figure_index({"a": art}))
+    assert art["statement"] == "증가율은 전년 동기 대비 [[fig:g]] 입니다"
+    # 화면 틀로 되돌릴 때도 원래 라벨
+    f2 = {"id": "h", "label": "2026.01 잔액", "labelBase": "전년 동기 잔액", "unit": "KRW_TN", "value": 1.0, "basis": yoy}
+    strip_figure(f2)
+    assert f2 == {"id": "h", "label": "전년 동기 잔액", "unit": "KRW_TN", "value": None}
 
 
 def test_prev_token_steps_back_and_clamps():

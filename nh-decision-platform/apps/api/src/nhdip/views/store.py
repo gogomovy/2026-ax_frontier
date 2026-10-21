@@ -129,7 +129,29 @@ def _trace_key(obj: dict[str, Any]) -> Any:
     calc = obj.get("calc")
     if isinstance(calc, dict):
         calc = {k: v for k, v in calc.items() if k not in ("calcId", "executedAt")}
-    return (obj.get("value"), calc, obj.get("sourceRef"), obj.get("dataOrigin"), obj.get("decimals"), obj.get("unit"))
+    return (obj.get("value"), calc, obj.get("sourceRef"), obj.get("dataOrigin"), obj.get("decimals"), obj.get("unit"), obj.get("label"), repr(obj.get("basis")), repr(obj.get("align")))
+
+
+def apply_basis(obj: dict[str, Any], basis: list[dict[str, Any]] | None) -> None:
+    """수치의 기간 대체 표시 — 대체가 있으면 basis 를 달고 라벨의 기간 낱말('전년 동기')을 실제 견준 기간으로(원래 라벨은 labelBase),
+    대체가 풀리면 원래 라벨로 되돌린다. 라벨 서식 문구(labelTpl)가 있는 수치는 render_templates 가 라벨을 다시 쓴다."""
+    from .period_words import basis_list, relabel
+
+    basis = basis_list(basis)
+    if "labelBase" in obj and ("labelTpl" in obj or not basis):
+        obj["label"] = obj.pop("labelBase")
+    if not basis:
+        obj.pop("basis", None)
+        return
+    obj["basis"] = basis
+    if "labelTpl" in obj:
+        return
+    base = obj.get("labelBase") or obj.get("label")
+    new = relabel(base, basis)
+    if new != base:
+        obj["labelBase"], obj["label"] = base, new
+    elif "labelBase" in obj:
+        obj["label"] = obj.pop("labelBase")
 
 
 def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[str, Any]], key: str = "") -> None:
@@ -163,6 +185,15 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
             for k in ("verdict", "severity"):  # 판정형 수식 결과 문구 (Phase I)
                 if f.get(k) is not None:
                     obj[k] = f[k]
+            if "basis" in f:
+                apply_basis(obj, f["basis"])
+            # 비교 기간 맞춤(목표 환산 · 기간 인자) · 경영목표 수치 — 없으면 뗀다(그 달이 올라와 맞춤이 풀린 경우)
+            for k in ("align", "goal"):
+                if k in f:
+                    if f[k]:
+                        obj[k] = f[k]
+                    else:
+                        obj.pop(k, None)
             if before != f["value"]:
                 changes.append({"artifact": key, "figure": obj["id"], "before": before, "after": f["value"]})
             elif was_stale:

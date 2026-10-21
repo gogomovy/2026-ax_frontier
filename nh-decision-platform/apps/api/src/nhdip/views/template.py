@@ -22,11 +22,12 @@ import copy
 import re
 from typing import Any, Iterable
 
+from nhdip.views.period_words import relabel
 from nhdip.views.store import find_paths
 
 DASH = "–"
 TPL = "Tpl"
-FIG_DROP = ("calc", "sourceRef", "dataOrigin", "stale", "staleReason", "verdict", "severity")
+FIG_DROP = ("calc", "sourceRef", "dataOrigin", "stale", "staleReason", "verdict", "severity", "basis", "align", "goal")
 # 사람이 만드는 내용(다른 부서 요청 · 검토 대기)은 시드가 만들지 않는다 — 사용자 요청만 (Q135)
 DEMO_ARTIFACTS: dict[str, Any] = {"report_requests": [], "review_queue": []}
 DEMO_FIELDS: dict[str, list[str]] = {"hq_dashboard": ["requests"]}
@@ -138,6 +139,8 @@ def strip_figure(d: dict[str, Any]) -> None:
     d["value"] = None
     for k in FIG_DROP:
         d.pop(k, None)
+    if "labelBase" in d:
+        d["label"] = d.pop("labelBase")  # 기간 대체로 바꾼 라벨('2026.01 대비') → 원래 라벨('전년 동기 대비')
 
 
 def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ()) -> Any:
@@ -159,6 +162,7 @@ def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ())
             d[k[:-6]] = None  # 지표 표시값으로 채우는 숫자 필드
         if "gapVerdict" in d:
             d["gapVerdict"] = None  # 목표 판정은 실적 수치로 서버가 계산한다 (views.goal_verdict) — 틀에는 두지 않는다
+            d.pop("gapBasis", None)  # 판정 근거(비교 기간 환산)도 실행 때 생긴다
         # 실행 때 생기는 것 — 문서 인용 근거(attach_evidence) · 검증 결과(critic) · 근거 문서(basisDoc) · 배치 확인 문서 · 에이전트 문장 표시
         if isinstance(d.get("evidence"), list):
             d["evidence"] = [e for e in d["evidence"] if not (isinstance(e, dict) and any(k in e for k in DOC_EVIDENCE_KEYS))]
@@ -272,7 +276,7 @@ def fmt_period(value: Any, mode: str | None) -> str:
 def _period(ctx: Any, arg: str, mode: str | None) -> str:
     if ctx is None:
         return DASH
-    from nhdip.calc.metrics import ResolveError, resolve_token
+    from nhdip.calc.metrics import ResolveError, fallback_on, resolve_token
 
     code, _, token = arg.partition(":")
     try:
@@ -280,7 +284,8 @@ def _period(ctx: Any, arg: str, mode: str | None) -> str:
         col = ds.as_of_column
         if not col:
             return DASH
-        return fmt_period(resolve_token(rows, col, (token or "$latest").strip()), mode)
+        # 지표와 같은 규칙으로 — 전년 동기가 없어 가장 가까운 기준일로 대체되면 라벨도 그 기준일(설정 calc.period_fallback)
+        return fmt_period(resolve_token(rows, col, (token or "$latest").strip(), fallback=fallback_on(ctx)), mode)
     except (ResolveError, ValueError, KeyError):
         return DASH
 
@@ -329,15 +334,44 @@ def _operand(tok: str, idx: dict[str, dict[str, Any]]) -> float | None:
     return None if v is None or isinstance(v, bool) else float(v)
 
 
+def figure_span(f: Any) -> dict[str, Any] | None:
+    """수치가 원래와 다른 비교 기간으로 계산됐으면 그 기간({months, wantedMonths, …}) — 이미 맞춘 값(normalized)은 None."""
+    from nhdip.calc.metrics import span_of
+
+    return span_of(f.get("basis")) if isinstance(f, dict) else None
+
+
 def eval_condition(expr: str, idx: dict[str, dict[str, Any]]) -> bool | None:
-    """'A>B' — 수치 id 또는 숫자 비교. 값이 없거나 식이 틀리면 None."""
+    """'A>B' — 수치 id 또는 숫자 비교. 값이 없거나 식이 틀리면 None.
+    한쪽이 경영목표(goal)이고 다른 쪽이 원래와 다른 비교 기간의 실적이면 목표를 그 기간으로 환산해 견준다(계산 커널 · 목표 판정과 같은 규칙)."""
     m = IF_EXPR.match(expr)
     if not m:
         return None
     a, op, b = _operand(m.group(1), idx), m.group(2), _operand(m.group(3), idx)
     if a is None or b is None:
         return None
+    fa, fb = idx.get(m.group(1)), idx.get(m.group(3))
+    for goal, other, side in ((fa, fb, "a"), (fb, fa, "b")):
+        span = figure_span(other)
+        if isinstance(goal, dict) and goal.get("goal") and span:
+            r = span["months"] / span["wantedMonths"]
+            a, b = (a * r, b) if side == "a" else (a, b * r)
+            break
     return {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b, "=": a == b, "!=": a != b}[op]
+
+
+def template_span(basis: list[dict[str, Any]]) -> dict[str, Any] | None:
+    from nhdip.calc.metrics import span_of
+
+    return span_of(basis)
+
+
+def _goal_suffix(f: dict[str, Any] | None, span: dict[str, Any] | None, units: dict[str, str]) -> str:
+    """경영목표 수치 옆 환산 표기 — '(7개월 환산 4.08%)'. 목표가 아니거나 비교 기간이 원래와 같으면 빈 글자."""
+    if not isinstance(f, dict) or not f.get("goal") or not span or not isinstance(f.get("value"), (int, float)) or isinstance(f.get("value"), bool):
+        return ""
+    scaled = {**f, "value": f["value"] * span["months"] / span["wantedMonths"], "decimals": max(int(f.get("decimals") or 0), 2)}
+    return f"({span['months']}개월 환산 {fmt_figure(scaled, None, units)})"
 
 
 def _at(root: Any, path: str) -> str:
@@ -352,7 +386,9 @@ def _at(root: Any, path: str) -> str:
     return DASH if obj in (None, "") or isinstance(obj, (dict, list)) else str(obj)
 
 
-def render_text(tpl: str, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None, *, keep_fig: bool = False, root: Any = None) -> str:
+def render_text(tpl: str, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None, *, keep_fig: bool = False, root: Any = None,
+                span: dict[str, Any] | None = None) -> str:
+    """span — 이 문구가 기대는 실적의 비교 기간(원래와 다르면) · 경영목표 수치 옆에 그 기간 환산 값을 붙인다."""
     units = units or UNIT_LABELS
 
     def pick(m: re.Match) -> str:
@@ -363,7 +399,9 @@ def render_text(tpl: str, idx: dict[str, dict[str, Any]], ctx: Any = None, units
         kind, arg, mode = m.group(1), m.group(2), m.group(3)
         if kind == "fig":
             # 화면은 꾸밈 없는 [[fig:ID]] 만 수치 칩으로 그린다 — 꾸밈(signed · verdict …)이 붙은 표식은 서버가 글로 렌더한다
-            return m.group(0) if keep_fig and not mode else fmt_figure(idx.get(arg.strip()), mode, units)
+            f = idx.get(arg.strip())
+            tail = _goal_suffix(f, span, units) if mode in (None, "signed") else ""
+            return (m.group(0) if keep_fig and not mode else fmt_figure(f, mode, units)) + tail
         if kind == "ym":
             return _period(ctx, arg, mode)
         return _rule(ctx, arg, mode)
@@ -393,6 +431,20 @@ def template_figure_ids(d: dict[str, Any]) -> set[str]:
     return out
 
 
+def _tpl_basis(tpls: list[str], idx: dict[str, dict[str, Any]], d: dict[str, Any]) -> list[dict[str, Any]]:
+    """서식 문구가 기대는 수치(그 객체가 수치면 자기 자신 · [[fig:ID]] · [[if:..]] 피연산자)의 기간 대체 기록 — 문구의 '전년 동기'를 실제 기간으로."""
+    out: list[dict[str, Any]] = list(d.get("basis") or []) if is_figure(d) else []
+    for s in tpls:
+        ids = {x.strip() for x in re.findall(r"\[\[fig:([^\]|]+)", s)}
+        for e in re.findall(r"\[\[if:([^\]|]+)\|", s):
+            m = IF_EXPR.match(e)
+            if m:
+                ids.update(t for t in (m.group(1), m.group(3)) if not re.fullmatch(r"-?[0-9.]+", t))
+        for fid in ids:
+            out.extend((idx.get(fid) or {}).get("basis") or [])
+    return out
+
+
 def render_templates(payload: Any, idx: dict[str, dict[str, Any]], ctx: Any = None, units: dict[str, str] | None = None, *,
                      protect: bool = True, refresh: set[str] | None = None) -> bool:
     """`xxxTpl`(문자열 · 문자열 목록) → `xxx`. 바뀐 것이 있으면 True.
@@ -412,9 +464,11 @@ def render_templates(payload: Any, idx: dict[str, dict[str, Any]], ctx: Any = No
                 changed = True
             keep = fld in KEEP_FIG_FIELDS
             if isinstance(tpl, str):
-                new: Any = render_text(tpl, idx, ctx, units, keep_fig=keep, root=payload)
+                basis = _tpl_basis([tpl], idx, d)
+                new: Any = relabel(render_text(tpl, idx, ctx, units, keep_fig=keep, root=payload, span=template_span(basis)), basis)
             elif isinstance(tpl, list) and all(isinstance(x, str) for x in tpl):
-                new = [render_text(x, idx, ctx, units, keep_fig=keep, root=payload) for x in tpl]
+                basis = _tpl_basis(tpl, idx, d)
+                new = [relabel(render_text(x, idx, ctx, units, keep_fig=keep, root=payload, span=template_span(basis)), basis) for x in tpl]
             else:
                 continue
             if d.get(fld) != new:

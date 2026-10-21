@@ -28,8 +28,26 @@ export interface CalcTrace {
   inputs: CalcInputRef[];
   executedAt: string;
   note?: string;
-  /** 계산은 됐지만 확인이 필요한 사항 (기준 시점 불일치 · 단위 경고) */
+  /** 계산은 됐지만 확인이 필요한 사항 (기준 시점 불일치 · 단위 경고 · 기간 대체) */
   warnings?: string[];
+  /** 기간 대체 — 가리키던 달(예: 전년 동기)이 없어 가장 가까운 보관 기준일과 견줬다 */
+  periodBasis?: PeriodBasis[];
+  /** 비교 기간 맞춤 — 기간 인자 · 경영목표를 실제 비교 기간으로 환산 */
+  periodAlign?: PeriodAlign | null;
+}
+
+/** 기간 대체 한 건 — token($latest-12 · $prev_year_end …)이 가리키던 기간(wanted) 대신 실제로 견준 기간(used) */
+export interface PeriodBasis {
+  col?: string | null;
+  token: string;
+  wanted: string;
+  used: string;
+  /** 최신 기준일 · 실제 비교 기간(개월) · 원래 비교 기간(개월) */
+  latest?: string | null;
+  months?: number | null;
+  wantedMonths?: number | null;
+  /** 이미 비교 기간에 맞춘 값 */
+  normalized?: boolean;
 }
 
 /** 참조 가능한 수치. LLM 이 만든 리터럴이 아니라 계산 결과를 가리킨다 (PRIN-05) */
@@ -48,6 +66,13 @@ export interface Figure {
   /** 최근 계산이 실패해 이전 값을 보여 주는 중 (B.32) */
   stale?: boolean;
   staleReason?: string;
+  /** 기간 대체 — 있으면 라벨은 이미 실제 견준 기간으로 바뀌어 있다(원래 라벨은 labelBase) */
+  basis?: PeriodBasis[];
+  labelBase?: string;
+  /** 비교 기간 맞춤(목표 환산 · 기간 인자) */
+  align?: PeriodAlign | null;
+  /** 경영목표 값 그대로인 수치 */
+  goal?: boolean;
 }
 
 export interface EvidenceDoc {
@@ -81,7 +106,9 @@ export interface Verification {
     | "evidence_present"
     | "causality_language"
     | "alignment"
-    | "goal_consistency";
+    | "goal_consistency"
+    | "grounding"
+    | "period_basis";
   passed: boolean;
   detail?: string;
 }
@@ -170,7 +197,36 @@ export interface Goal {
   gapSigned?: boolean;
   /** 서버가 실적 수치로 계산한 판정 — 계산할 수 없으면 null(배지를 달지 않는다) */
   gapVerdict?: "on_track" | "below" | "near_limit" | "breach" | null;
+  /** 판정 근거 — 실적이 원래와 다른 비교 기간이면(전년 동기 자료 없음) 목표를 그 기간으로 환산해 판정했다 */
+  gapBasis?: GapBasis;
   history?: GoalHistoryEntry[];
+}
+
+/** 목표 판정의 비교 기간 근거 (PER-05) */
+export interface GapBasis {
+  months: number;
+  wantedMonths: number;
+  token?: string | null;
+  used?: string | null;
+  wanted?: string | null;
+  /** 원래 목표 */
+  target?: number;
+  /** 비교 기간으로 환산한 목표 (판정 기준) */
+  aligned?: number;
+  /** 맞추지 않고 판정 보류(설정 calc.period_align = off) */
+  held?: boolean;
+  note?: string;
+}
+
+/** 수치의 비교 기간 맞춤 — 기간 인자 · 경영목표를 실제 비교 기간으로 환산해 계산했다 */
+export interface PeriodAlign {
+  months: number;
+  wantedMonths: number;
+  token?: string | null;
+  used?: string | null;
+  wanted?: string | null;
+  params?: Record<string, { from: string; to: string }>;
+  goal?: Record<string, { from: string; to: string }>;
 }
 
 export interface GoalHistoryEntry {
@@ -279,6 +335,7 @@ export interface LoanSegmentDetail {
   goalValue?: Figure;
   gap?: Figure;
   gapVerdict?: Goal["gapVerdict"];
+  gapBasis?: GapBasis;
   narrative: string;
   narrativeFigures: Record<string, Figure>;
   evidence: Evidence[];
@@ -860,6 +917,9 @@ export interface ChangeItem {
   direction: "up" | "down" | "same";
   files?: string[];
   scope?: { office?: string };
+  /** 비교 기준이 바뀌어 생긴 변화(예: 2026.01 대비 → 전년 동기 대비) — 업무 변화가 아니다 */
+  basisChange?: { before: string; after: string };
+  reason?: string | null;
 }
 
 export interface ChangeFeed {

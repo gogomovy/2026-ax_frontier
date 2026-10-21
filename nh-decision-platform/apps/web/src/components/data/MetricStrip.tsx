@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 
 import clsx from "clsx";
 import { DeltaFigure, FigureText } from "@/components/data/FigureText";
+import { periodName } from "@/lib/periodBasis";
 import type { Figure } from "@/lib/types";
 
 export interface MetricStripItem {
@@ -45,7 +46,7 @@ export function MetricStrip({ items, columns = 4 }: { items: MetricStripItem[]; 
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-steel">
             {item.delta ? (
               <span>
-                전년 동기 <DeltaFigure figure={item.delta} positiveIsGood={item.positiveIsGood ?? true} plain />
+                {periodName(item.delta, "$latest-12", "전년 동기")} <DeltaFigure figure={item.delta} positiveIsGood={item.positiveIsGood ?? true} plain />
               </span>
             ) : null}
             {item.caption ? <span>{item.caption}</span> : null}

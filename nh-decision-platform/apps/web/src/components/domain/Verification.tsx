@@ -12,6 +12,8 @@ const CHECK_LABEL: Record<Verification["checkCode"], string> = {
   causality_language: "인과 표현",
   alignment: "상위 기준 정합",
   goal_consistency: "목표 정합성",
+  grounding: "근거 일치",
+  period_basis: "비교 기준",
 };
 
 /** Critic 검증 결과 (요구사항 AGT-06) */

@@ -134,6 +134,10 @@ SETTINGS = {
     "request.to_org": ("", "확인 · 보고 요청을 받는 부서 이름"),
     "workflow.debounce_default_sec": (60, "변경 이벤트 후 워크플로우 실행 대기(초) — 연속 변경 병합"),
     "calc.rounding_default": ("HALF_UP", "지표 표시 반올림 기본값 (HALF_UP · HALF_EVEN · DOWN · UP)"),
+    "calc.period_fallback": ("nearest", "달 수로 세는 기간 토큰($latest-12 전년 동기 · $prev_year_end 전년 말)이 가리키는 달이 없을 때 — nearest = 최신보다 앞선 가장 가까운 보관 기준일과 비교"
+                                         "(화면 라벨 · 계산 근거에 실제 기간 표시) · strict = 비교하지 않음(갱신 실패)"),
+    "calc.period_align": ("prorate", "비교 기간 맞춤 — 전년 동기 대신 다른 기준일과 견줬을 때(calc.period_fallback) prorate = 경영목표(목표 대비 이탈 · 달성률 · 목표 판정)를 실제 비교 기간에 "
+                                     "비례 환산(연 목표 × 경과월 ÷ 12)하고 기간 인자(CAGR 기간)도 실제 비교 기간으로 · off = 맞추지 않고 목표 판정 보류"),
     "embedding.agent": ("embedder", "문서 임베딩에 사용할 에이전트 코드"),
     "search.top_k": (5, "근거 검색 결과 수"),
     "contracts.dept_prefix": ({}, "컬럼 정의서 부서 → mart 테이블 접두어 (예: 종기부 T01 → mart.hq_t01 · 사업부서 T01 → 표 코드 RISK_T01 · mart.risk_t01)"),
@@ -582,9 +586,10 @@ SETTINGS.update(_KB_SETTINGS)
 # Phase M 설정 — 온톨로지 구축 · 자료 등록 · 근거 일치 · LLM 차단기 (요구사항 §30 · §31)
 SETTINGS.update({
     "ontology.build": ({"enabled": True, "llm": True, "max_datasets": 8, "auto_apply": [], "min_confidence": 0.9, "link_min_containment": 0.95, "link_min_distinct": 2,
-                        "resolve_min_score": 0.84, "resolve_llm_band": [0.7, 0.84], "reextract_per_run": 5},
+                        "resolve_min_score": 0.84, "resolve_llm_band": [0.7, 0.84], "reextract_per_run": 5, "steward_review": True},
                        "온톨로지 구축 에이전트 정책 — llm(이름 · 의미 판단에 LLM), max_datasets(실행당 구조 파악 수), auto_apply(자동 적용할 연산 종류, 기본 없음 — 예 [\"add_alias\"]), "
-                       "min_confidence(자동 적용 신뢰도), link_min_containment(외래 키 포함률), resolve_min_score(별칭 제안 유사도), reextract_per_run(스키마 변경 후 재추출 문서 수)"),
+                       "min_confidence(자동 적용 신뢰도), link_min_containment(외래 키 포함률), resolve_min_score(별칭 제안 유사도), reextract_per_run(스키마 변경 후 재추출 문서 수), "
+                       "steward_review(한 부서 자료만 닿는 변경 제안은 그 부서 데이터 책임자도 승인 · false 면 관리자만)"),
     "intake.steward_self_apply": (True, "부서 데이터 책임자가 자기 자료 등록을 바로 반영(별도 승인 없음). false 면 책임자 등록도 승인 요청으로 (Q192)"),
     # §40 STW — 새 자료 분석 화면 제안(분석 제안 에이전트). 승인은 자료를 소유한 부서의 데이터 책임자 또는 관리자
     "analysis.auto": ({"enabled": True, "max_per_run": 2, "max_measures": 4, "max_tables": 2, "space": "", "llm": True, "preview": True},

@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { useUi } from "@/components/providers/UiProvider";
 import { FloatingTip } from "@/components/ui/FloatingTip";
 import { formatFigure, formatSigned, formatSignedValue, formatValue } from "@/lib/format";
+import { basisNotes } from "@/lib/periodBasis";
 import type { Figure } from "@/lib/types";
 
 /**
@@ -34,6 +35,7 @@ export function FigureText({
   const anchor = useRef<HTMLButtonElement>(null);
   const text = bare ? (signed ? formatSignedValue(figure) : formatValue(figure)) : signed ? formatSigned(figure) : formatFigure(figure);
   const undefinedValue = figure.value === null || figure.value === undefined;
+  const notes = basisNotes(figure);
 
   return (
     <span className="relative inline-block">
@@ -45,7 +47,7 @@ export function FigureText({
         onMouseLeave={() => setHint(false)}
         onFocus={() => setHint(true)}
         onBlur={() => setHint(false)}
-        aria-label={`${figure.label} ${text}${figure.stale ? " (갱신 실패 — 이전 값)" : ""} — 계산 추적 보기`}
+        aria-label={`${figure.label} ${text}${figure.stale ? " (갱신 실패 — 이전 값)" : ""}${notes.length ? ` (${notes.join(" · ")})` : ""} — 계산 추적 보기`}
         className={clsx(
           plain ? "cursor-pointer decoration-icon decoration-dotted decoration-1 underline-offset-4 hover:underline" : "figure-traceable",
           "tnum text-left",
@@ -57,6 +59,11 @@ export function FigureText({
         {figure.stale ? (
           <span aria-hidden className="ml-0.5 align-super text-[9px] font-bold text-critical" title="최근 계산 실패 — 이전 값">
             !
+          </span>
+        ) : null}
+        {notes.length && !figure.stale ? (
+          <span aria-hidden className="ml-0.5 align-super text-[9px] font-bold text-attention" title={notes.join(" · ")}>
+            *
           </span>
         ) : null}
       </button>
@@ -78,6 +85,11 @@ export function FigureText({
           ) : (
             <span className="mt-1 block text-[11px] text-stone">계산 추적 정보 없음</span>
           )}
+          {notes.map((n) => (
+            <span key={n} className="mt-1.5 block text-[10.5px] leading-snug text-attention">
+              비교 기준 · {n}
+            </span>
+          ))}
           <span className="mt-1.5 block text-[10.5px] font-bold text-primary">클릭 — 전체 계산 추적 보기</span>
         </span>
       </FloatingTip>

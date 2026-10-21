@@ -5,6 +5,7 @@ import { useUi } from "@/components/providers/UiProvider";
 import { Badge, IconDoc, IconWarn } from "@/components/ui/primitives";
 import { formatFigure } from "@/lib/format";
 import { useFocusTrap } from "@/lib/a11y";
+import { basisNote, basisNotes } from "@/lib/periodBasis";
 import { EvidenceBody } from "./EvidenceBody";
 
 /** 근거 원문 확인 · 계산 추적 · 용어 정의를 담는 우측 패널 (DB-07, UX-02/03/04) */
@@ -75,6 +76,11 @@ export function SourceDrawer() {
 function CalcBody({ payload }: { payload: Extract<import("@/components/providers/UiProvider").DrawerPayload, { kind: "calc" }> }) {
   const { figure } = payload;
   const trace = payload.trace ?? figure.calc;
+  const basis = figure.basis ?? trace?.periodBasis;
+  const notes = basisNotes({ basis, align: figure.align ?? trace?.periodAlign });
+  // 대체 안내는 위에 따로 — 같은 글을 두 번 쓰지 않게(목표 · 기간 환산의 자세한 값은 '확인 필요'에 남긴다)
+  const plain = (basis ?? []).filter((b) => b.token && b.used).map(basisNote);
+  const warnings = (trace?.warnings ?? []).filter((w) => !plain.includes(w));
 
   return (
     <div className="flex flex-col gap-lg">
@@ -87,9 +93,18 @@ function CalcBody({ payload }: { payload: Extract<import("@/components/providers
           {figure.dataOrigin === "mixed" ? <Badge tone="warning">실데이터 · 시뮬레이션 혼합</Badge> : null}
           {figure.value === null ? <Badge tone="critical">산출 불가</Badge> : null}
           {figure.stale ? <Badge tone="critical">갱신 실패 — 이전 값</Badge> : null}
+          {notes.length ? <Badge tone="attention">비교 기준 대체</Badge> : null}
         </div>
         {figure.stale && figure.staleReason ? (
           <p className="mt-2 text-[11.5px] text-critical">최근 계산 실패: {figure.staleReason}</p>
+        ) : null}
+        {notes.length ? (
+          <ul className="mt-2 flex flex-col gap-0.5 text-[11.5px] text-attention" data-period-basis>
+            {notes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+            {figure.labelBase && figure.labelBase !== figure.label ? <li className="text-steel">원래 이름: {figure.labelBase}</li> : null}
+          </ul>
         ) : null}
       </div>
 
@@ -121,9 +136,9 @@ function CalcBody({ payload }: { payload: Extract<import("@/components/providers
             </ul>
           </div>
 
-          {trace.warnings?.length ? (
+          {warnings.length ? (
             <ul className="flex flex-col gap-1 rounded-lg bg-attention-faint px-3 py-2 text-[11.5px] text-charcoal">
-              {trace.warnings.map((w) => (
+              {warnings.map((w) => (
                 <li key={w}>확인 필요 · {w}</li>
               ))}
             </ul>

@@ -695,6 +695,7 @@ export function UploadWorkspace({ initial, initialTarget }: { initial: Uploadabl
                   {/* 같은 자료를 날짜만 바꿔 올릴 때 (Phase P · UPV-01 · UPV-07) — 기준일이 판을 가른다 · 보관 중인 기준일 */}
                   <p className="rounded-lg bg-surface-soft px-md py-2 text-[12px] leading-relaxed text-charcoal" data-upload-period-rule>
                     같은 자료의 판은 <strong className="font-bold">기준일</strong>로 구분됩니다 — 기준일이 같으면 그 판을 새 파일로 교체하고, 다르면 날짜별로 함께 보관해 날짜별 비교(전월 · 전년 동기 대비)에 씁니다.
+                    비교할 달이 없으면 가장 가까운 보관 기준일과 견주고, 화면 · 목표 판정에 실제로 견준 기간을 밝힙니다.
                     메모는 판 설명이고, 시행일은 문서에만 있습니다. 입력한 기준일의 달이 파일 기간에 없으면 요청하지 않습니다.
                   </p>
                   {ds ? <PeriodList code={ds.code} /> : null}

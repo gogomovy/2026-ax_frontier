@@ -85,9 +85,15 @@ def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     if not node.agent_code:
         return NodeResult({"skipped": "담당 에이전트 없음 — 규칙 판정 · 기존 문장", **rule_out}, "degraded")
     ev = (ctx.state.get("evidence") or [])[:4]
+    from nhdip.views.period_words import PERIOD_GUIDE, figure_note, figures_span
+
+    span = figures_span(figs)
+    notes = {fid: figure_note(f, span) for fid, f in figs.items()}
     context = {
         "title": spec["title"],
-        "figures": [{"id": fid, "label": f["label"], "value": f.get("value"), "unit": f.get("unit"), "stale": bool(f.get("stale"))} for fid, f in figs.items()],
+        # 비교 기준(basis) — 전년 동기 자료가 없어 다른 기준일과 견준 수치 · 비교 기간에 맞춘 목표(PER-05)
+        "figures": [{"id": fid, "label": f["label"], "value": f.get("value"), "unit": f.get("unit"), "stale": bool(f.get("stale")), **({"basis": notes[fid]} if notes[fid] else {})}
+                    for fid, f in figs.items()],
         "verdicts": an["verdicts"],
         "tables": [{"key": k, "caption": next((t["caption"] for t in spec.get("tables") or [] if t["key"] == k), k), "rows": [[g, float(v)] for g, v in tv["rows"][:10]], "note": tv.get("note")} for k, tv in an["tables"].items()],
         "insights": [{"key": i["key"], "title": i["title"], "figures": [figure_id(token, m) for m in i.get("metrics") or []], "instruction": i.get("instruction") or ""} for i in spec.get("insights") or []],
@@ -108,6 +114,7 @@ def n_dynamic_task(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         "출력: {\"findings\": [{\"insight\": 의견 key, \"severity\": \"info\"|\"watch\"|\"caution\"|\"critical\", \"statement\": \"2~4문장\"}], \"summary\": \"한 문장\"}\n"
         "규칙: 숫자를 직접 쓰지 말고 수치는 그 의견의 figures 에 있는 [[fig:ID]] 마커로만 참조한다(마커 뒤에 단위를 붙이지 않는다). 집계표 값은 '상위 항목' 처럼 말로만 언급한다. 인과를 단정하지 않는다."
         + (f"\n다음 표현은 쓰지 않는다(검증에서 막힌다): {', '.join(banned)}" if banned else "")
+        + (f"\n{PERIOD_GUIDE} figures 의 basis 가 그 수치의 실제 비교 기준이다." if any(notes.values()) else "")
     )
     data, meta = ask_json(ctx.session, node.agent_code, task, context, workflow_run_id=ctx.run.id, node_run_id=ctx.node_run_id, required=("findings",), shrink=("tables", "evidence"))
     if data is None:

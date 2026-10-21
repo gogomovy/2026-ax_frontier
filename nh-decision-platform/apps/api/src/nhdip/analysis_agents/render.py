@@ -31,6 +31,18 @@ def figures(spec: dict[str, Any], token: str, outcomes: dict[str, MetricOutcome]
         f: dict[str, Any] = {"id": fid, "label": m["label"], "value": _display(oc), "unit": m.get("unit") or "NONE", "decimals": m.get("decimals"), "dataOrigin": (oc.data_origin if oc else None) or "simulated"}
         if oc is not None and not oc.error:
             f["calc"] = oc.trace
+            # 비교 기준(PER-04 · PER-05) — 전년 동기 자료가 없어 다른 기준일과 견줬으면 라벨이 실제 기간을 말하고 화면 · 에이전트가 그 사실을 안다
+            if oc.fallbacks:
+                from nhdip.views.period_words import relabel
+
+                f["basis"] = list(oc.fallbacks)
+                new = relabel(m["label"], f["basis"])
+                if new != m["label"]:
+                    f["label"], f["labelBase"] = new, m["label"]
+            if oc.align:
+                f["align"] = oc.align
+            if oc.goal:
+                f["goal"] = True
         else:
             f["stale"] = True
             f["staleReason"] = ((oc.error if oc else None) or "계산 결과 없음")[:200]

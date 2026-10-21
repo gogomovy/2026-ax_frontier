@@ -87,8 +87,30 @@ DETECT_TASK = (
     "- level: major(경영 · 리스크 판단에 바로 영향) · minor(관찰 필요) · ignore(업무상 의미 없음)\n"
     "- ruleLevel 이 major 인 후보는 ignore 로 내리지 않는다. 같은 원인으로 움직인 변화는 group 에 같은 이름을 준다.\n"
     "- reason 은 숫자 없이 한 문장. 수치를 새로 만들거나 계산하지 않는다.\n"
+    "- basisChange 가 있는 후보는 비교 기준(견준 기간)이 바뀌어 생긴 변화다(예: 없던 전년 동기 자료가 올라옴) — 업무 변화로 보지 말고 minor 나 ignore 로, reason 에 그 사실을 쓴다.\n"
     '출력: {"changes": [{"code": "...", "level": "major|minor|ignore", "reason": "...", "group": "..."}], "summary": "숫자 없는 한 문장"}'
 )
+
+
+def basis_change(session: Any, oc: Any) -> dict[str, str] | None:
+    """직전 값과 이번 값의 비교 기준이 다르면 {before, after}('2026.01 대비' · '전년 동기 대비') — 같으면 None.
+    직전 기준은 그 값의 계산 기록(calc_run)에서 읽는다(PER-05 · 기간 대체 기록이 계산 기록에 남는다)."""
+    from nhdip.calc.metrics import run_basis, token_name
+    from nhdip.views.period_words import basis_short
+
+    cur = [b for b in oc.fallbacks or [] if isinstance(b, dict)]
+    if not cur and not oc.previous_run:
+        return None
+    prev = run_basis(session, oc.previous_run) if oc.previous_run else []
+
+    def key(bs: list[dict[str, Any]]) -> list[tuple[str, str]]:
+        return sorted((str(b.get("token")), str(b.get("used"))) for b in bs)
+
+    if key(cur) == key(prev):
+        return None
+    tokens = list(dict.fromkeys(str(b.get("token")) for b in cur + prev if b.get("token")))
+    plain = " · ".join(f"{token_name(t)} 대비" for t in tokens) or "원래 비교 기준"
+    return {"before": basis_short(prev) or plain, "after": basis_short(cur) or plain}
 
 
 @node_impl("detect_changes", "변화 감지 에이전트 — 커널이 변화를 계산하고 LLM 이 업무상 중요도를 판단(규칙 CHANGE_SIGNIFICANCE 가 후보 · 안전장치 · 대체), 유의 변화만 변화 피드 · 이벤트로")
@@ -111,9 +133,14 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ratio = _ratio(delta, pct, _threshold(pol, code, oc.unit))
         if ratio < cand_bar:
             continue
-        items.append({"kind": "metric", "code": code, "label": oc.label, "unit": oc.unit, "decimals": oc.decimals, "before": float(before), "after": float(after),
-                      "delta": float(delta), "deltaPct": None if pct is None else round(float(pct), 2), "ruleLevel": _rule_level(ratio, mult), "ratio": round(float(ratio), 2),
-                      "direction": "up" if delta > 0 else "down", "figureIds": list(oc.figure_ids), "calcId": oc.calc_run_id})
+        item = {"kind": "metric", "code": code, "label": oc.label, "unit": oc.unit, "decimals": oc.decimals, "before": float(before), "after": float(after),
+                "delta": float(delta), "deltaPct": None if pct is None else round(float(pct), 2), "ruleLevel": _rule_level(ratio, mult), "ratio": round(float(ratio), 2),
+                "direction": "up" if delta > 0 else "down", "figureIds": list(oc.figure_ids), "calcId": oc.calc_run_id}
+        changed_basis = basis_change(ctx.session, oc)
+        if changed_basis:
+            # 비교 기준이 바뀌어 생긴 변화(예: 2026.01 대비 → 전년 동기 대비 — 그 달 자료가 올라옴)는 업무 변화가 아니다 — 주요로 올리지 않고 사유를 붙인다(PER-05)
+            item.update(basisChange=changed_basis, ruleLevel="minor")
+        items.append(item)
     # 데이터 버전 변화 — 직전 감지 때 본 버전과 비교
     # 직전 '성공한' 실행의 감지 기록만 — 실패한 실행이 본 버전을 기준으로 삼으면 그 변화를 놓친다 (B.32)
     last = ctx.session.execute(
@@ -150,7 +177,8 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         ranked = sorted(items, key=lambda i: (i.get("ruleLevel") != "major", -abs(float(i.get("deltaPct") or 0))))
         ask_items = ranked[:cap] if cap else ranked
         context = {"workflow": {"code": ctx.workflow.code, "name": ctx.workflow.name, "description": ctx.workflow.description}, "guidance": pol.get("llm_guidance"),
-                   "candidates": [{k: i.get(k) for k in ("kind", "code", "label", "unit", "before", "after", "delta", "deltaPct", "direction", "ruleLevel", "files")} for i in ask_items]}
+                   "candidates": [{k: i.get(k) for k in ("kind", "code", "label", "unit", "before", "after", "delta", "deltaPct", "direction", "ruleLevel", "files", "basisChange") if k in i}
+                                  for i in ask_items]}
         if ctx.llm_off:  # 범위 서술 상한 밖 지점(B.47 · BRM-07) — LLM 을 부르지 않고 규칙 판단
             data, meta = None, {"by": "rule", "reason": ctx.llm_off}
         else:
@@ -178,11 +206,16 @@ def n_detect_changes(ctx: RunContext, node: WorkflowNode) -> NodeResult:
                 lvl = d["level"]
                 if lvl == "ignore" and i["ruleLevel"] == "major" and pol.get("protect_major", True):
                     lvl = "minor"
+                if lvl == "major" and i.get("basisChange"):
+                    lvl = "minor"  # 비교 기준이 바뀐 변화는 LLM 이 주요로 봐도 주요로 올리지 않는다(오케스트레이터 경로 지정 · 알림을 깨우지 않게)
                 reason, dropped = clean_reason(d.get("reason"))
                 group, _ = clean_reason(d.get("group"), 40)  # 묶음 이름도 사유와 같은 숫자 점검 — 점검 없이 변화 피드(게시)로 가지 않게
                 i.update({"level": None if lvl == "ignore" else lvl, "judgedBy": "llm", "reason": reason or None, "group": group or None, **({"reasonDropped": True} if dropped else {})})
             else:
                 i.update({"level": i["ruleLevel"], "judgedBy": "rule"})
+            if i.get("basisChange") and not i.get("reason"):
+                b = i["basisChange"]
+                i["reason"] = f"비교 기준이 바뀌어 생긴 변화({b['before']} → {b['after']})"
     final = [i for i in items if i.get("level")]
     final.sort(key=lambda x: (x["level"] != "major", -(x.get("ratio") or 0)))
     ctx.state["changes"] = final

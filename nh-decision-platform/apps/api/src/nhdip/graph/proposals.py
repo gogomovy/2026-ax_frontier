@@ -29,6 +29,7 @@ DEFAULT_BUILD = {
     "resolve_min_score": 0.84,  # 개체 해소 — 이 점수 이상이면 별칭 제안
     "resolve_llm_band": [0.7, 0.84],  # 이 구간은 LLM 판정(LLM 없으면 제안하지 않음)
     "reextract_per_run": 5,  # 스키마 판이 바뀌었을 때 실행당 다시 추출할 문서 수(ONB-11)
+    "steward_review": True,  # 한 부서 자료만 닿는 제안은 그 부서 데이터 책임자도 승인(§40 STW-07) — 끄면 관리자만
 }
 
 
@@ -87,6 +88,45 @@ def estimate_impact(session: Session, base: dict[str, Any], proposed: dict[str, 
     rels = {k: {"before": r0.get(k, 0), "after": r1.get(k, 0)} for k in sorted(set(r0) | set(r1)) if r0.get(k, 0) != r1.get(k, 0)}
     dangling = {k: v for k, v in b1.dangling().items() if v != b0.dangling().get(k, 0)}
     return {"nodes": nodes, "relations": rels, "dangling": dangling, "nodesDelta": sum(n1.values()) - sum(n0.values()), "relationsDelta": sum(r1.values()) - sum(r0.values())}
+
+
+def op_datasets(op: dict[str, Any]) -> set[str] | None:
+    """연산이 읽는 원천 자료(코드 또는 이름) — 원천이 없는 연산(별칭 · 수정 · 속성)은 None."""
+    kind = op.get("op")
+    if kind == "add_class":
+        backing = (op.get("class") or {}).get("backing") or []
+    elif kind in ("add_backing", "add_link_backing"):
+        backing = [op.get("backing") or {}]
+    elif kind == "add_relation":
+        backing = (op.get("relation") or {}).get("backing") or []
+    else:
+        return None
+    out = {str(b["dataset"]) for b in backing if isinstance(b, dict) and b.get("dataset")}
+    return out or None
+
+
+def proposal_datasets(ops: list[dict[str, Any]]) -> tuple[set[str], bool]:
+    """(제안이 닿는 원천 자료, 자료로 가를 수 없는 연산이 있는가). 속성 추가는 같은 제안에서 그 클래스에 원천을 붙이는 연산의 자료로 본다.
+    가를 수 없는 연산(별칭 · 클래스 · 관계 수정 · 원천 없는 속성)이 하나라도 있으면 전행 영향 — 관리자 몫."""
+    by_label: dict[str, set[str]] = {}
+    for o in ops:
+        label = (o.get("class") or {}).get("label") if o.get("op") == "add_class" else o.get("label") if o.get("op") == "add_backing" else None
+        ds = op_datasets(o) if label else None
+        if label and ds:
+            by_label.setdefault(str(label), set()).update(ds)
+    out: set[str] = set()
+    loose = False
+    for o in ops:
+        if not isinstance(o, dict):
+            continue
+        ds = op_datasets(o)
+        if ds is None and o.get("op") == "add_property":
+            ds = by_label.get(str(o.get("label") or "")) or None
+        if ds is None:
+            loose = True
+        else:
+            out |= ds
+    return out, loose
 
 
 def pending_keys(session: Session) -> set[str]:

@@ -19,6 +19,7 @@ from nhdip.graph.search import graph_documents, hybrid_search, query_terms
 from nhdip.llm import LlmError, LlmUnavailable, chat, embed, parse_json, resolve
 from nhdip.models import Metric, Rule, RuleVersion, Setting, ViewBinding, WorkflowNode, source
 from nhdip.views import builders
+from nhdip.views.period_words import PERIOD_GUIDE, basis_range, basis_short, figure_note, figures_span, relabel
 from nhdip.views.store import find_insight, find_paths, get_current, patch_figures, patch_insight, publish
 
 from nhdip.llm.guard import GUARD, fence
@@ -167,6 +168,11 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             payload["calc"] = oc.trace
         else:
             payload["sourceRef"] = oc.trace["inputs"][0]["source"] if oc.trace.get("inputs") else None
+        # 기간 대체(전년 동기 자료가 없어 가장 가까운 기준일과 견줌) — 라벨 · 서식 문구가 실제 기간을 말하게(patch_figures · render_templates)
+        # 비교 기간 맞춤(목표 환산 · 기간 인자) · 경영목표 수치 표시 — 목표 판정 · 서식 문구가 같은 비교 기간으로 견주게
+        payload["basis"] = list(oc.fallbacks or [])
+        payload["align"] = oc.align
+        payload["goal"] = bool(oc.goal)
         for fid in oc.figure_ids:
             figs[fid] = payload
     changes: list[dict[str, Any]] = []
@@ -442,14 +448,19 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         figures = target_figures(arts, ins)
         # 갱신 실패(stale) · 값 없는 수치는 서술 재료에서 뺀다 — 다시 계산하지 못한 옛 값을 최신 값처럼 서술하지 않도록 (DEL-11)
         usable = {fid: f for fid, f in figures.items() if not f.get("stale") and f.get("value") is not None}
-        fig_lines = [f"- [[fig:{fid}]] {f.get('label')} = {f.get('value')} {f.get('unit')}" + (f" (판정 {f['verdict']})" if f.get("verdict") else "") for fid, f in usable.items()]
+        # 비교 기준 — 전년 동기 자료가 없어 다른 기준일과 견준 수치 · 비교 기간에 맞춘 목표를 에이전트가 알고 서술하게(PER-05)
+        span = figures_span(usable)
+        notes = {fid: figure_note(f, span) for fid, f in usable.items()}
+        fig_lines = [f"- [[fig:{fid}]] {f.get('label')} = {f.get('value')} {f.get('unit')}" + (f" (판정 {f['verdict']})" if f.get("verdict") else "")
+                     + (f" — 비교 기준: {notes[fid]}" if notes[fid] else "") for fid, f in usable.items()]
         verdicts = {k: v for k, v in (ctx.state.get("verdicts") or {}).items()}
         # 근거 — 이 대상에 붙인 문서 근거(attach_evidence)를 먼저, 이어서 이번 실행의 근거 검색 결과
         own = [e for e in (ins.get("evidence") or []) if isinstance(e, dict) and isinstance(e.get("doc"), dict)]
         ev_lines = [f"- [{e.get('category')}] {e['doc'].get('title')} p.{e['doc'].get('page') or '-'}: {(e.get('snippet') or '')[:300]}" for e in own]
         ev_lines += [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]]
         guide = ins.get("guide") if isinstance(ins.get("guide"), dict) else None
-        instruction = " ".join(x for x in (FIELD_GUIDE.get(field, ""), f"규칙 가이드: {guide.get('title')} — {guide.get('text')}" if guide and guide.get("text") else "", target.get("instruction", "")) if x)
+        instruction = " ".join(x for x in (FIELD_GUIDE.get(field, ""), f"규칙 가이드: {guide.get('title')} — {guide.get('text')}" if guide and guide.get("text") else "", target.get("instruction", ""),
+                                           PERIOD_GUIDE if any(notes.values()) else "") if x)
         tmpl = llm.user_template or (
             "다음 확정 수치와 근거로 '{title}' 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다(마커가 단위까지 표시하므로 마커 뒤에 건 · % · 원 같은 단위를 붙이지 않는다). 인과를 단정하지 않는다. 2~4문장.\n\n"
             "수치:\n{figures}\n\n판정:\n{verdicts}\n\n근거:\n{evidence}\n\n기존 서술(참고):\n{current}\n\n{instruction}\n출력: {{\"statement\": \"...\"}}"
@@ -527,6 +538,9 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     extra_num = rules.get("literal_number_regex") or LITERAL_NUM_DEFAULT  # 규칙(DB)의 패턴은 내장 패턴(numguard)과 함께 적용
     causal = rules.get("causal_phrases") or []
     arts = ctx.load_artifacts()
+    from nhdip.views.template import figure_index
+
+    fig_idx = figure_index(arts)
     out = []
     degraded = False
     gpol = _grounding_policy(ctx.session)
@@ -535,6 +549,13 @@ def n_critic(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         # 꾸밈이 붙은 수치 표식([[fig:ID|signed]])은 화면이 칩으로 그리지 못한다 — 꾸밈을 떼고 같은 수치 표식으로
         st = re.sub(r"\[\[fig:([A-Za-z0-9_\-]+)\|[a-z0-9+]+\]\]", r"[[fig:\1]]", nar["statement"])
         checks = []
+        # 비교 기준 — 문장이 기대는 수치가 전년 동기 자료 없이 다른 기준일과 견준 값이면, 에이전트가 '전년 동기'라고 써도 실제 기간으로 고친다(PER-05)
+        basis = [b for fid in nar.get("figures") or [] for b in (fig_idx.get(fid) or {}).get("basis") or []]
+        if basis:
+            fixed = relabel(st, basis)
+            checks.append({"checkCode": "period_basis", "passed": True,
+                           "detail": "기간 표현을 실제 비교 기준으로 고침" if fixed != st else "기간 표현이 실제 비교 기준과 맞음"})
+            st = fixed
         lits = numguard.literal_numbers(st, extra_num)
         checks.append({"checkCode": "numeric_provenance", "passed": not lits, "detail": "모든 수치가 계산 결과를 참조" if not lits else f"리터럴 숫자: {lits[:5]}"})
         used = set(re.findall(r"\[\[fig:([^\]]+)\]\]", st))
@@ -805,8 +826,12 @@ def n_rank_attentions(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         try:
             for c in comps:
                 if c.get("metric"):
-                    val, _, _ = resolve_ref(ctx.eval, {"metric": c["metric"]})
-                    resolved.append({"label": c["label"], "value": val, "per_unit": c.get("per_unit", 1), "max": c.get("max"), "text": _num_text(abs(val), int(c.get("decimals", 2)), c.get("unit", ""))})
+                    val, _, detail = resolve_ref(ctx.eval, {"metric": c["metric"]})
+                    # 비교 기준 — 전년 동기 자료 없이 다른 기준일과 견줬거나 목표를 비교 기간으로 환산한 값이면 점수 근거에 드러낸다(PER-05)
+                    src_oc = ctx.eval.outcomes.get(c["metric"])
+                    note = basis_short((detail or {}).get("fallback"), src_oc.align if src_oc is not None else None)
+                    text = _num_text(abs(val), int(c.get("decimals", 2)), c.get("unit", "")) + (f" · {note}" if note else "")
+                    resolved.append({"label": c["label"], "value": val, "per_unit": c.get("per_unit", 1), "max": c.get("max"), "text": text})
                 elif c.get("importance"):
                     resolved.append({"label": c["label"], "points": importance.get(c["importance"], 0), "text": c["importance"]})
                 else:
@@ -948,7 +973,9 @@ def n_recommend_goals(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         if item.get("trend"):
             to = ctx.eval.outcomes.get(item["trend"])
             if to and to.value is not None:
-                detail.append(f"3개년 추세 {_num_text(float(to.value), 2, '%')}")
+                # 추세 구간 — 2년 전 동기 자료가 없어 다른 기준일부터 잰 추세면 실제 구간(연평균은 그 기간으로 맞춰 계산 — CAGR 기간 인자)
+                span = basis_range(to.fallbacks)
+                detail.append(f"추세({span} 연평균) {_num_text(float(to.value), 2, '%')}" if span else f"{item.get('trend_label') or '3개년 추세'} {_num_text(float(to.value), 2, '%')}")
         entry = {"label": label, "value": " · ".join(detail), "source": f"calc_run {oc.calc_run_id} · {oc.formula}"}
         inputs = [x for x in (prop.get("ruleInputs") or []) if x.get("label") != label]
         if inputs + [entry] != prop.get("ruleInputs"):

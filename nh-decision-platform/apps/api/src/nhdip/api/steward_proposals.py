@@ -1,4 +1,4 @@
-"""부서 데이터 책임자 승인함 API (요구사항 §40 STW) — 에이전트 제안(분석 화면 · 추적 지표 · 개념 연결)과 부서 사용자 분석 요청.
+"""부서 데이터 책임자 승인함 API (요구사항 §40 STW) — 에이전트 제안(분석 화면 · 추적 지표 · 개념 연결 · 온톨로지 변경)과 부서 사용자 분석 요청.
 
 관리자는 전체, 부서 데이터 책임자는 자기 부서가 소유한 자료 · 자기 부서 사용자의 요청만 본다(다른 부서 것은 없는 것처럼 404).
 판정 · 반영은 핵심 계층 `nhdip.stewardship` 이 하고, 여기서는 권한 · 감사 · 커밋만 한다.
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from nhdip.db import get_session
 from nhdip.events import audit
 from nhdip.models import AppUser
-from nhdip.stewardship import StewardError, Viewer, approve_analysis, inbox, reject_analysis, review_concept, review_metric, viewer_of
+from nhdip.stewardship import StewardError, Viewer, approve_analysis, inbox, reject_analysis, review_concept, review_metric, review_ontology, viewer_of
 
 from .deps import client_ip, current_user
 
@@ -119,3 +119,22 @@ def concept_decide(dataset: str, action: str, body: ConceptIn, request: Request,
         except Exception:  # noqa: BLE001
             session.rollback()
     return {"ok": True}
+
+
+@router.post("/ontology/{pid}/{action}")
+def ontology_decide(pid: int, action: str, body: NoteIn, request: Request, session: Session = Depends(get_session), v: Viewer = Depends(_viewer)):
+    """온톨로지 변경 제안 승인(적용 → 새 판) · 반려(사유 필수 — 같은 연산을 다시 제안하지 않음). 적용 검증 실패는 failed 로 남기고 422."""
+    if action not in ("approve", "reject"):
+        raise HTTPException(404, "알 수 없는 동작")
+    try:
+        p, res = review_ontology(session, v, pid, approve=action == "approve", note=body.note)
+    except StewardError as exc:
+        session.rollback()
+        raise _http(exc) from exc
+    audit(session, v.emp_no, f"steward.ontology.{action}", "ontology_proposal", str(pid),
+          {"via": _via(v), "result": res.get("status"), "version": res.get("version"), "datasets": [d.get("code") for d in (p.evidence or {}).get("datasets") or [] if isinstance(d, dict)], "note": body.note},
+          client_ip(request))
+    session.commit()
+    if not res.get("ok"):
+        raise HTTPException(422, res.get("error") or "적용하지 못했습니다")
+    return {"ok": True, "status": res.get("status"), "version": res.get("version"), "warnings": res.get("warnings") or []}

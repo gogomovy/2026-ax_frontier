@@ -21,8 +21,9 @@ import { Badge, IconChevron, IconWarn, NextStep } from "@/components/ui/primitiv
 import { derivedFigure } from "@/lib/derived";
 import { UNIT_LABEL, formatFigure } from "@/lib/format";
 import { GOAL_VERDICT, directionSuffix, proposalRange, resolveGoal } from "@/lib/goalView";
-import { lastStep, revenueRowsOf, targetPath, trendPhrase } from "@/lib/loanView";
+import { lastStep, revenueRowsOf, targetPath, targetPathSince, trendPhrase } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { basisOf, gapBasisText, growthBasisHint, periodDot, periodName } from "@/lib/periodBasis";
 import { signatureOf } from "@/lib/seen";
 import { TONE_BADGE, TONE_BAR, TONE_GAUGE, bandOf, goalByRole, threshold, type Band } from "@/lib/uiConfig";
 import type { CapitalView, DomainCardInfo, Figure, Goal, Insight, LoanOverview, Proposal } from "@/lib/types";
@@ -152,10 +153,17 @@ export function OverviewWorkspace({
   const corpGoal = goalByRole(goals, cfg, "corpGrowth");
   const corpTarget = corpGoal ? resolveGoal(corpGoal, overrides[corpGoal.id]) : null;
   const corpGrowth = corpGoal ? (overrides[corpGoal.id]?.targetValue ?? corpGoal.targetValue) : null;
-  // 목표 경로의 출발점 = 전년 동월 잔액 — 연도별 계열에서 전년 동월 라벨로 찾는다(기준일에서 계산)
-  const corpBase = lp.prevYm === NO_VALUE ? null : (loan.corporate.yearly.find((p) => p.label.endsWith(lp.prevYm))?.value ?? null);
+  // 목표 경로의 출발점 = 전년 동월 잔액 — 연도별 계열에서 전년 동월 라벨로 찾는다(기준일에서 계산).
+  // 전년 동월 자료가 없어 가장 가까운 기준일과 견줬으면(증가율 수치의 basis) 그 기준일 잔액에서 출발해 그때부터 경과월만큼(커널의 목표 환산과 같은 규칙)
+  const corpBasis = basisOf(loan.corporate.growth, "$latest-12");
+  const corpBaseLabel = corpBasis ? periodDot(corpBasis.used) : lp.prevYm;
+  const corpBase = corpBaseLabel === NO_VALUE ? null : (loan.corporate.yearly.find((p) => p.label.endsWith(corpBaseLabel))?.value ?? null);
   const corpPoints = loan.corporate.monthly;
-  const corpPath = targetPath(corpBase, corpGrowth, corpPoints.length);
+  const corpPath = corpBasis
+    ? targetPathSince(corpBase, corpGrowth, corpPoints.map((p) => p.label), corpBasis.used)
+    : targetPath(corpBase, corpGrowth, corpPoints.length);
+  const corpGoalBasis = gapBasisText(corpGoal?.gapBasis, corpGoal ? UNIT_LABEL[corpGoal.unit] : "");
+  const hhBasis = basisOf(loan.household.growth, "$latest-12");
 
   const hhLimitGoal = goalByRole(goals, cfg, "hhLimit");
   const hhLimit = hhLimitGoal ? (overrides[hhLimitGoal.id]?.targetValue ?? hhLimitGoal.targetValue) : null;
@@ -303,9 +311,14 @@ export function OverviewWorkspace({
                         return (
                           <li key={g.id} className="rounded-lg bg-canvas p-5">
                             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                              <div className="flex min-w-0 items-center gap-2">
+                              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                                 <h4 className="text-[16px] font-bold leading-[1.4] text-ink-deep">{view.title}</h4>
                                 <Badge tone={verdict.tone}>{verdict.label}</Badge>
+                                {g.gapBasis ? (
+                                  <span className="text-[12px] text-steel" title={g.gapBasis.note}>
+                                    {gapBasisText(g.gapBasis, UNIT_LABEL[g.unit])}
+                                  </span>
+                                ) : null}
                               </div>
                               <dl className="flex items-baseline gap-4 text-[12px] text-steel">
                                 {g.actual ? (
@@ -370,11 +383,21 @@ export function OverviewWorkspace({
                 {/* 핵심 지표 */}
                 <dl className={clsx("grid grid-cols-2 divide-hairline-soft overflow-hidden rounded-xl border border-hairline-soft lg:divide-x", nimRow ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
                   {nimRow ? (
-                    <Kpi label={`여신 이자마진 수익 (${monthCum})`} figure={nimRow.current} caption={<>전년 동기 <FigureText figure={nimRow.diffRate} signed plain className="text-ink-deep" /></>} hint="여신에서 발생한 이자수익에서 조달비용을 차감한 순이자마진(NIM) 수익입니다. 해당 월 누계 기준으로 집계합니다." />
+                    <Kpi label={`여신 이자마진 수익 (${monthCum})`} figure={nimRow.current} caption={<>{periodName(nimRow.diffRate, "$latest-12", "전년 동기")} <FigureText figure={nimRow.diffRate} signed plain className="text-ink-deep" /></>} hint="여신에서 발생한 이자수익에서 조달비용을 차감한 순이자마진(NIM) 수익입니다. 해당 월 누계 기준으로 집계합니다." />
                   ) : null}
                   <Kpi label="전체 수익 중 비중" figure={loan.revenue.nimShare} caption={shareTrend ?? undefined} tone={shareStep === "축소" ? "attention" : undefined} hint="전체 은행 이자수익 대비 여신 NIM 수익의 비중입니다. 비중 = 여신 NIM 수익 ÷ 전체 이자수익 × 100." />
-                  <Kpi label="기업여신 잔액" figure={loan.corporate.balance} caption={<>증가율 <FigureText figure={loan.corporate.growth} signed plain className="text-ink-deep" />{corpTarget ? <> · 목표 {corpTarget.targetLabel}</> : null}</>} hint="기업여신(대기업·외감·비외감·소기업·기업형소호) 전체 잔액의 기준일 기준 합계입니다. 증가율은 전년 동월 말 잔액 대비입니다." />
-                  <Kpi label="가계여신 잔액" figure={loan.household.balance} caption={<>증가율 <FigureText figure={loan.household.growth} signed plain className="text-ink-deep" />{hhLimit ? <> · 한도 {hhLimit.toFixed(2)}{hhUnit}</> : null}</>} hint="가계여신(주택담보·신용·기타) 전체 잔액의 기준일 기준 합계입니다. 증가율은 전년 동월 말 잔액 대비이며, 관리 목표 한도와 비교합니다." />
+                  <Kpi
+                    label="기업여신 잔액"
+                    figure={loan.corporate.balance}
+                    caption={<>증가율 <FigureText figure={loan.corporate.growth} signed plain className="text-ink-deep" />{corpTarget ? <> · 목표 {corpTarget.targetLabel}</> : null}</>}
+                    hint={`기업여신(대기업·외감·비외감·소기업·기업형소호) 전체 잔액의 기준일 기준 합계입니다. ${growthBasisHint(corpBasis)}${corpGoalBasis ? ` 목표 판정은 ${corpGoalBasis}입니다.` : ""}`}
+                  />
+                  <Kpi
+                    label="가계여신 잔액"
+                    figure={loan.household.balance}
+                    caption={<>증가율 <FigureText figure={loan.household.growth} signed plain className="text-ink-deep" />{hhLimit ? <> · 한도 {hhLimit.toFixed(2)}{hhUnit}</> : null}</>}
+                    hint={`가계여신(주택담보·신용·기타) 전체 잔액의 기준일 기준 합계입니다. ${growthBasisHint(hhBasis)} 관리 목표 한도와 비교합니다.`}
+                  />
                 </dl>
 
                 {/* 추이 */}
@@ -388,7 +411,13 @@ export function OverviewWorkspace({
                     caption={
                       <>
                         {rangeLabel} · 단위 {corpUnit}
-                        {corpPath ? <span className="block">목표 경로 = 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12)</span> : null}
+                        {corpPath ? (
+                          <span className="block">
+                            {corpBasis
+                              ? `목표 경로 = ${corpBaseLabel} 잔액 × (1 + 연 목표 증가율 × ${corpBaseLabel} 이후 경과월 ÷ 12) — 전년 동기 자료가 없어 가장 가까운 기준일부터`
+                              : "목표 경로 = 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12)"}
+                          </span>
+                        ) : null}
                       </>
                     }
                     table={{

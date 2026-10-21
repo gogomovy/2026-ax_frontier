@@ -10,6 +10,11 @@
 
 목표 값 우선순위: 규칙에 연결된 확정 값(설정 goal.rule_links) → 목표 수치(targetFigure) → targetValue.
 기준은 설정 `goal.verdict_policy`({"near_pct": 10, "maintain_tol_pp": 1.0}) — 관리자가 편집한다.
+
+비교 기간 맞춤(PER-05) — 실적이 원래 비교 기간(전년 동기 12개월)과 다른 기간으로 계산됐으면(Figure.basis — 그 달 자료가 없어 가장 가까운
+기준일과 견줌) 증가율 · 한도 목표를 그 기간에 비례 환산해 판정한다(연 목표 × 7/12 — 계산 커널의 목표 대비 이탈과 같은 규칙).
+판정 근거는 `gapBasis`(비교 기간 · 원래 목표 · 환산 목표 · 안내 문구)로 남고, 그 달 자료가 올라오면 사라진다.
+설정 calc.period_align = off 면 맞추지 않고 판정을 보류한다(gapVerdict None · gapBasis.held).
 """
 from __future__ import annotations
 
@@ -93,25 +98,67 @@ def verdict_of(goal: dict[str, Any], target: Decimal | None, target_unit: str | 
     return None  # amount(누계 금액) · 알 수 없는 유형
 
 
+SPAN_KINDS = ("growth", "limit")  # 기간에 비례하는 목표(증가율 · 증가율 한도) — 비율(구성비) 목표는 수준이라 환산하지 않는다
+
+
+def align_target(goal: dict[str, Any], target: Decimal | None, mode: str) -> tuple[Decimal | None, dict[str, Any] | None]:
+    """(판정에 쓸 목표, 판정 근거 gapBasis | None) — 실적이 원래와 다른 비교 기간으로 계산됐으면 그 기간에 맞춘다."""
+    from nhdip.calc.metrics import period_dot, span_of, token_name
+
+    actual = goal.get("actual") if isinstance(goal.get("actual"), dict) else {}
+    span = span_of(actual.get("basis"))
+    if span is None or target is None:
+        return target, None
+    months, wanted = span["months"], span["wantedMonths"]
+    info: dict[str, Any] = {"months": months, "wantedMonths": wanted, "token": span.get("token"), "used": span.get("used"), "wanted": span.get("wanted"),
+                            "target": float(target)}
+    base = f"{token_name(str(span.get('token') or ''))}({period_dot(span.get('wanted'))}) 자료가 없어 {period_dot(span.get('used'))} 대비 {months}개월 실적"
+    if goal.get("targetType") not in SPAN_KINDS:
+        info["note"] = f"{base}으로 판정"
+        return target, info
+    if mode != "prorate":
+        info.update(held=True, note=f"{base} — 연 목표와 기간이 달라 판정 보류")
+        return None, info
+    eff = target * Decimal(months) / Decimal(wanted)
+    unit = _unit(goal.get("unit"))
+    info.update(aligned=float(eff), note=f"{base} — 목표 {_fmt(target)}{unit}를 {months}개월로 환산한 {_fmt(eff)}{unit} 기준 판정")
+    return eff, info
+
+
+def _unit(code: Any) -> str:
+    from nhdip.views.template import UNIT_LABELS
+
+    return UNIT_LABELS.get(str(code or ""), "")
+
+
+def _fmt(v: Decimal) -> str:
+    q = v.quantize(Decimal("0.01"))
+    return f"{q.normalize():f}" if q == q.to_integral_value() else f"{q:f}".rstrip("0").rstrip(".")
+
+
 def apply_goal_verdicts(session: Session, arts: dict[str, Any]) -> tuple[set[str], list[dict[str, Any]]]:
-    """산출물의 목표(`goals`)마다 gapVerdict 를 계산해 채우고, 같은 목표를 가리키는 여신 구분(`goalId`)에도 옮긴다.
+    """산출물의 목표(`goals`)마다 gapVerdict(· 비교 기간 근거 gapBasis)를 계산해 채우고, 같은 목표를 가리키는 여신 구분(`goalId`)에도 옮긴다.
     (바뀐 산출물 키, 판정 요약) 을 돌려준다."""
+    from nhdip.calc.metrics import align_mode_of
+
     changed: set[str] = set()
     out: list[dict[str, Any]] = []
     policy = _policy(session)
-    by_goal: dict[str, str | None] = {}
+    mode = align_mode_of(session)
+    by_goal: dict[str, tuple[str | None, dict[str, Any] | None]] = {}
     goals = arts.get("goals")
     for g in goals if isinstance(goals, list) else []:
         if not isinstance(g, dict) or not g.get("id"):
             continue
         target, tunit = target_of(session, g)
-        v = verdict_of(g, target, tunit, policy)
-        by_goal[str(g["id"])] = v
-        if g.get("gapVerdict") != v:
-            g["gapVerdict"] = v
+        eff, basis = align_target(g, target, mode)
+        v = verdict_of(g, eff, tunit, policy)
+        by_goal[str(g["id"])] = (v, basis)
+        if _set(g, v, basis):
             changed.add("goals")
         a = g.get("actual") if isinstance(g.get("actual"), dict) else {}
-        out.append({"goal": g["id"], "verdict": v, "actual": a.get("value"), "target": None if target is None else float(target)})
+        out.append({"goal": g["id"], "verdict": v, "actual": a.get("value"), "target": None if target is None else float(target),
+                    **({"basis": basis} if basis else {})})
     if not by_goal:
         return changed, out
     for key, payload in arts.items():
@@ -119,10 +166,25 @@ def apply_goal_verdicts(session: Session, arts: dict[str, Any]) -> tuple[set[str
         while stack:
             o = stack.pop()
             if isinstance(o, dict):
-                if "goalId" in o and "gapVerdict" in o and str(o["goalId"]) in by_goal and o["gapVerdict"] != by_goal[str(o["goalId"])]:
-                    o["gapVerdict"] = by_goal[str(o["goalId"])]
+                if "goalId" in o and "gapVerdict" in o and str(o["goalId"]) in by_goal and _set(o, *by_goal[str(o["goalId"])]):
                     changed.add(key)
                 stack.extend(o.values())
             elif isinstance(o, list):
                 stack.extend(o)
     return changed, out
+
+
+def _set(o: dict[str, Any], verdict: str | None, basis: dict[str, Any] | None) -> bool:
+    """판정 · 판정 근거를 쓴다(근거가 없어지면 뗀다). 바뀌었으면 True."""
+    hit = False
+    if o.get("gapVerdict") != verdict:
+        o["gapVerdict"] = verdict
+        hit = True
+    if basis:
+        if o.get("gapBasis") != basis:
+            o["gapBasis"] = basis
+            hit = True
+    elif "gapBasis" in o:
+        del o["gapBasis"]
+        hit = True
+    return hit

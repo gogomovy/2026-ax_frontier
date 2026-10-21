@@ -39,14 +39,20 @@ class FormulaSpec:
     tool_enabled: bool = True
     returns: str = "scalar"  # scalar | object | list
     examples: list[dict[str, Any]] = field(default_factory=list)
+    # 비교 기간 맞춤(PER-05) — 입력이 가리키던 기간 대신 다른 기준일과 견줬을 때(기간 대체) 평가기가 맞춰 주는 것.
+    # period_params: 기간 길이 인자 {이름: "years" | "months"} — 실제 비교 기간으로 바꾼다(예: CAGR 기간 2년 → 19개월이면 1.58년)
+    # goal_align: 실적과 경영목표를 견주는 수식 — 목표 입력을 실제 비교 기간에 맞춰 환산한다(연 목표 × 7/12)
+    period_params: dict[str, str] = field(default_factory=dict)
+    goal_align: bool = False
 
 
 REGISTRY: dict[str, FormulaSpec] = {}
 
 
-def formula(id: str, *, version: int = 1, expression: str, description: str, params: dict[str, str], library: str = "decimal", returns: str = "scalar", tool_enabled: bool = True):
+def formula(id: str, *, version: int = 1, expression: str, description: str, params: dict[str, str], library: str = "decimal", returns: str = "scalar", tool_enabled: bool = True,
+            period_params: dict[str, str] | None = None, goal_align: bool = False):
     def deco(fn):
-        REGISTRY[id] = FormulaSpec(id, version, expression, description, params, fn, library, tool_enabled, returns)
+        REGISTRY[id] = FormulaSpec(id, version, expression, description, params, fn, library, tool_enabled, returns, period_params=dict(period_params or {}), goal_align=goal_align)
         return fn
 
     return deco
@@ -90,7 +96,7 @@ def f_sum(values):
     return sum((D(v) for v in values), Decimal(0))
 
 
-@formula("DIFF", expression="a − b", description="차이(증감, 목표 대비 이탈 등)", params={"a": "number", "b": "number"})
+@formula("DIFF", expression="a − b", description="차이(증감, 목표 대비 이탈 등)", params={"a": "number", "b": "number"}, goal_align=True)
 def f_diff(a, b):
     return D(a) - D(b)
 
@@ -100,7 +106,7 @@ def f_share_delta(share1, share0):
     return D(share1) - D(share0)
 
 
-@formula("SHARE", expression="분자 ÷ 분모 × 100", description="구성비·비중(%)", params={"numerator": "number", "denominator": "number"})
+@formula("SHARE", expression="분자 ÷ 분모 × 100", description="구성비·비중(%)", params={"numerator": "number", "denominator": "number"}, goal_align=True)
 def f_share(numerator, denominator):
     den = D(denominator)
     if den == 0:
@@ -108,7 +114,7 @@ def f_share(numerator, denominator):
     return D(numerator) / den * 100
 
 
-@formula("RATIO", expression="a ÷ b", description="비율", params={"a": "number", "b": "number"})
+@formula("RATIO", expression="a ÷ b", description="비율", params={"a": "number", "b": "number"}, goal_align=True)
 def f_ratio(a, b):
     den = D(b)
     if den == 0:
@@ -124,7 +130,7 @@ def f_growth(v0, v1):
     return (D(v1) - base) / abs(base) * 100
 
 
-@formula("USAGE_RATE", expression="사용 ÷ 한도 × 100", description="소진율(%)", params={"used": "number", "limit": "number"})
+@formula("USAGE_RATE", expression="사용 ÷ 한도 × 100", description="소진율(%)", params={"used": "number", "limit": "number"}, goal_align=True)
 def f_usage(used, limit):
     return f_share(used, limit)
 
@@ -381,6 +387,7 @@ def f_linear(a, b, c):
     expression="((종료값 ÷ 시작값)^(1 ÷ 기간) − 1) × 100",
     description="연평균 성장률(%) — 3개년 추세 밴드의 기준(Phase 2.6.4)",
     params={"v_start": "number", "v_end": "number", "years": "number"},
+    period_params={"years": "years"},
 )
 def f_cagr(v_start, v_end, years):
     a, b, n = D(v_start), D(v_end), D(years)
@@ -712,6 +719,8 @@ def catalog() -> list[dict[str, Any]]:
             "library": s.library,
             "returns": s.returns,
             "toolEnabled": s.tool_enabled,
+            **({"periodParams": s.period_params} if s.period_params else {}),
+            **({"goalAlign": True} if s.goal_align else {}),
         }
         for s in REGISTRY.values()
     ]

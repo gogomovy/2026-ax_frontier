@@ -46,6 +46,7 @@ SKIP_DEFAULT = {
     "id", "kind", "calc", "sourceRef", "tableRef", "dataOrigin", "executedAt", "formulaId", "formulaVersion", "href", "verifications", "rankScore", "rankBasis",
     "generatedAt", "degradedSources", "batchLabel", "persona", "domainCode", "subDomain", "sourceKind", "figureId", "checkCode", "reportAnchor", "tabKey", "reportKind",
     "insightId", "relatedGoalId", "sourceInsightId", "linkedTabKey", "guideRuleId", "creationMode", "history", "toc", "unit", "decimals", "generation", "office",
+    "token", "basis", "align", "labelBase",  # 비교 기준 기록(기간 토큰 · 맞춤) — 사람이 읽는 안내는 gapBasis.note · 수치 라벨에 있다
 }
 TITLE_KEYS = ("title", "name", "heading", "caption", "label", "assetClass", "org", "prefLabel")
 DEFAULT_TITLES = {

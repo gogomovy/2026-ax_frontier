@@ -22,6 +22,7 @@ import { Badge, Button, IconChevron, IconPlus, PillTabs, TextLink } from "@/comp
 import { UNIT_LABEL, formatDate, formatKstShort } from "@/lib/format";
 import { isArchived } from "@/lib/goalChange";
 import { GOAL_VERDICT, proposalRange, resolveGoal } from "@/lib/goalView";
+import { gapBasisText } from "@/lib/periodBasis";
 import { useDismiss } from "@/lib/useDismiss";
 import type { DomainCardInfo, Goal, Insight, Proposal, ReportRequest, ReviewQueueItem } from "@/lib/types";
 
@@ -176,6 +177,11 @@ export function GoalsWorkspace({
                         <span className="text-[14px] font-bold leading-[21px] text-ink-deep">{view.title}</span>
                         {verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : null}
                         {view.changed ? <Badge tone="info">방금 수정</Badge> : null}
+                        {goal.gapBasis ? (
+                          <span className="text-[12px] text-steel" title={goal.gapBasis.note}>
+                            {gapBasisText(goal.gapBasis, UNIT_LABEL[goal.unit])}
+                          </span>
+                        ) : null}
                       </p>
                       <p className="mt-1 text-[12px] leading-[18px] text-steel">
                         {goal.periodLabel} · {goal.metricLabel}

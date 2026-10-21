@@ -12,6 +12,22 @@ const fig = (i: ChangeItem, value: number, unit: Figure["unit"] = i.unit): Figur
 /** 펼쳐 두는 최근 변화 건수 */
 const RECENT_COUNT = 3;
 
+/** 비교 기준이 바뀌어 생긴 변화 — '2026.01 대비 → 전년 동기 대비' */
+function basisTitle(i: ChangeItem): string | null {
+  return i.basisChange ? `비교 기준 변경: ${i.basisChange.before} → ${i.basisChange.after}` : null;
+}
+
+/** 비교 기준 변경 표시 — 업무 변화가 아니라 견준 기간이 바뀐 것(그 달 자료가 올라오거나 빠짐) */
+function BasisTag({ i }: { i: ChangeItem }) {
+  if (!i.basisChange) return null;
+  return (
+    <span className="ml-1.5 inline-flex h-[18px] items-center rounded-pill bg-track px-1.5 align-middle text-[10.5px] font-bold text-steel" title={basisTitle(i) ?? undefined}>
+      기준 변경
+      <span className="sr-only"> — {basisTitle(i)}</span>
+    </span>
+  );
+}
+
 /**
  * 최근 감지된 변화 (B.30) — 변화 감지 에이전트가 직전 확정값 대비 유의 기준(규칙 CHANGE_SIGNIFICANCE)을 넘은 변화만 기록한다.
  * 수치는 커널 계산 결과이며, 데이터 변경은 새로 확정된 파일과 행 수 증감을 보여준다.
@@ -103,8 +119,9 @@ function compactRow(i: ChangeItem, dense?: boolean) {
   const unit = i.kind === "data" ? "CNT" : i.unit;
   return (
     <li key={i.id} className="flex flex-wrap items-center gap-x-6 gap-y-1 border-b border-track py-2 text-[13px] leading-[19px] last:border-b-0 md:h-9 md:flex-nowrap md:py-0">
-      <span className="min-w-0 flex-1 truncate font-medium text-ink-deep" title={i.label}>
+      <span className="min-w-0 flex-1 truncate font-medium text-ink-deep" title={basisTitle(i) ?? i.label}>
         {i.label}
+        <BasisTag i={i} />
       </span>
       <span className="tnum whitespace-nowrap text-steel">
         {i.kind === "data" ? `${formatFigure(fig(i, i.before, "CNT"))} → ${formatFigure(fig(i, i.after, "CNT"))} 행` : `${formatFigure(fig(i, i.before))} → ${formatFigure(fig(i, i.after))}`}
@@ -127,7 +144,10 @@ function row(i: ChangeItem) {
             <li key={i.id} className="flex flex-wrap items-center gap-x-md gap-y-1 px-lg py-2.5 text-[13px]">
               <Badge tone={i.level === "major" ? "attention" : "neutral"}>{i.level === "major" ? "주요" : "일반"}</Badge>
               <Badge tone={i.kind === "data" ? "dark" : "info"}>{i.kind === "data" ? "데이터" : "지표"}</Badge>
-              <span className="min-w-0 flex-1 font-bold text-ink-deep">{i.label}</span>
+              <span className="min-w-0 flex-1 font-bold text-ink-deep" title={basisTitle(i) ?? undefined}>
+                {i.label}
+                <BasisTag i={i} />
+              </span>
               <span className="tnum text-charcoal">
                 {i.kind === "data" ? `${formatFigure(fig(i, i.before, "CNT"))} → ${formatFigure(fig(i, i.after, "CNT"))} 행` : `${formatFigure(fig(i, i.before))} → ${formatFigure(fig(i, i.after))}`}
                 <span className={i.direction === "down" ? "ml-1.5 text-critical" : "ml-1.5 text-primary"}>

@@ -3,9 +3,11 @@ import { FigureText } from "@/components/data/FigureText";
 import { MetricStrip, type MetricStripItem } from "@/components/data/MetricStrip";
 import { AgentNote } from "@/components/domain/AgentNote";
 import { Badge, TextLink } from "@/components/ui/primitives";
+import { UNIT_LABEL, formatFigure } from "@/lib/format";
 import { GOAL_VERDICT } from "@/lib/goalView";
 import { pointCount, sourceLabel } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { gapBasisText } from "@/lib/periodBasis";
 import type { Figure, LoanSegmentDetail } from "@/lib/types";
 
 /**
@@ -23,6 +25,8 @@ export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; a
   const years = pointCount(segment.yearly);
   const yearlyLabel = `${years ? `${years}개년 ` : ""}${monthEnd} 잔액`;
   const { gap, goalValue } = segment;
+  const aligned = segment.gapBasis?.aligned;
+  const basisText = gapBasisText(segment.gapBasis, goalValue ? UNIT_LABEL[goalValue.unit] : "");
 
   const items: MetricStripItem[] = [
     {
@@ -90,15 +94,25 @@ export function SegmentDetail({ segment, asOf }: { segment: LoanSegmentDetail; a
                 )}
               </dd>
             </div>
+            {/* 실적이 원래와 다른 비교 기간이면(전년 동기 자료 없음) 목표를 그 기간으로 환산해 판정한다 — 판정 · 게이지가 같은 기준 */}
+            {goalValue && typeof aligned === "number" ? (
+              <div className="flex items-baseline justify-between gap-2 border-t border-hairline-soft pt-3" title={segment.gapBasis?.note}>
+                <dt className="text-[12.5px] text-steel">{segment.gapBasis?.months}개월 환산 목표</dt>
+                <dd className="text-[16px] font-bold text-charcoal tnum">{formatFigure({ ...goalValue, value: aligned, decimals: 2 })}</dd>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-2 border-t border-hairline-soft pt-3">
               <dt className="text-[12.5px] text-steel">판정</dt>
-              <dd>{verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : <span className="text-[12px] text-stone">{NO_VALUE}</span>}</dd>
+              <dd className="flex flex-col items-end gap-0.5">
+                {verdict ? <Badge tone={verdict.tone}>{verdict.label}</Badge> : <span className="text-[12px] text-stone">{NO_VALUE}</span>}
+                {basisText ? <span className="text-[11px] text-steel">{basisText}</span> : null}
+              </dd>
             </div>
           </dl>
           {showGauge ? (
             <TargetGauge
               actual={segment.growth.value ?? 0}
-              target={goalValue?.value ?? 0}
+              target={typeof aligned === "number" ? aligned : (goalValue?.value ?? 0)}
               unit={goalValue?.unit ?? segment.growth.unit}
               decimals={goalValue?.decimals ?? 1}
               tone={offTrack ? "critical" : "primary"}

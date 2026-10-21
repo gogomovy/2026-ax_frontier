@@ -20,8 +20,9 @@ import { AsOfTools, ExportButton } from "@/components/layout/PageTools";
 import { EmptyCard } from "@/components/ui/StateViews";
 import { AddAgentTab, NextStep, StatusDot, tabClass } from "@/components/ui/primitives";
 import { UNIT_LABEL, formatFigure, formatSigned, formatValue } from "@/lib/format";
-import { pointCount, revenueRowsOf, targetPath, trendPhrase } from "@/lib/loanView";
+import { pointCount, revenueRowsOf, targetPath, targetPathSince, trendPhrase } from "@/lib/loanView";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { basisOf, columnPeriod, periodDot, periodName } from "@/lib/periodBasis";
 import { usePrinting } from "@/lib/printState";
 import { toPoliteSentence, toPoliteText } from "@/lib/sentence";
 import { signatureOf, tabSeenKey, tabSignature } from "@/lib/seen";
@@ -313,7 +314,7 @@ function RevenueTab({ overview, headline }: { overview: LoanOverview; headline: 
       <section className="grid grid-cols-1 gap-4 xl:grid-cols-[856fr_520fr]">
         <div className="flex min-w-0 flex-col gap-3 rounded-[10px] border border-hairline-soft bg-canvas px-6 pb-[22px] pt-6">
           <h2 className="flex flex-wrap items-baseline gap-x-2 text-[20px] font-bold leading-[25px] text-ink-deep">
-            전년 동기 대비
+            {columnPeriod(revenue.rows.map((r) => r.diffRate), "$latest-12", "전년 동기")} 대비
             <span className="text-[12px] font-normal text-steel">
               {years ? `${years}개년 ` : ""}
               {monthLabel}
@@ -388,8 +389,13 @@ function SegmentTab({ segment, overview, comparison, goals }: { segment: LoanSeg
       value: <BigFigure figure={segment.growth} size="hero" signed />,
       sub:
         segment.goalValue && segment.gap ? (
-          <span className={clsx("font-bold", tone)}>
-            {(segment.gap.value ?? 0) < 0 ? "▼" : "▲"} {hh ? "관리 한도" : "목표"} {formatSigned(segment.goalValue)} 대비 {formatSigned(segment.gap)}
+          <span className={clsx("font-bold", tone)} title={segment.gapBasis?.note}>
+            {(segment.gap.value ?? 0) < 0 ? "▼" : "▲"} {hh ? "관리 한도" : "목표"} {formatSigned(segment.goalValue)}
+            {/* 실적이 원래와 다른 비교 기간이면 목표도 그 기간으로 환산해 견준다 — 차이 값(커널)과 같은 기준을 보인다 */}
+            {typeof segment.gapBasis?.aligned === "number"
+              ? `(${segment.gapBasis.months}개월 환산 ${formatSigned({ ...segment.goalValue, value: segment.gapBasis.aligned, decimals: 2 })})`
+              : ""}{" "}
+            대비 {formatSigned(segment.gap)}
           </span>
         ) : null,
     },
@@ -400,7 +406,7 @@ function SegmentTab({ segment, overview, comparison, goals }: { segment: LoanSeg
           sub:
             limitFig && limitFig.value && segment.balance.value != null
               ? `관리 한도 ${formatValue({ ...limitFig, decimals: 0 })}${UNIT_LABEL[limitFig.unit]}의 ${((segment.balance.value / limitFig.value) * 100).toFixed(1)}%`
-              : `전년 동기 ${formatSigned(segment.growth)}`,
+              : `${periodName(segment.growth, "$latest-12", "전년 동기")} ${formatSigned(segment.growth)}`,
         }
       : {
           label: `${segment.name} 구성비`,
@@ -410,18 +416,26 @@ function SegmentTab({ segment, overview, comparison, goals }: { segment: LoanSeg
     {
       label: `이자수익 (${monthLabel})`,
       value: <BigFigure figure={asTn(segment.interestRevenue)} size="title" />,
-      sub: interestRow ? `전년 동기 ${formatSigned(interestRow.diffRate)}` : null,
+      sub: interestRow ? `${periodName(interestRow.diffRate, "$latest-12", "전년 동기")} ${formatSigned(interestRow.diffRate)}` : null,
     },
   ];
 
   // 추이 — 1월 ~ 기준월
   const monthly = segment.monthly.map((pt) => ({ label: monthOf(pt.label), value: pt.value }));
   const last = [...segment.monthly].reverse().find((pt) => pt.value !== null)?.value ?? null;
+  // 출발점 = 증가율이 견준 기준일의 잔액(최근 잔액 ÷ (1 + 증가율)) — 전년 동기 자료가 없어 다른 기준일과 견줬으면 그 기준일부터 경과월만큼
   const base = last !== null && segment.growth.value != null ? last / (1 + segment.growth.value / 100) : null;
-  const path = !hh ? targetPath(base, segment.goalValue?.value ?? null, monthly.length) : null;
+  const growthBasis = basisOf(segment.growth, "$latest-12");
+  const path = hh
+    ? null
+    : growthBasis
+      ? targetPathSince(base, segment.goalValue?.value ?? null, segment.monthly.map((pt) => pt.label), growthBasis.used)
+      : targetPath(base, segment.goalValue?.value ?? null, monthly.length);
   const unit = UNIT_LABEL[segment.balance.unit];
   const dec = segment.balance.decimals ?? 2;
-  const caption = `${p.year === NO_VALUE ? NO_VALUE : `${p.year}년`} 1–${monthly.length}월 · 단위 ${unit}`;
+  const caption =
+    `${p.year === NO_VALUE ? NO_VALUE : `${p.year}년`} 1–${monthly.length}월 · 단위 ${unit}` +
+    (path && growthBasis ? ` · 목표 경로는 ${periodDot(growthBasis.used)} 잔액부터(전년 동기 자료 없음)` : "");
 
   const figures: Record<string, Figure> = {
     [segment.balance.id]: segment.balance,
@@ -564,7 +578,7 @@ function ComparisonTab({ overview, comparison }: { overview: LoanOverview; compa
       value: gapFig ? <BigFigure figure={gapFig} size="hero" signed /> : <span className="text-[32px] font-bold text-steel">{NO_VALUE}</span>,
       sub: (
         <span className={clsx("font-bold", (gapFig?.value ?? 0) > 0 ? "text-critical" : "text-ink-deep")}>
-          {(gapFig?.value ?? 0) > 0 ? "▲" : "▼"} 가계 {formatSigned(hh.growth)} · 기업 {formatSigned(corp.growth)} (전년 대비)
+          {(gapFig?.value ?? 0) > 0 ? "▲" : "▼"} 가계 {formatSigned(hh.growth)} · 기업 {formatSigned(corp.growth)} ({columnPeriod([hh.growth, corp.growth], "$latest-12", "전년")} 대비)
         </span>
       ),
     },
@@ -594,7 +608,9 @@ function ComparisonTab({ overview, comparison }: { overview: LoanOverview; compa
   // 이자수익 규모 (3개년 8월 누계)
   const intA = comparison.interestRows.find((r) => isCorp(r.label));
   const intB = comparison.interestRows.find((r) => isHh(r.label));
-  const years = [p.prev2Ym, p.prevYm, p.ym];
+  // 전년 · 전전년 칸이 그 달이 없어 가장 가까운 기준일과 견줬으면 실제 기간으로(Figure.basis)
+  const prevYm = columnPeriod([intA?.prior, intB?.prior], "$latest-12", p.prevYm);
+  const years = [columnPeriod([intA?.prior2, intB?.prior2], "$latest-24", p.prev2Ym), prevYm, p.ym];
   const yearVals = (r?: ComparisonRow) => (r ? [r.prior2?.value ?? null, r.prior.value, r.current.value] : [null, null, null]);
   const intUnit = intA ? UNIT_LABEL[intA.current.unit] : "";
 
@@ -606,6 +622,7 @@ function ComparisonTab({ overview, comparison }: { overview: LoanOverview; compa
     { label: "이자수익", a: intA?.diffRate.value ?? null, b: intB?.diffRate.value ?? null },
   ];
   const hhFaster = rateRows.every((r) => r.a !== null && r.b !== null && r.b > r.a);
+  const rateBase = columnPeriod([balRowA?.diffRate, balRowB?.diffRate, intA?.diffRate, intB?.diffRate], "$latest-12", p.prevYm);
 
   // 결론 한 문장 — 괴리 제목('… — … 방향')은 머리글이라 문장으로 쓰지 않고, 이 화면 수치에서 문장을 만든다.
   // 기조(기업 확대 · 가계 관리)는 괴리 판정(divergence)이 있을 때만 말한다.
@@ -689,12 +706,12 @@ function ComparisonTab({ overview, comparison }: { overview: LoanOverview; compa
         </ChartCard>
 
         <ChartCard
-          title="전년 대비 증가율"
+          title={rateBase === p.prevYm ? "전년 대비 증가율" : `${rateBase} 대비 증가율`}
           legend={[
             { label: "기업여신", color: PAIR.a, dot: true },
             { label: "가계여신", color: PAIR.b, dot: true },
           ]}
-          caption={`${p.prevYm} → ${p.ym}${hhFaster ? " · 가계가 잔액·이자수익 모두 더 빠르게 증가" : ""}`}
+          caption={`${rateBase} → ${p.ym}${hhFaster ? " · 가계가 잔액·이자수익 모두 더 빠르게 증가" : ""}`}
           table={{
             columns: [
               { key: "k", label: "항목" },
@@ -704,7 +721,7 @@ function ComparisonTab({ overview, comparison }: { overview: LoanOverview; compa
             rows: rateRows.map((r) => ({ k: r.label, a: r.a === null ? NO_VALUE : `${r.a.toFixed(2)}%`, b: r.b === null ? NO_VALUE : `${r.b.toFixed(2)}%` })),
           }}
         >
-          <PairHBars rows={rateRows} ariaLabel="기업·가계 전년 대비 증가율" />
+          <PairHBars rows={rateRows} ariaLabel={`기업·가계 ${rateBase === p.prevYm ? "전년" : rateBase} 대비 증가율`} />
         </ChartCard>
       </section>
 

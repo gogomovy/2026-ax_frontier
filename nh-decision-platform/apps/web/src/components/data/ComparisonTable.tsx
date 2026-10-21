@@ -6,11 +6,13 @@ import { IconSort } from "@/components/ui/icons";
 import { ScrollRegion } from "@/components/ui/ScrollRegion";
 import { UNIT_LABEL } from "@/lib/format";
 import { NO_VALUE, periodOf } from "@/lib/period";
+import { columnPeriod } from "@/lib/periodBasis";
 import type { ComparisonRow } from "@/lib/types";
 
 /**
  * 현재 / 전년 / 전전년 / 증감액 / 증감률 5열 비교표 (요구사항 LOAN-03)
  * 열 머리(연월) · 기준 문구는 산출물 기준일(asOf)에서, 단위는 행 수치의 단위에서 정한다(Phase I · 하드코딩 없음).
+ * 전년 · 전전년 칸 수치가 그 달이 없어 가장 가까운 기준일과 견줬으면(Figure.basis) 열 머리도 실제 기간으로 쓴다.
  * 헤더는 neutral/50, 강조할 행은 primary/50 + Bold, 증감률 머리글을 눌러 정렬할 수 있다. 컨테이너 폭은 고정하고 스크롤바 자리를 미리 잡는다(scrollbar-gutter).
  */
 export function ComparisonTable({
@@ -54,10 +56,10 @@ export function ComparisonTable({
               {p.ym}
             </th>
             <th scope="col" className={head}>
-              {p.prevYm}
+              {columnPeriod(rows.map((r) => r.prior), "$latest-12", p.prevYm)}
             </th>
             <th scope="col" className={head}>
-              {p.prev2Ym}
+              {columnPeriod(rows.map((r) => r.prior2), "$latest-24", p.prev2Ym)}
             </th>
             <th scope="col" className={head}>
               증감액

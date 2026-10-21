@@ -5,10 +5,10 @@
   discover_links      링크 발견 에이전트 onto_linker      포함률로 외래 키 후보 → 링크 유형(이름 · 다중도 · 원천 열)
   resolve_entities    개체 해소 에이전트 onto_resolver    미해석 후보 → 별칭 제안(유사도 · 애매한 쌍은 LLM 판정)
   check_ontology      품질 검증 에이전트 onto_qa(규칙)    스키마 · 범위 · 버려진 관계 · 키 중복 · 다중도 · 후보 적체 · 재추출 대상
-  propose_ontology    변경 제안 onto_steward(규칙)        앞 단계 연산을 제안으로(대기 중 · 이미 반영된 것은 빼고), 정책이 허용하면 자동 적용
+  propose_ontology    변경 제안 onto_steward(규칙)        앞 단계 연산을 원천 자료별 제안으로(대기 중 · 이미 반영된 것은 빼고), 정책이 허용하면 자동 적용
 
 1차 판단은 결정론이고 LLM 은 이름 · 의미 · 애매한 경우만 정한다(Q182). LLM 출력은 허용 목록 · 형식으로 검증하고, 맞지 않으면 규칙 결과를 쓴다.
-스키마는 이 워크플로에서 바로 바꾸지 않는다 — 제안 → 관리자 승인(Q181).
+스키마는 이 워크플로에서 바로 바꾸지 않는다 — 제안 → 승인(Q181). 한 부서 자료만 닿는 제안은 그 부서 데이터 책임자도, 나머지(별칭 · 여러 부서 · 전행)는 관리자가(§40 STW-07).
 """
 from __future__ import annotations
 
@@ -21,7 +21,8 @@ from nhdip.data.datasets import current_rows, current_versions
 from nhdip.graph import links as L
 from nhdip.graph import profile as P
 from nhdip.graph import resolve as R
-from nhdip.graph.proposals import auto_apply, build_policy, create_proposal
+from nhdip.graph.proposals import auto_apply, build_policy, create_proposal, op_datasets, proposal_datasets
+from nhdip.graph.schema import op_key
 from nhdip.models import Dataset
 
 from .agent_nodes import record
@@ -69,8 +70,10 @@ def _ops(ctx: RunContext) -> list[dict[str, Any]]:
     return ctx.state.setdefault("onto_ops", [])
 
 
-def _add_op(ctx: RunContext, op: dict[str, Any], why: str, confidence: float, by: str, group: str = "model") -> None:
-    _ops(ctx).append({"op": op, "why": why[:300], "confidence": round(float(confidence), 3), "by": by, "group": group})
+def _add_op(ctx: RunContext, op: dict[str, Any], why: str, confidence: float, by: str, group: str = "model", datasets: list[str] | None = None) -> None:
+    """datasets = 그 연산을 낳은 원천 자료(비우면 연산의 원천에서 읽는다) — 제안을 자료별로 갈라 그 자료 책임자가 승인하게 한다."""
+    ds = sorted(set(datasets) if datasets is not None else (op_datasets(op) or set()))
+    _ops(ctx).append({"op": op, "why": why[:300], "confidence": round(float(confidence), 3), "by": by, "group": group, "datasets": ds})
 
 
 # ═════════════════════════ 1. 구조 파악 ═════════════════════════
@@ -204,7 +207,7 @@ def n_design_object_types(ctx: RunContext, node) -> NodeResult:
             have = {p.get("name") for c2 in schema.classes or [] if c2.get("label") == target for p in c2.get("properties") or []}
             for prop in properties[1:]:
                 if prop["name"] not in have:
-                    _add_op(ctx, {"op": "add_property", "label": target, "property": prop}, f"{target} 속성 {prop['name']} ← {c['dataset']}", c["confidence"], by)
+                    _add_op(ctx, {"op": "add_property", "label": target, "property": prop}, f"{target} 속성 {prop['name']} ← {c['dataset']}", c["confidence"], by, datasets=[c["dataset"]])
         else:
             _add_op(ctx, {"op": "add_class", "class": {"label": label, "ko": ko or c["ko"], "kind": "object", "description": desc or f"{c['datasetName']} 의 행", "key_hint": c["key_col"],
                                                        "primary_key": "key", "title_property": "name", "properties": properties, "backing": [backing], "extractable": False, "required": []}}, why, c["confidence"], by)
@@ -377,31 +380,77 @@ def n_check_ontology(ctx: RunContext, node) -> NodeResult:
 
 
 # ═════════════════════════ 6. 변경 제안 ═════════════════════════
+def _needs(op: dict[str, Any]) -> set[str]:
+    """연산이 기대는 클래스 — 같은 실행에서 새로 제안된 클래스면 그 제안과 한 묶음이어야 적용 검증을 통과한다."""
+    kind = op.get("op")
+    if kind == "add_relation":
+        r = op.get("relation") or {}
+        return {str(r[k]) for k in ("from", "to") if r.get(k)}
+    if kind in ("add_backing", "add_property", "update_class", "add_alias"):
+        return {str(op["label"])} if op.get("label") else set()
+    return set()
+
+
+def _proposal_groups(items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """제안 묶음 — 같은 원천 자료 조합끼리 한 제안(그 자료를 소유한 부서 데이터 책임자가 승인할 수 있게 · §40 STW-07).
+    별칭은 문서에서 오므로 따로 한 제안(관리자). 새 클래스에 기대는 연산(그 클래스를 잇는 링크 · 속성)은 클래스 제안과 합친다."""
+    keys: list[tuple[str, tuple[str, ...]]] = [("alias", ()) if x["group"] == "alias" else ("model", tuple(x.get("datasets") or [])) for x in items]
+    parent = {k: k for k in keys}
+
+    def find(k: tuple[str, tuple[str, ...]]) -> tuple[str, tuple[str, ...]]:
+        while parent[k] != k:
+            parent[k] = parent[parent[k]]
+            k = parent[k]
+        return k
+
+    provides = {str((x["op"].get("class") or {}).get("label")): keys[i] for i, x in enumerate(items) if x["op"].get("op") == "add_class"}
+    for i, x in enumerate(items):
+        for label in _needs(x["op"]):
+            j = provides.get(label)
+            if j is not None and j[0] == keys[i][0]:
+                parent[find(keys[i])] = find(j)
+    groups: dict[tuple[str, tuple[str, ...]], list[dict[str, Any]]] = {}
+    for i, x in enumerate(items):
+        groups.setdefault(find(keys[i]), []).append(x)
+    # 모형 묶음 먼저(자료 순) · 별칭 마지막 — 실행마다 같은 순서
+    return [groups[k] for k in sorted(groups, key=lambda k: (k[0] == "alias", k[1]))]
+
+
 @node_impl("propose_ontology", "변경 제안 — 앞 단계 연산을 제안으로(대기 중 · 이미 반영된 것 제외), 정책이 허용한 연산만 자동 적용")
 def n_propose_ontology(ctx: RunContext, node) -> NodeResult:
     pol = build_policy(ctx.session)
     items = _ops(ctx)
     if not items:
         return NodeResult({"proposals": [], "note": "제안할 변경 없음"})
+    from nhdip.data.sources import Resolver as Sources
+
+    src = Sources(ctx.session)
+
+    def ds_name(ref: str) -> str:
+        d = src.resolve(ref)
+        return d.name if d is not None else ref
+
     made = []
-    groups = [("model", "객체 유형 · 링크"), ("alias", "별칭(개체 해소)")]
-    for grp, title in groups:
-        part = [x for x in items if (x["group"] in ("model", "link")) == (grp == "model")]
-        if not part:
-            continue
+    quality = (ctx.state.get("onto_quality") or {}).get("grade")
+    for part in _proposal_groups(items):
+        alias = all(x["group"] == "alias" for x in part)
+        part_ds = sorted({d for x in part for d in x.get("datasets") or []})
+        names = [ds_name(d) for d in part_ds]
+        what = "별칭(개체 해소)" if alias else "객체 유형 · 링크" + (f" · {', '.join(names[:2])}{f' 외 {len(names) - 2}' if len(names) > 2 else ''}" if names else "")
+        head = f"구축 에이전트 제안 — {what}"
         ops = [x["op"] for x in part]
-        ev = {"items": [{k: x[k] for k in ("why", "confidence", "by")} for x in part][:100], "minConfidence": min(x["confidence"] for x in part), "quality": (ctx.state.get("onto_quality") or {}).get("grade")}
-        n_cls = sum(1 for o in ops if o["op"] == "add_class")
-        n_bk = sum(1 for o in ops if o["op"] == "add_backing")
-        n_rel = sum(1 for o in ops if o["op"] == "add_relation")
-        n_al = sum(1 for o in ops if o["op"] == "add_alias")
-        head = f"구축 에이전트 제안 — {title}"
-        summary = " · ".join(x for x in [f"새 객체 유형 {n_cls}" if n_cls else "", f"원천 연결 {n_bk}" if n_bk else "", f"링크 유형 {n_rel}" if n_rel else "", f"별칭 {n_al}" if n_al else ""] if x)
-        p = create_proposal(ctx.session, ops, title=f"{head} ({summary})", summary=summary, source="agent", agent_code=node.agent_code or "onto_steward", workflow_run_id=ctx.run.id, evidence=ev)
+        p = create_proposal(ctx.session, ops, title=head, source="agent", agent_code=node.agent_code or "onto_steward", workflow_run_id=ctx.run.id,
+                            evidence={"minConfidence": min(x["confidence"] for x in part), "quality": quality})
         if p is None:
             continue
-        # 대기 중 제안 · 이미 반영된 연산을 뺀 뒤 남은 것으로 제목을 다시 쓴다
+        # 대기 중 제안 · 이미 반영된 연산을 뺀 뒤 남은 것으로 근거 · 자료 · 제목을 다시 쓴다(근거 items 는 p.ops 와 같은 순서)
         kept = p.ops or []
+        by_key = {op_key(x["op"]): x for x in part}
+        ev_items = [{k: (by_key.get(op_key(o)) or {}).get(k) for k in ("why", "confidence", "by", "datasets")} for o in kept]
+        confs = [i["confidence"] for i in ev_items if isinstance(i["confidence"], (int, float))]
+        touched, loose = proposal_datasets(kept)
+        p.evidence = {"items": ev_items[:200], "minConfidence": min(confs) if confs else 0, "quality": quality,
+                      "datasets": [{"code": d, "name": ds_name(d)} for d in sorted(touched)], "unscoped": loose}
         cnt = {k: sum(1 for o in kept if o.get("op") == k) for k in ("add_class", "add_backing", "add_relation", "add_alias", "add_property")}
         summary = " · ".join(x for x in [f"새 객체 유형 {cnt['add_class']}" if cnt["add_class"] else "", f"원천 연결 {cnt['add_backing']}" if cnt["add_backing"] else "",
                                          f"링크 유형 {cnt['add_relation']}" if cnt["add_relation"] else "", f"속성 {cnt['add_property']}" if cnt["add_property"] else "",

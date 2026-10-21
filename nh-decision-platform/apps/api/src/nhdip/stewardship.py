@@ -6,8 +6,11 @@
              · 사용자 분석 요청([분석 에이전트 만들기])
   metric     지표 제안 에이전트(propose_metrics)               지표 켜기 → 계산 커널 계산 · 지표 이력
   concept    개념 연결 에이전트(propose_concepts)              자료 → 업무 개념(DESCRIBES) 연결 → 그래프 재투영 · 설명 카드 개념 태그
+  ontology   온톨로지 구축 에이전트(propose_ontology)          스키마 변경(객체 유형 · 원천 연결 · 속성 · 링크) 적용 → 새 판 → 그래프 재투영 · 재추출
 
 범위 — 자료의 현재 판 소유 조직이 모두 책임자 부서(그 아래 조직 포함) 안이면 그 부서 자료다. 소유가 없는 판(전행 공통) · 공통 통합 DB 는 관리자만.
+온톨로지 변경은 연산이 닿는 원천 자료가 모두 그 부서 자료일 때만(별칭 · 수정 · 여러 부서 · 전행 자료가 섞이면 관리자 — 설정 ontology.build.steward_review).
+링크는 양 끝 객체 유형의 원천 자료까지 본다 — 다른 부서 자료로 만든 객체 유형으로 잇는 링크는 관리자(또는 양쪽을 소유한 책임자).
 사용자 분석 요청은 요청자 소속이 책임자 부서 안이면. 본인이 요청한 것은 승인 · 반려할 수 없다(4-eyes).
 HTTP 를 모른다 — 호출한 쪽(api.steward_proposals · api.admin_data)이 권한 · 감사 · 커밋을 맡는다.
 """
@@ -21,14 +24,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from nhdip.events import emit
-from nhdip.models import AnalysisAgent, AnalysisAgentVersion, AppUser, Dataset, Metric, OrgUnit, Screen, ScreenGrant, Setting, utcnow
+from nhdip.models import AnalysisAgent, AnalysisAgentVersion, AppUser, Dataset, Metric, OntologyProposal, OrgUnit, Screen, ScreenGrant, Setting, utcnow
 
 AUTO_ACTOR = "agent:analysis_proposer"  # 분석 제안 에이전트가 낸 요청의 요청자(사람이 아님 — 4-eyes 대상 아님)
 PROPOSED_CONCEPTS = "proposed_concepts"  # 자료 정의 mapping 안의 개념 연결 제안(승인 대기)
 REJECTED_CONCEPTS = "rejected_concepts"  # 사람이 반려한 연결(다시 제안하지 않음)
 SKIPPED_CONCEPTS = "skipped_concepts"  # 에이전트가 관련 없다고 본 후보(다시 묻지 않음 · 화면에 보이지 않음)
-KINDS = ("analysis", "metric", "concept")
+KINDS = ("analysis", "metric", "concept", "ontology")
 STATUSES = ("pending", "approved", "rejected")
+ONTO_STATUS = {"pending": "pending", "applied": "approved", "rejected": "rejected"}  # 온톨로지 제안 상태 → 승인함 상태(실패 · 대체됨은 관리자 화면)
 
 
 class StewardError(Exception):
@@ -299,6 +303,102 @@ def _concept_items(session: Session, viewer: Viewer, status: str, schema_ko: dic
     return out
 
 
+def ontology_datasets(session: Session, p: OntologyProposal, resolver: Any = None) -> tuple[list[Dataset], bool]:
+    """(제안 연산이 닿는 원천 자료, 부서로 가를 수 없는가) — 원천이 없는 연산이 있거나 자료를 찾지 못하면 가를 수 없다(관리자 몫)."""
+    own, linked, loose = ontology_scope(session, p, resolver)
+    return own + [d for d in linked if all(x.code != d.code for x in own)], loose
+
+
+def ontology_scope(session: Session, p: OntologyProposal, resolver: Any = None) -> tuple[list[Dataset], list[Dataset], bool]:
+    """(연산의 원천 자료, 링크가 잇는 기존 객체 유형의 원천 자료, 부서로 가를 수 없는가).
+
+    링크 유형은 양 끝 객체 유형이 있어야 뜻이 있다 — 다른 부서 자료로 만든 객체 유형으로 잇는 링크는 그 부서 그래프에도 관계가 생기므로
+    양쪽 자료를 모두 소유한 책임자만(아니면 관리자) 승인한다(§40 STW-08). 같은 제안에서 새로 만드는 객체 유형은 그 원천이 이미 연산의 원천이다."""
+    from nhdip.data.sources import Resolver
+    from nhdip.graph.projection import active_schema
+    from nhdip.graph.proposals import proposal_datasets
+
+    res = resolver or Resolver(session)
+    ops = [o for o in p.ops or [] if isinstance(o, dict)]
+    refs, loose = proposal_datasets(ops)
+    created = {str((o.get("class") or {}).get("label")) for o in ops if o.get("op") == "add_class"}
+    ends = {str((o.get("relation") or {}).get(k)) for o in ops if o.get("op") == "add_relation" for k in ("from", "to") if (o.get("relation") or {}).get(k)} - created
+    linked_refs: set[str] = set()
+    if ends:
+        sc = active_schema(session)
+        for c in (sc.classes if sc is not None else []) or []:
+            if c.get("label") in ends:
+                linked_refs |= {str(b["dataset"]) for b in c.get("backing") or [] if isinstance(b, dict) and b.get("dataset")}
+
+    def resolve(refs_: set[str]) -> list[Dataset]:
+        nonlocal loose
+        out: list[Dataset] = []
+        for ref in sorted(refs_):
+            d = res.resolve(ref)
+            if d is None:
+                loose = True
+            elif all(x.code != d.code for x in out):
+                out.append(d)
+        return out
+
+    own = resolve(refs)
+    linked = [d for d in resolve(linked_refs - refs) if all(x.code != d.code for x in own)]
+    return own, linked, loose or not own
+
+
+def can_review_ontology(session: Session, viewer: Viewer, p: OntologyProposal, resolver: Any = None, policy: dict[str, Any] | None = None) -> bool:
+    if viewer.admin:
+        return True
+    from nhdip.graph.proposals import build_policy
+
+    if not (policy if policy is not None else build_policy(session)).get("steward_review", True):
+        return False
+    dss, loose = ontology_datasets(session, p, resolver)
+    return not loose and all(can_review_dataset(session, viewer, d) for d in dss)
+
+
+def _ontology_items(session: Session, viewer: Viewer, status: str) -> list[dict[str, Any]]:
+    from nhdip.data.sources import Resolver
+    from nhdip.graph.proposals import build_policy
+    from nhdip.graph.schema import op_key
+
+    wanted = [k for k, v in ONTO_STATUS.items() if not status or v == status]
+    rows = list(session.execute(select(OntologyProposal).where(OntologyProposal.status.in_(wanted)).order_by(OntologyProposal.id.desc()).limit(200)).scalars())
+    if not rows:
+        return []
+    pol = build_policy(session)
+    if not viewer.admin and not pol.get("steward_review", True):
+        return []
+    res = Resolver(session)
+    scoped = [(p, *ontology_scope(session, p, res)) for p in rows]
+    seen = [(p, own, linked, loose) for p, own, linked, loose in scoped
+            if viewer.admin or (not loose and all(can_review_dataset(session, viewer, d) for d in own + linked))]
+    names = _names(session, {s[0].decided_by or "" for s in seen} | {s[0].created_by or "" for s in seen})
+    out = []
+    for p, dss, linked, loose in seen:
+        ops = [o for o in p.ops or [] if isinstance(o, dict)]
+        ev = p.evidence or {}
+        # 근거 items 는 자료별 제안(§40 STW-07)부터 연산과 같은 순서 — 이전 제안은 순서가 맞지 않을 수 있어 쓰지 않는다
+        why = ev.get("items") if "datasets" in ev and isinstance(ev.get("items"), list) and len(ev["items"]) == len(ops) else None
+        imp = p.impact or {}
+        out.append({
+            "kind": "ontology", "id": f"ontology:{p.id}", "status": ONTO_STATUS[p.status], "pid": p.id, "title": p.title, "summary": p.summary, "source": p.source,
+            "datasets": [{"code": d.code, "name": d.name} for d in dss], "scoped": not loose,
+            # 링크가 잇는 기존 객체 유형의 원천 — 다른 부서 자료면 그 부서 그래프에도 관계가 생긴다(양쪽 소유 책임자 · 관리자만 승인)
+            "linkedDatasets": [{"code": d.code, "name": d.name} for d in linked],
+            "ops": [{"op": o, "key": op_key(o), **({k: (why[i] or {}).get(k) for k in ("why", "confidence", "by")} if why else {})} for i, o in enumerate(ops[:80])],
+            "opCount": len(ops),
+            "impact": {k: imp[k] for k in ("nodes", "relations", "dangling", "nodesDelta", "relationsDelta", "error") if k in imp},
+            "warnings": ((p.validation or {}).get("warnings") or [])[:10],
+            "baseVersion": p.base_version, "appliedVersion": p.applied_version, "createdAt": _iso(p.created_at),
+            "createdBy": p.created_by, "createdByName": names.get(p.created_by or "") or ("온톨로지 구축 에이전트" if p.source == "agent" else None),
+            "decidedBy": p.decided_by, "decidedByName": names.get(p.decided_by or "") or ("자동 적용" if (p.decided_by or "").startswith("system:") else None),
+            "decidedAt": _iso(p.decided_at), "note": p.note,
+            "canReview": p.status == "pending" and p.created_by != viewer.emp_no,
+        })
+    return out
+
+
 def _schema_ko(session: Session) -> dict[str, str]:
     from nhdip.graph.projection import active_schema
     from nhdip.graph.schema import CLASS_KO
@@ -321,6 +421,8 @@ def inbox(session: Session, viewer: Viewer, status: str = "pending", kind: str |
         items += _metric_items(session, viewer, status)
     if kind in (None, "", "concept"):
         items += _concept_items(session, viewer, status, _schema_ko(session))
+    if kind in (None, "", "ontology"):
+        items += _ontology_items(session, viewer, status)
     counts = pending_counts(session, viewer)
     return {"scope": viewer.scope_json(), "admin": viewer.admin, "items": items, "counts": counts,
             "spaces": [{"key": k, "label": sp.get("label") or k} for k, sp in builder_spaces(session).items()]}
@@ -331,7 +433,8 @@ def pending_counts(session: Session, viewer: Viewer) -> dict[str, int]:
     a = sum(1 for i in _analysis_items(session, viewer, "pending") if i["canReview"])
     m = len(_metric_items(session, viewer, "pending"))
     c = len(_concept_items(session, viewer, "pending", {}))
-    return {"analysis": a, "metric": m, "concept": c, "total": a + m + c}
+    o = sum(1 for i in _ontology_items(session, viewer, "pending") if i["canReview"])
+    return {"analysis": a, "metric": m, "concept": c, "ontology": o, "total": a + m + c + o}
 
 
 def pending_total(session: Session, user: Any) -> int:
@@ -457,6 +560,25 @@ def review_concept(session: Session, viewer: Viewer, dataset: str, label: str, k
         # 그래프 재투영(wf_graph_projection) · 구조 파악 재실행이 깨어난다 — 설명 카드 개념 태그는 호출한 쪽이 커밋 뒤에 맞춘다
         emit(session, "config.changed", {"kind": "dataset", "code": ds.code, "reason": "concept_link"}, viewer.emp_no)
     return ds
+
+
+# ═════════════════════════ 결정 — 온톨로지 변경 ═════════════════════════
+def review_ontology(session: Session, viewer: Viewer, pid: int, *, approve: bool, note: str | None = None) -> tuple[OntologyProposal, dict[str, Any]]:
+    """승인 = 관리자 승인과 같은 경로(graph.proposals.decide — 활성 스키마에 적용 → 검증 → 새 판 → ontology.changed).
+    책임자는 연산을 골라 빼지 못한다(전부 적용 · 반려) — 일부만 적용하려면 관리자 [온톨로지 › 변경 제안]. 적용 검증 실패는 제안을 failed 로 남긴다."""
+    from nhdip.graph.proposals import decide
+
+    p = session.get(OntologyProposal, pid, with_for_update=True)
+    if p is None or p.status not in ONTO_STATUS or not can_review_ontology(session, viewer, p):
+        raise StewardError(404, "온톨로지 변경 제안 없음")  # 다른 부서 · 전행 제안은 없는 것처럼
+    if p.status != "pending":
+        raise StewardError(409, "승인 대기 상태가 아닙니다")
+    if p.created_by and p.created_by == viewer.emp_no:
+        raise StewardError(409, "본인이 만든 제안은 다른 책임자나 관리자가 승인해야 합니다")
+    text = (note or "").strip()[:1000]
+    if not approve and not text:
+        raise StewardError(422, "반려 사유를 적어 주세요")
+    return p, decide(session, p, approve=approve, actor=viewer.emp_no, note=text or None)
 
 
 def linked_concepts(session: Session, ds: Dataset, resolver: Any = None) -> list[dict[str, Any]]:

@@ -17,12 +17,33 @@ export function revenueRowsOf(rows: ComparisonRow[] | null | undefined) {
 }
 
 /**
- * 목표 경로 — 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12), 경과월 = 1 … n.
+ * 목표 경로 — 전년 동기 잔액 × (1 + 연 목표 증가율 × 경과월 ÷ 12), 경과월 = 1 … n. (전년 동기 자료가 없으면 targetPathSince)
  * 화면 차트 · 표 · 툴팁이 같은 함수를 쓴다(수식은 차트 캡션에 그대로 공개). 입력이 없으면 null.
  */
 export function targetPath(base: number | null | undefined, growthPct: number | null | undefined, months: number): number[] | null {
   if (!isNum(base) || !isNum(growthPct) || months <= 0) return null;
   return Array.from({ length: months }, (_, i) => base * (1 + (growthPct / 100) * ((i + 1) / 12)));
+}
+
+/** 연월 순번 — '2026.03' · '2026-03-31' · '202603' → 연×12 + 월. 읽을 수 없으면 null */
+export function monthIndexOf(label: string | null | undefined): number | null {
+  const m = /(\d{4})[.\-/]?(\d{1,2})(?!\d)/.exec(String(label ?? ""));
+  if (!m) return null;
+  const mo = Number(m[2]);
+  return mo >= 1 && mo <= 12 ? Number(m[1]) * 12 + (mo - 1) : null;
+}
+
+/**
+ * 목표 경로(비교 기준일부터) — 전년 동기 자료가 없어 가장 가까운 기준일과 견줬을 때(Figure.basis):
+ * 그 기준일 잔액 × (1 + 연 목표 증가율 × 그 기준일부터 경과월 ÷ 12). 계산 커널이 목표를 비교 기간으로 환산하는 규칙(× 경과월 ÷ 12)과 같아
+ * 마지막 달의 경로 값이 환산 목표 판정과 맞는다. 기준일보다 앞선 달은 기준일 잔액. 입력이 없거나 연월을 읽을 수 없으면 null.
+ */
+export function targetPathSince(base: number | null | undefined, growthPct: number | null | undefined, labels: string[], since: string | null | undefined): number[] | null {
+  const s = monthIndexOf(since);
+  if (!isNum(base) || !isNum(growthPct) || s === null || labels.length === 0) return null;
+  const idx = labels.map(monthIndexOf);
+  if (idx.some((i) => i === null)) return null;
+  return idx.map((i) => base * (1 + (growthPct / 100) * (Math.max(0, (i as number) - s) / 12)));
 }
 
 /** 수치의 원천 이름 — 계산 추적 첫 입력의 원천(파일 · 표)에서 셀 위치 · 확장자를 뺀 것. 없으면 undefined */

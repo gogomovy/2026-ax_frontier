@@ -7,7 +7,8 @@
                  · {"startswith" | "endswith" | "contains": 글자} · {"ref": 참조} · {"in_dataset": {"dataset": 자료, "col": 컬럼, "where": {...}}}
                  (코드 비교는 글자로 · 모르는 연산자는 오류)
        기준일 열에는 기간 토큰을 쓴다 — 보관 기간에서 고르는 것: $latest · $prev(직전 보관 기간) · $prev-N · $earliest · $nearest-N(N개월 전에 가장 가까운 기간),
-                 달 수로 세는 것(그 달이 없으면 값 없음 오류): $latest-N(예: $latest-12 = 전년 동기) · $prev_year_end. 자세한 뜻은 resolve_token 참고
+                 달 수로 세는 것: $latest-N(예: $latest-12 = 전년 동기) · $prev_year_end — 그 달이 없으면 최신보다 앞선 가장 가까운 보관 기간으로
+                 대체하고(설정 calc.period_fallback) 계산 근거 · 화면 라벨에 실제 기간을 남긴다. 자세한 뜻은 resolve_token 참고
   {"metric": 지표코드, "field": "value"|추가필드}    다른 지표 결과 (같은 실행 또는 최근 값)
   {"rule": 규칙코드, "path": "a.b"}                  활성 규칙 버전 본문 값
   {"setting": 키}                                     cfg.setting 값
@@ -47,6 +48,13 @@ class MetricOutcome:
     decimals: int | None
     data_origin: str = "simulated"
     previous: Decimal | None = None
+    # 기간 대체 — 입력(선행 지표 포함)이 가리키던 달이 없어 가장 가까운 보관 기간과 견줬으면
+    # [{col, token, wanted, used, latest, months, wantedMonths, normalized?}] (normalized = 이 값은 이미 비교 기간에 맞춤)
+    fallbacks: list[dict[str, Any]] = field(default_factory=list)
+    # 비교 기간 맞춤 — {months, wantedMonths, token, used, params{이름: {from, to}}, goal{이름: {from, to}}} (없으면 None)
+    align: dict[str, Any] | None = None
+    goal: bool = False  # 경영목표 값 그대로(목표 규칙 경로의 VALUE) — 맞춤 · 화면 문구가 목표로 알아본다
+    previous_run: str | None = None  # 직전 값의 계산 기록 — 변화 감지가 그때의 비교 기준과 견준다
 
     def as_json(self) -> dict[str, Any]:
         return {
@@ -85,6 +93,9 @@ class EvalContext:
     rule_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
     scope_suffix: str = ""
     resolver: Any = None  # data.sources.Resolver — 자료 이름 → 데이터셋(실행 하나 동안 같은 답)
+    period_fallback: bool | None = None  # 기간 대체(설정 calc.period_fallback) — 지연 로딩 · fallback_on
+    period_align: str | None = None  # 비교 기간 맞춤(설정 calc.period_align) — 지연 로딩 · align_mode
+    goal_rules: set[tuple[str, str]] | None = None  # 경영목표 규칙 경로(설정 goal.rule_links) — 지연 로딩 · goal_links
 
     def scoped(self, code: str) -> str:
         """지표 값 · 이력에 쓰는 코드 — 범위 실행이면 '<코드>@<범위>'."""
@@ -212,8 +223,8 @@ def periods_of(rows: list[dict[str, Any]], col: str) -> list[str]:
     return sorted({str(r.get(col)) for r in rows if r.get(col) is not None})
 
 
-def resolve_token(rows: list[dict[str, Any]], col: str, token: Any) -> Any:
-    """기간 토큰을 실제 기준일 값으로.
+def resolve_token(rows: list[dict[str, Any]], col: str, token: Any, *, fallback: bool = True) -> Any:
+    """기간 토큰을 실제 기준일 값으로 (어느 기간으로 대체됐는지까지 알려면 resolve_token_info).
 
     보관 기간에서 고른다 — 올린 기준일이 띄어 있어도(예: 1월 · 8월만 올림) 비교가 된다:
       $latest      가장 늦은 기준일
@@ -222,21 +233,34 @@ def resolve_token(rows: list[dict[str, Any]], col: str, token: Any) -> Any:
       $prev-N      최신에서 N번째 직전 기준일 (더 과거가 없으면 가장 이른 기준일)
       $nearest-N   'N개월 전'에 가장 가까운 보관 기간 (목표 이전을 먼저, 그런 기간이 없으면 가장 가까운 것)
 
-    달 수로 센다 — 그 달이 없으면 맞는 행이 없어 오류가 난다(뜻을 조용히 바꾸지 않는다):
-      $latest-N      정확히 N개월 전 (예: $latest-12 = 전년 동기)
+    달 수로 센다 — 그 달이 보관돼 있으면 그 달:
+      $latest-N      N개월 전 (예: $latest-12 = 전년 동기)
       $prev_year_end 최근 기간의 전년 12월
+    그 달이 없으면(fallback · 설정 calc.period_fallback=nearest, 기본) 최신보다 앞선 보관 기간 중 그 달에 가장 가까운 기간으로 대체한다
+    (같은 거리면 앞선 기간). 대체는 계산 근거(periodBasis) · 화면 라벨에 실제 기간으로 드러난다 — 라벨이 '전년 동기'라고 말하면서 다른 달과 견주지 않게.
+    대신할 기간은 최신보다 그 달에 더 가까워야 한다(1월 · 8월이면 전년 동기 자리에 1월은 되지만 2년 전 자리에는 안 된다).
+    그런 기간이 없으면(자기 자신 · 최근 달과 견주게 되면) 대체하지 않는다 — 맞는 행이 없어 오류('갱신 실패').
+    fallback=False(설정 strict)면 대체하지 않는다.
     """
+    return resolve_token_info(rows, col, token, fallback=fallback)[0]
+
+
+FALLBACK_KINDS = ("latest", "prev_year_end")  # 달 수로 세는 토큰 — 그 달이 없을 때 가장 가까운 보관 기간으로 대체할 수 있는 것
+
+
+def resolve_token_info(rows: list[dict[str, Any]], col: str, token: Any, *, fallback: bool = True) -> tuple[Any, str | None]:
+    """(실제 기준일, 대체됐으면 원래 가리키던 기간 · 아니면 None) — 뜻은 resolve_token."""
     if not isinstance(token, str):
-        return token
+        return token, None
     m = TOKEN_RE.match(token)
     if not m:
-        return token
+        return token, None
     vals = periods_of(rows, col)
     if not vals:
         raise ResolveError(f"{col}: 값 없음")
     kind, n = m.group(1), int(m.group(2)) if m.group(2) else None
     if kind == "prev":
-        return vals[max(len(vals) - 1 - max(n or 1, 1), 0)]
+        return vals[max(len(vals) - 1 - max(n or 1, 1), 0)], None
     if kind == "nearest":
         if n is None:
             raise ResolveError(f"$nearest 는 개월 수가 필요합니다(예: $nearest-12) — {token}")
@@ -245,11 +269,135 @@ def resolve_token(rows: list[dict[str, Any]], col: str, token: Any) -> Any:
         if target is None or not cand:
             raise ResolveError(f"{col}: 기준일을 연월로 읽을 수 없어 {token} 을 쓸 수 없습니다")
         before = [c for c in cand if c[0] <= target]
-        return max(before)[1] if before else min(cand, key=lambda c: abs(c[0] - target))[1]
-    base = vals[-1] if kind in ("latest", "prev_year_end") else vals[0]
+        return (max(before)[1] if before else min(cand, key=lambda c: abs(c[0] - target))[1]), None
+    base = vals[-1] if kind in FALLBACK_KINDS else vals[0]
     if kind == "prev_year_end":
         base = _shift(base, int(str(base).replace("-", "")[4:6]))  # 같은 해 1월의 한 달 전 = 전년 12월(YYYYMM · YYYY-MM-DD)
-    return _shift(base, n) if n else base
+    want = _shift(base, n) if n else base
+    if not fallback or kind not in FALLBACK_KINDS or want == vals[-1] or want in vals:
+        return want, None
+    wi, li = _month_index(want), _month_index(vals[-1])
+    if wi is None or li is None:
+        return want, None
+    # 대신 견줄 수 있는 기간 — 최신보다 앞서고, 최신보다 가리키던 달에 더 가까운 것(그렇지 않으면 '전년 동기' 자리에 사실상 최근 달이 들어간다 —
+    # 예: 1월 · 8월이면 전년 동기(작년 8월) 자리에 1월은 되지만, 2년 전(재작년 8월) 자리에 1월은 아니다)
+    cand = [(mi, v) for v, mi in ((x, _month_index(x)) for x in vals) if mi is not None and mi < li and abs(mi - wi) < li - mi]
+    same = [v for mi, v in cand if mi == wi]
+    if same:
+        return same[-1], None  # 같은 달의 다른 날짜(영업일 말일 등) — 같은 기간이라 대체로 보지 않는다
+    if not cand:
+        return want, None  # 견줄 앞선 기간이 없다 — 대체하지 않는다(맞는 행이 없어 오류 · 화면은 '갱신 실패')
+    used = min(cand, key=lambda c: (abs(c[0] - wi), c[0] > wi))[1]
+    return used, want
+
+
+def token_name(token: str) -> str:
+    """기간 토큰의 업무 이름 — 대체 안내 문구용(전년 동기 · 전년 말 · 전월 · N개월 전)."""
+    m = TOKEN_RE.match(token or "")
+    if not m:
+        return str(token)
+    kind, n = m.group(1), int(m.group(2)) if m.group(2) else 0
+    if kind == "prev_year_end":
+        return "전년 말"
+    if kind == "latest" and n:
+        return {1: "전월", 12: "전년 동기", 24: "2년 전 동기"}.get(n) or (f"{n // 12}년 전 동기" if n % 12 == 0 else f"{n}개월 전")
+    return str(token)
+
+
+def period_dot(value: Any) -> str:
+    """202508 · 2025-08-31 → 2025.08 (안내 문구용)."""
+    s = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return f"{s[:4]}.{s[4:6]}" if len(s) >= 6 else str(value)
+
+
+def fallback_note(fb: dict[str, Any]) -> str:
+    """대체 기록 한 건 → '전년 동기(2025.08) 자료가 없어 가장 가까운 기준일 2026.01 과 비교'."""
+    return f"{token_name(str(fb.get('token') or ''))}({period_dot(fb.get('wanted'))}) 자료가 없어 가장 가까운 기준일 {period_dot(fb.get('used'))} 과 비교"
+
+
+def span_months(latest: Any, wanted: Any, used: Any) -> dict[str, int]:
+    """비교 기간(개월) — 최신에서 원래 가리키던 기간까지(wantedMonths) · 실제로 견준 기간까지(months). 연월로 읽을 수 없으면 빈 값."""
+    li, wi, ui = _month_index(latest), _month_index(wanted), _month_index(used)
+    if li is None or wi is None or ui is None:
+        return {}
+    return {"months": li - ui, "wantedMonths": li - wi}
+
+
+def span_of(fallbacks: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """기간 대체 기록 중 비교 기간이 원래와 다른 것(맞춤 대상) — 여럿이면 원래 비교 기간이 가장 긴 것.
+    이미 비교 기간에 맞춘 값(normalized — 기간 인자 · 목표를 환산한 결과)은 다시 맞추지 않는다."""
+    best: dict[str, Any] | None = None
+    for f in fallbacks or []:
+        if not isinstance(f, dict) or f.get("normalized"):
+            continue
+        m, w = f.get("months"), f.get("wantedMonths")
+        if isinstance(m, int) and isinstance(w, int) and m > 0 and w > 0 and m != w and (best is None or w > best["wantedMonths"]):
+            best = f
+    return best
+
+
+def align_mode_of(session: Session) -> str:
+    """비교 기간 맞춤 — 설정 calc.period_align: prorate(기본 · 기간 인자 · 경영목표를 실제 비교 기간에 맞춰 환산) | off(맞추지 않고 목표 판정 보류)."""
+    s = session.get(Setting, "calc.period_align")
+    v = s.value if s is not None else None
+    mode = v.get("mode") if isinstance(v, dict) else v
+    return "off" if str(mode if mode is not None else "prorate").strip().lower() in ("off", "none", "false", "hold") else "prorate"
+
+
+def align_mode(ctx: "EvalContext | None") -> str:
+    """align_mode_of — 실행 하나 동안 같은 답."""
+    if ctx is None or getattr(ctx, "session", None) is None:
+        return "prorate"
+    if getattr(ctx, "period_align", None) is None:
+        ctx.period_align = align_mode_of(ctx.session)
+    return ctx.period_align
+
+
+def goal_links(ctx: "EvalContext") -> set[tuple[str, str]]:
+    """경영목표 값이 사는 규칙 경로 {(규칙, 경로)} — 설정 goal.rule_links(목표 확정 · 판정이 쓰는 같은 연결). 실행 하나 동안 같은 답."""
+    if ctx.goal_rules is None:
+        s = ctx.session.get(Setting, "goal.rule_links")
+        v = s.value if s is not None and isinstance(s.value, dict) else {}
+        ctx.goal_rules = {(str(x["rule"]), str(x["path"])) for x in v.values() if isinstance(x, dict) and x.get("rule") and x.get("path")}
+    return ctx.goal_rules
+
+
+def is_goal_ref(ctx: "EvalContext", ref: Any, _depth: int = 0) -> bool:
+    """입력이 경영목표 값인가 — 목표 규칙 경로이거나, 그 값을 그대로 쓰는 지표(VALUE)."""
+    if not isinstance(ref, dict) or _depth > 3:
+        return False
+    if ref.get("rule") and ref.get("path"):
+        return (str(ref["rule"]), str(ref["path"])) in goal_links(ctx)
+    code = ref.get("metric")
+    if not code or ref.get("field") not in (None, "value"):
+        return False
+    oc = ctx.outcomes.get(code)
+    if oc is not None:
+        return oc.goal
+    m = ctx.session.get(Metric, code)
+    args = list((m.args or {}).values()) if m is not None else []
+    return m is not None and m.formula == "VALUE" and len(args) == 1 and is_goal_ref(ctx, args[0], _depth + 1)
+
+
+def ratio_text(span: dict[str, Any]) -> str:
+    return f"{span['months']}/{span['wantedMonths']}"
+
+
+def align_note(label: str, before: Any, after: Any, span: dict[str, Any], what: str) -> str:
+    """'경영목표 7 → 4.08 (비교 기간 7개월에 맞춰 연 목표 × 7/12)'."""
+    return f"{label} {_display_input(before)} → {_display_input(after)} ({what} — 비교 기간 {span['months']}개월에 맞춰 × {ratio_text(span)})"
+
+
+def fallback_on(ctx: "EvalContext | None") -> bool:
+    """기간 대체를 쓰는가 — 설정 calc.period_fallback: nearest(기본) | strict. 실행 하나 동안 같은 답."""
+    if ctx is None or getattr(ctx, "session", None) is None:
+        return True
+    if getattr(ctx, "period_fallback", None) is None:
+        s = ctx.session.get(Setting, "calc.period_fallback")
+        v = s.value if s is not None else None
+        mode = v.get("mode") if isinstance(v, dict) else v
+        ctx.period_fallback = str(mode or "nearest").strip().lower() != "strict"
+    return ctx.period_fallback
 
 
 def anchor_dataset(ctx: "EvalContext", ref: dict[str, Any]) -> str | None:
@@ -264,18 +412,25 @@ def anchor_dataset(ctx: "EvalContext", ref: dict[str, Any]) -> str | None:
     return src.strip() if isinstance(src, str) and src.strip() else None
 
 
-def resolve_period(ctx: "EvalContext", value: Any, *, anchor: str | None, rows: list[dict[str, Any]], col: str) -> Any:
-    """기간 토큰을 실제 기준일로 — 기준 자료(anchor)가 정해져 있으면 그 자료의 보관 기간에서 고른다."""
+def resolve_period(ctx: "EvalContext", value: Any, *, anchor: str | None, rows: list[dict[str, Any]], col: str, notes: dict[str, dict[str, Any]] | None = None) -> Any:
+    """기간 토큰을 실제 기준일로 — 기준 자료(anchor)가 정해져 있으면 그 자료의 보관 기간에서 고른다.
+    notes 를 주면 대체가 일어났을 때 {col: {token, wanted, used}} 를 남긴다(계산 근거 · 화면 라벨용)."""
     if not (isinstance(value, str) and TOKEN_RE.match(value)):
         return value
     if anchor:
         _, a_rows, a_ds = ctx.dataset(anchor)
-        return resolve_token(a_rows, a_ds.as_of_column or col, value)
-    return resolve_token(rows, col, value)
+        rows, col_used = a_rows, a_ds.as_of_column or col
+    else:
+        col_used = col
+    used, wanted = resolve_token_info(rows, col_used, value, fallback=fallback_on(ctx))
+    if wanted is not None and notes is not None:
+        latest = periods_of(rows, col_used)[-1]
+        notes[col] = {"token": value, "wanted": wanted, "used": used, "latest": latest, **span_months(latest, wanted, used)}
+    return used
 
 
-def resolve_where(ctx: "EvalContext", rows: list[dict[str, Any]], where: dict[str, Any] | None) -> dict[str, Any]:
-    """조건의 토큰·참조를 확정 값으로 치환 (토큰은 다른 확정 조건으로 거른 행 기준)."""
+def resolve_where(ctx: "EvalContext", rows: list[dict[str, Any]], where: dict[str, Any] | None, notes: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """조건의 토큰·참조를 확정 값으로 치환 (토큰은 다른 확정 조건으로 거른 행 기준). notes — 기간 대체 기록(resolve_period)."""
     where = dict(where or {})
     anchors: dict[str, str] = {}
     for k, v in list(where.items()):
@@ -292,13 +447,13 @@ def resolve_where(ctx: "EvalContext", rows: list[dict[str, Any]], where: dict[st
             if k in anchors:
                 # 기준 자료가 정해진 토큰 — 이 질의의 행이 아니라 그 자료의 보관 기간에서 고른다.
                 # 고른 기간이 이 자료에 없으면 맞는 행이 없어 '값 없음' 오류가 나고 화면은 '갱신 실패'로 표시된다(조용히 다른 달과 견주지 않게)
-                where[k] = resolve_period(ctx, v, anchor=anchors[k], rows=base_rows, col=k)
+                where[k] = resolve_period(ctx, v, anchor=anchors[k], rows=base_rows, col=k, notes=notes)
                 continue
             if rows and not base_rows:
                 # 자료는 있는데 다른 조건에 맞는 행이 없음(예: 연체 차주가 없는 지점 · B.47) — 토큰은 그대로 두어
                 # 빈 선택(list → [], count → 0)이 되게 한다. 자료 자체가 없으면 아래에서 '값 없음' 오류 그대로.
                 continue
-            where[k] = resolve_token(base_rows, k, v)
+            where[k] = resolve_period(ctx, v, anchor=None, rows=base_rows, col=k, notes=notes)
     return where
 
 
@@ -356,6 +511,45 @@ def _from_deleted_data(ctx: EvalContext, mv: MetricValue) -> bool:
     return any(isinstance(s, dict) and s.get("dataset") in gone and mv.created_at < gone[s["dataset"]] for s in run.sources or [])
 
 
+def merge_fallbacks(sources: list[Any]) -> list[dict[str, Any]]:
+    """입력 출처들의 기간 대체 기록을 모은다(같은 토큰 · 같은 대체는 한 번)."""
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for s in sources:
+        for f in (s.get("fallback") or []) if isinstance(s, dict) else []:
+            if not isinstance(f, dict):
+                continue
+            key = (str(f.get("token")), str(f.get("wanted")), str(f.get("used")))
+            if key not in seen:
+                seen.add(key)
+                out.append({k: f[k] for k in BASIS_KEYS if f.get(k) is not None})
+            elif f.get("normalized"):
+                next(x for x in out if (str(x.get("token")), str(x.get("wanted")), str(x.get("used"))) == key)["normalized"] = True
+    return out
+
+
+BASIS_KEYS = ("col", "token", "wanted", "used", "latest", "months", "wantedMonths", "normalized")
+BASIS_PARAM = "_basis"  # 계산 기록 입력 출처에 남기는 결과의 비교 기준(맞춤 표시 포함) — 저장된 값을 다른 지표가 쓸 때 그대로 따라간다
+
+
+def basis_of_sources(sources: list[Any]) -> list[dict[str, Any]]:
+    """계산 기록 입력 출처 → 그 결과의 비교 기준. 결과 기록(_basis)이 있으면 그것, 없으면(이전 기록) 입력에서 모은다."""
+    for s in sources or []:
+        if isinstance(s, dict) and s.get("param") == BASIS_PARAM:
+            return [dict(f) for f in s.get("fallback") or [] if isinstance(f, dict)]
+    return merge_fallbacks(list(sources or []))
+
+
+def run_basis(session: Session, calc_run_id: str | None) -> list[dict[str, Any]]:
+    run = session.get(CalcRun, calc_run_id) if calc_run_id else None
+    return basis_of_sources(list(run.sources or [])) if run is not None else []
+
+
+def _stored_fallbacks(ctx: EvalContext, mv: MetricValue) -> list[dict[str, Any]]:
+    """저장된 지표 값이 기간을 대체해 계산됐는지 — 그 계산 기록에서."""
+    return run_basis(ctx.session, mv.calc_run_id)
+
+
 def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
     """(값, 출처 문자열, 출처 상세)"""
     if "const" in ref:
@@ -363,7 +557,8 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
     if "q" in ref:
         q = ref["q"]
         v, rows, ds = ctx.dataset(q["dataset"])
-        q = {**q, "where": resolve_where(ctx, rows, q.get("where"))}
+        notes: dict[str, dict[str, Any]] = {}
+        q = {**q, "where": resolve_where(ctx, rows, q.get("where"), notes)}
         sel = [r for r in rows if _match(r, q.get("where") or {}, ctx)]
         if q.get("order_by"):
             sel.sort(key=lambda r: (r.get(q["order_by"]) is None, r.get(q["order_by"])))
@@ -399,8 +594,10 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
                   if isinstance(t, str) and TOKEN_RE.match(t) and k in (q.get("where") or {}) and q["where"][k] != t}
         periods = {f"{k}@{t}": val for k, (t, val) in picked.items()}
         latest = {k: val for k, (t, val) in picked.items() if t == "$latest"}
+        # 기간 대체(그 달이 없어 가장 가까운 보관 기간과 견줌) — 이 지표를 쓰는 지표 · 화면 라벨까지 따라간다
+        fallback = [{"col": k, **n} for k, n in notes.items()]
         return value, src, {"dataset": ds.code, "version": v.version, "rows": len(sel),
-                            **({"periods": periods} if periods else {}), **({"latest": latest} if latest else {})}
+                            **({"periods": periods} if periods else {}), **({"latest": latest} if latest else {}), **({"fallback": fallback} if fallback else {})}
     if "metric" in ref:
         code = ref["metric"]
         field_ = ref.get("field", "value")
@@ -409,7 +606,7 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
             if oc.error:
                 raise ResolveError(f"선행 지표 오류: {code}")
             val = oc.value if field_ == "value" else (oc.display if field_ == "display" else oc.extra.get(field_))
-            return val, oc.calc_run_id, {"metric": code}
+            return val, oc.calc_run_id, {"metric": code, **({"fallback": list(oc.fallbacks)} if oc.fallbacks else {})}
         # 이 실행에서 계산하지 않은 지표 — 저장된 최근 값(범위 실행이면 그 범위 값 먼저).
         # 이미 삭제된 자료로 계산한 값은 건너뛴다 — 삭제한 자료의 수치가 다른 지표의 입력으로 되살아나지 않게 (DEL-11)
         last, skipped = None, 0
@@ -424,7 +621,8 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
                 break
         if last is None or field_ != "value":
             raise ResolveError(f"지표 값 없음: {code}" + (" (삭제된 자료로 계산한 값은 쓰지 않습니다 — 다시 계산되면 채워집니다)" if skipped and last is None else ""))
-        return last.value, f"calc.metric_value({last.metric_code})", {"metric": code}
+        fb = _stored_fallbacks(ctx, last)
+        return last.value, f"calc.metric_value({last.metric_code})", {"metric": code, **({"fallback": fb} if fb else {})}
     if "rule" in ref:
         rule = ctx.session.get(Rule, ref["rule"])
         if not rule:
@@ -587,6 +785,16 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
             if len(vals) > 1:
                 col, _, tok = key.partition("@")
                 warnings.append(f"기준 시점 불일치 — {col} {tok}: {', '.join(sorted(vals))} (자료별로 올라온 기간이 다름)")
+        # 기간 대체 — 화면이 '전년 동기'라고 말하지 않고 실제로 견준 기간을 쓰게(build_views → Figure.basis)
+        fallbacks = merge_fallbacks(sources) if error is None else []
+        warnings.extend(fallback_note(f) for f in fallbacks)
+        # 비교 기간 맞춤(PER-05) — 실제로 견준 기간이 원래와 다르면 기간 인자(CAGR 기간)와 경영목표(목표 대비 이탈 · 달성률)를 그 기간에 맞춘다
+        align = None
+        if error is None and fallbacks:
+            fallbacks, align = _align_inputs(ctx, m, inputs, sources, trace_inputs, fallbacks, warnings)
+        if error is None and fallbacks:
+            # 결과의 비교 기준(맞춤 표시 포함) — 저장된 값을 다른 지표 · 다음 실행의 변화 감지가 읽을 때 그대로 따라간다(대체가 없으면 남기지 않는다)
+            sources.append({"param": BASIS_PARAM, "source": "비교 기준", "fallback": fallbacks, **({"align": align} if align else {})})
         rounding = m.rounding or rounding_default
         run, result, display = run_and_record(
             ctx.session,
@@ -604,15 +812,16 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
         spec = formulas.REGISTRY.get(m.formula)
         # 직전 값 — 같은 범위끼리만 비교(다지점이면 지점마다 따로 · B.47)
         # 실패한 실행이 남긴 값은 기준으로 삼지 않는다 — 다시 시도(재실행)가 '변화 없음'으로 보고 변화 감지를 놓치지 않게
-        prev = ctx.session.execute(
-            select(MetricValue.display_value)
+        prev_row = ctx.session.execute(
+            select(MetricValue.display_value, MetricValue.calc_run_id)
             .where(
                 MetricValue.metric_code == ctx.scoped(m.code),
                 ~exists().where(WorkflowRun.id == MetricValue.workflow_run_id, WorkflowRun.status == "failed"),
             )
             .order_by(MetricValue.created_at.desc())
             .limit(1)
-        ).scalar()
+        ).first()
+        prev, prev_run = (prev_row[0], prev_row[1]) if prev_row is not None else (None, None)
         data_origin = _origin_of(ctx, sources)
         oc = MetricOutcome(
             code=m.code,
@@ -632,12 +841,18 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
                 "executedAt": now,
                 "note": f"표시 {m.decimals}자리 · {rounding}" + (f" · ÷{m.scale:g}" if m.scale else "") if m.decimals is not None else None,
                 **({"warnings": warnings} if warnings else {}),
+                **({"periodBasis": fallbacks} if fallbacks else {}),
+                **({"periodAlign": align} if align else {}),
             },
             figure_ids=list(m.figure_ids or [m.code]),
             unit=m.unit,
             decimals=m.decimals,
             data_origin=data_origin,
             previous=prev,
+            fallbacks=fallbacks,
+            align=align,
+            goal=m.formula == "VALUE" and len(m.args or {}) == 1 and is_goal_ref(ctx, next(iter((m.args or {}).values()))),
+            previous_run=prev_run,
         )
         ctx.outcomes[m.code] = oc
         if not error:
@@ -652,6 +867,63 @@ def evaluate(ctx: EvalContext, metrics: list[Metric]) -> dict[str, MetricOutcome
                 )
             )
     return ctx.outcomes
+
+
+def _data_ref(ref: Any) -> bool:
+    """자료 · 다른 지표에서 온 입력인가 — 그런 값은 비교 기간 맞춤에서 바꾸지 않는다(기간 인자는 상수 · 규칙 값만)."""
+    return isinstance(ref, dict) and ("q" in ref or "metric" in ref)
+
+
+def _align_inputs(ctx: EvalContext, m: Metric, inputs: dict[str, Any], sources: list[Any], trace_inputs: list[dict[str, Any]],
+                  fallbacks: list[dict[str, Any]], warnings: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """실제로 견준 기간이 원래와 다를 때(예: 전년 동기 12개월 → 7개월) 그 기간에 맞춘다 — 설정 calc.period_align.
+
+    · 기간 길이 인자(수식 period_params — CAGR 기간)는 실제 비교 기간으로 바꾼다 → 결과는 '맞춘 값'(normalized)이라 뒤에서 다시 맞추지 않는다.
+    · 실적과 경영목표를 견주는 수식(goal_align — 목표 대비 이탈 · 달성률)은 목표 입력을 그 기간에 비례 환산한다(연 목표 × 7/12 —
+      화면 목표 경로와 같은 '경과월 ÷ 12' 규칙). 비교 대상이 목표인지는 설정 goal.rule_links 로 안다(목표 확정 · 판정과 같은 연결).
+    계산 근거에 원래 값 · 환산 값 · 비율이 남는다. (맞춘 비교 기준, 맞춤 기록 | None)"""
+    span = span_of(fallbacks)
+    spec = formulas.REGISTRY.get(m.formula)
+    if span is None or spec is None or align_mode(ctx) != "prorate":
+        return fallbacks, None
+    ratio = Decimal(span["months"]) / Decimal(span["wantedMonths"])
+    args = {k: (v if isinstance(v, dict) else {"const": v}) for k, v in (m.args or {}).items()}
+    done: dict[str, dict[str, dict[str, str]]] = {"params": {}, "goal": {}}
+
+    def scale(name: str, kind: str, what: str) -> None:
+        before = formulas.D(inputs[name])
+        after = before * ratio
+        inputs[name] = after
+        done[kind][name] = {"from": str(before), "to": str(after)}
+        label = args[name].get("label", name)
+        for t in trace_inputs:
+            if t["key"] == name:
+                t["value"] = _display_input(after)
+                t["label"] = f"{label} (비교 기간 {span['months']}개월 환산)"
+                t["source"] = f"{t['source']} · {_display_input(before)} × {ratio_text(span)}"
+        for s in sources:
+            if isinstance(s, dict) and s.get("param") == name:
+                s["aligned"] = {"from": str(before), "to": str(after), "ratio": ratio_text(span)}
+        warnings.append(align_note(label, before, after, span, what))
+
+    try:
+        for name in spec.period_params:
+            if name in inputs and not _data_ref(args.get(name)):
+                scale(name, "params", "기간")
+        if spec.goal_align:
+            goals = [n for n in inputs if is_goal_ref(ctx, args.get(n))]
+            # 목표끼리 견주는 수식(둘 다 목표)이나 목표만 있는 수식은 맞추지 않는다 — 실적 쪽이 있어야 비교 기간이 뜻을 가진다
+            if goals and len(goals) < len(inputs):
+                for name in goals:
+                    scale(name, "goal", "경영목표")
+    except (formulas.FormulaError, ArithmeticError, TypeError):
+        return fallbacks, None
+    if not done["params"] and not done["goal"]:
+        return fallbacks, None
+    align = {"months": span["months"], "wantedMonths": span["wantedMonths"], "token": span.get("token"), "used": span.get("used"), "wanted": span.get("wanted"),
+             **{k: v for k, v in done.items() if v}}
+    # 맞춘 값 — 이 지표를 쓰는 지표 · 목표 판정 · 화면 문구가 다시 맞추지 않게(비교 기준 표시는 그대로 따라간다)
+    return [{**f, "normalized": True} for f in fallbacks], align
 
 
 def _failed_run(ctx: EvalContext, m: Metric, error: str, sources: list[Any]):
