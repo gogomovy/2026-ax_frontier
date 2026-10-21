@@ -517,6 +517,15 @@ export interface ReportDoc {
   analysisAgent?: { code: string; status: string; version: number };
 }
 
+/** 영업점 공통 공유 보고서 (/screens/plans/{id}/report) — 사업부서가 '영업점 참고'를 켠 진행사업의 연결 분석 보고서(지금 세대 그대로) */
+export interface SharedReportDoc extends ReportDoc {
+  tabKey: string;
+  reportKey: string;
+  /** 분석한 부서 (분석 공간 이름 — 화면 설정 · 조직에서) */
+  analysisFrom: string;
+  sharedPlan: { id: string; title?: string; ownerOrg?: string; reviewCycle?: string; relatedGoalTitle?: string; status?: string; scope: string };
+}
+
 export interface AnalysisTab {
   tabKey: string;
   label: string;
@@ -647,7 +656,8 @@ export interface DefaultRateSeries {
   latest: Figure;
   /** 연초 대비 증감 (pp) */
   deltaPP: Figure;
-  severity: Severity;
+  /** 판정 — 아직 자료로 계산되지 않은 틀이면 null (서버 readiness.gate 가 비운다) */
+  severity: Severity | null;
   note?: string;
 }
 

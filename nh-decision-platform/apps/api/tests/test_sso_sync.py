@@ -199,7 +199,7 @@ def test_signup_with_hr_prefill(db, nc):
         assert c.get("/auth/signup/lookup", params={"emp_no": "990000001"}).json()["pending"] is True
         assert _client().post("/auth/login", json={"emp_no": "990000001", "password": "abcd1234"}).status_code == 403  # 승인 대기
         assert "sso_error" not in _sso(_client(), "990000001").headers["location"]  # 신청 중에도 SSO 는 그대로
-        row = next(x for x in admin.get("/admin/users").json() if x["empNo"] == "990000001")
+        row = next(x for x in admin.get("/admin/users", params={"status": "pending", "q": "990000001"}).json()["items"] if x["empNo"] == "990000001")
         assert row["passwordRequestAt"]
         from nhdip.api.menu_counts import admin_counts
 

@@ -1,6 +1,8 @@
 """조직 트리 — 유형(본부 · 부 · 국 · 팀 · 지역본부 · 영업점) · 허용 상위 유형 검증 · 깊이 재계산."""
 from __future__ import annotations
 
+from collections import defaultdict
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
@@ -94,6 +96,141 @@ def org_chain(session: Session, org_code: str) -> list[OrgUnit]:
         seen.add(cur.code)
         cur = session.get(OrgUnit, cur.parent_code) if cur.parent_code else None
     return chain
+
+
+# ── 대량 조직 조회 — 인사 동기화(.dat)로 조직 · 사용자가 수천 건이 되어도 화면 · API 가 멈추지 않게 ─────────
+@dataclass(frozen=True)
+class OrgNode:
+    code: str
+    name: str
+    parent: str | None
+    unit_type: str | None
+    level: int
+    active: bool
+    sort: int
+
+
+class OrgIndex:
+    """조직 전체를 가벼운 행(코드 · 이름 · 상위 · 유형)으로 한 번 읽어 경로 · 하위 조직 · 트리 순서를 메모리에서 계산한다.
+    상위가 없거나 순환하는 조직도 빠지지 않는다(최상위로 취급)."""
+
+    def __init__(self, rows: list[OrgNode]) -> None:
+        self.by: dict[str, OrgNode] = {r.code: r for r in rows}
+        kids: dict[str | None, list[OrgNode]] = defaultdict(list)
+        for r in rows:
+            kids[r.parent if r.parent in self.by and r.parent != r.code else None].append(r)
+        for v in kids.values():
+            v.sort(key=lambda r: (r.sort, r.code))
+        self.kids = kids
+        order: dict[str, int] = {}
+        stack = list(reversed(kids[None]))
+        while stack:
+            r = stack.pop()
+            if r.code in order:
+                continue
+            order[r.code] = len(order)
+            stack.extend(reversed(kids.get(r.code, [])))
+        for r in rows:  # 순환 고리 안에만 있는 조직
+            order.setdefault(r.code, len(order))
+        self.order = order
+
+    @classmethod
+    def load(cls, session: Session) -> OrgIndex:
+        cols = (OrgUnit.code, OrgUnit.name, OrgUnit.parent_code, OrgUnit.unit_type, OrgUnit.level, OrgUnit.active, OrgUnit.sort)
+        return cls([OrgNode(c, n, p, t, int(lv or 1), bool(a), int(s or 0)) for c, n, p, t, lv, a, s in session.execute(select(*cols)).all()])
+
+    def path(self, code: str) -> list[OrgNode]:
+        """최상위 → 그 조직 순서."""
+        out: list[OrgNode] = []
+        seen: set[str] = set()
+        cur = self.by.get(code)
+        while cur and cur.code not in seen:
+            out.append(cur)
+            seen.add(cur.code)
+            cur = self.by.get(cur.parent) if cur.parent else None
+        return out[::-1]
+
+    def subtree(self, code: str) -> set[str]:
+        """그 조직과 모든 하위 조직 코드. 없는 조직이면 빈 집합."""
+        out: set[str] = set()
+        stack = [code]
+        while stack:
+            c = stack.pop()
+            if c in out or c not in self.by:
+                continue
+            out.add(c)
+            stack.extend(k.code for k in self.kids.get(c, []))
+        return out
+
+
+LOOKUP_MAX = 100
+
+
+def lookup(
+    session: Session,
+    q: str = "",
+    *,
+    types: list[str] | None = None,
+    exclude: str | None = None,
+    codes: list[str] | None = None,
+    active_only: bool = True,
+    limit: int = 30,
+) -> dict[str, Any]:
+    """조직 검색 (검색형 조직 선택 상자) — 이름 · 코드 · 상위 조직 이름의 부분 일치(낱말마다 모두 맞아야 함).
+    순서: 코드 · 이름이 같음 → 앞부분 일치 → 이름 · 코드 안에 있음 → 상위 조직 이름으로만 맞음, 같은 순위는 조직 트리 순.
+    types = 고를 수 있는 조직 유형(상위 조직 고르기), exclude = 그 조직과 하위 조직 제외(자기 하위로 옮기기 방지),
+    codes = 검색 대신 그 코드들의 표시 정보(선택 상자의 현재 값). total 은 잘리기 전 일치 건수."""
+    idx = OrgIndex.load(session)
+    lbl = type_labels(session)
+
+    def item(r: OrgNode) -> dict[str, Any]:
+        return {"code": r.code, "name": r.name, "unitType": r.unit_type, "unitLabel": lbl.get(r.unit_type or "", "조직"), "level": r.level, "active": r.active,
+                "path": [x.name for x in idx.path(r.code)[:-1]]}
+
+    if codes:
+        found = [idx.by[c] for c in dict.fromkeys(codes) if c in idx.by]
+        return {"items": [item(r) for r in found], "total": len(found)}
+    limit = max(1, min(int(limit), LOOKUP_MAX))
+    banned = idx.subtree(exclude) if exclude else set()
+    allowed = set(types or [])
+    tokens = [t.casefold() for t in (q or "").split() if t][:5]
+    hits: list[tuple[int, int, OrgNode]] = []
+    for r in idx.by.values():
+        if r.code in banned or (active_only and not r.active) or (allowed and (r.unit_type or "") not in allowed):
+            continue
+        rank = 0
+        name, code, above = r.name.casefold(), r.code.casefold(), None
+        for t in tokens:
+            if t in (name, code):
+                s = 0
+            elif name.startswith(t) or code.startswith(t):
+                s = 1
+            elif t in name or t in code:
+                s = 2
+            else:
+                above = above if above is not None else " ".join(x.name.casefold() for x in idx.path(r.code)[:-1])
+                if t not in above:
+                    break
+                s = 3
+            rank = max(rank, s)
+        else:
+            hits.append((rank, idx.order[r.code], r))
+    hits.sort(key=lambda h: (h[0], h[1]))
+    return {"items": [item(r) for _, _, r in hits[:limit]], "total": len(hits)}
+
+
+def warm_chains(session: Session, codes: set[str]) -> list[OrgUnit]:
+    """주어진 조직과 모든 상위 조직을 깊이만큼의 질의(보통 3~5번)로 한꺼번에 읽어 둔다 —
+    이어지는 org_chain(session.get)이 질의 없이 세션에서 꺼낸다. 돌려준 목록을 쥐고 있는 동안 유지된다."""
+    kept: list[OrgUnit] = []
+    seen: set[str] = set()
+    need = {c for c in codes if c}
+    while need:
+        seen |= need
+        rows = session.execute(select(OrgUnit).where(OrgUnit.code.in_(need))).scalars().all()
+        kept.extend(rows)
+        need = {o.parent_code for o in rows if o.parent_code and o.parent_code not in seen}
+    return kept
 
 
 # ── 부서 데이터 책임자 범위 (UPL-04 · Q107) ─────────────────────

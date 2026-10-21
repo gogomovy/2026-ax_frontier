@@ -1,13 +1,13 @@
 /**
  * 콘텐츠 보안 정책 (B.33) — proxy.ts 가 요청마다 nonce 를 만들어 스크립트를 nonce + strict-dynamic 으로만 허용한다.
- * 외부 출처는 글꼴 CDN(jsdelivr · Pretendard) 하나뿐이다. 스타일은 React 의 style 속성 때문에 'unsafe-inline' 을 유지한다.
+ * 외부 출처는 하나도 열지 않는다(폐쇄망 — 글꼴도 앱이 직접 낸다). 스타일은 React 의 style 속성 때문에 'unsafe-inline' 을 유지한다.
  */
 export function buildCsp(nonce: string, dev = process.env.NODE_ENV !== "production"): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ""}`,
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
-    "font-src 'self' data: https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     "img-src 'self' data: blob:",
     `connect-src 'self'${dev ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
@@ -38,8 +38,8 @@ export function buildSsoPageCsp(agent: string = ncAgentOrigin()): string {
   return [
     "default-src 'self'",
     `script-src 'self' 'unsafe-inline' ${agent}`,
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
-    "font-src 'self' data: https://cdn.jsdelivr.net",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
     "img-src 'self' data:",
     `connect-src 'self' ${agent}`,
     "frame-ancestors 'none'",

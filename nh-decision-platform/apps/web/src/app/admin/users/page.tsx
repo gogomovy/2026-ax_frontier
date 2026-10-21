@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { ApproveDialog } from "@/components/admin/ApproveDialog";
 import { useIsDataAdmin } from "@/components/admin/DataDelete";
-import { AdminPage, C, Card, Check, Loading, Select, StatusBadge, Table, Tabs, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { AdminPage, C, Card, Check, Loading, Select, StatusBadge, Table, Tabs, TextInput, fmtTime, useAction, useApiData } from "@/components/admin/kit";
+import { OrgPicker } from "@/components/admin/OrgPicker";
 import { useConfirm } from "@/components/providers/UiProvider";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPatch, apiPost } from "@/lib/api-client";
 import { passwordRuleError } from "@/lib/password";
+import { pageRange, usersPath, type UserTab } from "@/lib/usersQuery";
 
 interface UserRow {
   empNo: string;
@@ -29,38 +32,77 @@ interface UserRow {
   source?: "local" | "dat" | "sso";
   /** 인사 동기화 사번이 가입 화면에서 낸 사번 · 비밀번호 로그인 신청 시각 (Phase R) — 승인 전까지 비밀번호 로그인 불가, SSO 는 그대로 */
   passwordRequestAt?: string | null;
+  /** 관리자가 정한 업무 소속 — 인사 동기화가 사무소 기준으로 되돌리지 않는다 */
+  orgAssigned?: { code: string; by: string; at: string; from?: string } | null;
+  /** 인사(.dat) 사무소 */
+  hrOffice?: { code: string; name: string | null } | null;
 }
 
 /** 승인 대기 = 가입 승인 대기 + 인사 동기화 사번의 비밀번호 로그인 신청 */
 const isPending = (u: UserRow) => u.status === "pending" || Boolean(u.passwordRequestAt);
-interface OrgRow {
-  code: string;
-  name: string;
-  level: number;
-  parent: string | null;
-  active: boolean;
+
+/** 서버가 걸러 한 쪽씩 돌려준다 — 인사 동기화로 수천 명이어도 화면이 멈추지 않게 (counts = 같은 검색 조건의 탭별 건수) */
+interface UsersPage {
+  items: UserRow[];
+  total: number;
+  page: number;
+  size: number;
+  counts: Record<UserTab, number>;
+  status: UserTab;
+  q: string;
+  org: string | null;
 }
 
 const STATUS_LABEL: Record<string, string> = { pending: "승인 대기", active: "사용", locked: "잠김", disabled: "중지" };
+const EMPTY_TEXT: Record<UserTab, string> = { pending: "승인을 기다리는 사용자가 없습니다.", active: "사용 중인 사용자가 없습니다.", locked: "잠긴 사용자가 없습니다.", disabled: "중지된 사용자가 없습니다.", all: "사용자가 없습니다." };
+const PAGE_SIZE = 50;
 
 /** 가입 승인 · 역할 · 소속 · 잠금 해제 · 비밀번호 초기화 (ADM-02) */
 export default function UsersAdmin() {
-  const [tab, setTab] = useState<"all" | "pending" | "locked" | "active" | "disabled">("pending");
-  const users = useApiData<UserRow[]>("/admin/users");
-  const orgs = useApiData<{ orgs: OrgRow[] }>("/admin/orgs");
+  const [tab, setTab] = useState<UserTab>("pending");
+  const [text, setText] = useState("");
+  const [query, setQuery] = useState("");
+  const [org, setOrg] = useState<{ code: string; name: string } | null>(null);
+  const [page, setPage] = useState(1);
+  // 검색어는 입력이 멈추고 0.3초 뒤에 반영(그때 첫 쪽으로)
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const next = text.trim().slice(0, 50); // 서버도 50자까지만 본다(응답의 q 와 맞춰 '흐리게' 판정)
+      if (next === query) return;
+      setQuery(next);
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [text, query]);
+  const users = useApiData<UsersPage>(usersPath({ status: tab, q: query, org: org?.code, page, size: PAGE_SIZE }));
+  const d = users.data;
+  // 탭 · 검색을 바꾼 직후 — 새 결과가 올 때까지 이전 목록을 흐리게
+  const stale = Boolean(d && (d.status !== tab || d.q !== query || (d.org ?? null) !== (org?.code ?? null)));
+  const list = d?.items ?? [];
+  const range = d ? pageRange(d.page, d.size, d.total) : null;
   const { run, busy } = useAction();
-  const list = useMemo(() => (users.data ?? []).filter((u) => tab === "all" || (tab === "pending" ? isPending(u) : u.status === tab)), [users.data, tab]);
-  const count = (s: string) => (users.data ?? []).filter((u) => (s === "pending" ? isPending(u) : u.status === s)).length;
-  const orgOptions = (orgs.data?.orgs ?? []).filter((o) => o.active).map((o) => ({ value: o.code, label: `${"　".repeat(o.level - 1)}${o.name}` }));
 
   const confirm = useConfirm();
   const act = (emp: string, action: string, msg: string) => run(() => apiPost(`/admin/users/${emp}/${action}`), msg, users.reload);
-  const orgName = (code: string) => orgs.data?.orgs.find((o) => o.code === code)?.name ?? code;
+  // 승인 — 업무 소속(종합기획부 · 사업부서 · 영업본부 · 영업점)을 정하는 대화상자에서
+  const [approving, setApproving] = useState<UserRow | null>(null);
+  const approve = async (u: UserRow, orgCode: string) => {
+    const r = await run(() => apiPost(`/admin/users/${u.empNo}/approve`, { org_code: orgCode }), u.passwordRequestAt ? "비밀번호 로그인을 승인했습니다" : "승인했습니다", users.reload);
+    if (r !== null) setApproving(null);
+  };
+  const followHr = async (u: UserRow) => {
+    const ok = await confirm({
+      title: "인사 기준 소속으로 되돌릴까요?",
+      body: `${u.name}(${u.empNo}) — 관리자가 정한 소속(${u.org.name})을 풀고 인사 사무소${u.hrOffice?.name ? `(${u.hrOffice.name})` : ""}로 옮깁니다. 이후에는 인사 동기화가 소속을 맞춥니다. 화면 권한이 바로 바뀝니다.`,
+      confirmLabel: "인사 기준으로",
+    });
+    if (ok) await run(() => apiPatch(`/admin/users/${u.empNo}`, { follow_hr: true }), "인사 기준 소속으로 되돌렸습니다", users.reload);
+  };
 
   // 되돌리기 어렵거나 권한이 바뀌는 작업은 결과를 설명하고 한 번 더 묻는다 (Phase E · INT-01 · Q123). 취소하면 선택 상자는 원래 값 그대로
-  const changeOrg = async (u: UserRow, code: string) => {
-    if (code === u.org.code) return;
-    const ok = await confirm({ title: "소속을 바꿀까요?", body: `${u.name}(${u.empNo}) — ${u.org.name} → ${orgName(code)}. 화면 권한이 새 소속 기준으로 바로 바뀝니다.`, confirmLabel: "소속 바꾸기" });
+  const changeOrg = async (u: UserRow, code: string, name?: string) => {
+    if (!code || code === u.org.code) return;
+    const ok = await confirm({ title: "소속을 바꿀까요?", body: `${u.name}(${u.empNo}) — ${u.org.name} → ${name ?? code}. 화면 권한이 새 소속 기준으로 바로 바뀝니다.`, confirmLabel: "소속 바꾸기" });
     if (ok) await run(() => apiPatch(`/admin/users/${u.empNo}`, { org_code: code }), "소속을 바꿨습니다", users.reload);
   };
   const changeRole = async (u: UserRow, role: string) => {
@@ -112,17 +154,55 @@ export default function UsersAdmin() {
     >
       <Tabs
         active={tab}
-        onChange={setTab}
+        onChange={(k) => {
+          setTab(k);
+          setPage(1);
+        }}
         tabs={[
-          { key: "pending", label: "승인 대기", count: count("pending") },
-          { key: "active", label: "사용", count: count("active") },
-          { key: "locked", label: "잠김", count: count("locked") },
-          { key: "disabled", label: "중지", count: count("disabled") },
-          { key: "all", label: "전체", count: users.data?.length },
+          { key: "pending", label: "승인 대기", count: d?.counts.pending },
+          { key: "active", label: "사용", count: d?.counts.active },
+          { key: "locked", label: "잠김", count: d?.counts.locked },
+          { key: "disabled", label: "중지", count: d?.counts.disabled },
+          { key: "all", label: "전체", count: d?.counts.all },
         ]}
       />
       <Card>
-        <Loading error={users.error} loading={!users.data && users.loading} />
+        <div className="mb-md flex flex-wrap items-end gap-md" role="search" aria-label="사용자 찾기">
+          <TextInput label="찾기" value={text} onChange={setText} placeholder="사번 · 이름 · 소속 조직 이름" className="w-[280px]" />
+          <OrgPicker
+            label="소속(하위 조직 포함)"
+            value={org?.code ?? ""}
+            valueLabel={org?.name}
+            empty="전체 조직"
+            includeInactive
+            className="w-[260px]"
+            onChange={(code, o) => {
+              setOrg(code ? { code, name: o?.name ?? code } : null);
+              setPage(1);
+            }}
+          />
+          {query || org ? (
+            <Button
+              size="sm"
+              variant="quiet"
+              onClick={() => {
+                setText("");
+                setQuery("");
+                setOrg(null);
+                setPage(1);
+              }}
+            >
+              조건 지우기
+            </Button>
+          ) : null}
+          {d && range ? (
+            <p className="ml-auto text-[12px] text-steel tnum" role="status" aria-live="polite">
+              {d.total ? `${range.from.toLocaleString("ko-KR")}–${range.to.toLocaleString("ko-KR")} / ${d.total.toLocaleString("ko-KR")}명` : "0명"}
+            </p>
+          ) : null}
+        </div>
+        <Loading error={users.error} loading={!d && users.loading} />
+        <div className={stale ? "opacity-60 transition-opacity" : "transition-opacity"} aria-busy={stale}>
         <Table head={["사번", "이름 · 직급", "소속", "역할", "데이터 책임자", "데이터 관리자", "상태", "가입 · 최근 로그인", "작업"]}>
           {list.map((u) => (
             <tr key={u.empNo}>
@@ -136,8 +216,21 @@ export default function UsersAdmin() {
                 ) : null}
               </C>
               <C className="min-w-[220px]">
-                <Select ariaLabel={`${u.name} 소속`} value={u.org.code} options={orgOptions} onChange={(v) => void changeOrg(u, v)} />
+                <OrgPicker ariaLabel={`${u.name} 소속`} value={u.org.code} valueLabel={u.org.name} disabled={busy} onChange={(code, o) => void changeOrg(u, code, o?.name)} />
                 <p className="mt-0.5 text-[10.5px] text-stone">{u.orgPath.map((o) => o.name).join(" > ")}</p>
+                {u.orgAssigned ? (
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[10.5px] text-steel">
+                    <span title={`${u.orgAssigned.by} · ${fmtTime(u.orgAssigned.at)} — 인사 동기화가 이 소속을 바꾸지 않습니다`}>
+                      <Badge tone="info">관리자 지정</Badge>
+                    </span>
+                    {u.hrOffice && u.hrOffice.code !== u.org.code ? <span>인사 사무소 {u.hrOffice.name ?? u.hrOffice.code}</span> : null}
+                    {u.source === "dat" && u.hrOffice ? (
+                      <button type="button" className="font-bold text-primary disabled:opacity-50" disabled={busy} onClick={() => void followHr(u)}>
+                        인사 기준으로
+                      </button>
+                    ) : null}
+                  </p>
+                ) : null}
               </C>
               <C className="w-[110px]">
                 <Select ariaLabel={`${u.name} 역할`} value={u.role} options={[{ value: "user", label: "사용자" }, { value: "admin", label: "관리자" }]} onChange={(v) => void changeRole(u, v)} />
@@ -185,7 +278,7 @@ export default function UsersAdmin() {
                 <div className="flex flex-wrap gap-1">
                   {isPending(u) ? (
                     <>
-                      <Button size="sm" variant="confirm" disabled={busy} onClick={() => act(u.empNo, "approve", u.passwordRequestAt ? "비밀번호 로그인을 승인했습니다" : "승인했습니다")}>
+                      <Button size="sm" variant="confirm" disabled={busy} onClick={() => setApproving(u)} aria-label={`${u.name} 승인 — 업무 소속 정하기`}>
                         승인
                       </Button>
                       <Button size="sm" variant="ghost" disabled={busy} onClick={() => void reject(u)}>
@@ -222,8 +315,25 @@ export default function UsersAdmin() {
             </tr>
           ))}
         </Table>
-        {users.data && !list.length ? <p className="py-lg text-center text-[12.5px] text-stone">해당 사용자가 없습니다.</p> : null}
+        </div>
+        {d && !stale && !list.length ? (
+          <p className="py-lg text-center text-[12.5px] text-stone">{query || org ? "검색 조건에 맞는 사용자가 없습니다." : EMPTY_TEXT[tab]}</p>
+        ) : null}
+        {d && range && range.pages > 1 ? (
+          <nav aria-label="사용자 목록 쪽" className="mt-md flex items-center justify-center gap-sm text-[12px] text-steel">
+            <Button size="sm" variant="ghost" disabled={d.page <= 1 || stale} onClick={() => setPage(d.page - 1)}>
+              이전
+            </Button>
+            <span className="tnum" aria-current="page">
+              {d.page.toLocaleString("ko-KR")} / {range.pages.toLocaleString("ko-KR")}쪽
+            </span>
+            <Button size="sm" variant="ghost" disabled={d.page >= range.pages || stale} onClick={() => setPage(d.page + 1)}>
+              다음
+            </Button>
+          </nav>
+        ) : null}
       </Card>
+      {approving ? <ApproveDialog user={approving} busy={busy} onApprove={(code) => approve(approving, code)} onClose={() => setApproving(null)} /> : null}
     </AdminPage>
   );
 }

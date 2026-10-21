@@ -276,6 +276,10 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     forced_types = [t for t in types if t in set(pol.get("force_on") or ["manual"])]
     ev_classes = set((ev.config or {}).get("doc_classes") or []) if ev else set()
     doc_change = [c for c in ctx.causes if isinstance(c, dict) and str(c.get("type", "")).startswith("document.") and (not ev_classes or (c.get("payload") or {}).get("doc_class") in ev_classes)]
+    # 사업부서가 수행방안의 영업점 참고를 켜거나 껐다 — 영업점 서술의 근거(수행방안 · 연결 분석)가 바뀐 것이라 문서 변경과 같이 다시 쓴다
+    from nhdip.views.plan_share import SHARE_EVENTS, is_branch_outputs
+
+    share_change = [c for c in ctx.causes if isinstance(c, dict) and c.get("type") in SHARE_EVENTS] if is_branch_outputs(ctx.workflow.outputs) else []
     if "schedule" in types and pol.get("refresh_on_schedule"):
         full.append("schedule")
     changes = ctx.state.get("changes") or []
@@ -297,6 +301,8 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             why[tid] = f"전체 갱신({', '.join(sorted(set(full)))})"
         elif doc_change:
             why[tid] = f"근거 문서 변경 {len(doc_change)}건"
+        elif share_change:
+            why[tid] = f"사업부서 수행방안 영업점 참고 변경 {len(share_change)}건"
         elif hit:
             why[tid] = f"수치 변화: {', '.join(hit[:5])}"
         elif data_changed and pol.get("narrate_on_data_change", True) and not ins.get("figures"):

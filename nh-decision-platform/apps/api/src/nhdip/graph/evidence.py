@@ -46,13 +46,16 @@ def _user_orgs(session: Session, user: AppUser | None) -> set[str] | None:
     return {o.code for o in org_chain(session, user.org_code)}
 
 
-def doc_visible(session: Session, user: AppUser | None, doc_code: str, meta: dict[str, Any] | None) -> tuple[bool, str | None]:
-    """문서 등급 검증 — 목록 · 검색 · 원본 열람 3지점 공통 (8.4.2)."""
+def doc_visible(session: Session, user: AppUser | None, doc_code: str, meta: dict[str, Any] | None, grant: Any = None) -> tuple[bool, str | None]:
+    """문서 등급 검증 — 목록 · 검색 · 원본 열람 3지점 공통 (8.4.2).
+    grant = 영업점 공통으로 열린 문서 코드(영업점 참고 수행방안의 연결 근거 — views.plan_share.branch_grant). 그 문서는 부서한정이어도 연다."""
     access = (meta or {}).get("accessClass", "internal")
     if access != "dept_only":
         return True, None
     orgs = _user_orgs(session, user)
     if orgs is None:
+        return True, None
+    if grant and doc_code in grant:
         return True, None
     owners_s = session.get(Setting, "docs.owner_orgs")
     owners = set(((owners_s.value if owners_s else {}) or {}).get(doc_code, []))
@@ -92,6 +95,7 @@ def rank_evidence(
     doc_classes: list[str] | None = None,
     doc_filter: dict[str, list[int]] | None = None,
     query_terms: int = 0,
+    grant_docs: Any = None,
 ) -> dict[str, Any]:
     pol = policy(session)
     docs = _doc_rows(session, hits)
@@ -101,7 +105,7 @@ def rank_evidence(
         d = docs.get((h["origin"], h["document_id"]))
         meta = (d.meta if d else {}) or {}
         reason = None
-        ok, why = doc_visible(session, user, d.doc_code if d else "", meta)
+        ok, why = doc_visible(session, user, d.doc_code if d else "", meta, grant=grant_docs)
         if not ok:
             reason = ("permission", why)
         elif domain and meta.get("domainLabels") and domain not in meta["domainLabels"] and "전행" not in meta["domainLabels"]:

@@ -194,15 +194,29 @@ def to_template(key: str, payload: Any, bindings: Iterable[dict[str, Any]] = ())
     for b in bindings:
         if b.get("artifact_key") != key:
             continue
-        for parent, fld in binding_targets(p, b["path"]):
-            try:
-                obj = get_parent(p, parent)
-            except (KeyError, IndexError, ValueError, TypeError):
-                continue
-            cur = obj.get(fld) if isinstance(obj, dict) else None
-            obj[fld] = "" if fld == "note" else ([] if isinstance(cur, list) or cur is None else ({} if isinstance(cur, dict) else None))
+        clear_binding(p, b["path"])
     render_templates(p, {}, None, protect=False)
     return p
+
+
+def clear_binding(p: Any, path: str) -> bool:
+    """바인딩이 채우는 표 · 차트 · 계열을 비운다(값 없는 틀과 같게) — 입력 자료가 지워져 계산할 것이 없을 때. 바뀌었으면 True."""
+    changed = False
+    for parent, fld in binding_targets(p, path):
+        try:
+            obj = get_parent(p, parent)
+        except (KeyError, IndexError, ValueError, TypeError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        cur = obj.get(fld)
+        empty = "" if fld == "note" else ([] if isinstance(cur, list) or cur is None else ({} if isinstance(cur, dict) else None))
+        if cur != empty or obj.get("stale"):
+            obj[fld] = empty
+            obj.pop("stale", None)
+            obj.pop("staleReason", None)
+            changed = True
+    return changed
 
 
 # ═════════════════════════ 서식 문구 렌더 ═════════════════════════

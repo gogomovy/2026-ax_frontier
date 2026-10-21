@@ -17,14 +17,20 @@ import type { AnalysisTab, DefaultRateSeries, DefaultRateTrend, Figure, Insight,
 /* ── 상태(심각도) 규칙 — 이 화면의 색 · 글자는 모두 여기서 ─────────────
  * 정상 < 관찰 < 주의 < 긴급. 판정은 태그로, 상태 색 글자는 '주의 이상'(문제 값)에만. */
 const SEV_ORDER: Severity[] = ["info", "watch", "caution", "critical"];
-const sevRank = (s: Severity) => SEV_ORDER.indexOf(s);
-const isProblem = (s: Severity) => sevRank(s) >= sevRank("caution");
+/** 판정 없음(null) — 아직 자료로 계산되지 않은 틀. 가장 낮은 순위 · 문제 아님 · 태그 대신 '–' */
+const sevRank = (s: Severity | null) => (s ? SEV_ORDER.indexOf(s) : -1);
+const isProblem = (s: Severity | null) => sevRank(s) >= sevRank("caution");
 const SEV: Record<Severity, { tag: Tone; text: string }> = {
   info: { tag: "neutral", text: "" },
   watch: { tag: "attention", text: "" },
   caution: { tag: "attention", text: "!text-attention" },
   critical: { tag: "critical", text: "!text-critical" },
 };
+/** 판정 태그 — 판정이 없으면(계산 전 틀) '–' (예전에는 없는 판정을 표에서 찾다가 화면 전체가 오류로 멈췄다) */
+function SevTag({ severity }: { severity: Severity | null }) {
+  if (!severity) return <span className="text-[12px] text-steel" aria-label="판정 없음">{NO_VALUE}</span>;
+  return <Tag tone={SEV[severity].tag}>{SEVERITY_TEXT[severity]}</Tag>;
+}
 /** 모형 판정 → 상태 표시 (적정은 무채색 · 조건부 적정 주의 · 미흡/재개발 긴급) */
 const MODEL_MARK: Record<Severity, MarkTone | null> = { info: null, watch: "attention", caution: "critical", critical: "critical" };
 /** 기준 이탈 점 색 — 판정 태그 색과 같다 */
@@ -156,7 +162,7 @@ export function RiskOverview({
     });
   };
   /** 전월 대비 색 — 오른 경우에만 상태색(주의 이상), 내렸거나 같으면 중립 (on: 강조 줄의 중립은 진한 글자) */
-  const momTone = (s: DefaultRateSeries, on = true) => ((momOf(s).value ?? 0) > 0 && SEV[s.severity].text) || (on ? "!text-ink-deep" : "!text-steel");
+  const momTone = (s: DefaultRateSeries, on = true) => ((momOf(s).value ?? 0) > 0 && s.severity && SEV[s.severity].text) || (on ? "!text-ink-deep" : "!text-steel");
 
   /* ── 가장 시급한 규모 = 상태가 가장 높고, 같으면 상승폭이 큰 규모 ── */
   const ranked = useMemo(
@@ -332,7 +338,7 @@ export function RiskOverview({
                         <Spark values={s.points.map((p) => p.value)} color={on ? "var(--color-primary)" : "var(--color-icon)"} label={`${s.label} 부도율 ${s.points.length}개월 추이`} />
                       </span>
                       <span role="cell" className="relative">
-                        <Tag tone={SEV[s.severity].tag}>{SEVERITY_TEXT[s.severity]}</Tag>
+                        <SevTag severity={s.severity} />
                       </span>
                       <span role="cell" aria-hidden="true" className="relative flex justify-end text-icon">
                         <IconChevron />
@@ -358,7 +364,7 @@ export function RiskOverview({
                 {/* 사용자 결정: 상세 패널의 '분석 결과 보기' 버튼은 두지 않는다 (아래 '관련 분석 결과' 줄과 하단 '다음 단계'로 이동) */}
                 <div className="flex min-w-0 items-center gap-2.5">
                   <h2 className="truncate text-[18px] font-bold leading-[1.25] text-ink-deep">{sel.label} 부도율</h2>
-                  <Tag tone={SEV[sel.severity].tag}>{SEVERITY_TEXT[sel.severity]}</Tag>
+                  <SevTag severity={sel.severity} />
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">

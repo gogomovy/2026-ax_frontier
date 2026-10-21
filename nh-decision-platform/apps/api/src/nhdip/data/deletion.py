@@ -138,11 +138,13 @@ def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor
     was_current = bool(v.is_current)
     n_rows = session.execute(delete(t.row).where(t.row.version_id == v.id)).rowcount or 0
     promoted = None
+    owners = {v.owner_org}  # 지운 판의 소유 팀 + 대신 현재가 되는 판의 소유 팀 — 두 팀 흐름이 모두 다시 돈다
     if was_current:
         nxt = _promote_candidate(session, ds, v)
         if nxt is not None:
             nxt.is_current, nxt.status, nxt.committed_at = True, "committed", utcnow()
             promoted = {"id": nxt.id, "version": nxt.version}
+            owners.add(nxt.owner_org)
     now = utcnow()
     marker = {"at": now.isoformat(), "by": actor, "reason": why}
     files = [p for p in [v.file_path] if p]
@@ -154,7 +156,8 @@ def delete_dataset_version(session: Session, ds: Dataset, version_id: int, actor
         task = _task(session, "neo4j", "dataset_version", ref, {"label": "DatasetVersion", "key": f"{ds.code}:v{v.version}", "dataset": ds.code, "version": v.version}, actor)
         # 이 자료로 만든 지난 산출물 세대 — 관련 워크플로우가 삭제 뒤 한 번 다시 끝난 뒤에 지운다(그 전에는 낡은 현재 세대가 지난 세대로 다시 남는다). 대상이 달라 참조를 구분
         hist = _task(session, "pg", "artifact_history", f"{ref}#history", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "after": now.isoformat()}, actor)
-        ev = emit(session, "dataset.deleted", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "promoted_version": promoted["version"] if promoted else None, "rows": int(n_rows)}, actor)
+        ev = emit(session, "dataset.deleted", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "promoted_version": promoted["version"] if promoted else None, "rows": int(n_rows),
+                                               **({"owner_orgs": sorted(o for o in owners if o)} if any(owners) else {}), **({"common": True} if getattr(ds, "common", False) else {})}, actor)
         session.flush()
         res.purge_ids, res.event_id = [task.id, hist.id], ev.id
         # 이 자료로 적재한 정의서 표(mart.*) 행 · 대조 결과 — 바로 지운다(다시 계산하면 남은 자료로 다시 적재). 적재는 같은 기준월만 바꿔 넣어 지운 판의 기준월 행이 남는다
@@ -252,11 +255,14 @@ def delete_document(session: Session, origin: str, document_id: int, actor: str,
         .values(is_current=False, status=DELETED, text="", extraction={}, file_path=None, deleted_at=now, deleted_by=actor, delete_reason=why)
     )
     promoted = None
+    # 지운 문서(현재 판)의 소유 팀 + 대신 현재가 되는 판의 소유 팀 — 위 일괄 갱신이 is_current 를 바꿨으므로 미리 잡은 current_ids 로
+    owners = {x.owner_org for x in targets if x.id in current_ids}
     if was_current:
         nxt = _doc_promote_candidate(session, origin, d.doc_code, set(ids))
         if nxt is not None:
             nxt.is_current = True
             promoted = {"id": nxt.id, "version": nxt.version}
+            owners.add(nxt.owner_org)
     ref = f"{origin}:{d.doc_code}"
     res = DeleteResult("document", ref, was_current, promoted, {"versions": len(ids), "chunks": int(n_chunks), "issues": int(n_issues)}, files)
     # 본문이 복사돼 남은 곳 — 호출 기록 · 노드 입출력의 내용, 산출물의 근거 조각(새 세대로 게시 · 색인 갱신), 그 조각이 든 옛 세대 (같은 트랜잭션)
@@ -270,7 +276,8 @@ def delete_document(session: Session, origin: str, document_id: int, actor: str,
         if promoted is None:
             # 문서 노드(키 = 출처:문서코드)와 이 문서에서만 나온 추출 개체 — 같은 코드로 다시 올리면 건너뛴다
             tasks.append(_task(session, "neo4j", "document", ref, {"label": "Document", "key": ref, "origin": origin, "doc_code": d.doc_code, "src_refs": [f"{origin}.document({i})" for i in ids]}, actor))
-        ev = emit(session, "document.deleted", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "versions": [x.version for x in targets], "promoted_id": promoted["id"] if promoted else None}, actor)
+        ev = emit(session, "document.deleted", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "versions": [x.version for x in targets], "promoted_id": promoted["id"] if promoted else None,
+                                                **({"owner_orgs": sorted(o for o in owners if o)} if any(owners) else {})}, actor)
         session.flush()
         res.purge_ids, res.event_id = [x.id for x in tasks], ev.id
     audit(session, actor, "admin.document.delete", "document", f"{origin}:{d.doc_code}", {"versions": [x.version for x in targets], "was_current": was_current, "promoted": promoted, "chunks": int(n_chunks), "reason": why, "via": via, "scrubbed": res.scrubbed}, ip)

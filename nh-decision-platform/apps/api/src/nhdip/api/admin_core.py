@@ -4,9 +4,9 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from nhdip.db import get_session
@@ -100,20 +100,72 @@ class UserPatch(BaseModel):
     data_steward: bool | None = None
     # 데이터 관리자 지정 (Phase J · DEL-01 · Q143) — 업로드 자료 삭제 권한. 데이터 관리자만 바꿀 수 있다
     data_admin: bool | None = None
+    # 관리자가 정한 업무 소속을 풀고 인사(.dat) 사무소 기준으로 되돌린다
+    follow_hr: bool | None = None
 
 
 class PasswordReset(BaseModel):
     password: str
 
 
+USER_TABS = ("pending", "active", "locked", "disabled", "all")
+USER_PAGE_MAX = 200
+
+
+def like_pattern(q: str) -> str:
+    """부분 일치 LIKE 패턴 — 사용자가 친 % · _ · \\ 는 글자 그대로 찾는다(escape='\\')."""
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
 @router.get("/users")
-def users(status: str | None = None, session: Session = Depends(get_session)):
-    q = select(AppUser).order_by(AppUser.status != "pending", AppUser.created_at.desc())
-    if status:
-        q = q.where(AppUser.status == status)
-    return [{**user_json(session, u), "failedCount": u.failed_count, "createdAt": _iso(u.created_at), "approvedBy": u.approved_by, "approvedAt": _iso(u.approved_at),
-             # 인사 동기화 사번의 사번 · 비밀번호 로그인 신청 (Phase R — 가입 화면)
-             "passwordRequestAt": ((u.hr or {}).get(PW_REQUEST) or {}).get("at")} for u in session.execute(q).scalars()]
+def users(
+    status: str = "all",
+    q: str = "",
+    org: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=USER_PAGE_MAX),
+    session: Session = Depends(get_session),
+):
+    """사용자 목록 (ADM-02) — 인사 동기화로 수천 명이 되어도 화면이 멈추지 않게 서버에서 걸러 한 쪽씩 돌려준다.
+    status: pending(가입 승인 대기 + 인사 동기화 사번의 비밀번호 로그인 신청) · active · locked · disabled · all
+    q: 사번 · 이름 · 소속 조직 이름 부분 일치, org: 그 조직과 하위 조직 소속만.
+    counts 는 같은 검색 조건의 탭별 건수(탭 숫자), 쪽 번호가 끝을 넘으면 마지막 쪽을 돌려준다(승인으로 목록이 줄어든 뒤)."""
+    from nhdip.affiliation import assigned_of
+    from nhdip.orgs import OrgIndex, type_labels, warm_chains
+
+    if status not in USER_TABS:
+        raise HTTPException(422, f"status 는 {' | '.join(USER_TABS)}")
+    q = q.strip()[:50]
+    pw = AppUser.hr.has_key(PW_REQUEST)
+    conds: list[Any] = []
+    if q:
+        pat = like_pattern(q)
+        conds.append(or_(
+            AppUser.emp_no.ilike(pat, escape="\\"),
+            AppUser.name.ilike(pat, escape="\\"),
+            AppUser.org_code.in_(select(OrgUnit.code).where(OrgUnit.name.ilike(pat, escape="\\"))),
+        ))
+    if org:
+        conds.append(AppUser.org_code.in_(OrgIndex.load(session).subtree(org) or {org}))
+    by_status = dict(session.execute(select(AppUser.status, func.count()).where(*conds).group_by(AppUser.status)).all())
+    pw_active = session.execute(select(func.count()).select_from(AppUser).where(*conds, pw, AppUser.status != "pending")).scalar() or 0
+    counts = {"pending": int(by_status.get("pending", 0)) + int(pw_active), **{k: int(by_status.get(k, 0)) for k in ("active", "locked", "disabled")}, "all": int(sum(by_status.values()))}
+    tab = {"pending": or_(AppUser.status == "pending", pw), "all": None}.get(status, AppUser.status == status)
+    where = [*conds, *([tab] if tab is not None else [])]
+    total = counts[status]
+    page = min(page, max(1, -(-total // size)))
+    rows = session.execute(
+        select(AppUser).where(*where).order_by(AppUser.status != "pending", AppUser.created_at.desc(), AppUser.emp_no).offset((page - 1) * size).limit(size)
+    ).scalars().all()
+    _kept = warm_chains(session, {u.org_code for u in rows})  # 소속 경로 · 책임자 범위를 사용자마다 따로 읽지 않게
+    labels = type_labels(session)
+    items = [{**user_json(session, u, labels), "failedCount": u.failed_count, "createdAt": _iso(u.created_at), "approvedBy": u.approved_by, "approvedAt": _iso(u.approved_at),
+              # 인사 동기화 사번의 사번 · 비밀번호 로그인 신청 (Phase R — 가입 화면)
+              "passwordRequestAt": ((u.hr or {}).get(PW_REQUEST) or {}).get("at"),
+              # 관리자가 정한 업무 소속(인사 동기화가 되돌리지 않음) · 인사 사무소(다를 때 보여 준다)
+              "orgAssigned": assigned_of(u),
+              "hrOffice": {"code": (u.hr or {}).get("officeCode"), "name": (u.hr or {}).get("officeName")} if (u.hr or {}).get("officeCode") else None} for u in rows]
+    return {"items": items, "total": total, "page": page, "size": size, "counts": counts, "status": status, "q": q, "org": org}
 
 
 def _user(session: Session, emp: str) -> AppUser:
@@ -128,11 +180,92 @@ def _revoke(session: Session, emp: str) -> None:
         us.revoked_at = utcnow()
 
 
+# ── 업무 소속 (가입 승인 때 관리자가 정한다) ─────────────────────
+class UserActionIn(BaseModel):
+    # 승인할 때 정한 업무 소속(조직 코드) — 비우면 신청한 소속 그대로
+    org_code: str | None = None
+
+
+def _active_org(session: Session, code: str) -> OrgUnit:
+    org = session.get(OrgUnit, code)
+    if org is None or not org.active:
+        raise HTTPException(422, f"없는 조직이거나 쓰지 않는 조직입니다: {code}")
+    return org
+
+
+def _org_preview(session: Session, aff: Any, code: str | None) -> dict[str, Any] | None:
+    """그 조직 소속이면 — 영역 · 첫 화면 · 볼 수 있는 업무 화면(상위 조직 권한 상속 · 화면 제외 유형 포함, deps.user_screen_codes 와 같은 판정)."""
+    from types import SimpleNamespace
+
+    from .deps import user_screen_codes
+
+    if not code or aff.option(code) is None:
+        return None
+    codes = user_screen_codes(session, SimpleNamespace(role="user", org_code=code))  # type: ignore[arg-type]
+    rows = session.execute(select(Screen).where(Screen.code.in_(codes), Screen.kind.in_(["flow", "reference"])).order_by(Screen.sort)).scalars().all() if codes else []
+    home = next((s for s in rows if s.kind == "flow"), rows[0] if rows else None)
+    return {"org": aff.option(code), "affiliation": aff.classify(code), "home": {"path": home.path, "label": home.label} if home else None,
+            "screens": [{"code": s.code, "label": s.label, "section": s.section} for s in rows]}
+
+
+@router.get("/users/affiliations")
+def affiliations(session: Session = Depends(get_session)):
+    """업무 소속 영역 — 종합기획부 · 사업부서(설정 ui.scopes) · 영업본부(지역본부 유형) · 영업점(영업점 유형, 검색). 승인 대화상자의 선택지."""
+    from nhdip.affiliation import Affiliation
+
+    return {"groups": Affiliation(session).groups()}
+
+
+@router.get("/users/{emp}/affiliation")
+def user_affiliation(emp: str, org: str | None = None, session: Session = Depends(get_session)):
+    """승인 · 소속 지정 미리보기 — 신청 소속 · 인사 사무소 · 추천 단위(신청 소속 경로에서 처음 맞는 영역 단위) ·
+    org(또는 추천 · 신청 소속)으로 정하면 보게 될 첫 화면과 업무 화면."""
+    from nhdip.affiliation import Affiliation, assigned_of, hr_office
+
+    u = _user(session, emp)
+    aff = Affiliation(session)
+    suggested = aff.classify(u.org_code)
+    if suggested:
+        suggested["org"] = aff.option(suggested["code"])
+    office = hr_office(u, aff.idx) if (u.source or "local") == "dat" else None
+    target = org or (suggested or {}).get("code") or u.org_code
+    return {"empNo": u.emp_no, "current": aff.option(u.org_code), "hrOffice": aff.option(office) if office else None, "assigned": assigned_of(u),
+            "suggested": suggested, "preview": _org_preview(session, aff, target)}
+
+
+@router.post("/users/{emp}/password")
+def user_password(emp: str, body: PasswordReset, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    # 아래 /users/{emp}/{action} 보다 먼저 둔다 — 뒤에 두면 'password' 가 작업 이름으로 잡혀 404 가 났다
+    u = _user(session, emp)
+    err = password_policy_error(body.password)
+    if err:
+        raise HTTPException(422, err)
+    u.password_hash = hash_password(body.password)
+    u.failed_count = 0
+    if u.status == "locked":
+        u.status = "active"
+    if (u.hr or {}).get(PW_REQUEST):  # 관리자가 직접 비밀번호를 정하면 신청은 끝난 것으로
+        u.hr = {k: v for k, v in u.hr.items() if k != PW_REQUEST}
+    _revoke(session, emp)
+    audit(session, admin.emp_no, "admin.user.password_reset", "user", emp, None, client_ip(request))
+    session.commit()
+    return {"ok": True}
+
+
 @router.post("/users/{emp}/{action}")
-def user_action(emp: str, action: str, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+def user_action(emp: str, action: str, request: Request, body: UserActionIn | None = None, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    from nhdip.affiliation import assign
+
     u = _user(session, emp)
     if emp == admin.emp_no and action in ("disable", "reject"):
         raise HTTPException(400, "본인 계정은 중지할 수 없습니다")
+    org_code = (body.org_code or "").strip() if body else ""
+    if org_code and action != "approve":
+        raise HTTPException(422, "소속은 승인할 때만 함께 정합니다(그 밖에는 소속 변경)")
+    moved = None
+    if org_code:
+        _active_org(session, org_code)
+        moved = assign(u, org_code, admin.emp_no)  # 관리자가 정한 소속 — 인사 동기화가 되돌리지 않는다
     if action in ("approve", "reject") and (u.hr or {}).get(PW_REQUEST):
         # 인사 동기화 사번의 비밀번호 로그인 신청 — 계정 상태(사내 SSO)는 그대로, 비밀번호만 승인 · 반려
         hr = {k: v for k, v in (u.hr or {}).items() if k != PW_REQUEST}
@@ -141,7 +274,7 @@ def user_action(emp: str, action: str, request: Request, session: Session = Depe
         else:
             u.password_hash, u.failed_count = "", 0
         u.hr = hr
-        audit(session, admin.emp_no, f"admin.user.password_{action}", "user", emp, None, client_ip(request))
+        audit(session, admin.emp_no, f"admin.user.password_{action}", "user", emp, {"org": moved} if moved else None, client_ip(request))
         session.commit()
         return user_json(session, u)
     if action == "approve":
@@ -157,7 +290,7 @@ def user_action(emp: str, action: str, request: Request, session: Session = Depe
         _revoke(session, emp)
     else:
         raise HTTPException(404, "알 수 없는 작업")
-    audit(session, admin.emp_no, f"admin.user.{action}", "user", emp, None, client_ip(request))
+    audit(session, admin.emp_no, f"admin.user.{action}", "user", emp, {"org": moved} if moved else None, client_ip(request))
     session.commit()
     return user_json(session, u)
 
@@ -191,29 +324,25 @@ def user_patch(emp: str, body: UserPatch, request: Request, session: Session = D
     if patch.get("role") == "user" and u.data_admin:
         _check_data_admin_change(session, admin, u, False, "user")
         patch["data_admin"] = False  # 관리자 권한을 회수하면 데이터 관리자 지정도 함께 해제
+    from nhdip.affiliation import assign, follow_hr
+    from nhdip.orgs import OrgIndex
+
+    follow = patch.pop("follow_hr", False)
+    if "org_code" in patch and follow:
+        raise HTTPException(422, "소속 지정과 '인사 기준으로'는 함께 쓸 수 없습니다")
+    if "org_code" in patch:
+        code = patch.pop("org_code")
+        _active_org(session, code)
+        if code != u.org_code or not (u.hr or {}).get("orgAssigned"):
+            patch["org"] = assign(u, code, admin.emp_no)  # 관리자가 정한 소속 — 인사 동기화가 되돌리지 않는다
+    if follow:
+        patch["org"] = follow_hr(u, OrgIndex.load(session)) or {"followHr": True}
     for k, v in patch.items():
-        setattr(u, k, v)
+        if k != "org":
+            setattr(u, k, v)
     audit(session, admin.emp_no, "admin.user.update", "user", emp, patch, client_ip(request))
     session.commit()
     return user_json(session, u)
-
-
-@router.post("/users/{emp}/password")
-def user_password(emp: str, body: PasswordReset, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
-    u = _user(session, emp)
-    err = password_policy_error(body.password)
-    if err:
-        raise HTTPException(422, err)
-    u.password_hash = hash_password(body.password)
-    u.failed_count = 0
-    if u.status == "locked":
-        u.status = "active"
-    if (u.hr or {}).get(PW_REQUEST):  # 관리자가 직접 비밀번호를 정하면 신청은 끝난 것으로
-        u.hr = {k: v for k, v in u.hr.items() if k != PW_REQUEST}
-    _revoke(session, emp)
-    audit(session, admin.emp_no, "admin.user.password_reset", "user", emp, None, client_ip(request))
-    session.commit()
-    return {"ok": True}
 
 
 # ═════════════════════════ 조직 ═════════════════════════
@@ -247,6 +376,31 @@ def orgs(session: Session = Depends(get_session)):
     }
 
 
+@router.get("/orgs/lookup")
+def org_lookup(
+    q: str = "",
+    types: str = "",
+    exclude: str | None = None,
+    codes: str = "",
+    inactive: bool = False,
+    limit: int = Query(30, ge=1, le=100),
+    session: Session = Depends(get_session),
+):
+    """조직 검색 — 검색형 조직 선택 상자(사용자 소속 · 상위 조직 · 자료 소유 조직)가 쓴다. 전체 목록을 내려보내지 않는다.
+    types=DEPT,REGION(고를 수 있는 유형) · exclude=코드(그 조직과 하위 제외) · codes=A,B(현재 값 표시 정보) · inactive=1(사용 안 함 포함)."""
+    from nhdip.orgs import lookup
+
+    return lookup(
+        session,
+        q[:60],
+        types=[t for t in types.split(",") if t.strip()],
+        exclude=exclude or None,
+        codes=[c.strip() for c in codes.split(",") if c.strip()][:100],
+        active_only=not inactive,
+        limit=limit,
+    )
+
+
 @router.post("/orgs", status_code=201)
 def org_create(body: OrgIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     from nhdip.orgs import OrgError, recompute_levels, validate_parent
@@ -278,10 +432,14 @@ def org_patch(code: str, body: OrgPatch, request: Request, session: Session = De
             validate_parent(session, patch.get("unit_type", o.unit_type) or "", patch.get("parent_code", o.parent_code), self_code=code)
         except OrgError as exc:
             raise HTTPException(422, str(exc)) from exc
+    before = o.parent_code
     for k, v in patch.items():
         setattr(o, k, v)
     session.flush()
     recompute_levels(session)
+    if "parent_code" in patch and patch["parent_code"] != before:
+        # 조직을 다른 상위로 옮기면 그 아래 팀이 올린 자료의 소속 부서가 바뀐다 — 옮기기 전 · 뒤 상위 부서의 팀 범위 흐름이 다시 돈다(디스패처 org.moved)
+        emit(session, "org.moved", {"code": code, "parent_before": before, "parent_after": patch["parent_code"]}, admin.emp_no)
     audit(session, admin.emp_no, "admin.org.update", "org", code, patch, client_ip(request))
     session.commit()
     return orgs(session)

@@ -1,7 +1,7 @@
 // 백엔드 내부 주소 — docker compose 에서는 http://api:8000 (빌드 인자 + 런타임 환경변수)
 const API_INTERNAL_URL = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 
-// 보안 헤더 (B.32) — 외부 출처는 글꼴 CDN(jsdelivr · Pretendard) 하나뿐이다.
+// 보안 헤더 (B.32) — 외부 출처는 열지 않는다(폐쇄망 · 글꼴도 pretendard 패키지로 앱이 직접 낸다).
 // CSP 는 proxy.ts 가 요청마다 nonce 정책을 붙인다(B.33 · src/lib/csp.ts) — 화면 데이터는 항상 백엔드 API 에서 온다(Phase I).
 const SECURITY_HEADERS = [
   { key: "X-Frame-Options", value: "DENY" },

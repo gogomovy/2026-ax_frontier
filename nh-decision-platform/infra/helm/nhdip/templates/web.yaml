@@ -56,6 +56,9 @@ spec:
               value: {{ .Values.global.timezone | quote }}
             - name: NODE_ENV
               value: production
+            # 폐쇄망 — Next.js 사용 통계 전송 끄기(이미지에도 들어 있지만 배포 설정으로도 고정)
+            - name: NEXT_TELEMETRY_DISABLED
+              value: "1"
             - name: PORT
               value: "3000"
             - name: HOSTNAME

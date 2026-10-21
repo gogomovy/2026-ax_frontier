@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { AdminPage, Card, Check, Loading, Select, Tabs, TextInput, useAction, useApiData } from "@/components/admin/kit";
+import { OrgPicker } from "@/components/admin/OrgPicker";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPut } from "@/lib/api-client";
 import { bandOf, type Band, type Tone } from "@/lib/uiConfig";
@@ -237,7 +238,8 @@ function GoalRolesForm({ meta, reload }: { meta: Meta; reload: () => unknown }) 
 function ScopesForm({ meta, reload }: { meta: Meta; reload: () => unknown }) {
   const [v, setV] = useState<ScopesCfg>(() => clone(meta.values["ui.scopes"] as ScopesCfg));
   const { save, busy } = useSave("ui.scopes", reload);
-  const orgOptions = [{ value: "", label: "조직 없음(영업점 묶음 등)" }, ...meta.orgs.map((o) => ({ value: o.code, label: `${o.name} (${o.code})` }))];
+  // 조직이 수천 곳이어도 단위마다 전체 목록을 그리지 않게 검색형 선택 상자로 — 이름은 양식 정보(meta.orgs)에서
+  const orgName = new Map(meta.orgs.map((o) => [o.code, o.name]));
   const setKind = (kind: string, patch: Partial<ScopesCfg[string]>) => setV((p) => ({ ...p, [kind]: { ...(p[kind] ?? { label: "", units: [] }), ...patch } }));
   return (
     <FormCard title="업무 영역" settingKey="ui.scopes" meta={meta} busy={busy} onSave={() => void save(v)} onReset={() => setV(clone(meta.defaults["ui.scopes"] as ScopesCfg))}>
@@ -262,7 +264,15 @@ function ScopesForm({ meta, reload }: { meta: Meta; reload: () => unknown }) {
               <ul className="mt-sm flex flex-col gap-xs">
                 {spec.units.map((u, i) => (
                   <li key={i} className="flex flex-wrap items-end gap-sm">
-                    <Select label={i === 0 ? "조직" : undefined} ariaLabel={`${kind} ${i + 1}번째 조직`} value={u.org ?? ""} onChange={(x) => setKind(kind, { units: spec.units.map((w, j) => (j === i ? { ...w, org: x || null } : w)) })} options={orgOptions} className="w-[260px]" />
+                    <OrgPicker
+                      label={i === 0 ? "조직" : undefined}
+                      ariaLabel={`${kind} ${i + 1}번째 조직`}
+                      value={u.org ?? ""}
+                      valueLabel={u.org ? orgName.get(u.org) : undefined}
+                      empty="조직 없음(영업점 묶음 등)"
+                      onChange={(x) => setKind(kind, { units: spec.units.map((w, j) => (j === i ? { ...w, org: x || null } : w)) })}
+                      className="w-[260px]"
+                    />
                     <label className="block w-[220px]">
                       {i === 0 ? <span className="mb-1 block text-[12px] font-bold text-charcoal">메뉴 묶음</span> : null}
                       <input

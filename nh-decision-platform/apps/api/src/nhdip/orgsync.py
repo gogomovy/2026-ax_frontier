@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from nhdip.models import AppUser, OrgUnit, Setting, UserSession, utcnow
 
+ASSIGNED = "orgAssigned"  # nhdip.affiliation.ASSIGNED 와 같다 — 관리자가 정한 업무 소속 표지(app_user.hr)
 ORG_MIN_FIELDS = 15
 EMP_MIN_FIELDS = 21
 DEACTIVATE_LIMIT_PCT = 30
@@ -58,6 +59,8 @@ class SyncResult:
     deactivated: int = 0
     reactivated: int = 0
     skipped: int = 0
+    # 관리자가 정한 업무 소속(hr.orgAssigned)을 유지한 사용자 — 사무소와 달라도 소속을 바꾸지 않았다
+    kept_assigned: int = 0
     encoding: str = "utf-8"
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
@@ -74,7 +77,8 @@ class SyncResult:
 
     def json(self) -> dict[str, Any]:
         return {"kind": self.kind, "dryRun": self.dry_run, "totalProcessed": self.total_processed, "matched": self.matched, "inserted": self.inserted, "updated": self.updated,
-                "unchanged": self.unchanged, "deactivated": self.deactivated, "reactivated": self.reactivated, "skipped": self.skipped, "encoding": self.encoding,
+                "unchanged": self.unchanged, "deactivated": self.deactivated, "reactivated": self.reactivated, "skipped": self.skipped, "keptAssigned": self.kept_assigned,
+                "encoding": self.encoding,
                 "errors": self.errors, "warnings": self.warnings}
 
 
@@ -406,8 +410,12 @@ def sync_employees(session: Session, content: bytes, *, dry_run: bool = False) -
                 res.inserted += 1
                 continue
             before = (u.name, u.org_code, u.position, u.status)
-            # 동기화 필드만 — 역할 · 데이터 책임자 · 데이터 관리자 · 비밀번호는 그대로
-            u.name, u.org_code, u.position = name[:50], org.code, position
+            # 동기화 필드만 — 역할 · 데이터 책임자 · 데이터 관리자 · 비밀번호는 그대로.
+            # 관리자가 승인 · 사용자 화면에서 정한 업무 소속(hr.orgAssigned)은 사무소 기준으로 되돌리지 않는다(인사 정보는 hr 에 갱신)
+            keep = isinstance((u.hr or {}).get(ASSIGNED), dict) and u.org_code in orgs
+            if keep and u.org_code != org.code:
+                res.kept_assigned += 1
+            u.name, u.org_code, u.position = name[:50], (u.org_code if keep else org.code), position
             u.hr = {**{k: v for k, v in (u.hr or {}).items() if k != "deactivatedBySync"}, **hr}
             if u.source == "local" and not u.password_hash:
                 u.source = "dat"
@@ -419,6 +427,8 @@ def sync_employees(session: Session, content: bytes, *, dry_run: bool = False) -
             res.updated += int(changed)
             res.unchanged += int(not changed)
         session.flush()
+        if res.kept_assigned:
+            res.warn(f"관리자가 정한 업무 소속을 유지한 사용자 {res.kept_assigned}명 — 인사 사무소와 다릅니다([사용자]에서 '인사 기준으로'를 누르면 사무소로 되돌립니다)")
         # 비활성화 — 파일 전체(필터 전)에 없는 dat 사용자. 관리자 · 영문 포함(외부 직원) 사번 제외 · 30% 안전장치 (가이드 3-6)
         if all_ids:
             live = [u for u in users.values() if u.source == "dat" and u.status == "active"]

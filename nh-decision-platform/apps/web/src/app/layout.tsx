@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+// 글꼴 — 외부 CDN 대신 패키지에서(빌드가 woff2 를 /_next/static/media 로 복사, 글자 범위별로 필요한 조각만 받는다)
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 import { UiProvider } from "@/components/providers/UiProvider";
 import { GoalStateProvider } from "@/components/providers/GoalStateProvider";

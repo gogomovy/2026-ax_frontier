@@ -15,7 +15,8 @@ from nhdip.models import AgentDecision, Dataset, Job, Workflow, WorkflowRun, Wor
 
 EVENT_LABEL = {"goal.confirmed": "경영목표 확정 · 수정", "contract.changed": "정의서 변경", "change.detected": "변화 감지", "kb.indexed": "지식 색인"}
 CAUSE_LABEL = {"manual": "수동 실행", "schedule": "정기 실행", "agent.followup": "플래너 후속 실행", "change.detected": "다른 흐름 변화 감지", "metrics.changed": "상위 흐름 결과 변화",
-               "rule.changed": "판정 규칙 변경", "config.changed": "정의 · 설정 변경", "goal.confirmed": "경영목표 확정", "contract.changed": "정의서 변경"}
+               "rule.changed": "판정 규칙 변경", "config.changed": "정의 · 설정 변경", "goal.confirmed": "경영목표 확정", "contract.changed": "정의서 변경",
+               "dataset.owner_changed": "자료 소유 변경", "document.owner_changed": "문서 소유 변경", "org.moved": "조직 이동"}
 DAYS = {"*": "매일", "1-5": "평일", "0,6": "주말", "6,0": "주말", "0": "일요일", "1": "월요일", "2": "화요일", "3": "수요일", "4": "목요일", "5": "금요일", "6": "토요일"}
 
 

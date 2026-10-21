@@ -53,6 +53,11 @@ spec:
               value: {{ .Values.neo4j.heapMax | quote }}
             - name: NEO4J_server_memory_pagecache_size
               value: {{ .Values.neo4j.pageCache | quote }}
+            # 폐쇄망 — 사용 통계 전송(dbms.usage_report.enabled, 기본 켜짐) · Neo4j Browser 의 외부 접속(가이드 · 업데이트 확인)을 끈다
+            - name: NEO4J_dbms_usage__report_enabled
+              value: "false"
+            - name: NEO4J_browser_allow__outgoing__connections
+              value: "false"
           ports:
             - containerPort: 7687
               name: bolt

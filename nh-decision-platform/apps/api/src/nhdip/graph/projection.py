@@ -16,6 +16,7 @@ from nhdip.data.datasets import current_rows, current_versions
 from nhdip.models import Dataset, KbChunk, Metric, OntologySchema, Workflow, WorkflowTrigger, source
 
 from .neo4j_client import run, safe_name
+from .schema import PLATFORM_CLASSES, PLATFORM_RELS
 
 
 def active_schema(session: Session) -> OntologySchema | None:
@@ -133,10 +134,10 @@ def project_all(session: Session) -> dict[str, Any]:
     schema = active_schema(session)
     if not schema:
         raise RuntimeError("활성 온톨로지 스키마가 없습니다")
-    labels = {c["label"] for c in schema.classes}
+    labels = {c["label"] for c in schema.classes} | PLATFORM_CLASSES
     ensure_constraints(labels)
     if not has_uploaded_data(session):
-        empty = Batch(schema.version, int(time.time() * 1000), labels, {r["type"] for r in schema.relations})
+        empty = Batch(schema.version, int(time.time() * 1000), labels, {r["type"] for r in schema.relations} | PLATFORM_RELS)
         stats = empty.flush()  # 이번 세대에 아무것도 없으니 관리 노드 · 관계가 모두 정리된다
         return {**stats, "artifact_mentions": 0, "documents": 0, "generation": empty.gen, "schema_version": schema.version, "rejected": [], "skipped": "올린 자료 없음 — 그래프를 비워 둠"}
     b = collect_graph(session, schema)
@@ -149,8 +150,8 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
     schema = schema or active_schema(session)
     if not schema:
         raise RuntimeError("활성 온톨로지 스키마가 없습니다")
-    labels = {c["label"] for c in schema.classes}
-    rels = {r["type"] for r in schema.relations}
+    labels = {c["label"] for c in schema.classes} | PLATFORM_CLASSES
+    rels = {r["type"] for r in schema.relations} | PLATFORM_RELS
     gen = int(time.time() * 1000)
     b = Batch(schema.version, gen, labels, rels)
     if not has_uploaded_data(session):
@@ -359,6 +360,10 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
         b.rel("MENTIONS", "Artifact", skey, label, concept, src_ref=f"app.kb_chunk({skey})")
         n_mentions += 1
     b.counts = {**b.counts, "artifact_mentions": n_mentions, "documents": n_docs}
+    # 5) 영업점 공통 — 수행방안 '영업점 참고' → 연결 보고서 · 근거 문서 · 데이터셋 (온톨로지 연결, 권한은 SQL · ES 규칙)
+    n_plans = project_shared_plans(session, b, set(rows_by_ds))
+    if n_plans:
+        b.counts["shared_plans"] = n_plans
     # 화면용 — 산출물 키 대신 화면 제목(색인 청크의 artifactTitle). Neo4j 노드 이름은 그대로(키)
     titles: dict[str, str] = {}
     for skey, title in session.execute(select(KbChunk.source_key, KbChunk.meta["artifactTitle"].astext).distinct()).all():
@@ -373,6 +378,40 @@ def collect_graph(session: Session, schema: OntologySchema | None = None) -> Bat
                 office = f" · {key.split('@', 1)[1]}" if "@" in key else ""
                 b.meta.setdefault(("Artifact", key), {})["title"] = f"{t}{office}"[:120]
     return b
+
+
+def project_shared_plans(session: Session, b: Batch, datasets_with_rows: set[str]) -> int:
+    """영업점 참고 수행방안(Plan, scope=branch_common) → 연결 보고서(LINKED_TO Artifact) · 근거 문서(EVIDENCED_BY Document) ·
+    계산 데이터셋(USES_DATA Dataset). 연결은 지금 원장 기준(views.plan_share.branch_grant) — 사업부서가 다시 계산하면 다음 투영에 따라온다.
+    끝점이 이번 투영에 없는 문서 · 데이터셋은 잇지 않는다(끊긴 관계를 만들지 않는다). 실패해도 나머지 투영은 그대로."""
+    import logging
+
+    from nhdip.views.plan_share import branch_grant
+
+    try:
+        with session.begin_nested():
+            g = branch_grant(session)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("영업점 공통 연결 투영 건너뜀: %s", exc, exc_info=True)
+        return 0
+    docs = {k for labels, items in b.nodes.items() if labels[0] == "Document" for k in items}
+    arts = b.nodes.get(("Artifact",), {})
+    for pid, p in g.plans.items():
+        b.node("Plan", pid, {"name": p.get("title") or pid, "owner_org": p.get("ownerOrg"), "tab_key": p.get("tabKey"), "scope": "branch_common"},
+               src_kind="plan", src_ref=f"action_plans({pid})")
+        key = p.get("reportKey")
+        if key:
+            if key not in arts:
+                b.node("Artifact", key, {"name": key}, src_kind="artifact", src_ref=f"app.view_artifact({key})")
+            b.rel("LINKED_TO", "Plan", pid, "Artifact", key, src_ref=f"action_plans({pid})")
+        for code in p.get("docs") or []:
+            for origin in ("bank", "ext"):
+                if f"{origin}:{code}" in docs:
+                    b.rel("EVIDENCED_BY", "Plan", pid, "Document", f"{origin}:{code}", src_ref=f"action_plans({pid})")
+        for code in p.get("datasets") or []:
+            if code in datasets_with_rows:
+                b.rel("USES_DATA", "Plan", pid, "Dataset", code, src_ref=f"action_plans({pid})")
+    return len(g.plans)
 
 
 def impact_of_dataset(code: str) -> list[dict[str, Any]]:

@@ -35,6 +35,14 @@ def partition_clause(session: Session, t: Any, as_of: Any, owner_org: str | None
     return and_(same, or_(t.version.owner_org.is_(None), t.version.owner_org.not_in(branches)))
 
 
+def replaced_owners(session: Session, t: Any, code: str, clause: Any, exclude_id: int | None = None) -> set[str | None]:
+    """구획의 지금 현재 판 소유 조직(None = 전행 공통) — 현재 판이 바뀌기 전에 읽어 이벤트에 싣는다(이전 소유 팀 흐름도 다시 돌게)."""
+    q = select(t.version.owner_org).where(t.version.dataset_code == code, t.version.is_current, clause)
+    if exclude_id is not None:
+        q = q.where(t.version.id != exclude_id)
+    return set(session.execute(q.distinct()).scalars())
+
+
 class IngestError(ValueError):
     pass
 
@@ -498,17 +506,23 @@ def ingest_rows(
         # 같은 기준일 · 소유 구획(partition)의 이전 현재 버전만 교체 — 다른 기준일 · 다른 영업점 자료는 유지
         same = partition_clause(session, t, v.as_of, owner_org)
         # 같은 구획 현재 판과 같은 파일(해시 · 행 수)이면 결과가 바뀌지 않는다 — 이벤트에 표시해 디스패처가 재계산하지 않게 (Phase P · UPV-05 · AGW-02)
+        # 소유가 다르면(같은 파일을 다른 팀 소유로 다시 올림) 같은 판이 아니다 — 팀 범위 결과가 바뀌므로 다시 계산한다
         twin = None
         if file_sha:
             twin = session.execute(
-                select(t.version.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, t.version.is_current, t.version.file_sha256 == file_sha, t.version.row_count == len(rows), same).limit(1)
+                select(t.version.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, t.version.is_current, t.version.file_sha256 == file_sha, t.version.row_count == len(rows),
+                                                t.version.owner_org.is_not_distinct_from(owner_org), same).limit(1)
             ).scalar()
+        # 밀려나는 현재 판의 소유 — 이전 소유 팀 흐름도 다시 돌게(그 팀 범위에서 이 자료가 빠진다)
+        prev = replaced_owners(session, t, ds.code, same, exclude_id=v.id)
         session.execute(update(t.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, same).values(is_current=False))
         v.is_current = True
+        moved = sorted(o for o in prev - {owner_org} if o)
         emit(
             session,
             "dataset.committed",
             {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, "rows": len(rows), **({"owner_org": owner_org} if owner_org else {}),
+             **({"owner_orgs": moved, "owner_changed": True} if prev - {owner_org} else {}),
              **({"common": True} if getattr(ds, "common", False) else {}), **({"unchanged": True, "same_as": twin} if twin is not None else {})},
             actor,
         )
@@ -589,6 +603,7 @@ def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
     if not target or target.dataset_code != ds.code or target.status not in ("committed", "rolled_back"):
         raise IngestError("되돌릴 수 있는 버전이 아닙니다")
     same = partition_clause(session, t, target.as_of, target.owner_org)
+    prev = replaced_owners(session, t, ds.code, same, exclude_id=target.id)
     for cur in session.execute(select(t.version).where(t.version.dataset_code == ds.code, t.version.is_current, same)).scalars():
         cur.is_current = False
         if cur.version > target.version:
@@ -596,9 +611,43 @@ def rollback(session: Session, ds: Dataset, version_id: int, actor: str | None):
     target.is_current = True
     target.status = "committed"
     target.committed_at = utcnow()
-    emit(session, "dataset.committed", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": target.version, "version_id": target.id, "rollback": True}, actor)
+    moved = sorted(o for o in prev - {target.owner_org} if o)
+    emit(session, "dataset.committed", {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": target.version, "version_id": target.id, "rollback": True,
+                                        **({"owner_org": target.owner_org} if target.owner_org else {}), **({"owner_orgs": moved, "owner_changed": True} if prev - {target.owner_org} else {}),
+                                        **({"common": True} if getattr(ds, "common", False) else {})}, actor)
     audit(session, actor, "dataset.rollback", "dataset", ds.code, {"to_version": target.version, "as_of": str(target.as_of) if target.as_of else None})
     return target
+
+
+def change_version_owner(session: Session, ds: Dataset, version_id: int, owner_org: str | None, actor: str) -> dict[str, Any] | None:
+    """올린 판의 소유 조직을 바꾼다(관리자) — 자료가 바뀐 것과 같이 다룬다: 이벤트(dataset.owner_changed)에 이전 · 새 소유를 실어
+    이전 소유 팀 · 새 소유 팀 흐름, 이 자료로 계산하는 흐름이 다시 돌게 한다. 바뀐 것이 없으면 None.
+    공통 통합 DB 자료는 소유 팀이 없다. 영업점 구획이 바뀌어 같은 기준일 현재 판이 둘이 되면 거절한다(다른 판을 몰래 밀어내지 않게)."""
+    from nhdip.locks import lock
+
+    if getattr(ds, "common", False):
+        raise IngestError("공통 통합 DB 자료는 소유 팀 없이 전행 공통입니다 — 공통 통합 DB 를 끈 뒤 바꾸세요")
+    t = source(ds.origin)
+    lock(session, f"ds:{ds.origin}:{ds.code}")
+    v = session.get(t.version, version_id)
+    if v is None or v.dataset_code != ds.code or v.status == "deleted":
+        raise IngestError("바꿀 수 있는 판이 아닙니다")
+    old = v.owner_org
+    if old == owner_org:
+        return None
+    if v.is_current:
+        clash = session.execute(
+            select(t.version.version).where(t.version.dataset_code == ds.code, t.version.is_current, t.version.id != v.id, partition_clause(session, t, v.as_of, owner_org)).limit(1)
+        ).scalar()
+        if clash is not None:
+            raise IngestError(f"그 소유 구획에 같은 기준일 현재 판(v{clash})이 있습니다 — 그 판을 정리한 뒤 바꾸세요")
+    v.owner_org = owner_org
+    payload = {"dataset": ds.code, "origin": ds.origin, "kind": ds.kind, "version": v.version, "version_id": v.id, **({"owner_org": owner_org} if owner_org else {}),
+               "owner_orgs": sorted(o for o in {old} if o), "owner_changed": True, "current": bool(v.is_current)}
+    if v.is_current:
+        emit(session, "dataset.owner_changed", payload, actor)
+    audit(session, actor, "dataset.owner_change", "dataset", ds.code, {"version": v.version, "from": old, "to": owner_org})
+    return {"from": old, "to": owner_org, "event": bool(v.is_current)}
 
 
 def latest_as_of(session: Session) -> str | None:

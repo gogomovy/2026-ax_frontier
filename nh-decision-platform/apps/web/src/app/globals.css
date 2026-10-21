@@ -1,6 +1,6 @@
 @import "../styles/tokens.generated.css";
-/* 폐쇄망 환경에서는 아래 CDN 이 차단되며, 그 경우 system 폰트로 폴백된다. */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+/* 글꼴(Pretendard)은 app/layout.tsx 에서 패키지(pretendard)로 불러 앱과 같은 출처(/_next/static/media)로 낸다 —
+   폐쇄망에서 브라우저가 외부 CDN 을 부르지 않게. 외부 주소를 여기에 다시 넣지 않는다(closedNetwork.test.ts 가 막는다). */
 
 @tailwind base;
 @tailwind components;

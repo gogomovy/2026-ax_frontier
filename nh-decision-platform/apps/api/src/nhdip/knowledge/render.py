@@ -40,6 +40,7 @@ LABELS = {
     "sourceGoalTitle": "원천 경영목표", "metricLabel": "지표", "reqTypeLabel": "요청 유형", "altLabels": "다른 이름", "relatedTerms": "관련 용어", "direction": "방향",
     "targetType": "목표 유형", "path": "경로", "changeType": "변경", "changeSummary": "변경 내용", "itemCode": "항목 코드",
     "reportCode": "리포트 코드", "asOfYm": "기준년월", "quality": "품질 검증", "qualityNote": "품질 메모", "usedBy": "사용처",
+    "analysisFrom": "분석 부서", "linkedDocs": "근거 문서", "linkedData": "연결 데이터",
 }
 NUM_LABELS = {"score": "득점", "max": "배점", "progress": "진행률(%)", "rank": "순위", "rows": "행 수"}
 SKIP_DEFAULT = {
@@ -50,6 +51,7 @@ SKIP_DEFAULT = {
 }
 TITLE_KEYS = ("title", "name", "heading", "caption", "label", "assetClass", "org", "prefLabel")
 DEFAULT_TITLES = {
+    "branch_shared_plans": "영업점 참고 수행방안 · 연결 분석",
     "hq_dashboard": "종합기획부 대시보드", "attentions": "AI Attention 우선순위", "loan_overview": "여신 현황 분석", "comparison_view": "기업 · 가계여신 비교",
     "capital_view": "총자산 · 자본(RWA) 제약", "profitability": "수익성 트래킹", "goals": "경영목표", "proposals": "경영목표 수정 · 신설 제안", "review_queue": "목표 검토 대기",
     "cascade": "경영목표 전파 경로", "report_requests": "확인 · 보고 요청", "risk_dashboard": "신용리스크 대시보드", "analysis_tabs": "신용리스크 분석 탭",
@@ -154,6 +156,19 @@ def resolve_text(s: str, figs: dict[str, dict[str, Any]]) -> str:
     """`[[fig:ID]]` → 확정값 문장, `{{term:코드|표시}}` → 표시 글자. 풀 수 없는 마커는 '수치 미확인'."""
     s = FIG_MARK.sub(lambda m: fig_text(figs[m.group(1)]) if m.group(1) in figs else "(수치 미확인)", s)
     return TERM_MARK.sub(lambda m: (m.group(2) or m.group(1)), s)
+
+
+def resolve_labels(s: str, figs: dict[str, dict[str, Any]]) -> str:
+    """`[[fig:ID]]` → 수치 이름('…') — 값 없이 무엇을 말하는지만. 숫자를 쓰지 않는 에이전트 입력용(영업점 서술 · 공유 분석 요약)."""
+    s = FIG_MARK.sub(lambda m: f"'{figs[m.group(1)].get('label') or m.group(1)}'" if m.group(1) in figs else "(수치)", s)
+    return TERM_MARK.sub(lambda m: (m.group(2) or m.group(1)), s)
+
+
+def section_lines(payload: Any, blocks: list[Any], table_rows: int = 6) -> list[str]:
+    """보고서 절의 본문 블록(p · ul · kv · 표 · 그래프) → 글 줄 — 색인과 같은 표기(수치 마커는 값으로, 개인정보 형식 값은 가림)."""
+    r = _Renderer("report.section", payload, {"table_rows": table_rows})
+    r.blocks_of(blocks, ("",), {})
+    return [ln for b in r.blocks for ln in b.lines]
 
 
 def is_series(v: Any) -> bool:

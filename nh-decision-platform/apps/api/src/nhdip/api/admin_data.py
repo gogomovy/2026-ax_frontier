@@ -364,6 +364,31 @@ def dataset_create(body: DatasetIn, request: Request, session: Session = Depends
     return _ds_json(session, d)
 
 
+OWNER_BEFORE_COMMON = "ownerBeforeCommon"  # 판의 quality 안 — 공통 통합 DB 로 바꾸기 전 소유 팀(되돌리면 복원)
+
+
+def _common_switch(session: Session, d: Dataset, common: bool, actor: str) -> None:
+    """공통 통합 DB 전환(§38 CMN) — 켜면 판의 소유 팀을 비우고(전행 공통) 이전 소유를 판에 남기며, 끄면 남긴 소유로 되돌린다.
+    소유가 바뀌는 자료 변경이므로 자료 이벤트(dataset.owner_changed)를 낸다 — 이전 · 새 소유 팀 흐름, 공통 조건 흐름, 이 자료로 계산하는 흐름이 다시 돈다."""
+    t = source(d.origin)
+    before: set[str] = set()
+    after: set[str] = set()
+    for v in session.execute(select(t.version).where(t.version.dataset_code == d.code)).scalars():
+        q = dict(v.quality or {})
+        if common:
+            if v.owner_org:
+                before.add(v.owner_org)
+                q[OWNER_BEFORE_COMMON] = v.owner_org
+                v.quality = q
+                v.owner_org = None
+        elif q.get(OWNER_BEFORE_COMMON):
+            v.owner_org = str(q.pop(OWNER_BEFORE_COMMON))
+            v.quality = q
+            after.add(v.owner_org)
+    emit(session, "dataset.owner_changed", {"dataset": d.code, "origin": d.origin, "kind": d.kind, "common": common, "was_common": not common, "owner_orgs": sorted(before | after),
+                                            "reason": "common_on" if common else "common_off"}, actor)
+
+
 @router.patch("/datasets/{code}")
 def dataset_patch(code: str, body: dict[str, Any], request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     d = _ds(session, code)
@@ -380,12 +405,8 @@ def dataset_patch(code: str, body: dict[str, Any], request: Request, session: Se
     was_common = bool(getattr(d, "common", False))
     for k, v in patch.items():
         setattr(d, k, bool(v) if k == "common" else v)
-    if "common" in patch and bool(patch["common"]) and not was_common:
-        # 공통 통합 DB 로 — 판의 소유 팀을 비운다(전행 공통). 팀 · 영업점 화면 범위에 갈리지 않고 모든 부서가 본다(§38 CMN)
-        from sqlalchemy import update as sql_update
-
-        t = source(d.origin)
-        session.execute(sql_update(t.version).where(t.version.dataset_code == code).values(owner_org=None))
+    if "common" in patch and bool(patch["common"]) != was_common:
+        _common_switch(session, d, bool(patch["common"]), admin.emp_no)
     _config_changed(session, "dataset", code, admin.emp_no)
     audit(session, admin.emp_no, "admin.dataset.update", "dataset", code, patch, client_ip(request))
     session.commit()
@@ -819,6 +840,56 @@ async def document_upload(
     return {"origin": origin, "id": doc.id, "docCode": doc.doc_code, "version": doc.version}
 
 
+class OwnerIn(BaseModel):
+    owner_org: str | None = None  # 빈 값 = 전행 공통
+
+
+def _owner_target(session: Session, admin: AppUser, body: OwnerIn) -> str | None:
+    from nhdip.orgs import OwnerError, resolve_owner
+
+    try:
+        return resolve_owner(session, admin, body.owner_org)
+    except OwnerError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.patch("/datasets/{code}/versions/{vid}/owner")
+def dataset_version_owner(code: str, vid: int, body: OwnerIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """판의 소유 조직 바꾸기 — 현재 판이면 자료 변경으로 보고 이전 · 새 소유 팀 흐름, 이 자료로 계산하는 흐름이 다시 돈다."""
+    from nhdip.data.datasets import change_version_owner
+
+    d = _ds(session, code)
+    try:
+        out = change_version_owner(session, d, vid, _owner_target(session, admin, body), admin.emp_no)
+    except IngestError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    session.commit()
+    if out and out["event"]:
+        try:
+            from nhdip.data.catalog import index_dataset_cards
+
+            index_dataset_cards(session, [code])  # 설명 카드의 소유 표시
+            session.commit()
+        except Exception:  # noqa: BLE001 — 워커 주기가 다시 맞춘다
+            session.rollback()
+    return {"changed": bool(out), **(out or {})}
+
+
+@router.patch("/documents/{origin}/{did}/owner")
+def document_owner(origin: str, did: int, body: OwnerIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    """문서의 소유 조직 바꾸기 — 현재 판이면 이전 · 새 소유 팀 흐름과 그 문서 분류를 근거로 읽는 흐름이 다시 돈다."""
+    from nhdip.data.documents import change_document_owner
+
+    if origin not in ("bank", "ext"):
+        raise HTTPException(404, "문서 없음")
+    try:
+        out = change_document_owner(session, origin, did, _owner_target(session, admin, body), admin.emp_no)
+    except DocumentError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    session.commit()
+    return {"changed": bool(out), **(out or {})}
+
+
 @router.post("/documents/{origin}/{did}/reextract")
 def document_reextract(origin: str, did: int, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     t = source(origin)
@@ -828,7 +899,7 @@ def document_reextract(origin: str, did: int, request: Request, session: Session
     if d.status == "deleted":
         raise HTTPException(409, "삭제된 문서는 재구조화할 수 없습니다")
     d.status = "ingested"
-    emit(session, "document.ingested", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "reextract": True}, admin.emp_no)
+    emit(session, "document.ingested", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, "reextract": True, **({"owner_org": d.owner_org} if d.owner_org else {})}, admin.emp_no)
     audit(session, admin.emp_no, "admin.document.reextract", "document", f"{origin}:{did}", None, client_ip(request))
     session.commit()
     return {"queued": True}

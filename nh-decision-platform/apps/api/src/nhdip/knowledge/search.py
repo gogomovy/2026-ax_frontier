@@ -674,7 +674,7 @@ def retrieve(
     exp_keys = [e["key"] for e in expanded]
     lim = int(cfg["candidates_per_channel"])
     wexp = float(cfg["expand_weight"])
-    has_analysis = bool(scope.full or scope.gated)
+    has_analysis = scope.has_analysis()
 
     t0 = time.perf_counter()
     qvec, model, sem_reason = query_vector(session, query)
@@ -786,10 +786,17 @@ def retrieve(
     ranked = rerank_analysis(cands, cfg=cfg, owned=scope.owned, screen_cols=screen_cols, boosts=boosts, intent=intent, ref=ref_date, k=int(cfg["analysis_k"]))
     for c in ranked:
         col = scope.collections.get(c["collection"])
+        label = col.label if col else c["collection"]
+        href = (c.get("meta") or {}).get("href")
+        # 영업점 공통으로만 열린 청크(내 컬렉션 권한 밖) — 출처 이름에 '영업점 공통', 화면 열기는 공유 보고서 화면(부서 보고서 화면 권한이 없으므로)
+        shared = scope.granted_source(c["source_key"]) if c["collection"] not in scope.full and c["collection"] not in scope.gated else None
+        if shared is not None:
+            label = f"{ctx.grant_label} · {label}" if col and col.label != ctx.grant_label else ctx.grant_label
+            href = f"{ctx.grant_path}/{shared}" if shared else href
         c.update({
-            "collectionLabel": col.label if col else c["collection"], "owned": c["collection"] in scope.owned, "sourceKey": c["source_key"],
-            "href": (c.get("meta") or {}).get("href"), "asOf": c["as_of"].isoformat() if c.get("as_of") else None, "severity": (c.get("meta") or {}).get("severity"),
-            "artifactTitle": (c.get("meta") or {}).get("artifactTitle"), "sectionPath": c.get("section_path"),
+            "collectionLabel": label, "owned": c["collection"] in scope.owned, "sourceKey": c["source_key"],
+            "href": href, "asOf": c["as_of"].isoformat() if c.get("as_of") else None, "severity": (c.get("meta") or {}).get("severity"),
+            "artifactTitle": (c.get("meta") or {}).get("artifactTitle"), "sectionPath": c.get("section_path"), **({"shared": True} if shared is not None else {}),
         })
     out.analysis = ranked
 
@@ -809,14 +816,20 @@ def retrieve(
         doc_hits.append({**it, "signals": sig})
     if doc_hits:
         top = max(h["score"] for h in doc_hits) or 1.0
-        rk = rank_evidence(session, doc_hits, k=int(cfg["doc_k"]), user=user, as_of=ref_date.isoformat(), query_terms=len(terms))
+        grant_docs = ctx.grant_docs if not ctx.is_admin else None
+        rk = rank_evidence(session, doc_hits, k=int(cfg["doc_k"]), user=user, as_of=ref_date.isoformat(), query_terms=len(terms), grant_docs=grant_docs)
         out.rejected = rk["rejected"]
         out.missing_categories = rk["missingCategories"]
         for h in rk["hits"]:
             col = doc_collection(scope, h["doc_class"])
             owned = bool(col and col.code in scope.owned)
             final = 0.6 * (h["score"] / top) + 0.4 * h["priority"] + (float(cfg["team_boost"]) if owned else 0.0) + (float(cfg["intent_boost"]) if intent == "evidence" else 0.0)
-            h.update({"kind": "document", "collection": col.code if col else None, "collectionLabel": col.label if col else None, "owned": owned, "final": final})
+            label = col.label if col else None
+            # 영업점 공통 근거 문서 — 내 문서 분류 권한 밖인데 영업점 참고 수행방안의 연결 근거라 열린 것
+            shared = bool(grant_docs and h.get("docCode") in grant_docs and (col is None or (scope.doc_classes is not None and h["doc_class"] not in scope.doc_classes)))
+            if shared:
+                label = ctx.grant_label
+            h.update({"kind": "document", "collection": col.code if col else None, "collectionLabel": label, "owned": owned, "final": final, **({"shared": True} if shared else {})})
         out.documents = rk["hits"]
     out.rejected = [*rejected[:30], *out.rejected]
 

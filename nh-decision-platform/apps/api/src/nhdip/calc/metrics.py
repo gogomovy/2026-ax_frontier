@@ -483,6 +483,7 @@ def _get_path(obj: Any, path: str | None) -> Any:
 
 
 HISTORY_SCAN = 8  # 저장된 지표 값을 거슬러 볼 최대 건수 — 삭제된 자료로 계산한 값을 건너뛰고 쓸 만한 값을 찾는 범위
+DELETED_INPUT = "삭제된 자료로 계산한 값은 쓰지 않습니다"  # 지운 자료로만 계산된 지표를 읽을 때의 오류 문구 — 화면 갱신(build_views)이 '비움' 으로 다룬다
 
 
 def _deleted_at(ctx: EvalContext) -> dict[str, datetime]:
@@ -620,7 +621,7 @@ def resolve_ref(ctx: EvalContext, ref: dict[str, Any]) -> tuple[Any, str, Any]:
             if last is not None:
                 break
         if last is None or field_ != "value":
-            raise ResolveError(f"지표 값 없음: {code}" + (" (삭제된 자료로 계산한 값은 쓰지 않습니다 — 다시 계산되면 채워집니다)" if skipped and last is None else ""))
+            raise ResolveError(f"지표 값 없음: {code}" + (f" ({DELETED_INPUT} — 다시 계산되면 채워집니다)" if skipped and last is None else ""))
         fb = _stored_fallbacks(ctx, last)
         return last.value, f"calc.metric_value({last.metric_code})", {"metric": code, **({"fallback": fb} if fb else {})}
     if "rule" in ref:

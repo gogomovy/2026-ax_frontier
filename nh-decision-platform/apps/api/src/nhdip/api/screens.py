@@ -19,7 +19,7 @@ from nhdip.views.readiness import gate, session_lookup
 from nhdip.views.store import find_insight, get_current, get_current_row
 from nhdip.views.template import strip_tpl
 
-from .deps import require_resource
+from .deps import current_user, require_resource
 
 router = APIRouter(prefix="/screens", tags=["screens"])
 
@@ -83,6 +83,46 @@ def report_requests(session: Session = Depends(get_session), _: AppUser = Depend
     base = _artifact(session, "report_requests") or []
     users = sorted(get_ns(session, NS_REPORT_REQUEST).values(), key=lambda r: r.get("createdAt", ""), reverse=True)
     return [{k: v for k, v in r.items() if k != "createdBy"} for r in users] + list(base)
+
+
+@router.get("/plans/{pid}/linked-analysis")
+def plan_linked_analysis(pid: str, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("action_plans"))):
+    """수행방안에 연결된 분석 결과 — 영업점(수행방안 수정 권한 없음)은 '영업점 참고'가 켜진 진행사업의 것만, 원본 보고서 대신 요약(지금 보고서 기준).
+    href = 그 보고서 화면 주소(사용자가 열 수 있을 때만)."""
+    from nhdip.views.plan_share import in_branch_common, linked_analysis, report_href, shared_plans
+    from nhdip.views.user_state import merged_plans
+
+    from .deps import user_resources
+
+    allowed = user_resources(session, user)
+    dept = allowed is None or "plan_actions" in allowed
+    plans = merged_plans(session) if dept else shared_plans(session)
+    plan = next((p for p in plans if p.get("id") == pid), None)
+    if plan is None:
+        raise HTTPException(404, "수행방안 없음")
+    a = linked_analysis(session, plan)
+    # 부서 보고서 화면 권한이 없으면 영업점 공통 공유 보고서 화면으로(영업점 참고가 켜진 진행사업 · 영업본부 · 영업점만)
+    shared = pid if (plan.get("branchShared") and plan.get("status") == "in_progress" and in_branch_common(session, user, allowed)) else None
+    return {"plan": pid, "analysis": a, "href": report_href(session, a, allowed, shared) if a else None}
+
+
+@router.get("/plans/{pid}/report")
+def plan_shared_report(pid: str, session: Session = Depends(get_session), user: AppUser = Depends(current_user)):
+    """영업점 공통 공유 보고서 — 사업부서가 '영업점 참고'를 켠 진행사업의 연결 분석 보고서(지금 세대 · 원본 그대로, 복사본 아님).
+    영업본부 · 영업점(부서 보고서 화면 권한 없이) · 관리자. 끄면 바로 404 — 다시 계산하면 새 세대가 그대로 보인다."""
+    from nhdip.views.plan_share import GRANT_LABEL, in_branch_common, shared_report
+
+    from .deps import user_resources
+
+    if not in_branch_common(session, user, user_resources(session, user)):
+        raise HTTPException(403, f"{GRANT_LABEL}(영업본부 · 영업점) 사용자만 볼 수 있습니다")
+    got = shared_report(session, pid)
+    if got is None:
+        raise HTTPException(404, "영업점 참고로 공유된 보고서가 없습니다")
+    plan, report = got
+    shared = {k: plan.get(k) for k in ("id", "title", "ownerOrg", "reviewCycle", "relatedGoalTitle", "status") if plan.get(k) not in (None, "")}
+    # 다시 실행 · 내려받기는 부서 화면에서만(workflow 없음) — 영업점 공통은 지금 결과를 본다
+    return {**strip_tpl(report), "workflow": None, "sharedPlan": {**shared, "scope": GRANT_LABEL}}
 
 
 @router.get("/action-plans")

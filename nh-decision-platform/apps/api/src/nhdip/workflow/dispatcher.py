@@ -13,6 +13,7 @@ from sqlalchemy import and_, exists, select, text
 from sqlalchemy.orm import Session, aliased
 
 from nhdip.models import Job, Metric, OutboxEvent, Setting, ViewBinding, Workflow, WorkflowNode, WorkflowTrigger, utcnow
+from nhdip.views.plan_share import SHARE_EVENTS, is_branch_outputs
 
 
 def _datasets_in(obj: Any) -> set[str]:
@@ -24,8 +25,15 @@ def _datasets_in(obj: Any) -> set[str]:
 BASE_WORKFLOWS = {"wf_graph_projection", "wf_ontology_build"}  # 기반 흐름 — 업무 판단 전파 대상이 아니다
 
 
+def event_owners(p: dict[str, Any]) -> set[str]:
+    """자료 이벤트가 닿는 소유 조직 — 새 소유(owner_org) + 바뀌기 전 · 함께 바뀐 소유(owner_orgs). 비어 있으면 전행 공통."""
+    out = {str(p["owner_org"])} if p.get("owner_org") else set()
+    out |= {str(o) for o in (p.get("owner_orgs") or []) if o}
+    return out
+
+
 def _is_common_event(session: Session, etype: str, p: dict[str, Any]) -> bool:
-    if p.get("common"):
+    if p.get("common") or p.get("was_common"):  # 공통 통합 DB 에서 빠진 자료도 공통 조건 흐름이 다시 본다
         return True
     if etype.startswith("dataset.") and p.get("dataset"):
         from nhdip.models import Dataset
@@ -96,18 +104,21 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
         refs = Resolver(session).refs_for(p["dataset"])
     # 팀 · 공통 조건 (Phase P · TDB-07 · AGW-04) — 자료 · 문서 이벤트의 소유 조직 · 공통 통합 DB 여부
     data_ev = ev.type.startswith("dataset.") or ev.type.startswith("document.")
-    owner = p.get("owner_org") if data_ev else None
+    # 소유가 바뀌면(다른 팀이 다시 올림 · 되돌리기 · 삭제로 다른 판이 현재가 됨 · 공통 통합 DB 전환 · 소유 변경) 새 소유 팀과 이전 소유 팀 흐름이 모두 다시 돈다
+    owners = event_owners(p) if data_ev else set()
     is_common = data_ev and _is_common_event(session, ev.type, p)
     team_orgs: dict[str, set[str]] = {}
 
     def in_team(root: str) -> bool:
-        if not owner:
+        if not owners:
             return False
         if root not in team_orgs:
             from nhdip.analysis_agents.team import subtree
 
             team_orgs[root] = subtree(session, root)
-        return owner in team_orgs[root]
+        return bool(owners & team_orgs[root])
+
+    owner = ", ".join(sorted(owners))
 
     for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled)).scalars():
         if t.kind == "team" and data_ev:
@@ -131,6 +142,17 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
             add(t.workflow_code, f"trigger:rule({t.target})")
         elif t.kind == "setting" and ev.type == "config.changed" and p.get("kind") == "setting" and t.target == p.get("key"):
             add(t.workflow_code, f"trigger:setting({t.target})")
+    if ev.type == "org.moved" and p.get("code"):
+        # 조직 이동 — 옮기기 전 · 뒤 상위 가운데 한쪽에만 있는 조직(그 팀 범위가 바뀐 곳)을 대상으로 하는 팀 흐름
+        from nhdip.orgs import org_chain
+
+        def ups(code: Any) -> set[str]:
+            return {o.code for o in org_chain(session, str(code))} if code else set()
+
+        changed = ups(p.get("parent_before")) ^ ups(p.get("parent_after"))
+        for t in session.execute(select(WorkflowTrigger).where(WorkflowTrigger.enabled, WorkflowTrigger.kind == "team")).scalars():
+            if t.target in changed:
+                add(t.workflow_code, f"lineage:org_moved({p['code']} → {p.get('parent_after') or '-'})")
     if ev.type == "contract.changed":
         # 정의서 계보 (B.38) — 바뀐 표를 적재하는 워크플로우(적재 노드 config.tables)
         changed = set(p.get("tables") or ([p["table"]] if p.get("table") else []))
@@ -143,6 +165,14 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
         for n in session.execute(select(WorkflowNode).where(WorkflowNode.impl == "retrieve_evidence", WorkflowNode.enabled)).scalars():
             if n.workflow_code not in BASE_WORKFLOWS:
                 add(n.workflow_code, f"lineage:common_doc({p.get('doc_class')})")
+    if ev.type in SHARE_EVENTS:
+        # 수행방안 영업점 참고 켜기 · 끄기 — 영업점 서술 에이전트가 그 수행방안 · 연결 분석을 근거로 읽으므로 영업점 산출물을 만드는 흐름(서술 여부는 플래너가 판단)
+        for w in session.execute(select(Workflow).where(Workflow.enabled)).scalars():
+            if is_branch_outputs(w.outputs):
+                add(w.code, f"lineage:plan_share({str(p.get('title') or p.get('plan') or '')[:60]})")
+            elif w.code == "wf_graph_projection":
+                # 그래프 — 수행방안(Plan) ↔ 연결 보고서 · 근거 문서 · 데이터셋 연결을 다시 투영(영업점 공통 온톨로지 연결)
+                add(w.code, "lineage:plan_share(그래프 연결)")
     if ev.type == "metrics.changed" and p.get("metrics"):
         for wf, codes in downstream_of(session, p).items():
             add(wf, f"lineage:upstream({p.get('workflow')} · {codes[0]}{f' 외 {len(codes) - 1}' if len(codes) > 1 else ''})")

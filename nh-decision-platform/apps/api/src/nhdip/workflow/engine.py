@@ -280,20 +280,23 @@ def blank_outputs(session: Session, wf: Workflow, run: WorkflowRun) -> WorkflowR
 
     binds = [{"artifact_key": b.artifact_key, "path": b.path} for b in session.execute(select(ViewBinding)).scalars()]
     blanked: list[str] = []
+    before: dict[str, Any] = {}
     for key in sorted(set(wf.outputs or [])):
         rows = session.execute(select(ViewArtifact).where(ViewArtifact.is_current, (ViewArtifact.key == key) | ViewArtifact.key.like(key.replace("_", r"\_") + "@%", escape="\\"))).scalars().all()
         for row in rows:
             tpl = to_template(key, row.payload, binds)
             if tpl == row.payload:
                 continue
+            before.setdefault(key, row.payload)
             publish(session, row.key, tpl, produced_by=wf.code, workflow_run_id=run.id, changes=[{"artifact": row.key, "blanked": "올린 자료 없음"}])
             blanked.append(row.key)
     # 정의서 표(mart.*) · 대조 결과 — 지운 자료로 적재한 행이 [컬럼 정의서] · [파이프라인]에 남지 않게
     from nhdip.contracts.materialize import clear_contract_outputs
 
     contracts = clear_contract_outputs(session, [wf.code])
+    reset = reset_user_state(session, wf, before)
     run.status = "succeeded"
-    run.summary = {"nodes": [], "published": blanked, "figure_changes": 0, "no_data": True, "note": NO_DATA_NOTE, "contractsCleared": contracts}
+    run.summary = {"nodes": [], "published": blanked, "figure_changes": 0, "no_data": True, "note": NO_DATA_NOTE, "contractsCleared": contracts, **({"userStateReset": reset} if reset else {})}
     run.finished_at = utcnow()
     session.commit()
     if blanked:
@@ -305,6 +308,49 @@ def blank_outputs(session: Session, wf: Workflow, run: WorkflowRun) -> WorkflowR
         except Exception:  # noqa: BLE001 — 색인 실패가 실행을 실패로 만들지 않는다(워커 대조가 복구)
             session.rollback()
     return run
+
+
+# 값 없는 틀로 비운 산출물 → 그 산출물 위에 쌓인 사용자 결정(이름공간). 자료를 모두 지우면 결정도 처음 상태로 — 지운 자료로 확정한 목표 ·
+# 진행사업이 남아 새 자료 위에 다시 나타나지 않게(데이터 비우기 reset_business_data 와 같은 결과). 요청 · 보고(request.*)는 사람이 쓴 글이라 남긴다
+RESET_ON_BLANK: dict[str, tuple[str, ...]] = {
+    "goals": ("goal.override", "goal.proposal_action", "goal.added", "goal.review_item"),
+    "proposals": ("goal.proposal_action", "goal.review_item"),
+}
+# 수행방안은 그 산출물에 있던 수행방안(분석에서 나온 것)의 상태(진행 · 영업점 참고 · 숨김)만 — 다른 부서 · 사용자가 직접 쓴 수행방안은 남긴다
+RESET_ITEMS_ON_BLANK: dict[str, tuple[str, ...]] = {"action_plans": ("plan.runtime", "plan.deleted")}
+
+
+def reset_user_state(session: Session, wf: Workflow, blanked: dict[str, Any]) -> dict[str, int]:
+    """자료가 하나도 없어 화면 산출물을 비웠을 때(blanked = 산출물 키 → 비우기 전 내용) — 그 산출물에 기대는 사용자 결정을 지운다(감사 기록)."""
+    from sqlalchemy import delete
+
+    from nhdip.events import audit
+    from nhdip.models import UserState
+
+    out: dict[str, int] = {}
+    for ns in sorted({ns for k in blanked for ns in RESET_ON_BLANK.get(k, ())}):
+        n = int(session.execute(delete(UserState).where(UserState.namespace == ns)).rowcount or 0)
+        if n:
+            out[ns] = n
+    for key, spaces in RESET_ITEMS_ON_BLANK.items():
+        old = blanked.get(key)
+        ids = sorted({str(x["id"]) for x in old if isinstance(x, dict) and x.get("id")}) if isinstance(old, list) else []
+        for ns in spaces if ids else ():
+            n = int(session.execute(delete(UserState).where(UserState.namespace == ns, UserState.item_id.in_(ids))).rowcount or 0)
+            if n:
+                out[ns] = out.get(ns, 0) + n
+    if not out:
+        return {}
+    audit(session, "engine", "user_state.reset_no_data", "workflow", wf.code, {"artifacts": sorted(blanked), "removed": out, "reason": "올린 자료가 모두 지워져 화면을 값 없는 틀로 둠"})
+    if "plan.runtime" in out:
+        try:
+            from nhdip.views.plan_share import republish
+
+            with session.begin_nested():
+                republish(session, wf.code)  # 영업점 참고가 모두 꺼졌다 — 영업점 공통 요약도 비운다
+        except Exception:  # noqa: BLE001 — 요약 갱신 실패가 비우기를 막지 않는다(다음 변경 · 대조가 맞춘다)
+            pass
+    return out
 
 
 def changed_upstream_metrics(session: Session, workflow_code: str, outcomes: dict[str, Any]) -> list[str]:

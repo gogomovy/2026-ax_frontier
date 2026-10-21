@@ -52,6 +52,7 @@ ARTIFACT_RESOURCES: dict[str, str] = {
     "risk_dashboard": "risk_dashboard", "analysis_tabs": "analysis_tabs", "inclusive": "inclusive", "default_rate_trend": "default_rate_trend",
     "insights": "insights", "action_plans": "plan_actions",
     "branch_dashboard": "branch_dashboard", "branch_tabs": "branch_tabs", "branch_targets": "branch_targets",
+    "branch_shared_plans": "branch_targets",  # 영업점 공통 — 영업점 참고 수행방안 요약(컬렉션 analysis.branch_common)
     "terms": "terms", "dataset_meta": "datasets",
     "report.": "reports", "report.branch-": "branch_reports",
 }
@@ -66,7 +67,7 @@ ARTIFACT_ROUTES: dict[str, str] = {
     "goals": "/hq/goals", "proposals": "/hq/goals", "review_queue": "/hq/goals", "cascade": "/hq/goals",
     "risk_dashboard": "/risk", "default_rate_trend": "/risk", "analysis_tabs": "/risk/analysis", "insights": "/risk/analysis",
     "inclusive": "/risk/analysis/inclusive-risk", "action_plans": "/risk/guides",
-    "branch_dashboard": "/branch", "branch_tabs": "/branch", "branch_targets": "/branch/targets",
+    "branch_dashboard": "/branch", "branch_tabs": "/branch", "branch_targets": "/branch/targets", "branch_shared_plans": "/branch/targets",
     "terms": "/knowledge", "dataset_meta": "/knowledge",
     "report.branch-": "/branch/analysis/{tab}", "report.": "/risk/analysis/{tab}",
 }

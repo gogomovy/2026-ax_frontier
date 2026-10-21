@@ -11,6 +11,8 @@ export interface SyncCounts {
   deactivated?: number;
   reactivated?: number;
   skipped?: number;
+  /** 관리자가 정한 업무 소속을 유지한 사용자(인사 사무소와 다름) */
+  keptAssigned?: number;
 }
 
 export interface SyncResult extends SyncCounts {
@@ -46,6 +48,7 @@ export function countsLine(c: SyncCounts | null | undefined, kind?: SyncKind): s
     [off, c.deactivated],
     ["다시 사용", c.reactivated],
     ["건너뜀", c.skipped],
+    ["지정 소속 유지", c.keptAssigned],
   ];
   const shown = parts.filter(([, n]) => typeof n === "number" && n > 0).map(([k, n]) => `${k} ${n!.toLocaleString("ko-KR")}`);
   return shown.length ? shown.join(" · ") : "변경 없음";

@@ -16,6 +16,12 @@ COLLECTIONS: list[dict[str, Any]] = [
          required_resources=[], audience="all", sources={"doc_classes": ["common_ref"]}, sort=18),
     dict(code="catalog.common", label="공통 통합 DB 자료", kind="catalog", description="공통 통합 DB 데이터셋 설명 카드 — 전행 공개(값은 도구 · 지표로)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
          sources={}, sort=32),
+    # 영업점 공통(영업본부 · 영업점) — 사업부서가 수행방안 '영업점 참고'로 내린 진행사업 · 연결 분석 요약 · 연결 자료 이름.
+    # 연결 보고서 · 근거 문서 · 데이터셋 자체는 복사하지 않고 수행방안 연결로 함께 열린다(views.plan_share.branch_grant)
+    dict(code="analysis.branch_common", label="영업점 공통", kind="analysis",
+         description="사업부서가 수행방안 '영업점 참고'로 내린 진행사업과 연결 분석 요약 — 영업본부 · 영업점 화면 권한으로 열람. 연결 보고서 · 근거 문서 · 데이터는 수행방안 연결로 함께 열린다",
+         owner_orgs=[], shared_orgs=[], required_resources=["branch_targets", "branch_dashboard", "region_kpi"], audience="restricted",
+         sources={"artifact_keys": ["branch_shared_plans"], "screens": ["/branch", "/region"]}, sort=17),
     dict(code="doc.reference", label="기타 문서", kind="document", description="참고 자료와 위 컬렉션에 없는 문서 분류", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",
          sources={"doc_classes": ["reference", "*"]}, sort=19),
     dict(code="glossary", label="용어집", kind="glossary", description="통계 · 리스크 용어 정의 (전행 공개)", owner_orgs=[], shared_orgs=[], required_resources=[], audience="all",

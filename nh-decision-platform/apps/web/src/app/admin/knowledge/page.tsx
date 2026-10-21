@@ -444,7 +444,7 @@ function CollectionsTab({ items, reload }: { items: Collection[]; reload: () => 
   return (
     <Card title="컬렉션 — 담당 팀 · 공개 범위 · 포함 규칙">
       <p className="mb-md text-[12.5px] text-steel">
-        한 줄을 눌러 편집합니다. <b>담당 팀</b>은 그 컬렉션을 전체 열람하고 검색에서 앞서 보입니다. <b>공유 팀</b>은 열람만 합니다. 조직 코드는 하위 조직을 포함합니다(예: D200 = 신용리스크관리부 전체).
+        한 줄을 눌러 편집합니다. <b>담당 팀</b>은 그 컬렉션을 전체 열람하고 검색에서 앞서 보입니다. <b>공유 팀</b>은 열람만 합니다. 조직 코드는 하위 조직을 포함합니다(예: 부서 코드 = 그 부서 아래 팀 전체).
       </p>
       <ul className="flex flex-col gap-xs">
         {items.map((c) => (
@@ -525,7 +525,7 @@ function CollectionEditor({ c, reload }: { c: Collection; reload: () => unknown 
       <div className="mt-md">
         <Collapse label="포함 규칙 (어떤 자료가 이 컬렉션에 들어오는지) — 고급">
           <p className="mb-xs text-[11.5px] text-steel">
-            키: doc_classes(문서 분류) · artifact_keys(산출물 키) · artifact_prefixes(키 접두어) · spaces(분석 공간) · personas(P1 종합기획부 · P2 신용리스크 · P3 영업점) · screens(화면 경로 접두어, 가산점용). 저장하면 워커 대조(1분) 뒤 다시 색인됩니다.
+            키: doc_classes(문서 분류) · artifact_keys(산출물 키) · artifact_prefixes(키 접두어) · spaces(분석 공간) · personas(P1 종합기획부 · P2 사업부서 · P3 영업점) · screens(화면 경로 접두어, 가산점용). 저장하면 워커 대조(1분) 뒤 다시 색인됩니다.
           </p>
           <JsonEditor value={c.sources} rows={8} label="규칙 저장" disabled={busy} onSave={(v) => run(() => apiPut<{ note: string }>(url, { sources: v }), (r) => r.note, reload)} />
         </Collapse>

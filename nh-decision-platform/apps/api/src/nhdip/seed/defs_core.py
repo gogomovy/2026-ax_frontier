@@ -223,6 +223,7 @@ ONTOLOGY_CLASSES = [
     _c("DocClass", "문서 분류 DB", "code", extractable=False),
     _c("Issuer", "외부 문서 발행 기관", "name"),
     _c("Candidate", "스키마·마스터로 해석되지 않은 추출 결과 (검토 대기)", "raw", extractable=False),
+    _c("Plan", "영업점 참고 수행방안 — 영업점 공통(영업본부 · 영업점)이 연결 보고서 · 근거 문서 · 데이터를 함께 쓴다", "id", extractable=False),
 ]
 
 ONTOLOGY_RELATIONS = [
@@ -237,6 +238,9 @@ ONTOLOGY_RELATIONS = [
     {"type": "ISSUED_BY", "from": "Document", "to": "Issuer"},
     {"type": "MENTIONS", "from": "Document", "to": "*"},
     {"type": "MEASURES", "from": "Metric", "to": "*", "extractable": False},
+    {"type": "LINKED_TO", "from": "Plan", "to": "Artifact", "extractable": False},
+    {"type": "EVIDENCED_BY", "from": "Plan", "to": "Document", "extractable": False},
+    {"type": "USES_DATA", "from": "Plan", "to": "Dataset", "extractable": False},
 ]
 
 # ── 온톨로지 v3 (Phase M · ONB-01 · ONB-02 · Q179) — 객체 유형의 업무 이름 · 종류 · 기본 키 · 제목 · 속성(기본 타입), 링크 유형의 업무 이름 · 다중도 ──
@@ -255,6 +259,8 @@ ONTOLOGY_V3_CLASS: dict[str, dict] = {
     "DocClass": {"ko": "문서 분류", "kind": "system", "primary_key": "key", "title_property": "name", "properties": [_NAME]},
     "Issuer": {"ko": "발행 기관", "kind": "object", "primary_key": "key", "title_property": "name", "properties": [_NAME, _p("official", "공식 기관", "boolean")]},
     "Candidate": {"ko": "미확정 후보", "kind": "system", "primary_key": "key", "title_property": "name", "properties": [_NAME, _p("raw_label", "원래 클래스", "code"), _p("reason", "사유")]},
+    "Plan": {"ko": "수행방안(영업점 공통)", "kind": "system", "primary_key": "key", "title_property": "name",
+             "properties": [_NAME, _p("owner_org", "담당 부서"), _p("tab_key", "연결 분석", "code"), _p("scope", "공유 범위", "code")]},
 }
 ONTOLOGY_V3_REL: dict[str, dict] = {
     "HAS_VERSION": {"ko": "버전", "cardinality": "1:N", "inverse": "데이터셋"},
@@ -268,6 +274,9 @@ ONTOLOGY_V3_REL: dict[str, dict] = {
     "ISSUED_BY": {"ko": "발행", "cardinality": "N:1", "inverse": "발행 문서"},
     "MENTIONS": {"ko": "언급", "cardinality": "N:N", "inverse": "언급한 문서"},
     "MEASURES": {"ko": "측정", "cardinality": "N:N"},
+    "LINKED_TO": {"ko": "연결 분석", "cardinality": "N:1", "inverse": "연결 수행방안"},
+    "EVIDENCED_BY": {"ko": "근거 문서", "cardinality": "N:N", "inverse": "근거로 쓴 수행방안"},
+    "USES_DATA": {"ko": "연결 데이터", "cardinality": "N:N", "inverse": "연결 수행방안"},
 }
 ONTOLOGY_INTERFACES = [{"name": "BusinessConcept", "ko": "업무 개념", "properties": ["name"]}]
 ONTOLOGY_CLASSES = [{**c, **ONTOLOGY_V3_CLASS.get(c["label"], {})} for c in ONTOLOGY_CLASSES]

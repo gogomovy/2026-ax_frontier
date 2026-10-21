@@ -3,7 +3,8 @@ name: nhdip
 description: NH AI 경영 의사결정 플랫폼(NH NAVI) — 폐쇄망 쿠버네티스 배포 (web · api · worker · PostgreSQL · Neo4j · Elasticsearch · 사내 SSO 검증기)
 type: application
 # 차트 버전 — 차트(템플릿)를 바꾸면 올린다
-version: 1.0.0
+# 1.0.1 — 폐쇄망 외부 호출 끄기(Neo4j 사용 통계 · Browser 외부 접속, ES GeoIP 내려받기, web Next 통계). appVersion 은 그대로(이미지 기본 태그 1.0.0)
+version: 1.0.1
 # 자체 이미지(nhdip/api · nhdip/web · nhdip/elasticsearch · nhdip/sso-verifier) 기본 태그 — bundle.sh 의 TAG 기본값
 appVersion: "1.0.0"
 keywords: [nhdip, nh-navi]

@@ -81,6 +81,9 @@ spec:
               value: {{ printf "-Xms%s -Xmx%s" $es.heap $es.heap | quote }}
             - name: bootstrap.memory_lock
               value: "false"
+            # 폐쇄망 — GeoIP 데이터베이스 내려받기(geoip.elastic.co)를 끈다(이 앱은 GeoIP 를 쓰지 않는다)
+            - name: ingest.geoip.downloader.enabled
+              value: "false"
             - name: cluster.routing.allocation.disk.watermark.low
               value: {{ $es.diskWatermark.low | quote }}
             - name: cluster.routing.allocation.disk.watermark.high

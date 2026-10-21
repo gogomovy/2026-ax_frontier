@@ -118,6 +118,9 @@ services:
       NEO4J_server_memory_heap_initial__size: 512m
       NEO4J_server_memory_heap_max__size: 1g
       NEO4J_server_memory_pagecache_size: 512m
+      # 폐쇄망 — 사용 통계 전송(dbms.usage_report.enabled, 기본 켜짐) · Neo4j Browser 의 외부 접속(가이드 · 업데이트 확인)을 끈다
+      NEO4J_dbms_usage__report_enabled: "false"
+      NEO4J_browser_allow__outgoing__connections: "false"
     ports:
       # 관리용 포트는 기본으로 이 컴퓨터에서만 (외부 공개는 ADMIN_BIND=0.0.0.0)
       - "${ADMIN_BIND:-127.0.0.1}:${NEO4J_HTTP_PORT:-7474}:7474"
@@ -144,6 +147,8 @@ services:
       STORE_MODEL_IN_DB: "True"
       UI_USERNAME: ${LITELLM_UI_USERNAME:-admin}
       UI_PASSWORD: ${LITELLM_UI_PASSWORD:-}
+      # 폐쇄망 — 모델 가격표를 인터넷(GitHub)에서 받지 않고 이미지 안의 것을 쓴다(헬름 차트와 같게)
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
     volumes:
       - ./infra/litellm/config.yaml:/app/config.yaml:ro
     ports:
@@ -176,6 +181,8 @@ services:
       ELASTIC_PASSWORD: ${ES_PASSWORD:-}
       ES_JAVA_OPTS: -Xms${ES_HEAP:-1g} -Xmx${ES_HEAP:-1g}
       bootstrap.memory_lock: "false"
+      # 폐쇄망 — GeoIP 데이터베이스 내려받기(geoip.elastic.co)를 끈다(이 앱은 GeoIP 를 쓰지 않는다)
+      ingest.geoip.downloader.enabled: "false"
       # 디스크 기준을 비율(기본 85 · 90 · 95%) 대신 남은 용량으로 — 디스크가 큰 서버(또는 CI 러너)에서 비율 기준을 넘으면 새 색인(보안 색인 포함)을
       # 배치하지 못해 elastic 계정 인증이 503 으로 막힌다(CI 에서 확인). 남은 용량 기준이면 보호는 유지된다(ES_DISK_* 로 조정)
       cluster.routing.allocation.disk.watermark.low: ${ES_DISK_LOW:-2gb}

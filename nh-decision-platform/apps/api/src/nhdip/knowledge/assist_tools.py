@@ -5,7 +5,8 @@
   onto_find       이름 → 온톨로지 대표 키(별칭 사전 해석) · 클래스 업무 이름. 클래스를 모르면 모든 클래스에서 찾는다
   onto_neighbors  클래스(또는 대표 키) → 들고 나는 링크 유형(업무 이름 · 다중도 · 원천 데이터셋). Neo4j 가 있으면 그 키의 이웃 노드(최대 20)
   data_aggregate  반영된 정형 자료(현재 버전) → 합계 · 건수 · 평균 · 최소 · 최대(그룹 · 같음 조건). 합계 · 평균은 계산 커널(SUM · RATIO)로.
-                  행 원문은 돌려주지 않는다. 화면 가림 열 · 개인정보 형식 값이 든 열은 그룹 · 조건에 못 쓴다. 데이터셋 화면 권한(datasets)이 있어야 한다.
+                  행 원문은 돌려주지 않는다. 화면 가림 열 · 개인정보 형식 값이 든 열은 그룹 · 조건에 못 쓴다. 데이터셋 화면 권한(datasets)이 있어야 한다
+                  — 없으면 영업점 공통으로 연결된 데이터셋(영업점 참고 수행방안의 연결 보고서를 계산하는 자료)만.
 """
 from __future__ import annotations
 
@@ -39,8 +40,13 @@ SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
-def can_aggregate(ctx: AccessContext) -> bool:
+def _all_data(ctx: AccessContext) -> bool:
     return bool(ctx.is_admin or (ctx.resources is not None and DATA_RESOURCE in ctx.resources))
+
+
+def can_aggregate(ctx: AccessContext) -> bool:
+    """데이터셋 화면 권한이 있거나, 영업점 공통으로 연결된 데이터셋(영업점 참고 수행방안의 연결 보고서를 계산하는 자료)이 있을 때."""
+    return _all_data(ctx) or bool(ctx.grant_datasets)
 
 
 def _schema(session: Session):
@@ -128,8 +134,13 @@ def data_aggregate(session: Session, ctx: AccessContext, dataset: str, op: str, 
         return {"error": "데이터셋 화면 권한이 없어 자료를 집계할 수 없습니다"}
     if op not in OPS:
         return {"error": f"op 는 {', '.join(OPS)} 중 하나"}
+    shared_only = not _all_data(ctx)
+    allowed = set(ctx.grant_datasets or {}) if shared_only else None
     ds = session.get(Dataset, dataset)
-    if ds is None or not ds.active:
+    if ds is None or not ds.active or (allowed is not None and ds.code not in allowed):
+        if allowed is not None:
+            # 영업점 공통 — 연결된 데이터셋만 있다는 것만 알린다(다른 자료의 존재를 드러내지 않는다)
+            return {"error": f"{ctx.grant_label}으로 연결된 데이터셋이 아닙니다: {dataset}", "datasets": sorted(allowed)[:40]}
         names = [d.code for d in session.execute(select(Dataset).where(Dataset.active).order_by(Dataset.code)).scalars()][:40]
         return {"error": f"없는 데이터셋: {dataset}", "datasets": names}
     cols = {c.get("name"): c for c in ds.columns or []}
@@ -182,6 +193,13 @@ def build(session: Session, ctx: AccessContext):
     from nhdip.llm.tools import ExtraTools
 
     schemas = [s for s in SCHEMAS if s["function"]["name"] != "data_aggregate" or can_aggregate(ctx)]
+    if can_aggregate(ctx) and not _all_data(ctx):
+        # 영업점 공통 — 연결된 데이터셋 코드만 쓸 수 있다고 도구 설명에 적는다
+        codes = ", ".join(sorted(ctx.grant_datasets or {})[:20])
+        schemas = [
+            {**s, "function": {**s["function"], "description": f"{s['function']['description']} — {ctx.grant_label}으로 연결된 데이터셋만: {codes}"}} if s["function"]["name"] == "data_aggregate" else s
+            for s in schemas
+        ]
 
     def run(name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name == "onto_find":

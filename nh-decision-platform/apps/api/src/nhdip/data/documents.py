@@ -222,6 +222,8 @@ def ingest_document(
     if not (text or "").strip():
         raise DocumentError("본문 텍스트가 비어 있습니다(스캔 PDF 는 OCR 후 업로드)")
     last = session.execute(select(t.document.version).where(t.document.doc_code == doc_code).order_by(t.document.version.desc()).limit(1)).scalar()
+    # 밀려나는 현재 판의 소유 팀 — 소유가 바뀌면(다른 팀이 같은 문서를 다시 올림) 이전 소유 팀 흐름도 다시 돌게
+    prev_owners = set(session.execute(select(t.document.owner_org).where(t.document.doc_code == doc_code, t.document.is_current).distinct()).scalars())
     session.execute(update(t.document).where(t.document.doc_code == doc_code).values(is_current=False))
     doc = t.document(
         doc_code=doc_code,
@@ -248,7 +250,31 @@ def ingest_document(
         session.add(t.chunk(document_id=doc.id, seq=seq, page=page, text=chunk, section_path=sec[:500] if sec else None))
     if emit_event:
         # 소유 조직 · 공통 여부(Phase P · AGW-04 · TDB-07) — 디스패처가 팀 · 공통 조건 흐름(분석 에이전트)을 깨운다
+        moved = prev_owners - {owner_org}
         emit(session, "document.ingested", {"origin": origin, "document_id": doc.id, "doc_code": doc_code, "doc_class": doc_class, **({"owner_org": owner_org} if owner_org else {}),
+                                            **({"owner_orgs": sorted(o for o in moved if o), "owner_changed": True} if moved else {}),
                                             **({"common": True} if is_common_doc_class(session, doc_class) else {})}, actor)
     audit(session, actor, "document.upload", "document", doc_code, {"origin": origin, "version": doc.version, "doc_class": doc_class})
     return doc
+
+
+def change_document_owner(session: Session, origin: str, document_id: int, owner_org: str | None, actor: str) -> dict[str, Any] | None:
+    """올린 문서의 소유 조직을 바꾼다(관리자) — 이벤트(document.owner_changed)에 이전 · 새 소유를 실어 이전 · 새 소유 팀 흐름과
+    그 문서 분류를 근거로 읽는 흐름이 다시 돌게 한다(근거 소유 검사가 바뀐 소유로). 공통 통합 DB 문서 분류는 소유 팀이 없다. 바뀐 것이 없으면 None."""
+    from nhdip.common_db import is_common_doc_class
+
+    t = source(origin)
+    d = session.get(t.document, document_id)
+    if d is None or d.status == "deleted":
+        raise DocumentError("바꿀 수 있는 문서가 아닙니다")
+    if is_common_doc_class(session, d.doc_class):
+        raise DocumentError("공통 통합 DB 문서는 소유 팀 없이 전행 공통입니다")
+    old = d.owner_org
+    if old == owner_org:
+        return None
+    d.owner_org = owner_org
+    if d.is_current:
+        emit(session, "document.owner_changed", {"origin": origin, "document_id": d.id, "doc_code": d.doc_code, "doc_class": d.doc_class, **({"owner_org": owner_org} if owner_org else {}),
+                                                 "owner_orgs": sorted(o for o in {old} if o), "owner_changed": True}, actor)
+    audit(session, actor, "document.owner_change", "document", d.doc_code, {"origin": origin, "version": d.version, "from": old, "to": owner_org})
+    return {"from": old, "to": owner_org, "event": bool(d.is_current)}

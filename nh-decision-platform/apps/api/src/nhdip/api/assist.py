@@ -265,7 +265,28 @@ def access_context(session: Session, user: AppUser, screen: str | None = None) -
     s = session.get(Setting, "docs.owner_orgs")
     owners = s.value if s is not None and isinstance(s.value, dict) else {}
     dept_docs = {code for code, os_ in owners.items() if set(os_ or []) & orgs}
-    return AccessContext(emp_no=user.emp_no, is_admin=False, org_codes=orgs, resources=resources, offices=offices, dept_docs=dept_docs, screen=screen)
+    ctx = AccessContext(emp_no=user.emp_no, is_admin=False, org_codes=orgs, resources=resources, offices=offices, dept_docs=dept_docs, screen=screen)
+    return with_branch_grant(session, user, ctx)
+
+
+def with_branch_grant(session: Session, user: AppUser, ctx: AccessContext) -> AccessContext:
+    """영업점 공통(영업본부 · 영업점) 사용자에게 영업점 참고 수행방안의 연결 자료를 더 연다 — 질문마다 지금 원장 기준(복사본 없음).
+    연결을 만들지 못하면(원장 오류) 기본 권한 그대로 — 더 여는 것만 실패한다."""
+    from nhdip.views.plan_share import GRANT_LABEL, SHARED_PATH, branch_grant, in_branch_common
+
+    if ctx.is_admin or not in_branch_common(session, user, ctx.resources):
+        return ctx
+    try:
+        with session.begin_nested():
+            g = branch_grant(session)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("nhdip.assist").warning("영업점 공통 연결 자료 계산 실패 — 기본 권한으로: %s", exc, exc_info=True)
+        return ctx
+    if not g:
+        return ctx
+    ctx.grant_sources, ctx.grant_docs, ctx.grant_datasets = dict(g.sources), dict(g.docs), dict(g.datasets)
+    ctx.grant_label, ctx.grant_path = GRANT_LABEL, SHARED_PATH
+    return ctx
 
 
 def _signals(sig: dict[str, Any]) -> dict[str, Any]:

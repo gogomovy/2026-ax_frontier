@@ -40,14 +40,19 @@ CLASS_KO = {
     "Dataset": "데이터셋", "DatasetVersion": "데이터셋 버전", "Metric": "지표", "Workflow": "워크플로", "Artifact": "화면 산출물",
     "Document": "문서", "DocClass": "문서 분류", "Issuer": "발행 기관", "PolicyTheme": "정책 주제", "ProductGroup": "상품군",
     "Product": "상품", "Segment": "고객군", "RatingModel": "평가 모형", "BusinessDomain": "사업 부문", "CapitalConstraint": "자본 제약",
-    "Candidate": "미확정 후보",
+    "Candidate": "미확정 후보", "Plan": "수행방안(영업점 공통)",
 }
-SYSTEM_CLASSES = {"Dataset", "DatasetVersion", "Metric", "Workflow", "Artifact", "Document", "DocClass", "Candidate"}
+SYSTEM_CLASSES = {"Dataset", "DatasetVersion", "Metric", "Workflow", "Artifact", "Document", "DocClass", "Candidate", "Plan"}
 REL_KO = {
     "HAS_VERSION": "버전", "FEEDS": "지표 입력", "DERIVED_FROM": "지표 파생", "USES": "사용", "PRODUCES": "산출", "READS_CLASS": "문서 분류 읽음",
     "DESCRIBES": "설명", "IN_CLASS": "분류", "ISSUED_BY": "발행", "MENTIONS": "언급", "STATES_STANCE": "기조 표명", "SETS_CONSTRAINT": "제약 설정",
     "IN_GROUP": "상품군 소속", "PART_OF_THEME": "정책 주제 소속", "APPLIES_TO": "적용 대상", "MEASURES": "측정", "BELONGS_TO": "소속",
+    "LINKED_TO": "연결 분석", "EVIDENCED_BY": "근거 문서", "USES_DATA": "연결 데이터",
 }
+# 플랫폼이 직접 관리하는 연결 — 활성 스키마 판에 없어도 투영한다(이전 판 스키마로 운영 중인 곳에서도 영업점 공통 연결이 그래프에 나타나게).
+# 수행방안 '영업점 참고'(views.plan_share) → 연결 보고서 · 근거 문서 · 데이터셋. 권한은 그래프가 아니라 SQL · ES 규칙이 정한다
+PLATFORM_CLASSES = {"Plan"}
+PLATFORM_RELS = {"LINKED_TO", "EVIDENCED_BY", "USES_DATA"}
 
 
 def class_ko(c: dict[str, Any]) -> str:

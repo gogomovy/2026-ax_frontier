@@ -145,14 +145,58 @@ def _as_of_stamp(ctx: RunContext, arts: dict[str, Any], computed: set[str]) -> N
             ctx.changed.add(key)
 
 
+from nhdip.calc.metrics import DELETED_INPUT  # noqa: E402 — 다른 흐름 지표가 지운 자료로만 계산돼 있을 때의 오류 문구
+
+
+def gone_metrics(ctx: RunContext) -> set[str]:
+    """입력 자료가 없어 계산할 수 없는 지표(이 실행의 '필요 자료 미업로드' 자료를 읽는 지표 + 그 지표를 참조하는 지표).
+    자료를 지우면 여기에 든다 — 그 지표의 옛 값은 '갱신 실패'로 남기지 않고 비운다. 실행마다 한 번 계산한다."""
+    if "gone_metrics" in ctx.state:
+        return ctx.state["gone_metrics"]
+    from nhdip.graph.projection import _datasets_in_args
+
+    missing = set(ctx.state.get("missing_datasets") or [])
+    out: set[str] = set()
+    if missing:
+        metrics = {m.code: m for m in ctx.session.execute(select(Metric)).scalars()}
+        out = {c for c, m in metrics.items() if _datasets_in_args(m.args) & missing}
+        grew = True
+        while grew:
+            grew = False
+            for c, m in metrics.items():
+                if c not in out and any(isinstance(r, dict) and r.get("metric") in out for r in (m.args or {}).values()):
+                    out.add(c)
+                    grew = True
+    ctx.state["gone_metrics"] = out
+    return out
+
+
+def _binding_gone(ctx: RunContext, b: ViewBinding) -> bool:
+    """바인딩이 읽는 자료가 지워졌거나(필요 자료 미업로드) 지워진 자료의 지표를 쓰는지."""
+    from nhdip.graph.projection import _datasets_in_args
+
+    missing = set(ctx.state.get("missing_datasets") or [])
+    if missing and _datasets_in_args(b.params) & missing:
+        return True
+    gone = gone_metrics(ctx)
+    blob = json.dumps(b.params or {}, ensure_ascii=False, default=str)
+    return any(f'"{c}"' in blob for c in gone)
+
+
 @node_impl("build_views", "계산 결과로 화면 산출물의 수치(Figure)·표·차트를 갱신 (세대 교체 전 단계)")
 def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     arts = ctx.load_artifacts()
     figs: dict[str, dict[str, Any]] = {}
     # 지표 단위가 화면 단위 코드일 때만 수치 단위도 갱신 (관리자가 지표 단위 · 배율을 바꾼 경우) — B.32
     fig_units = {"KRW_MN", "KRW_BN", "KRW_TN", "PCT", "PP", "CNT", "RATIO", "NONE"}
-    for oc in ctx.eval.outcomes.values():
+    gone = gone_metrics(ctx)
+    for code, oc in ctx.eval.outcomes.items():
         if oc.error or oc.display is None:
+            if code in gone or DELETED_INPUT in (oc.error or ""):
+                # 입력 자료가 지워졌다 — 지운 자료로 낸 옛 값을 남기지 않고 비운다(남은 자료로 다시 계산되는 것만 화면에 남는다)
+                for fid in oc.figure_ids:
+                    figs[fid] = {"cleared": True, "reason": "입력 자료 삭제"}
+                continue
             # 계산 실패 — 이전 값은 두되 '갱신 실패' 로 표시해 최신 값으로 오인하지 않게 한다 (B.32)
             for fid in oc.figure_ids:
                 figs[fid] = {"stale": True, "staleReason": (oc.error or "값 없음")[:200]}
@@ -192,7 +236,14 @@ def n_build_views(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             value = fn(ctx.eval, b.params or {})
         except (ResolveError, KeyError, ValueError, TypeError, IndexError, ArithmeticError) as exc:  # 업로드 값이 비었을 때(Decimal 변환 · 0 나눗셈)도 노드가 실패하지 않게
             bind_out.append({"id": b.id, "artifact": b.artifact_key, "error": str(exc)})
-            # 계산 실패 — 표 · 차트의 이전 값은 두되 '갱신 실패' 로 표시한다(수치와 같은 정책, 삭제로 자료가 비었을 때도) (DEL-11)
+            if _binding_gone(ctx, b):
+                # 입력 자료가 지워졌다 — 지운 자료로 그린 표 · 차트를 비운다(수치와 같은 정책)
+                from nhdip.views.template import clear_binding
+
+                if clear_binding(payload, b.path):
+                    ctx.changed.add(b.artifact_key)
+                continue
+            # 계산 실패 — 표 · 차트의 이전 값은 두되 '갱신 실패' 로 표시한다(수치와 같은 정책) (DEL-11)
             if mark_binding_stale(payload, b.path, _resolve_target(payload, b.path), str(exc) or "계산 실패"):
                 ctx.changed.add(b.artifact_key)
             continue
@@ -410,6 +461,8 @@ FIELD_GUIDE = {
     "body": "수행방안 본문 — 담당 부서가 할 일을 실행 항목 중심으로 쓴다(점검 대상 · 주기 · 보고 조건). 규칙 가이드가 있으면 그 방향을 따른다.",
     "guideline": "영업점에 전달할 취급 가이드 한두 문장 — 무엇을 우선 취급하고 무엇을 조심할지. 근거 문서에 없는 기준을 만들지 않는다.",
 }
+SHARED_PLAN_GUIDE = ("근거의 [사업부서 진행사업] 줄은 사업부서가 영업점 참고를 켠 수행방안과 그 연결 분석이다 — 이 지점 수치와 관련 있을 때만 방향(우선 · 주의)으로 반영하고, "
+                     "사업부서 분석의 수치를 이 지점 수치처럼 쓰지 않는다.")
 
 
 @node_impl("narrate", "LLM 서술 — 의견 · 제안 판단 · 수행방안 본문 · 영업점 가이드. 확정 수치는 [[fig:ID]] 마커로만 참조 (실패 시 규칙 문장 유지)")
@@ -435,6 +488,11 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         return NodeResult({"fallback": "template", "reason": str(exc), "targets": [target_key(t) for t in targets], "results": results}, "degraded")
     degraded = False
     broken: str | None = None  # 첫 LLM 호출 실패 뒤에는 나머지 대상에서 같은 대기 · 재시도를 되풀이하지 않는다(게이트웨이 장애 때 실행이 수십 분 묶이는 것을 막음)
+    # 영업점 흐름 — 사업부서가 '영업점 참고'를 켠 진행사업과 그 연결 분석을 근거로 읽는다(수치 이름만, 값은 영업점 자체 확정 수치 마커로).
+    # 노드 설정 shared_plans: false 로 끈다
+    from nhdip.views.plan_share import agent_lines, is_branch_outputs
+
+    shared_lines = agent_lines(ctx.session) if cfg.get("shared_plans", True) and is_branch_outputs(ctx.workflow.outputs) else []
     for target in targets:
         key, field = target_key(target), target_field(target)
         if broken:
@@ -458,9 +516,10 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         own = [e for e in (ins.get("evidence") or []) if isinstance(e, dict) and isinstance(e.get("doc"), dict)]
         ev_lines = [f"- [{e.get('category')}] {e['doc'].get('title')} p.{e['doc'].get('page') or '-'}: {(e.get('snippet') or '')[:300]}" for e in own]
         ev_lines += [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]]
+        ev_lines += shared_lines
         guide = ins.get("guide") if isinstance(ins.get("guide"), dict) else None
         instruction = " ".join(x for x in (FIELD_GUIDE.get(field, ""), f"규칙 가이드: {guide.get('title')} — {guide.get('text')}" if guide and guide.get("text") else "", target.get("instruction", ""),
-                                           PERIOD_GUIDE if any(notes.values()) else "") if x)
+                                           PERIOD_GUIDE if any(notes.values()) else "", SHARED_PLAN_GUIDE if shared_lines else "") if x)
         tmpl = llm.user_template or (
             "다음 확정 수치와 근거로 '{title}' 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다(마커가 단위까지 표시하므로 마커 뒤에 건 · % · 원 같은 단위를 붙이지 않는다). 인과를 단정하지 않는다. 2~4문장.\n\n"
             "수치:\n{figures}\n\n판정:\n{verdicts}\n\n근거:\n{evidence}\n\n기존 서술(참고):\n{current}\n\n{instruction}\n출력: {{\"statement\": \"...\"}}"
@@ -650,13 +709,18 @@ def n_publish(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         published.append({"key": key, "generation": row.generation})
     ctx.changed = {p["key"] for p in published}
     kb = _index_knowledge(ctx.session, [p["key"] for p in published]) if published else None
+    # 영업점 참고 수행방안의 연결 분석 보고서가 새로 게시됐으면 영업점 참고 산출물(질문하기 색인)도 지금 보고서로
+    from nhdip.views.plan_share import refresh_if_linked
+
+    plans_refreshed = refresh_if_linked(ctx.session, [p["key"] for p in published], ctx.workflow.code) if published else False
     # 플래너가 정한 후속 워크플로우 — 게시가 끝난 뒤 실행되도록 이벤트로 넘긴다(오케스트레이터가 연쇄 · 순서 관리)
     followups = []
     for f in ctx.state.get("followups") or []:
         ctx.emit_after_success("agent.followup", {"workflow": f["workflow"], "reason": f.get("reason"), "by": "planner", "from": ctx.workflow.code, "run": ctx.run.id, "chain": f.get("chain") or [ctx.workflow.code]}, "planner")
         followups.append(f["workflow"])
     events = ctx.flush_deferred()  # 게시와 같은 트랜잭션 (B.33)
-    return NodeResult({"events": events, "published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {}), **({"knowledge": kb} if kb else {})})
+    return NodeResult({"events": events, "published": published, **({"merged": merged} if merged else {}), **({"followups": followups} if followups else {}), **({"knowledge": kb} if kb else {}),
+                       **({"branchSharedPlans": "갱신"} if plans_refreshed else {})})
 
 
 # ═════════════════════════ 문서 · 그래프 ═════════════════════════
@@ -931,6 +995,19 @@ def n_recommend_goals(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     for item in (node.config or {}).get("items", []):
         oc = ctx.eval.outcomes.get(item["metric"])
         prop = next((p for p in proposals if p.get("id") == item["proposal"]), None)
+        if prop is not None and (item["metric"] in gone_metrics(ctx) or DELETED_INPUT in ((oc.error if oc else "") or "")):
+            # 추천 근거 자료가 지워졌다 — 지운 자료로 낸 추천 범위를 남기지 않는다(검토 목록에서 빠지고, 자료가 다시 오르면 다시 계산)
+            rec = dict(prop.get("recommendation") or {})
+            cleared = {**rec, **{k: None for k in ("low", "high", "value", "currentValue") if k in rec}, "text": ""}
+            cleared.pop("calcId", None)
+            cleared.pop("engine", None)
+            label = item.get("input_label", "⑤ 엔진 산출 범위")
+            inputs = [x for x in (prop.get("ruleInputs") or []) if x.get("label") != label]
+            if cleared != rec or inputs != (prop.get("ruleInputs") or []):
+                prop["recommendation"], prop["ruleInputs"] = cleared, inputs
+                ctx.changed.add("proposals")
+            out.append({"proposal": item["proposal"], "cleared": "입력 자료 삭제 — 추천 범위를 비움"})
+            continue
         if prop is None or oc is None or oc.error or oc.value is None:
             out.append({"proposal": item["proposal"], "skipped": "제안 또는 지표 값 없음" if not (oc and oc.error) else oc.error})
             continue

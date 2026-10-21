@@ -159,6 +159,19 @@ def patch_figures(obj: Any, figs: dict[str, dict[str, Any]], changes: list[dict[
     if isinstance(obj, dict):
         if _is_figure(obj) and obj["id"] in figs:
             f = figs[obj["id"]]
+            if f.get("cleared"):
+                # 입력 자료가 지워졌다 — 지운 자료로 낸 옛 값 · 계산 근거를 남기지 않고 값 없는 틀로(남은 자료로 다시 계산하면 채워진다)
+                from .template import strip_figure
+
+                if obj.get("value") is not None or obj.get("stale") or obj.get("calc") or obj.get("sourceRef"):
+                    before = obj.get("value")
+                    strip_figure(obj)
+                    obj.pop("stale", None)
+                    obj.pop("staleReason", None)
+                    changes.append({"artifact": key, "figure": obj["id"], "before": before, "after": None, "cleared": True, "reason": f.get("reason")})
+                for v in obj.values():
+                    patch_figures(v, figs, changes, key)
+                return
             if f.get("stale"):
                 # 계산 실패 — 값은 그대로 두고 갱신 실패 표시만 (B.32). 이전 값이 없으면(빈 상태) 표시할 '이전 값'이 없으므로 달지 않는다
                 if obj.get("value") is not None and (not obj.get("stale") or obj.get("staleReason") != f.get("staleReason")):

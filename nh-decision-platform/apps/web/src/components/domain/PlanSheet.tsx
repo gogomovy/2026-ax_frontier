@@ -1,14 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { EvidenceSummary } from "@/components/evidence/EvidenceChips";
 import { FormField } from "@/components/domain/GoalSheets";
 import { AlignmentPanel } from "@/components/domain/Verification";
 import { usePlanState } from "@/components/providers/PlanStateProvider";
 import { useUi } from "@/components/providers/UiProvider";
+import { LinkedAnalysisSection } from "@/components/domain/LinkedAnalysis";
 import { Sheet, SheetSection } from "@/components/ui/Sheet";
-import { Badge, Button, IconCheck, IconChevron, IconDoc, Switch } from "@/components/ui/primitives";
+import { Badge, Button, IconCheck, Switch } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
 import type { ActionPlan, AnalysisTab } from "@/lib/types";
 
@@ -155,7 +155,7 @@ function PlanView({
             checked={plan.branchShared}
             onChange={() => toggleBranchShare(plan.id)}
             label={plan.branchShared ? "영업점 AI 참고 가능" : "영업점 AI 참고 중단"}
-            description="언제든 다시 바꿀 수 있습니다. 켜면 전파 경로에 영업점이 연결됩니다."
+            description="켜면 영업점 화면 · 질문하기 · 영업점 AI가 이 수행방안과 연결 분석(요약)을 함께 참고하고, 전파 경로에 영업점이 연결됩니다. 언제든 다시 바꿀 수 있습니다."
           />
         </div>
       ) : null}
@@ -218,22 +218,8 @@ function PlanView({
       </SheetSection>
 
       <SheetSection title="연결 분석">
-        {plan.linkedTabKey ? (
-          <Link
-            href={`/risk/analysis/${plan.linkedTabKey}`}
-            className="flex items-center gap-md rounded-xl border border-hairline-soft px-base py-3"
-          >
-            <IconDoc className="shrink-0 text-steel" />
-            <span className="min-w-0 flex-1 text-[13px] font-bold text-ink-deep">
-              {plan.linkedAnalysisLabel ?? plan.linkedTabKey}
-            </span>
-            <span className="inline-flex shrink-0 items-center gap-1 text-[12px] font-bold text-primary">
-              보고서 열기 <IconChevron />
-            </span>
-          </Link>
-        ) : (
-          <p className="text-[12.5px] text-stone">연결된 분석이 없습니다.</p>
-        )}
+        {/* 보고서 주소는 서버가 분석 공간에서 정한다(부서 화면 경로를 화면에 두지 않음). 열 수 없는 사용자(영업점)는 요약을 본다 */}
+        <LinkedAnalysisSection plan={plan} />
       </SheetSection>
     </Sheet>
   );

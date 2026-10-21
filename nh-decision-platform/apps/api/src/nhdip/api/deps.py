@@ -196,11 +196,12 @@ def require_resource(resource: str):
     return dep
 
 
-def user_json(session: Session, user: AppUser) -> dict[str, Any]:
+def user_json(session: Session, user: AppUser, labels: dict[str, str] | None = None) -> dict[str, Any]:
+    """labels = 조직 유형 이름(type_labels) — 목록에서는 한 번만 읽어 넘긴다(설정 행이 없으면 session.get 이 매번 질의한다)."""
     from nhdip.orgs import type_labels
 
     chain = org_chain(session, user.org_code)
-    labels = type_labels(session)
+    labels = labels if labels is not None else type_labels(session)
     return {
         "empNo": user.emp_no,
         "name": user.name,

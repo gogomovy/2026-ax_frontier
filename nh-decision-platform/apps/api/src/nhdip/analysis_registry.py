@@ -14,23 +14,51 @@ from sqlalchemy.orm import Session
 from nhdip.models import AnalysisAgent, Setting
 from nhdip.views.store import get_current, get_current_row
 
+# 공간의 구조(화면 경로 · 산출물 키 · 열람 리소스)는 제품 화면과 맞물린 기본값이다. 이름(label)은 구성이 없을 때의 표시용 기본값일 뿐 —
+# 실제 표시 이름은 spaces() 가 화면 · 업무 영역 · 조직에서 정한다(config_label). 새 부서 공간은 설정 analysis.spaces 로 더한다(DAG-07)
 DEFAULT_SPACES: dict[str, dict[str, Any]] = {
-    "risk": {"label": "신용리스크관리부", "path": "/risk/analysis", "tabs": "analysis_tabs", "tabsResource": "analysis_tabs", "resource": "reports", "reportPrefix": "report.", "builder": True, "domain": "RISK", "persona": "P2"},
+    "risk": {"label": "사업부서", "path": "/risk/analysis", "tabs": "analysis_tabs", "tabsResource": "analysis_tabs", "resource": "reports", "reportPrefix": "report.", "builder": True, "domain": "RISK", "persona": "P2"},
     "branch": {"label": "영업점", "path": "/branch/analysis", "tabs": "branch_tabs", "tabsResource": "branch_tabs", "resource": "branch_reports", "reportPrefix": "report.branch-", "scoped": "office", "builder": False, "domain": "BRANCH", "persona": "P3"},
-    # 종합기획부 — 기존 [데이터 분석] 화면의 탭으로 (Q109). 기존 탭(여신 실적)은 화면 안 탭이라 산출물 탭 목록은 없음
+    # 종합기획부(고정) — 기존 [데이터 분석] 화면의 탭으로 (Q109). 기존 탭(여신 실적)은 화면 안 탭이라 산출물 탭 목록은 없음
     "hq": {"label": "종합기획부", "path": "/hq/analysis", "tabs": None, "tabsResource": "hq_reports", "resource": "hq_reports", "reportPrefix": "report.", "builder": True, "domain": "HQ", "persona": "P1"},
 }
 SEV_ORDER = {"info": 0, "watch": 1, "caution": 2, "critical": 3}
 LIVE = ("active", "paused")
 
 
+def config_label(session: Session, path: str | None) -> str | None:
+    """분석 공간 이름을 운영 구성에서 — 그 화면(경로)의 메뉴 묶음 → [화면 설정 › 업무 영역] 단위의 조직 이름(없으면 묶음 이름).
+    부서 이름을 코드에 두지 않는다: 조직 · 화면 · 업무 영역을 바꾸면 분석 결과 제목 · 공유 표시도 따라 바뀐다."""
+    from nhdip.models import OrgUnit, Screen
+    from nhdip.ui_config import value_of
+
+    if not path:
+        return None
+    scr = session.execute(select(Screen).where(Screen.path == path, Screen.active).order_by(Screen.sort)).scalars().first()
+    if scr is None or not scr.section:
+        return None
+    for spec in (value_of(session, "ui.scopes") or {}).values():
+        units = spec.get("units") if isinstance(spec, dict) else None
+        for u in units or []:
+            if isinstance(u, dict) and u.get("section") == scr.section and u.get("org"):
+                org = session.get(OrgUnit, u["org"])
+                if org is not None:
+                    return org.name
+    return scr.section
+
+
 def spaces(session: Session) -> dict[str, dict[str, Any]]:
+    """분석 공간 — 기본 정의(DEFAULT_SPACES: 화면 경로 · 산출물 키 · 리소스) + 설정 analysis.spaces.
+    이름(label)은 설정에 적었으면 그것, 아니면 운영 구성(화면 · 업무 영역 · 조직)에서 — 기본 정의의 이름은 구성이 없을 때만 쓴다."""
     s = session.get(Setting, "analysis.spaces")
     v = s.value if s is not None and isinstance(s.value, dict) else {}
     out = {}
     for k, d in {**DEFAULT_SPACES, **v}.items():
         if isinstance(d, dict) and d.get("enabled", True) is not False:
-            out[k] = {**DEFAULT_SPACES.get(k, {}), **d, "key": k}
+            sp = {**DEFAULT_SPACES.get(k, {}), **d, "key": k}
+            if not (isinstance(v.get(k), dict) and v[k].get("label")):
+                sp["label"] = config_label(session, sp.get("path")) or sp.get("label") or k
+            out[k] = sp
     return out
 
 

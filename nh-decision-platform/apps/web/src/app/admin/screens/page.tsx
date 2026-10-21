@@ -1,9 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { AdminPage, C, Card, Loading, Table, TextInput, useAction, useApiData } from "@/components/admin/kit";
 import { Badge, Button } from "@/components/ui/primitives";
 import { apiPatch, apiPut } from "@/lib/api-client";
+import { buildOrgTree, orgMatches } from "@/lib/orgLookup";
+
+/** 권한 표에 한 번에 그리는 조직 열 수 */
+const MAX_COLS = 40;
 
 interface ScreenRow {
   code: string;
@@ -21,6 +25,7 @@ interface OrgRow {
   level: number;
   parent: string | null;
   active: boolean;
+  sort?: number;
 }
 interface Data {
   screens: ScreenRow[];
@@ -33,6 +38,7 @@ export default function ScreensAdmin() {
   const data = useApiData<Data>("/admin/screens");
   const { run, busy } = useAction();
   const [showAll, setShowAll] = useState(false);
+  const [orgText, setOrgText] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [resText, setResText] = useState("");
   const d = data.data;
@@ -47,7 +53,11 @@ export default function ScreensAdmin() {
     }
     return null;
   };
-  const orgs = (d?.orgs ?? []).filter((o) => o.active && (showAll || o.level <= 2));
+  // 조직이 수천 곳이면 '전체 조직' 열이 수만 칸이 되어 화면이 멈춘다 — 찾기로 좁히고, 한 번에 MAX_COLS 열까지만 그린다
+  const tree = useMemo(() => buildOrgTree((d?.orgs ?? []).map((o) => ({ ...o, sort: o.sort ?? 0 }))), [d]);
+  const term = useDeferredValue(orgText.trim());
+  const matched = (d?.orgs ?? []).filter((o) => o.active && (term ? orgMatches(o, tree.path(o.code).slice(0, -1).map((x) => x.name), term) : showAll || o.level <= 2));
+  const orgs = matched.slice(0, MAX_COLS);
   const screens = (d?.screens ?? []).filter((s) => !s.adminOnly);
 
   return (
@@ -63,6 +73,15 @@ export default function ScreensAdmin() {
       <Loading error={data.error} loading={!d && data.loading} />
       {d ? (
         <Card>
+          <div className="mb-md flex flex-wrap items-end gap-md" role="search" aria-label="권한 표 조직 찾기">
+            <TextInput label="조직 찾기" value={orgText} onChange={setOrgText} placeholder="이름 · 코드 · 상위 조직 이름" className="w-[300px]" />
+            <p className="text-[12px] text-steel tnum" role="status" aria-live="polite">
+              {matched.length > orgs.length
+                ? `조직 ${matched.length.toLocaleString("ko-KR")}곳 중 ${orgs.length}곳만 열로 보입니다 — 찾기로 좁히세요`
+                : `조직 ${orgs.length.toLocaleString("ko-KR")}곳`}
+              {term ? " · 찾기 결과(단계 무관)" : showAll ? " · 전체 단계" : " · 상위 2단계"}
+            </p>
+          </div>
           <Table head={["화면", ...orgs.map((o) => <span key={o.code} title={o.code} className={o.level === 1 ? "" : "font-medium text-steel"}>{o.name}</span>)]}>
             {screens.map((s) => (
               <tr key={s.code}>

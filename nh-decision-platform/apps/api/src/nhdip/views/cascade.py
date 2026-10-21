@@ -37,8 +37,11 @@ def build_tree(
     unit_labels: dict[str, str] | None = None,
     targets: list[dict[str, Any]] | None = None,
     plans: list[dict[str, Any]] | None = None,
+    hq_org: str | None = None,
 ) -> list[dict[str, Any]]:
+    """hq_org = 경영목표를 신설하는 부서 이름 — [화면 설정 › 업무 영역]의 종합기획부 단위(ui_config.hq_org_name), 없으면 종합기획부(고정)."""
     units = unit_labels or DEFAULT_UNIT_LABELS
+    hq = hq_org or "종합기획부"
     overrides = goal_state.get("overrides") or {}
     by_goal = {g["id"]: g for g in goals}
     by_target = {t["id"]: t for t in (targets or []) if isinstance(t, dict) and t.get("id")}
@@ -86,8 +89,8 @@ def build_tree(
             "id": added["id"],
             "kind": "goal",
             "label": added.get("title", ""),
-            "detail": f"종합기획부 · 신규 확정 · 목표 {added.get('targetLabel', '')}",
-            "org": "종합기획부",
+            "detail": f"{added.get('ownerOrg') or hq} · 신규 확정 · 목표 {added.get('targetLabel', '')}",
+            "org": added.get("ownerOrg") or hq,
             "children": [],
         })
 
@@ -139,6 +142,7 @@ def build_tree(
 
 
 def current_tree(session: Session) -> list[dict[str, Any]]:
+    from nhdip.ui_config import hq_org_name
     from nhdip.views import user_state as S
 
     units = session.get(Setting, "format.unit_labels")
@@ -150,6 +154,7 @@ def current_tree(session: Session) -> list[dict[str, Any]]:
         [p for p in merged if p.get("status") == "in_progress"],
         units.value if units else None,
         targets=get_current(session, "branch_targets") or [],
+        hq_org=hq_org_name(session),
         plans=merged,
     )
 

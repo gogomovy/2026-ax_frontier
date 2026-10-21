@@ -33,6 +33,7 @@ import type {
   ReportRequest,
   ReviewQueueItem,
   RiskDashboard,
+  SharedReportDoc,
   Term,
 } from "./types";
 
@@ -72,6 +73,8 @@ export const getSpaceTabsOptional = (space: string): Promise<AnalysisSpaceTabs |
 export const getSpaceReport = (space: string, tabKey: string, office?: string | null): Promise<ReportDoc | null> =>
   api(`/screens/analysis/${enc(space)}/reports/${enc(tabKey)}${officeQs(office)}`);
 export const getReport = (tabKey: string): Promise<ReportDoc | null> => api(`/screens/reports/${enc(tabKey)}`);
+/** 영업점 공통 공유 보고서 — 영업점 참고 수행방안의 연결 분석 보고서(영업본부 · 영업점, 부서 보고서 화면 권한 없이) */
+export const getSharedPlanReport = (planId: string): Promise<SharedReportDoc | null> => api(`/screens/plans/${enc(planId)}/report`);
 export const getInclusiveAnalysis = (): Promise<InclusiveAnalysis> => api("/screens/inclusive");
 export const getActionPlans = (): Promise<ActionPlan[]> => api("/screens/action-plans");
 export const getDefaultRateTrend = (): Promise<DefaultRateTrend> => api("/screens/default-rate-trend");

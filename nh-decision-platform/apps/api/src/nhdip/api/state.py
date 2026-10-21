@@ -115,6 +115,13 @@ def _user_dept(session: Session, user: AppUser) -> str | None:
     return None
 
 
+def _org_name(session: Session, code: str | None) -> str:
+    from nhdip.models import OrgUnit
+
+    o = session.get(OrgUnit, code) if code else None
+    return o.name if o is not None else (code or "-")
+
+
 def _proposal(session: Session, pid: str) -> dict[str, Any]:
     for p in get_current(session, "proposals") or []:
         if p["id"] == pid:
@@ -528,6 +535,30 @@ def _runtime(session: Session, pid: str, user: AppUser, **values: Any) -> None:
     S.put(session, S.NS_PLAN_RUNTIME, pid, rt, user.emp_no)
 
 
+def _shared(session: Session, pid: str | None = None) -> set[str]:
+    """영업점 참고가 켜진 진행사업 id (pid 를 주면 그것만 확인)."""
+    from nhdip.views.plan_share import shared_plans
+
+    ids = {str(p.get("id")) for p in shared_plans(session)}
+    return ids if pid is None else ids & {pid}
+
+
+def _after_share(session: Session, user: AppUser, before: set[str], pid: str | None = None) -> None:
+    """영업점 참고 수행방안이 바뀌었으면(켜기 · 끄기 · 참고 중인 사업의 수정 · 삭제) — 영업점 참고 산출물(수행방안 + 연결 분석)을 다시 게시해
+    질문하기에 바로 반영하고, 이벤트로 영업점 흐름을 다시 돌려 영업점 서술 에이전트가 새 근거로 쓰게 한다(같은 트랜잭션, 호출자가 commit)."""
+    from nhdip.views.plan_share import SHARE_EVENTS, republish
+
+    session.flush()
+    after = _shared(session, pid)
+    touched = (before | after) if pid is None else (before | after) & {pid}
+    if not touched:
+        return
+    republish(session, user.emp_no)
+    titles = {str(p.get("id")): p.get("title") for p in S.merged_plans(session)}
+    for i in sorted(touched):
+        emit(session, SHARE_EVENTS[0] if i in after else SHARE_EVENTS[1], {"plan": i, "title": titles.get(i)}, user.emp_no)
+
+
 @router.get("/plans")
 def get_plan_state(session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_state"))):
     allowed = user_resources(session, user)
@@ -546,8 +577,10 @@ def register_plan(pid: str, request: Request, session: Session = Depends(get_ses
 
 @router.post("/plans/{pid}/unregister")
 def unregister_plan(pid: str, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
+    before = _shared(session, pid)
     _runtime(session, pid, user, status="proposed", branchShared=False, registeredAt=None)
     audit(session, user.emp_no, "plan.unregister", "plan", pid, None, client_ip(request))
+    _after_share(session, user, before, pid)
     session.commit()
     return S.plan_state(session)
 
@@ -559,9 +592,12 @@ def toggle_share(pid: str, request: Request, session: Session = Depends(get_sess
         raise HTTPException(404, "수행방안 없음")
     _check_owner(session, pid, user)
     S.lock_item(session, S.NS_PLAN_RUNTIME, pid)
+    before = _shared(session, pid)
     cur = (S.get_ns(session, S.NS_PLAN_RUNTIME).get(pid) or {}).get("branchShared", base.get("branchShared", False))
     _runtime(session, pid, user, branchShared=not cur)
     audit(session, user.emp_no, "plan.toggle_share", "plan", pid, {"branchShared": not cur}, client_ip(request))
+    # 영업점 참고 — 수행방안과 연결 분석을 영업점 화면 · 질문하기 · 영업점 에이전트가 함께 쓴다(views.plan_share)
+    _after_share(session, user, before, pid)
     session.commit()
     return S.plan_state(session)
 
@@ -570,6 +606,7 @@ def toggle_share(pid: str, request: Request, session: Session = Depends(get_sess
 def update_plan(pid: str, body: PlanPatchIn, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
     patch = body.model_dump(exclude_none=True)
     _check_owner(session, pid, user)
+    before = _shared(session, pid)
     S.lock_item(session, S.NS_PLAN_USER, pid)
     users = S.get_ns(session, S.NS_PLAN_USER)
     if pid in users:
@@ -581,6 +618,7 @@ def update_plan(pid: str, body: PlanPatchIn, request: Request, session: Session 
         rt = S.get_ns(session, S.NS_PLAN_RUNTIME).get(pid) or {}
         _runtime(session, pid, user, patch={**(rt.get("patch") or {}), **patch}, updatedAt=S.today())
     audit(session, user.emp_no, "plan.update", "plan", pid, patch, client_ip(request))
+    _after_share(session, user, before, pid)  # 영업점이 참고 중인 사업을 고치면(연결 분석 포함) 영업점에도 새 내용
     session.commit()
     return S.plan_state(session)
 
@@ -590,9 +628,11 @@ def delete_plan(pid: str, request: Request, session: Session = Depends(get_sessi
     if not _plan_exists(session, pid):
         raise HTTPException(404, "수행방안 없음")
     _check_owner(session, pid, user)
+    before = _shared(session, pid)
     S.put(session, S.NS_PLAN_DELETED, pid, {}, user.emp_no)
     S.remove(session, S.NS_PLAN_USER, pid)
     audit(session, user.emp_no, "plan.delete", "plan", pid, None, client_ip(request))
+    _after_share(session, user, before, pid)
     session.commit()
     return S.plan_state(session)
 
@@ -606,7 +646,8 @@ def add_plan(body: NewPlanIn, request: Request, session: Session = Depends(get_s
         "id": pid,
         "title": body.title,
         "body": body.body,
-        "ownerOrg": (body.ownerOrg if user.role == "admin" and body.ownerOrg else None) or _user_dept(session, user) or "신용리스크관리부",
+        # 등록 부서 = 소속(가장 가까운 부 · 지역본부 · 영업점), 없으면 소속 조직 이름 — 부서 이름을 코드에 두지 않는다
+        "ownerOrg": (body.ownerOrg if user.role == "admin" and body.ownerOrg else None) or _user_dept(session, user) or _org_name(session, user.org_code),
         "monitoringMetrics": body.monitoringMetrics,
         "reviewCycle": body.reviewCycle or "월",
         "alignment": {"verdict": "unknown", "matched": [], "conflicts": []},
@@ -630,8 +671,10 @@ def add_plan(body: NewPlanIn, request: Request, session: Session = Depends(get_s
 @router.post("/plans/reset")
 def reset_plans(request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
     _require_admin_reset(user)
+    before = _shared(session)
     S.clear(session, "plan")
     audit(session, user.emp_no, "plan.reset", "plan", None, None, client_ip(request))
+    _after_share(session, user, before)
     session.commit()
     return S.plan_state(session)
 

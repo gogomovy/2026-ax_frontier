@@ -54,6 +54,13 @@ class AccessContext:
     offices: set[str] | None = None  # 열람 가능한 지점(사무소) 코드 (None = 제한 없음)
     dept_docs: set[str] | None = None  # 열람 가능한 부서한정 문서 코드 (None = 제한 없음)
     screen: str | None = None  # 지금 보고 있는 화면 경로 (가산점 힌트)
+    # 영업점 공통 — 사업부서가 '영업점 참고'로 연 수행방안의 연결 자료(views.plan_share.branch_grant). 위 규칙과 별도로 더 연다.
+    # 값 = 그 자료를 연 수행방안 id ('' = 영업점 참고 요약). 질문할 때마다 지금 원장에서 만든다 — 다시 계산한 결과가 그대로 이어진다
+    grant_sources: dict[str, str] | None = None  # 산출물 키(청크 source_key)
+    grant_docs: dict[str, str] | None = None  # 문서 코드
+    grant_datasets: dict[str, str] | None = None  # 데이터셋 코드(집계 도구)
+    grant_label: str = "영업점 공통"
+    grant_path: str = "/branch/shared"  # 공유 보고서 화면 주소 앞부분('/{수행방안 id}' 를 붙인다)
 
 
 @dataclass
@@ -65,17 +72,28 @@ class AccessScope:
     owned: set[str]  # 담당 팀인 컬렉션
     doc_classes: list[str] | None  # 열람 가능한 문서 분류 (None = 제한 없음)
     doc_owned_classes: set[str] = field(default_factory=set)
+    granted: list[str] = field(default_factory=list)  # 영업점 공통 연결 자료(grant_sources)로만 열리는 컬렉션 — 그 산출물 청크만
 
     def label(self, code: str) -> str:
         c = self.collections.get(code)
         return c.label if c else code
 
+    def has_analysis(self) -> bool:
+        return bool(self.full or self.gated or self.granted)
+
+    def granted_source(self, key: str | None) -> str | None:
+        """영업점 공통으로 열린 청크면 그 수행방안 id('' = 영업점 참고 요약), 아니면 None — 내 권한으로도 열리는 컬렉션이면 None."""
+        g = self.ctx.grant_sources
+        if not g or not key:
+            return None
+        return g.get(key)
+
     def public(self) -> list[dict[str, Any]]:
-        """응답용 — 내가 질문할 수 있는 컬렉션 (권한 밖은 없음)."""
+        """응답용 — 내가 질문할 수 있는 컬렉션 (권한 밖은 없음). 영업점 공통으로만 열린 컬렉션은 shared 표시."""
         out = []
-        for code in [*self.full, *self.gated]:
+        for code in [*self.full, *self.gated, *self.granted]:
             c = self.collections[code]
-            out.append({"code": c.code, "label": c.label, "kind": c.kind, "owned": code in self.owned, "partial": code in self.gated})
+            out.append({"code": c.code, "label": c.label, "kind": c.kind, "owned": code in self.owned, "partial": code not in self.full, **({"shared": True} if code in self.granted else {})})
         return sorted(out, key=lambda x: (self.collections[x["code"]].sort, x["code"]))
 
     def scope_keys(self) -> list[str] | None:
@@ -118,6 +136,28 @@ def _reachable(session: Session, ctx: AccessContext, gated: list[str]) -> list[s
     return [g for g in gated if g in hit]
 
 
+def _granted(session: Session, ctx: AccessContext, have: set[str], by_code: dict[str, CollectionInfo]) -> list[str]:
+    """영업점 공통 연결 산출물(grant_sources)의 청크가 든 컬렉션 가운데 내 권한으로는 열리지 않는 것 — 그 산출물 청크만 연다(kb_filter).
+    꺼진 컬렉션 · 미분류 컬렉션에 든 청크도 연결 산출물이면 연다(컬렉션 규칙이 없어도 수행방안 연결이 권한이다)."""
+    keys = sorted(ctx.grant_sources or {})
+    if not keys:
+        return []
+    sql = "SELECT DISTINCT collection_code FROM app.kb_chunk WHERE source_key = ANY(CAST(:k AS text[]))"
+    params: dict[str, Any] = {"k": keys}
+    if ctx.offices is not None:
+        sql += " AND (scope_key IS NULL OR scope_key = ANY(CAST(:s AS text[])))"
+        params["s"] = sorted(f"office:{o}" for o in ctx.offices)
+    out = []
+    for code in sorted(session.execute(text(sql), params).scalars()):
+        if code in have:
+            continue
+        if code not in by_code:
+            row = session.get(KbCollection, code)
+            by_code[code] = to_info(row) if row is not None else CollectionInfo(code=code, label=ctx.grant_label, kind="analysis")
+        out.append(code)
+    return out
+
+
 def _all_doc_classes(session: Session) -> list[str]:
     out: set[str] = set()
     for origin in ("bank", "ext"):
@@ -145,7 +185,8 @@ def resolve_scope(session: Session, ctx: AccessContext, collections: list[Collec
     if gated:
         # 청크 단위로만 열 수 있는 컬렉션은 내가 열 수 있는 청크가 실제로 있을 때만 범위에 나타낸다(존재 비노출 — ACL-04)
         gated = _reachable(session, ctx, gated)
-    accessible = {code: by_code[code] for code in [*full, *gated]}
+    granted = _granted(session, ctx, set(full) | set(gated), by_code) if ctx.grant_sources and not ctx.is_admin else []
+    accessible = {code: by_code[code] for code in [*full, *gated, *granted]}
     # 문서 분류 — 문서 컬렉션이 가져간 분류만, '*' 는 다른 컬렉션이 가져가지 않은 나머지 분류
     doc_cols = [c for c in cols if c.kind == "document"]
     # '*' 의 나머지 계산은 꺼진 컬렉션의 분류도 '가져간 것' 으로 본다 — 끄면 그 분류가 '기타 문서(전체 공개)' 로 새지 않고 닫힌다(실패 시 닫힘)
@@ -169,7 +210,8 @@ def resolve_scope(session: Session, ctx: AccessContext, collections: list[Collec
                     owned_classes.add(x)
     if need_all:
         classes |= set(_all_doc_classes(session)) - claimed
-    return AccessScope(ctx=ctx, collections=accessible, full=full, gated=gated, owned=owned, doc_classes=None if ctx.is_admin and not doc_cols else sorted(classes), doc_owned_classes=owned_classes)
+    return AccessScope(ctx=ctx, collections=accessible, full=full, gated=gated, owned=owned, doc_classes=None if ctx.is_admin and not doc_cols else sorted(classes), doc_owned_classes=owned_classes,
+                       granted=granted)
 
 
 # ── SQL 사전 필터 ─────────────────────────────────────────────
@@ -180,6 +222,10 @@ def kb_filter(scope: AccessScope, alias: str = "c") -> tuple[str, dict[str, Any]
     parts = [f"{a}.collection_code = ANY(CAST(:kb_full AS text[]))"]
     if scope.gated and scope.ctx.resources:
         parts.append(f"({a}.collection_code = ANY(CAST(:kb_gated AS text[])) AND {a}.required_resource = ANY(CAST(:kb_res AS text[])))")
+    if scope.ctx.grant_sources and not scope.ctx.is_admin:
+        # 영업점 공통 — 영업점 참고 수행방안의 연결 산출물(지금 세대 청크)
+        parts.append(f"{a}.source_key = ANY(CAST(:kb_grant AS text[]))")
+        params["kb_grant"] = sorted(scope.ctx.grant_sources)
     sql = "(" + " OR ".join(parts) + ")"
     scopes = scope.scope_keys()
     if scopes is not None:
@@ -191,17 +237,26 @@ def kb_filter(scope: AccessScope, alias: str = "c") -> tuple[str, dict[str, Any]
 def doc_filter(scope: AccessScope, alias: str = "d") -> tuple[str, dict[str, Any]]:
     """문서 청크 사전 필터 — 허용 문서 분류 + 부서한정 문서 (graph.evidence.doc_visible 과 같은 규칙)."""
     a = alias
-    sql = f"{a}.is_current"
+    grant = sorted(scope.ctx.grant_docs or {}) if not scope.ctx.is_admin else []
+    conds: list[str] = []
     params: dict[str, Any] = {}
+    closed = False
     if scope.doc_classes is not None:
         if not scope.doc_classes:
-            return "FALSE", {}
-        sql += f" AND {a}.doc_class = ANY(CAST(:doc_classes AS text[]))"
-        params["doc_classes"] = scope.doc_classes
-    if scope.ctx.dept_docs is not None:
-        sql += f" AND (COALESCE({a}.meta->>'accessClass', 'internal') <> 'dept_only' OR {a}.doc_code = ANY(CAST(:dept_docs AS text[])))"
+            closed = True
+        else:
+            conds.append(f"{a}.doc_class = ANY(CAST(:doc_classes AS text[]))")
+            params["doc_classes"] = scope.doc_classes
+    if not closed and scope.ctx.dept_docs is not None:
+        conds.append(f"(COALESCE({a}.meta->>'accessClass', 'internal') <> 'dept_only' OR {a}.doc_code = ANY(CAST(:dept_docs AS text[])))")
         params["dept_docs"] = sorted(scope.ctx.dept_docs)
-    return sql, params
+    if not grant:
+        return ("FALSE", {}) if closed else (" AND ".join([f"{a}.is_current", *conds]), params)
+    # 영업점 공통 — 영업점 참고 수행방안의 연결 근거 문서는 분류 · 부서한정과 별도로 연다(현재 판만)
+    params = {} if closed else params
+    params["doc_grant"] = grant
+    mine = "FALSE" if closed else (" AND ".join(conds) or "TRUE")
+    return f"{a}.is_current AND (({mine}) OR {a}.doc_code = ANY(CAST(:doc_grant AS text[])))", params
 
 
 # ── 산출물 → 컬렉션 · 화면 리소스 배정 ────────────────────────

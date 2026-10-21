@@ -271,6 +271,8 @@ def es_filter(scope: AccessScope) -> dict[str, Any]:
     should: list[dict[str, Any]] = [{"terms": {"collection_code": list(scope.full)}}]
     if scope.gated and res:
         should.append({"bool": {"filter": [{"terms": {"collection_code": list(scope.gated)}}, {"terms": {"required_resource": res}}]}})
+    if scope.ctx.grant_sources and not scope.ctx.is_admin:
+        should.append({"terms": {"source_key": sorted(scope.ctx.grant_sources)}})  # 영업점 공통 — 영업점 참고 수행방안의 연결 산출물
     flt: list[dict[str, Any]] = [{"bool": {"should": should, "minimum_should_match": 1}}]
     scopes = scope.scope_keys()
     if scopes is not None:
@@ -284,15 +286,22 @@ NOTHING: dict[str, Any] = {"bool": {"filter": [{"match_none": {}}]}}
 def doc_es_filter(scope: AccessScope) -> dict[str, Any]:
     """문서 청크 사전 필터의 ES 판(SQL `doc_filter` 와 같은 규칙) — 열람 가능한 문서 분류 + 부서한정 문서는 내 부서 문서만.
     현재 버전 조건은 색인 자체가 현재 버전만 담는 것으로 대신한다(이전 판 청크는 동기화가 지우고, 그 사이는 PG 재확인이 거른다)."""
+    grant = sorted(scope.ctx.grant_docs or {}) if not scope.ctx.is_admin else []
     flt: list[dict[str, Any]] = []
+    closed = False
     if scope.doc_classes is not None:
         if not scope.doc_classes:
-            return NOTHING
-        flt.append({"terms": {"doc_class": sorted(scope.doc_classes)}})
+            closed = True
+        else:
+            flt.append({"terms": {"doc_class": sorted(scope.doc_classes)}})
     dept = scope.ctx.dept_docs
-    if dept is not None:
+    if not closed and dept is not None:
         flt.append({"bool": {"should": [{"bool": {"must_not": [{"term": {"access_class": "dept_only"}}]}}, {"terms": {"doc_code": sorted(dept)}}], "minimum_should_match": 1}})
-    return {"bool": {"filter": flt}}
+    if not grant:
+        return NOTHING if closed else {"bool": {"filter": flt}}
+    # 영업점 공통 — 영업점 참고 수행방안의 연결 근거 문서는 분류 · 부서한정과 별도로 연다(SQL doc_filter 와 같은 규칙)
+    mine = NOTHING if closed else {"bool": {"filter": flt}}
+    return {"bool": {"filter": [{"bool": {"should": [mine, {"terms": {"doc_code": grant}}], "minimum_should_match": 1}}]}}
 
 
 def doc_es_filter_for(origins: tuple[str, ...] | list[str], doc_ids: dict[str, list[int]] | None, doc_classes: list[str] | None) -> dict[str, Any]:
