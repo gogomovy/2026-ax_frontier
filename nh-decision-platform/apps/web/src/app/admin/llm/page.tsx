@@ -53,6 +53,8 @@ interface TestResult {
   embed_latency_ms?: number;
   embed_error?: string;
   embed_model?: string;
+  // 저장된 last_test 에만 있다 — 지금 누른 결과인지 예전 기록인지 구분하는 데 쓴다
+  at?: string;
 }
 
 /** 외부 LiteLLM 간단 설정 (B.36) — 주소 · 키 · 모델을 넣고 저장하면 바로 연결을 확인한다 */
@@ -109,10 +111,18 @@ function QuickSetup({ onSaved }: { onSaved: () => void }) {
             {shown.chat_ok !== undefined ? ` · 모델 호출 ${shown.chat_ok ? `성공 ${shown.chat_latency_ms}ms` : "실패"}` : ""}
             {shown.embed_ok !== undefined
               ? ` · 임베딩 ${shown.embed_ok ? `성공 ${shown.embed_dim}차원 ${shown.embed_latency_ms}ms` : "실패"}`
-              : ""}
+              : form.emb.trim()
+                ? " · 임베딩 미확인"
+                : ""}
+            {!test && shown.at ? <span className="text-stone"> (예전 기록 {fmtTime(shown.at)})</span> : null}
           </span>
         ) : null}
       </div>
+      {shown && shown.embed_ok === undefined && form.emb.trim() ? (
+        <p className="mt-xs text-[12px] text-steel">
+          임베딩 모델({form.emb.trim()})은 아직 확인한 적이 없습니다 — 위 결과는 임베딩 확인이 없던 때 저장된 기록입니다. [저장하고 연결 확인]을 누르면 /embeddings 를 1건 호출해 차원까지 확인합니다.
+        </p>
+      ) : null}
       {shown && !shown.ok ? (
         <p className="mt-xs break-all text-[12px] text-critical">
           {shown.embed_ok === false && !shown.error && shown.chat_ok !== false
