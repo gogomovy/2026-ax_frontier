@@ -19,8 +19,20 @@ import { confidentSuggestion, suggestDatasets, titleFromFile } from "@/lib/uploa
 /** 관리자 업로드 형식 — 안내 문구와 파일 입력의 accept 를 같은 값으로 (Phase E · F7) */
 // .md — 마크다운 표(DRM 엑셀을 변환한 파일 · Phase Q MD-01)
 const DATASET_ACCEPT = ".csv,.tsv,.xlsx,.json,.md";
-const DOCUMENT_ACCEPT = ".pdf,.hwpx,.hwp,.txt,.md,.html";
+const DOCUMENT_ACCEPT = ".pdf,.docx,.hwpx,.hwp,.txt,.md,.html";
 const fmtAccept = (a: string) => a.replaceAll(",", " · ");
+
+/** 반영 미리보기 — 이 파일이 어느 판으로 들어가는지(영업점별 추가 · 같은 구획 교체 · 파일 이름의 영업점과 고른 곳이 다름) */
+interface Placement {
+  action: "add" | "replace";
+  nextVersion: number;
+  replaces: { version: number; asOf: string | null } | null;
+  owner: { code: string | null; label: string; branch: boolean };
+  fileOwnerHint: { code: string; label: string } | null;
+  ownerMismatch: boolean;
+  messages: string[];
+  error: string | null;
+}
 
 interface UploadResult {
   status?: string;
@@ -28,6 +40,20 @@ interface UploadResult {
   rows?: number;
   quality?: { status?: string; checks?: { rule: string; passed: boolean; detail: string; severity: string }[]; source?: { adapter?: string | null } };
   message?: string;
+  placement?: Placement;
+}
+
+function PlacementNote({ p }: { p: Placement }) {
+  return (
+    <ul className="flex flex-col gap-0.5 text-[12px]" data-placement={p.action}>
+      {p.error ? <li className="text-critical">✕ {p.error}</li> : null}
+      {p.messages.map((m, i) => (
+        <li key={i} className={p.ownerMismatch && i === 0 ? "font-bold text-critical" : p.action === "replace" && !p.ownerMismatch && i === 0 ? "font-bold text-attention" : "text-charcoal"}>
+          {m}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** 미리보기 · 업로드 결과 — 상태 · 행 수 · 품질 검증을 먼저, 원본은 고급에 */
@@ -38,6 +64,7 @@ function UploadResultView({ r }: { r: UploadResult }) {
   const notes = checks.filter((c) => c.passed && ["columns_added", "auto_column_values", "unmapped_headers"].includes(c.rule));
   return (
     <div className="mt-md flex flex-col gap-md" data-upload-result>
+      {r.placement ? <PlacementNote p={r.placement} /> : null}
       <KeyValueList
         items={[
           { label: "처리 상태", value: r.status ? <StatusBadge status={r.status} /> : "미리보기" },
@@ -701,18 +728,45 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
   // 자료를 둘 팀 · 영업점 — 기본은 현재 버전의 소유 조직(같은 팀이 새 판을 올리는 경우가 대부분)
   const [owner, setOwner] = useState<string>(ds.versions.find((v) => v.isCurrent)?.owner?.code ?? "");
   const [preview, setPreview] = useState<UploadResult | null>(null);
+  const [ownerAuto, setOwnerAuto] = useState<string | null>(null);
   const [rows, setRows] = useState<{ columns: string[]; rows: Record<string, unknown>[] } | null>(null);
 
-  const form = () => {
+  const form = (f: File | null = file, o: string = owner) => {
     const fd = new FormData();
-    if (file) fd.append("file", file);
+    if (f) fd.append("file", f);
     fd.append("origin", origin);
     fd.append("data_origin", dataOrigin);
     if (asOf) fd.append("as_of", asOf);
     fd.append("force", String(force));
-    if (owner) fd.append("owner_org", owner);
+    if (o) fd.append("owner_org", o);
     return fd;
   };
+  // 미리보기 응답의 rows 는 앞 20행 표본 — 화면에는 전체 행 수(rowCount)를 보인다
+  const previewOf = (r: UploadResult & { rowCount?: number }): UploadResult => ({ ...r, rows: r.rowCount ?? undefined });
+  const fetchPreview = (f: File | null = file, o: string = owner) =>
+    api<UploadResult & { rowCount?: number }>(`/admin/datasets/${ds.code}/preview`, { method: "POST", body: form(f, o) }).then(previewOf);
+  // 파일 이름에 영업점 코드가 있으면(예: …_BR302.csv) 그 영업점을 자료를 둘 곳으로 — 다른 영업점 판을 잘못 바꾸지 않게
+  const placeByName = (f: File) => {
+    void fetchPreview(f)
+      .then((r) => {
+        const hint = r.placement?.fileOwnerHint;
+        if (hint && hint.code !== owner) {
+          setOwner(hint.code);
+          setOwnerAuto(hint.label);
+          return fetchPreview(f, hint.code).then(setPreview);
+        }
+        setPreview(r);
+      })
+      .catch(() => undefined);
+  };
+  // 목록 위 '파일로 업로드' 로 파일이 채워진 채 열렸을 때도 같은 규칙(한 번만)
+  const autoPlaced = useRef(false);
+  useEffect(() => {
+    if (autoPlaced.current || !initialFile) return;
+    autoPlaced.current = true;
+    placeByName(initialFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 처음 열 때 한 번만
+  }, [initialFile]);
 
   return (
     <>
@@ -726,6 +780,8 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
             onFile={(f) => {
               setFile(f);
               setPreview(null);
+              setOwnerAuto(null);
+              if (f) placeByName(f);
             }}
             compact
             label="이 데이터셋의 새 파일을 끌어다 놓거나 눌러서 고르세요"
@@ -740,11 +796,19 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
             </div>
           </div>
           <div className="max-w-[420px]">
-            <OwnerOrgSelect value={owner} onChange={setOwner} />
-            <p className="mt-1 text-[11px] text-stone">영업점을 고르면 그 영업점 화면에서 계산되고, 다른 영업점 자료를 밀어내지 않습니다.</p>
+            <OwnerOrgSelect
+              value={owner}
+              onChange={(v) => {
+                setOwner(v);
+                setOwnerAuto(null);
+                setPreview(null);
+              }}
+            />
+            {ownerAuto ? <p className="mt-1 text-[11px] font-bold text-info">파일 이름에 있는 {ownerAuto}(으)로 골랐습니다 — 다르면 바꾸세요.</p> : null}
+            <p className="mt-1 text-[11px] text-stone">영업점을 고르면 그 영업점 화면에서 계산되고, 다른 영업점 자료를 밀어내지 않습니다(버전 번호는 자료 전체에서 이어 붙습니다).</p>
           </div>
           <div className="flex flex-wrap items-center gap-xs">
-            <Button size="sm" variant="quiet" disabled={busy || !file} onClick={() => run(() => api<UploadResult>(`/admin/datasets/${ds.code}/preview`, { method: "POST", body: form() }), undefined).then((r) => r && setPreview(r))}>
+            <Button size="sm" variant="quiet" disabled={busy || !file} onClick={() => run(() => fetchPreview(), undefined).then((r) => r && setPreview(r))}>
               미리보기
             </Button>
             <Button
@@ -752,19 +816,26 @@ function DatasetDetail({ ds, reload, initialFile }: { ds: Ds; reload: () => Prom
               variant={force ? "danger" : "confirm"}
               disabled={busy || !file}
               onClick={async () => {
-                const curV = ds.versions.find((v) => v.isCurrent);
+                // 확인 창은 실제 반영 규칙(기준일 × 소유 구획)으로 — '현재 버전이 바뀐다' 고 뭉뚱그리지 않는다
+                const pv = await run(() => fetchPreview(), undefined);
+                if (!pv) return;
+                setPreview(pv);
+                const p = pv.placement;
+                if (p?.error) return;
                 const ok = await confirm({
-                  title: force ? "품질 검사에 실패해도 확정할까요?" : "업로드하고 바로 확정할까요?",
+                  title: p?.ownerMismatch ? "파일 이름의 영업점과 자료를 둘 곳이 다릅니다" : force ? "품질 검사에 실패해도 확정할까요?" : p?.action === "replace" ? "같은 구획의 현재 판을 교체할까요?" : "새 판으로 추가할까요?",
                   body: (
                     <>
-                      <p>
-                        <strong>{ds.name}</strong>의 현재 버전{curV ? `(v${curV.version})` : ""}이 이 파일({file?.name})로 바뀌고, 관련 워크플로가 다시 계산됩니다. 되돌리려면 버전 표에서 [되돌리기]를 씁니다.
+                      <p className="mb-xs">
+                        <strong>{ds.name}</strong> · {file?.name} → <strong>{p?.owner.label ?? "전행 공통"}</strong>
                       </p>
+                      {p ? <PlacementNote p={p} /> : null}
+                      <p className="mt-xs text-[12px] text-steel">관련 워크플로가 다시 계산됩니다. 되돌리려면 버전 표에서 [되돌리기]를 씁니다.</p>
                       {force ? <p className="mt-xs font-bold text-critical">품질 검사에 실패한 자료도 현재 버전이 됩니다. 화면 수치가 틀릴 수 있습니다.</p> : null}
                     </>
                   ),
-                  confirmLabel: force ? "실패해도 확정" : "업로드(확정)",
-                  tone: force ? "danger" : "default",
+                  confirmLabel: p?.ownerMismatch ? "그래도 올리기" : force ? "실패해도 확정" : p?.action === "replace" ? "교체(확정)" : "추가(확정)",
+                  tone: force || p?.ownerMismatch ? "danger" : "default",
                 });
                 if (!ok) return;
                 const r = await run(() => api<UploadResult>(`/admin/datasets/${ds.code}/upload`, { method: "POST", body: form() }), "업로드했습니다 — 관련 워크플로가 대기열에 올라갑니다", reload);

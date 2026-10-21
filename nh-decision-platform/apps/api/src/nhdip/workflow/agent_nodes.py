@@ -280,6 +280,10 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     from nhdip.views.plan_share import SHARE_EVENTS, is_branch_outputs
 
     share_change = [c for c in ctx.causes if isinstance(c, dict) and c.get("type") in SHARE_EVENTS] if is_branch_outputs(ctx.workflow.outputs) else []
+    # 종합기획부 경영목표가 바뀌었다 — 사업부서 · 영업점 서술의 공통 방향(확정 목표)이 바뀐 것이라 다시 쓴다(목표를 만드는 흐름은 기존 규칙대로)
+    from nhdip.views.user_state import GOAL_EVENTS
+
+    goal_change = [c for c in ctx.causes if isinstance(c, dict) and c.get("type") in GOAL_EVENTS] if "goals" not in (ctx.workflow.outputs or []) else []
     if "schedule" in types and pol.get("refresh_on_schedule"):
         full.append("schedule")
     changes = ctx.state.get("changes") or []
@@ -303,6 +307,8 @@ def n_plan_run(ctx: RunContext, node: WorkflowNode) -> NodeResult:
             why[tid] = f"근거 문서 변경 {len(doc_change)}건"
         elif share_change:
             why[tid] = f"사업부서 수행방안 영업점 참고 변경 {len(share_change)}건"
+        elif goal_change:
+            why[tid] = f"종합기획부 경영목표 변경 {len(goal_change)}건"
         elif hit:
             why[tid] = f"수치 변화: {', '.join(hit[:5])}"
         elif data_changed and pol.get("narrate_on_data_change", True) and not ins.get("figures"):

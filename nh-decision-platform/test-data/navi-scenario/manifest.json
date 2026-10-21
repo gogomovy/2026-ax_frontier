@@ -1,0 +1,516 @@
+{
+ "region": {
+  "code": "D300",
+  "name": "수도권1지역본부"
+ },
+ "orgs": [
+  {
+   "code": "T213",
+   "name": "신용모형팀",
+   "unit_type": "TEAM",
+   "parent": "B210",
+   "sort": 25
+  }
+ ],
+ "accounts": [
+  {
+   "empNo": "20269101",
+   "name": "종기부시험",
+   "org": "T111",
+   "desc": "종합기획부 경영목표팀"
+  },
+  {
+   "empNo": "20269201",
+   "name": "모형시험",
+   "org": "T213",
+   "desc": "신용리스크관리부 신용모형팀"
+  },
+  {
+   "empNo": "20269301",
+   "name": "강남시험",
+   "org": "BR301",
+   "desc": "강남금융센터"
+  },
+  {
+   "empNo": "20269302",
+   "name": "서초시험",
+   "org": "BR302",
+   "desc": "서초지점"
+  },
+  {
+   "empNo": "20269303",
+   "name": "역삼시험",
+   "org": "BR303",
+   "desc": "역삼역지점"
+  },
+  {
+   "empNo": "20269300",
+   "name": "본부시험",
+   "org": "T311",
+   "desc": "수도권1지역본부 영업점지원팀"
+  }
+ ],
+ "folders": [
+  {
+   "folder": "00_관리자_공통(소유 전행 공통)",
+   "owner": null,
+   "who": "관리자",
+   "files": [
+    {
+     "name": "소매여신 상품 Pool 정의.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 10,
+     "note": "마스터 · Pool 정의"
+    },
+    {
+     "name": "Oblg_grd_def_202608.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 4096,
+     "note": "기업 익스포저 차주별(시스템 테이블 추출)"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_202608.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 6020,
+     "note": "소매 익스포저(시스템 테이블 추출)"
+    },
+    {
+     "name": "영업점 사무소 마스터.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 3,
+     "note": "마스터 · 영업점"
+    },
+    {
+     "name": "업적평가 배점표(리테일) 2026 상·하반기.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 38,
+     "note": "마스터 · 배점표"
+    },
+    {
+     "name": "붙임1) 여신가망 재무우량 기업명세(2026).xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 36,
+     "note": "본부 추천 가망기업(공문 붙임)"
+    },
+    {
+     "name": "금융위원회_포용금융 확대방안.pdf",
+     "kind": "document",
+     "origin": "ext",
+     "docCode": "doc-gov-inclusive",
+     "docClass": "gov_policy",
+     "title": "포용금융 확대방안",
+     "issuer": "금융위원회",
+     "publishedAt": "2026-01-15"
+    },
+    {
+     "name": "금융위원회_생산적 금융 공급 확대 방안.pdf",
+     "kind": "document",
+     "origin": "ext",
+     "docCode": "doc-gov-corp",
+     "docClass": "gov_policy",
+     "title": "생산적 금융 공급 확대 및 기업금융 활성화 방안",
+     "issuer": "금융위원회",
+     "publishedAt": "2026-02-20"
+    },
+    {
+     "name": "금융위원회_2026년 가계부채 관리방안.pdf",
+     "kind": "document",
+     "origin": "ext",
+     "docCode": "doc-gov-household",
+     "docClass": "gov_policy",
+     "title": "가계부채 관리방안(2026년)",
+     "issuer": "금융위원회·금융감독원",
+     "publishedAt": "2026-03-05"
+    },
+    {
+     "name": "(붙임1)26년(상) 업적평가 세부기준_최종.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-perf-2026h1",
+     "docClass": "branch_ref",
+     "title": "(붙임1) 26년(상) 업적평가 세부기준_최종",
+     "issuer": "종합기획부 성과관리팀",
+     "publishedAt": "2026-01-02"
+    },
+    {
+     "name": "붙임1_26년(하) 업적평가 세부기준_fin_fin.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-perf-2026h2",
+     "docClass": "branch_ref",
+     "title": "붙임1_26년(하) 업적평가 세부기준_fin_fin",
+     "issuer": "종합기획부 성과관리팀",
+     "publishedAt": "2026-07-01"
+    },
+    {
+     "name": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-risk-prospect-notice",
+     "docClass": "branch_ref",
+     "title": "[외감기업 활성화] (필독) 여신가망 재무우량 기업명세 제공 안내",
+     "issuer": "신용리스크관리부",
+     "publishedAt": "2026-07-15"
+    }
+   ]
+  },
+  {
+   "folder": "01_종합기획부(소유 T111 경영목표팀)",
+   "owner": "T111",
+   "who": "종기부시험(20269101) 또는 관리자",
+   "files": [
+    {
+     "name": "(202408)2633_상품부문별손익계산서.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 7,
+     "note": "2633 원본 양식 · 2024.08 누계"
+    },
+    {
+     "name": "(202508)2633_상품부문별손익계산서.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 7,
+     "note": "2633 원본 양식 · 2025.08 누계"
+    },
+    {
+     "name": "(202608)2633_상품부문별손익계산서.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 7,
+     "note": "2633 원본 양식 · 2026.08 누계"
+    },
+    {
+     "name": "(202412)2020 과목별 월별 여신현황.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 132,
+     "note": "2020 원본 양식 · 2024년 1~12월"
+    },
+    {
+     "name": "(202512)2020 과목별 월별 여신현황.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 132,
+     "note": "2020 원본 양식 · 2025년 1~12월"
+    },
+    {
+     "name": "(202608)2020 과목별 월별 여신현황.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 88,
+     "note": "2020 원본 양식 · 2026년 1~8월"
+    },
+    {
+     "name": "2026 하반기 자본·한도 제약.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 11,
+     "note": "자본 · 한도 제약"
+    },
+    {
+     "name": "타행_공시_비교(2026Q2).csv",
+     "kind": "dataset",
+     "origin": "ext",
+     "rows": 1,
+     "note": "외부 공시 통계"
+    },
+    {
+     "name": "(202608)종기부_경영계획KPI(컬럼정의서v2_결정반영).xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 15,
+     "note": "경영계획 KPI"
+    },
+    {
+     "name": "(붙임) 2026년도 생산적 포용적 금융 부문 자회사 성과평가 방안.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-perfeval",
+     "docClass": "mgmt_decision",
+     "title": "(붙임) 2026년도 생산적·포용적 금융 부문 자회사 성과평가 방안",
+     "issuer": "NH농협금융지주 기획조정부",
+     "publishedAt": "2026-03-01"
+    },
+    {
+     "name": "2025년 RWA 한도 및 총자산 최대 성장률 알림.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-rwalimit",
+     "docClass": "mgmt_decision",
+     "title": "2025년 RWA 한도 및 총자산 최대 성장률 알림",
+     "issuer": "NH농협금융지주",
+     "publishedAt": "2025-12-18"
+    },
+    {
+     "name": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-rwaplan",
+     "docClass": "mgmt_decision",
+     "title": "자본비율 관리를 위한 자회사별 RWA 순증 관리목표 설정 및 이행계획 수립 요청",
+     "issuer": "NH농협금융지주",
+     "publishedAt": "2026-01-09"
+    },
+    {
+     "name": "2026년 하반기 부서별 신용RWA 한도 배분 알림.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-rwadept",
+     "docClass": "mgmt_decision",
+     "title": "2026년 하반기 부서별 신용RWA 한도 배분 알림",
+     "issuer": "종합기획부",
+     "publishedAt": "2026-06-26"
+    },
+    {
+     "name": "2026년 하반기 경영전략회의 결과.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-strat",
+     "docClass": "mgmt_decision",
+     "title": "2026년 하반기 경영전략회의 결과",
+     "issuer": "경영전략회의",
+     "publishedAt": "2026-07-03"
+    },
+    {
+     "name": "2026년 사업계획(여신 부문).pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-bizplan",
+     "docClass": "mgmt_decision",
+     "title": "2026년 사업계획(여신 부문)",
+     "issuer": "종합기획부",
+     "publishedAt": "2025-12-27"
+    }
+   ]
+  },
+  {
+   "folder": "02_신용리스크관리부_신용모형팀(소유 T213)",
+   "owner": "T213",
+   "who": "모형시험(20269201) 또는 관리자",
+   "files": [
+    {
+     "name": "포용금융 대상 상품 운영기준(상품코드).xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 21,
+     "note": "마스터 · 대상 상품코드"
+    },
+    {
+     "name": "PD_Master_Scale_소기업모형.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 12,
+     "note": "마스터 · 예측부도율"
+    },
+    {
+     "name": "(202601)7790_상품별_충당금.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 50,
+     "note": "7790 원본 양식 · 2026.01"
+    },
+    {
+     "name": "(202608)7790_상품별_충당금.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 50,
+     "note": "7790 원본 양식 · 2026.08"
+    },
+    {
+     "name": "(20250831)신용평가모형_등급별_집계(기준분포).csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 68,
+     "note": "모형 등급별 집계 · 기준분포 2025-08-31"
+    },
+    {
+     "name": "(20260831)신용평가모형_등급별_모니터링_집계.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 68,
+     "note": "모형 등급별 집계 · 2026-08-31"
+    },
+    {
+     "name": "월별_부도율_집계(202509-202608).csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 120,
+     "note": "월별 부도율 집계(시스템 추출 CSV)"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_POOL_202508.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 10,
+     "note": "소매 Pool 월별 집계 · 2025.08"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_POOL_202601.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 10,
+     "note": "소매 Pool 월별 집계 · 2026.01"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_POOL_202608.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 10,
+     "note": "소매 Pool 월별 집계 · 2026.08"
+    },
+    {
+     "name": "포용금융 대상 상품 운영기준.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-mgmt-inclusive-products",
+     "docClass": "mgmt_decision",
+     "title": "포용금융 대상 상품 운영기준",
+     "issuer": "여신정책협의회",
+     "publishedAt": "2026-01-22"
+    },
+    {
+     "name": "2025_일반기업모형 모니터링 보고서_F.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-model-corp",
+     "docClass": "model_method",
+     "title": "2025_일반기업모형 모니터링 보고서",
+     "issuer": "신용리스크관리부",
+     "publishedAt": "2025-11-28"
+    },
+    {
+     "name": "'25년 3분기 소매여신모형 모니터링 결과 보고서.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-model-retail",
+     "docClass": "model_method",
+     "title": "'25년 3분기 소매여신모형 모니터링 결과 보고서",
+     "issuer": "소매모형팀",
+     "publishedAt": "2025-10-24"
+    },
+    {
+     "name": "붙임. 통계방법론 및 용어 해설.pdf",
+     "kind": "document",
+     "origin": "bank",
+     "docCode": "doc-model-stat",
+     "docClass": "model_method",
+     "title": "붙임. 통계방법론 및 용어 해설",
+     "issuer": "신용리스크관리부",
+     "publishedAt": "2025-11-28"
+    }
+   ]
+  },
+  {
+   "folder": "03_영업점_BR301 강남금융센터(소유 BR301)",
+   "owner": "BR301",
+   "who": "관리자(영업점은 자료 올리기 화면이 없음 — 소유를 그 지점으로 골라 올림)",
+   "files": [
+    {
+     "name": "Oblg_grd_def_202608_BR301.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 177,
+     "note": "기업 익스포저 차주별(시스템 테이블 추출)"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_202608_BR301.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 283,
+     "note": "소매 익스포저(시스템 테이블 추출)"
+    },
+    {
+     "name": "영업점 업적평가 득점 현황(202608)_강남금융센터.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 16,
+     "note": "영업점 득점 현황"
+    },
+    {
+     "name": "영업점 사업부문별 잔액(202608)_강남금융센터.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 4,
+     "note": "영업점 사업부문"
+    }
+   ]
+  },
+  {
+   "folder": "04_영업점_BR302 서초지점(소유 BR302)",
+   "owner": "BR302",
+   "who": "관리자(영업점은 자료 올리기 화면이 없음 — 소유를 그 지점으로 골라 올림)",
+   "files": [
+    {
+     "name": "Oblg_grd_def_202608_BR302.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 175,
+     "note": "기업 익스포저 차주별(시스템 테이블 추출)"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_202608_BR302.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 252,
+     "note": "소매 익스포저(시스템 테이블 추출)"
+    },
+    {
+     "name": "영업점 업적평가 득점 현황(202608)_서초지점.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 16,
+     "note": "영업점 득점 현황"
+    },
+    {
+     "name": "영업점 사업부문별 잔액(202608)_서초지점.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 4,
+     "note": "영업점 사업부문"
+    }
+   ]
+  },
+  {
+   "folder": "05_영업점_BR303 역삼역지점(소유 BR303)",
+   "owner": "BR303",
+   "who": "관리자(영업점은 자료 올리기 화면이 없음 — 소유를 그 지점으로 골라 올림)",
+   "files": [
+    {
+     "name": "Oblg_grd_def_202608_BR303.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 193,
+     "note": "기업 익스포저 차주별(시스템 테이블 추출)"
+    },
+    {
+     "name": "TB_JC_PM_C_LA_202608_BR303.csv",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 243,
+     "note": "소매 익스포저(시스템 테이블 추출)"
+    },
+    {
+     "name": "영업점 업적평가 득점 현황(202608)_역삼역지점.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 16,
+     "note": "영업점 득점 현황"
+    },
+    {
+     "name": "영업점 사업부문별 잔액(202608)_역삼역지점.xlsx",
+     "kind": "dataset",
+     "origin": "bank",
+     "rows": 4,
+     "note": "영업점 사업부문"
+    }
+   ]
+  }
+ ]
+}

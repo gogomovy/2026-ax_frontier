@@ -542,11 +542,21 @@ async def _read(file: UploadFile, purpose: str, session: Session, request: Reque
 
 
 @router.post("/datasets/{code}/preview")
-async def dataset_preview(code: str, request: Request, file: UploadFile = File(...), session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+async def dataset_preview(
+    code: str,
+    request: Request,
+    file: UploadFile = File(...),
+    as_of: str | None = Form(None),
+    owner_org: str | None = Form(None),
+    session: Session = Depends(get_session),
+    admin: AppUser = Depends(require_admin),
+):
+    """파일 미리보기 + 반영 미리보기(placement) — 이 파일이 어느 판으로 들어가는지(영업점별 추가 · 같은 구획 교체)를 업로드 전에 알린다."""
     d = _ds(session, code)
+    owner = owner_of(session, admin, owner_org)
     name, content = await _read(file, "dataset", session, request, admin.emp_no)
     try:
-        return preview_file(d, name, content, session)
+        return preview_file(d, name, content, session, place=True, as_of=as_of or None, owner_org=owner)
     except (IngestError, ValueError) as exc:
         raise HTTPException(422, str(exc)) from exc
 

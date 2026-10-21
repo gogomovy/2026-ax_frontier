@@ -40,7 +40,7 @@ LABELS = {
     "sourceGoalTitle": "원천 경영목표", "metricLabel": "지표", "reqTypeLabel": "요청 유형", "altLabels": "다른 이름", "relatedTerms": "관련 용어", "direction": "방향",
     "targetType": "목표 유형", "path": "경로", "changeType": "변경", "changeSummary": "변경 내용", "itemCode": "항목 코드",
     "reportCode": "리포트 코드", "asOfYm": "기준년월", "quality": "품질 검증", "qualityNote": "품질 메모", "usedBy": "사용처",
-    "analysisFrom": "분석 부서", "linkedDocs": "근거 문서", "linkedData": "연결 데이터",
+    "analysisFrom": "분석 부서", "linkedDocs": "근거 문서", "linkedData": "연결 데이터", "monitoringMetrics": "모니터링 지표",
 }
 NUM_LABELS = {"score": "득점", "max": "배점", "progress": "진행률(%)", "rank": "순위", "rows": "행 수"}
 SKIP_DEFAULT = {

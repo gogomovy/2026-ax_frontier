@@ -97,10 +97,14 @@ export interface MyAnalysis {
 }
 
 const STATUS_TONE: Record<string, "success" | "attention" | "critical" | "neutral" | "info"> = { active: "success", pending: "attention", paused: "neutral", retired: "neutral", rejected: "critical", draft: "info" };
-const SAMPLES = [
-  "7790 상품별 충당금 자료로 상품명별 충당금 합계와 충당금이 많은 상위 상품을 보고 싶습니다. 특정 상품에 쏠림이 있는지 의견을 주세요.",
-  "월별 부도율 자료에서 최근 기준월 구분별 부도율을 보고, 부도율이 높은 구분을 짚어 주세요.",
-];
+/** 예시 글 — 이 부서가 볼 수 있는 자료(카탈로그) 이름으로 만든다. 특정 자료 이름 · 코드를 코드에 두지 않는다(자료가 없으면 예시도 없음) */
+export function builderSamples(datasets: { code: string; name: string }[]): string[] {
+  const names = datasets.map((d) => d.name || d.code).filter(Boolean);
+  const out: string[] = [];
+  if (names[0]) out.push(`${names[0]} 자료로 항목별 합계와 값이 큰 상위 항목을 보고 싶습니다. 특정 항목에 쏠림이 있는지 의견을 주세요.`);
+  if (names[1]) out.push(`${names[1]} 자료에서 최근 기준월 구분별 값을 보고, 값이 높거나 크게 바뀐 구분을 짚어 주세요.`);
+  return out;
+}
 
 function refText(r: Ref): string {
   if (r.q) return `${r.q.dataset} · ${r.q.col ?? "행"} ${r.q.agg}${r.q.where && Object.keys(r.q.where).length ? ` (${Object.entries(r.q.where).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`).join(", ")})` : ""}`;
@@ -146,6 +150,7 @@ export function AnalysisBuilder({ catalog, mine: initialMine, editing, initialDa
   const dsName = useMemo(() => Object.fromEntries(catalog.datasets.map((d) => [d.code, d.name])), [catalog.datasets]);
   const unitLabel = useMemo(() => Object.fromEntries(catalog.units.map((u) => [u.code, u.label])), [catalog.units]);
   const spaceLabel = catalog.spaces.find((s) => s.key === space)?.label ?? space;
+  const samples = useMemo(() => builderSamples(catalog.datasets), [catalog.datasets]);
 
   const call = async <T,>(kind: typeof busy, path: string, body: unknown): Promise<T | null> => {
     setBusy(kind);
@@ -254,9 +259,9 @@ export function AnalysisBuilder({ catalog, mine: initialMine, editing, initialDa
               />
               <span className="mt-1 block text-right text-[11px] text-stone tnum">{text.length.toLocaleString("ko-KR")} / 6,000자</span>
             </label>
-            <div className="flex flex-wrap gap-1.5">
+            <div className={clsx("flex flex-wrap gap-1.5", samples.length ? "" : "hidden")}>
               <span className="text-[11.5px] font-bold text-steel">예시</span>
-              {SAMPLES.map((s, i) => (
+              {samples.map((s, i) => (
                 <button key={i} type="button" onClick={() => setText(s)} className="rounded-pill border border-hairline px-2.5 py-1 text-[11.5px] text-charcoal hover:bg-surface-soft">
                   예시 {i + 1}
                 </button>

@@ -42,6 +42,9 @@ def extract_text(filename: str, content: bytes) -> tuple[str, list[tuple[int, st
             raise DocumentError(f"한글 문서를 읽지 못했습니다(암호 · 배포용 문서는 해제 후 업로드): {type(exc).__name__}") from exc
         text = "\n\n".join(line.strip() for line in text.splitlines() if line.strip())
         return text, [(1, text)]
+    if name.endswith(".docx"):
+        text = _docx_text(content)
+        return text, [(1, text)]
     if name.endswith((".txt", ".md", ".csv", ".json", ".html")):
         if name.endswith(".md"):
             from .mdtable import decode as md_decode
@@ -52,7 +55,36 @@ def extract_text(filename: str, content: bytes) -> tuple[str, list[tuple[int, st
         if name.endswith(".html"):
             text = re.sub(r"<[^>]+>", " ", text)
         return text, [(1, text)]
-    raise DocumentError("지원 형식: .pdf · .hwpx · .hwp · .txt · .md · .html")
+    raise DocumentError("지원 형식: .pdf · .docx · .hwpx · .hwp · .txt · .md · .html")
+
+
+_W_PARA = re.compile(rb"<w:p[\s>].*?</w:p>|<w:p/>", re.S)
+_W_RUN = re.compile(rb"<w:t(?:\s[^>]*)?>(.*?)</w:t>|<w:(tab|br|cr)\b[^>]*/>", re.S)
+
+
+def _docx_text(content: bytes) -> str:
+    """워드(docx) 본문 — word/document.xml 의 문단(w:p)마다 글자(w:t)를 잇는다. 표 칸의 문단도 같은 순서로 읽는다.
+    면 정보가 없어 1면으로(한글 문서와 같음). XML 파서 대신 정해진 태그만 읽어 외부 개체 · 개체 확장을 따르지 않는다."""
+    import html
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
+            xml = zf.read("word/document.xml")
+    except (zipfile.BadZipFile, KeyError) as exc:
+        raise DocumentError("워드(docx) 문서를 읽지 못했습니다(암호 · 손상 문서는 해제 · 다시 저장 후 업로드)") from exc
+    paras = []
+    for p in _W_PARA.finditer(xml):
+        parts = []
+        for m in _W_RUN.finditer(p.group(0)):
+            if m.group(1) is not None:
+                parts.append(html.unescape(m.group(1).decode("utf-8", errors="replace")))
+            else:
+                parts.append("\t" if m.group(2) == b"tab" else "\n")
+        line = "".join(parts).strip()
+        if line:
+            paras.append(line)
+    return "\n\n".join(paras)
 
 
 # 문서 구조(작업 3.2.3) — 행정 · 보고 문서의 제목 번호 체계. (수준, 정규식)
@@ -207,7 +239,8 @@ def ingest_document(
         meta.setdefault("pageCount", len(pages))  # 원본 면 수 (청크 수가 아니라)
         sha = hashlib.sha256(content).hexdigest()
         low = filename.lower()
-        mime = "application/pdf" if low.endswith(".pdf") else "application/hwp+zip" if low.endswith(".hwpx") else "application/x-hwp" if low.endswith(".hwp") else "text/plain"
+        mime = ("application/pdf" if low.endswith(".pdf") else "application/hwp+zip" if low.endswith(".hwpx") else "application/x-hwp" if low.endswith(".hwp")
+                else "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if low.endswith(".docx") else "text/plain")
         base = os.path.join(get_settings().filestore_dir, origin, "documents")
         try:
             os.makedirs(base, exist_ok=True)

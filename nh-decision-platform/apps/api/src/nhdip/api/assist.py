@@ -449,7 +449,8 @@ def _extra_tools(session: Session, prep: Prepared, cfg: Any):
 def _finish_llm(prep: Prepared, cfg: Any, out: dict[str, Any]) -> dict[str, Any]:
     answer = out.get("answer") or ""
     tool_texts = [str(r["result"]) for r in out["tool_results"]]
-    check = verify_numbers(answer, [prep.facts, prep.ana_txt, prep.docs, *tool_texts], [prep.q, *[h["q"] for h in prep.history]])
+    check = verify_numbers(answer, [prep.facts, prep.ana_txt, prep.docs, *tool_texts], [prep.q, *[h["q"] for h in prep.history], *[h.get("a") or "" for h in prep.history]])
+    # 이전 답변은 클라이언트가 보낸 글이라 확정 근거로 치지 않는다 — 후속 질문이 앞 답의 숫자를 다시 말하면 '사용자 제시값'으로(검증 통과 아님 · 미확인도 아님)
     check["citations"] = verify_citations(answer, prep, out["tool_results"])
     return {**prep.result, "mode": "llm", "model": cfg.model, "answer": answer, "toolResults": out["tool_results"], "llmCallIds": out["call_ids"], "verification": check}
 

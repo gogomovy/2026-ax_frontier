@@ -64,16 +64,22 @@ export interface Placement {
   duplicateOf: { version: number } | null;
   existing: { asOf: string | null; version: number; rows: number; memo: string | null }[];
   messages: string[];
+  /** 소유 구획 — 영업점 자료는 영업점마다 현재 판을 따로 둔다 */
+  owner?: { code: string | null; label: string; branch: boolean };
+  ownerMismatch?: boolean;
 }
 
-/** 반영 미리보기 — 새 기준일로 추가 / 같은 기준일 판 교체 · 겹치는 기간 · 같은 파일 */
+/** 반영 미리보기 — 새 기준일로 추가 / 영업점 자료로 추가 / 같은 구획 판 교체 · 겹치는 기간 · 같은 파일 */
 export function PlacementNote({ p }: { p: Placement }) {
-  const tone = p.duplicateOf ? "attention" : p.action === "replace" ? "attention" : "info";
+  const tone = p.ownerMismatch ? "critical" : p.duplicateOf ? "attention" : p.action === "replace" ? "attention" : "info";
+  const who = p.owner?.branch ? `${p.owner.label} ` : "";
   const title = p.duplicateOf
     ? `같은 파일이 이미 현재 판(v${p.duplicateOf.version})입니다`
     : p.action === "replace"
-      ? `같은 기준일(${p.replaces?.asOf ?? "기준일 없음"}) 판 v${p.replaces?.version} 을(를) 교체합니다`
-      : `새 기준일(${p.versionAsOf ?? "기준일 없음"})로 추가합니다`;
+      ? `${who}같은 기준일(${p.replaces?.asOf ?? "기준일 없음"}) 판 v${p.replaces?.version} 을(를) 교체합니다`
+      : p.owner?.branch && p.existing.length
+        ? `${p.owner.label} 자료로 추가합니다 — 다른 영업점 판은 그대로`
+        : `새 기준일(${p.versionAsOf ?? "기준일 없음"})로 추가합니다`;
   return (
     <Notice tone={tone} title={title}>
       <span data-upload-placement={p.action}>

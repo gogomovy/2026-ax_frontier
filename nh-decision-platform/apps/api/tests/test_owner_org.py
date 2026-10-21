@@ -78,3 +78,39 @@ def test_owner_org_partition_and_lists(db):
         t = source("bank")
         s.execute(update(t.version).where(t.version.dataset_code == code).values(is_current=False))
         s.commit()
+
+
+def test_admin_preview_placement_by_branch(db):
+    """관리자 업로드 미리보기 — 영업점별 판 구분을 그대로 알리고(다른 영업점 판은 '교체' 가 아니라 '추가'), 파일 이름의 영업점 코드를 알아본다."""
+    admin = _client()
+    _login(admin, *ADMIN)
+    form = {"origin": "bank", "data_origin": "simulated", "owner_org": "BR301"}
+    a = admin.post("/admin/datasets/auto-upload", data=form, files={"file": ("배치시험_202608_BR301.csv", io.BytesIO(_csv(["BR301,202608,1"])), "text/csv")})
+    assert a.status_code == 201, a.text
+    code = a.json()["dataset"]
+
+    def pv(name: str, owner: str | None):
+        data = {"owner_org": owner} if owner else {}
+        r = admin.post(f"/admin/datasets/{code}/preview", data=data, files={"file": (name, io.BytesIO(_csv(["BR302,202608,2"])), "text/csv")})
+        assert r.status_code == 200, r.text
+        return r.json()["placement"]
+
+    try:
+        # 다른 영업점(BR302) 파일 — 같은 기준일이어도 BR301 판을 바꾸지 않고 추가
+        p = pv("배치시험_202608_BR302.csv", "BR302")
+        assert p["action"] == "add" and p["replaces"] is None and p["owner"]["branch"], p
+        assert p["fileOwnerHint"]["code"] == "BR302" and not p["ownerMismatch"]
+        assert any(k["owner"] == "BR301" for k in p["kept"]), p["kept"]
+        assert "그대로" in p["messages"][0]
+        # 파일 이름은 BR302 인데 BR301 로 올리려 하면 — 교체 + 이름 불일치 경고
+        q = pv("배치시험_202608_BR302.csv", "BR301")
+        assert q["action"] == "replace" and q["ownerMismatch"] and "BR302" in q["messages"][0], q
+        # 영업점 코드가 없는 이름(기준월 숫자만) — 힌트 없음
+        assert pv("배치시험_202608.csv", "BR302")["fileOwnerHint"] is None
+    finally:
+        from nhdip.models import source
+
+        with db() as s:
+            t = source("bank")
+            s.execute(update(t.version).where(t.version.dataset_code == code).values(is_current=False))
+            s.commit()

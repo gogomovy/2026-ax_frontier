@@ -8,12 +8,13 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from nhdip.models import Dataset, source
+from nhdip.models import Dataset, OrgUnit, source
 
 from .datasets import partition_clause, to_date
 
@@ -22,7 +23,32 @@ def _ym(iso: str | None) -> str | None:
     return iso[:7] if iso else None
 
 
-def placement(session: Session, ds: Dataset, rows: list[dict[str, Any]], *, as_of: str | None, owner_org: str | None, file_sha: str | None = None) -> dict[str, Any]:
+_CODE_TOKEN = re.compile(r"[A-Za-z]{0,4}\d{3,6}")
+
+
+def _org_label(session: Session, code: str | None) -> str:
+    if not code:
+        return "전행 공통"
+    o = session.get(OrgUnit, code)
+    return f"{o.name}({code})" if o is not None else code
+
+
+def file_owner_hint(session: Session, file_name: str | None) -> str | None:
+    """파일 이름 안의 영업점 코드(예: Oblg_grd_def_202608_BR302.csv → BR302) — 조직표에 있는 영업점일 때만. 기준월 같은 숫자는 조직이 아니면 무시."""
+    if not file_name:
+        return None
+    stem = re.sub(r"\.[^.]+$", "", file_name)
+    for tok in re.split(r"[_\-\s()\[\]·.]+", stem):
+        if tok and _CODE_TOKEN.fullmatch(tok):
+            o = session.get(OrgUnit, tok.upper()) or session.get(OrgUnit, tok)
+            if o is not None and o.active and o.unit_type == "BRANCH":
+                return o.code
+    return None
+
+
+def placement(session: Session, ds: Dataset, rows: list[dict[str, Any]], *, as_of: str | None, owner_org: str | None, file_sha: str | None = None, file_name: str | None = None) -> dict[str, Any]:
+    from nhdip.orgs import is_branch
+
     from .datasets import current_versions
 
     if getattr(ds, "common", False):
@@ -59,12 +85,31 @@ def placement(session: Session, ds: Dataset, rows: list[dict[str, Any]], *, as_o
                     if d is not None:
                         have.setdefault(d.isoformat(), v.version)
             out["overlaps"] = [{"asOf": d, "version": have[d]} for d in dates if d in have and d != version_as_of][:24]
+    # 소유 구획 — 영업점 자료는 영업점마다 현재 판을 따로 둔다(버전 번호는 자료 전체에서 이어 붙지만 다른 영업점 판을 바꾸지 않는다)
+    branch = is_branch(session, owner_org)
+    out["owner"] = {"code": owner_org, "label": _org_label(session, owner_org), "branch": branch}
+    out["nextVersion"] = (session.execute(select(t.version.version).where(t.version.dataset_code == ds.code).order_by(t.version.version.desc()).limit(1)).scalar() or 0) + 1
+    out["kept"] = [{"version": v.version, "asOf": v.as_of.isoformat() if v.as_of else None, "owner": v.owner_org, "ownerLabel": _org_label(session, v.owner_org)}
+                   for v in cur if not (out["replaces"] and v.version == out["replaces"]["version"])][:24]
+    hint = file_owner_hint(session, file_name)
+    out["fileOwnerHint"] = {"code": hint, "label": _org_label(session, hint)} if hint else None
+    out["ownerMismatch"] = bool(hint and hint != owner_org)
     m = out["messages"]
+    who = out["owner"]["label"]
+    if out["ownerMismatch"]:
+        m.append(f"파일 이름에 {out['fileOwnerHint']['label']} 가 있는데 자료를 둘 곳이 {who} 입니다 — 맞는지 확인하세요.")
     if out["action"] == "add":
-        m.append(f"새 기준일({version_as_of or '기준일 없음'})로 추가합니다 — 이미 있는 기준일 판 {len(cur)}개는 그대로 두고 함께 보관(날짜별 비교 가능)." if cur else "이 자료의 첫 판입니다.")
+        if not cur:
+            m.append(f"이 자료의 첫 판입니다({who}).")
+        elif branch:
+            m.append(f"{who} 자료로 새로 추가합니다(v{out['nextVersion']}) — 다른 영업점 · 전행 판 {len(cur)}개는 그대로 현재 판으로 남습니다.")
+        else:
+            m.append(f"새 기준일({version_as_of or '기준일 없음'})로 추가합니다(v{out['nextVersion']}) — 이미 있는 판 {len(cur)}개는 그대로 두고 함께 보관(날짜별 비교 가능).")
     else:
         r = out["replaces"]
-        m.append(f"같은 기준일({r['asOf'] or '기준일 없음'})의 현재 판 v{r['version']}" + (f"(메모: {r['memo']})" if r.get("memo") else "") + "을 이 파일로 교체합니다 — 이전 판은 이력으로 남아 되돌릴 수 있습니다.")
+        scope = f"{who}의 " if branch else ""
+        m.append(f"{scope}같은 기준일({r['asOf'] or '기준일 없음'}) 현재 판 v{r['version']}" + (f"(메모: {r['memo']})" if r.get("memo") else "") + f"을 이 파일(v{out['nextVersion']})로 교체합니다 — 이전 판은 이력으로 남아 되돌릴 수 있습니다."
+                 + (" 다른 영업점 판은 바뀌지 않습니다." if branch else ""))
     if out["overlaps"]:
         m.append(f"파일 안 {len(out['overlaps'])}개 기간은 이미 다른 판에 있습니다 — 반영하면 그 기간은 이 파일 값이 쓰입니다(최근 반영 우선).")
     if out["duplicateOf"]:

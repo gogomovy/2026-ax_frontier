@@ -568,10 +568,16 @@ def ingest_file(session: Session, ds: Dataset, filename: str, content: bytes, **
     return v
 
 
-def preview_file(ds: Dataset, filename: str, content: bytes, session: Session | None = None) -> dict[str, Any]:
+def preview_file(ds: Dataset, filename: str, content: bytes, session: Session | None = None, *, place: bool = False, as_of: str | None = None, owner_org: str | None = None) -> dict[str, Any]:
     raw, source, view, added, rows, errors, warns = _read_mapped(session, ds, filename, content)
-    return {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "quality": quality_check(view, rows, errors, unmapped=unmapped_headers(view, raw), added=added, warnings=warns), "source": source,
-            "columnsAdded": added}
+    out = {"headers": list(raw[0].keys()) if raw else [], "rows": rows[:20], "rowCount": len(rows), "quality": quality_check(view, rows, errors, unmapped=unmapped_headers(view, raw), added=added, warnings=warns), "source": source,
+           "columnsAdded": added}
+    if place and session is not None:
+        # 관리자 업로드도 반영 전에 어느 판으로 들어가는지(영업점별 추가 / 같은 구획 교체) 보여 준다
+        from .placement import placement
+
+        out["placement"] = placement(session, view, rows, as_of=as_of, owner_org=owner_org, file_sha=hashlib.sha256(content).hexdigest(), file_name=filename)
+    return out
 
 
 def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sample: int = 10, *, as_of: str | None = None, owner_org: str | None = None, place: bool = False) -> dict[str, Any]:
@@ -589,7 +595,7 @@ def check_file(session: Session, ds: Dataset, filename: str, content: bytes, sam
     if place:
         from .placement import placement
 
-        out["placement"] = placement(session, view, rows, as_of=as_of, owner_org=owner_org, file_sha=hashlib.sha256(content).hexdigest())
+        out["placement"] = placement(session, view, rows, as_of=as_of, owner_org=owner_org, file_sha=hashlib.sha256(content).hexdigest(), file_name=filename)
     return out
 
 

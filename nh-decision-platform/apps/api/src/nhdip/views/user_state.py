@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from datetime import date
 from typing import Any
 
@@ -72,6 +73,52 @@ def goal_state(session: Session) -> dict[str, Any]:
         "addedGoals": list(get_ns(session, NS_GOAL_ADDED).values()),
         "reviewItems": [v.get("title") for v in get_ns(session, NS_REVIEW_ITEM).values()],
     }
+
+
+GOAL_EVENTS = ("goal.confirmed",)  # 종합기획부 목표 확정 · 수정 · 신설 · 삭제 · 복원 — 사업부서 · 영업점 서술이 근거로 읽는 확정 목표가 바뀐다
+_PLACEHOLDER = re.compile(r"\s[–-](?=\s|$)")  # 값이 아직 없는 목표 제목의 자리표시('… – 이상')
+
+
+def _no_digits(text: Any) -> str:
+    """서술 근거 줄용 — 값 숫자(단위 붙은 정수 · 소수 · 천단위)를 뺀다. 서술 검증(numguard)이 리터럴 숫자를 막고 확정 수치는 [[fig]] 마커로만 쓴다.
+    기간 표현('2026년 3분기')은 검증도 막지 않으므로 남긴다."""
+    from nhdip.workflow.numguard import BUILTIN, normalize
+
+    s = _PLACEHOLDER.sub(" ", BUILTIN.sub(" ", normalize(str(text or ""))))
+    return " ".join(s.split()).strip(" ·-–()")
+
+
+def goal_lines(session: Session, limit: int = 8) -> list[str]:
+    """사업부서 · 영업점 서술 에이전트의 근거 줄 — 종합기획부가 확정한 현재 경영목표(보관 제외 · 신설 포함, 숫자 없이).
+    NAVI 흐름: 종합기획부 확정 목표 → 사업부서 · 영업점이 공유된 목표를 의견의 근거로."""
+    from nhdip.ui_config import hq_org_name
+
+    from .readiness import gate, has_value, session_lookup
+
+    hq = hq_org_name(session) or "종합기획부"
+    overrides = get_ns(session, NS_GOAL_OVERRIDE)
+    out: list[str] = []
+    goals = gate("goals", get_current(session, "goals") or [], session_lookup(session)) or []
+    for g in goals:
+        if not isinstance(g, dict) or not g.get("id") or (overrides.get(g["id"]) or {}).get("status") == "archived":
+            continue
+        ov = overrides.get(g["id"]) or {}
+        if not ov and not has_value(g):
+            continue  # 자료로 계산되지 않았고 담당자가 확정하지도 않은 시연 목표
+        title = _no_digits(g.get("title") or g.get("label"))
+        if not title:
+            continue
+        changed = ov.get("targetValue") is not None and ov.get("targetValue") != g.get("targetValue")
+        period = _no_digits(g.get("periodLabel"))
+        out.append(f"- [{g.get('ownerOrg') or hq} 확정 목표] {title}" + (f" · {period}" if period else "") + (" · 목표값 수정 확정" if changed else ""))
+    for a in get_ns(session, NS_GOAL_ADDED).values():
+        if not isinstance(a, dict) or a.get("status") == "archived":
+            continue
+        title = _no_digits(a.get("title"))
+        if title:
+            period = _no_digits(a.get("periodLabel"))
+            out.append(f"- [{a.get('ownerOrg') or hq} 신설 목표] {title}" + (f" · {period}" if period else ""))
+    return out[:limit]
 
 
 # ── 진행사업 ──────────────────────────────────────────────────

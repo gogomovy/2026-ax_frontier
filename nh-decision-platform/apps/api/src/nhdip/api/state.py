@@ -569,8 +569,12 @@ def get_plan_state(session: Session = Depends(get_session), user: AppUser = Depe
 
 @router.post("/plans/{pid}/register")
 def register_plan(pid: str, request: Request, session: Session = Depends(get_session), user: AppUser = Depends(require_resource("plan_actions"))):
+    # 영업점 참고가 미리 켜져 있던 수행방안(기본값 · 참고를 먼저 켬)은 등록하는 순간 영업점에 공유된다 —
+    # 켜기 · 끄기와 같이 영업점 공통 요약을 다시 게시하고 영업점 흐름을 다시 돌린다(_after_share)
+    before = _shared(session, pid)
     _runtime(session, pid, user, status="in_progress", registeredAt=S.today())
     audit(session, user.emp_no, "plan.register", "plan", pid, None, client_ip(request))
+    _after_share(session, user, before, pid)
     session.commit()
     return S.plan_state(session)
 

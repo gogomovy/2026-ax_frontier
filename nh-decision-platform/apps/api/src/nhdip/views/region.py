@@ -82,10 +82,11 @@ def _num(d: Decimal | None) -> float | None:
     return None if d is None else float(d)
 
 
-def _row(code: str, org: OrgUnit | None, payload: Any) -> dict[str, Any]:
+def _row(code: str, org: OrgUnit | None, payload: Any, has_data: bool = True) -> dict[str, Any]:
     from nhdip.views.template import strip_tpl
 
-    p = strip_tpl(payload) if isinstance(payload, dict) else None
+    # 그 지점 자료(사무소 마스터 · 득점 현황)가 없으면 산출물이 있어도 계산 전 — 기본 지점은 자료 없이도 기본 실행이 0점 틀을 만든다
+    p = strip_tpl(payload) if isinstance(payload, dict) and has_data else None
     sc = (p or {}).get("scorecard") or {}
     total, mx = _val(sc.get("total")), _val(sc.get("max"))
     after, adj, up = _val(sc.get("totalAfter")), _val(sc.get("adjustments")), _val(sc.get("uplift"))
@@ -119,7 +120,7 @@ def _row(code: str, org: OrgUnit | None, payload: Any) -> dict[str, Any]:
 def region_kpi(session: Session, user: Any, requested: str | None = None) -> dict[str, Any]:
     """지역본부 통합 업적평가 — 지점별 총점 · 만점 · 득점률 · 그룹 점수 · 주의 알림, 지역 평균 · 순위."""
     from nhdip.orgs import can_view_office, office_code_of, org_of_office
-    from nhdip.scopes import office_scope, scoped_key
+    from nhdip.scopes import office_data, office_scope, scoped_key
     from nhdip.views.store import get_current
 
     region = region_of_user(session, user, requested)
@@ -137,10 +138,11 @@ def region_kpi(session: Session, user: Any, requested: str | None = None) -> dic
             codes.append(c)
     rows = []
     by_code = {office_code_of(session, o.code): o for o in orgs}
+    with_data = office_data(session)
     for code in dict.fromkeys(codes):
         if not can_view_office(session, user, code):
             continue
-        rows.append(_row(code, by_code.get(code), get_current(session, scoped_key("branch_dashboard", code, primary))))
+        rows.append(_row(code, by_code.get(code), get_current(session, scoped_key("branch_dashboard", code, primary)), with_data is None or code in with_data))
     done = [r for r in rows if r["available"]]
     rank_key = lambda r: (-(r["totalAfter"] if r["totalAfter"] is not None else r["total"] or 0), r["code"])  # noqa: E731
     for i, r in enumerate(sorted(done, key=rank_key), start=1):

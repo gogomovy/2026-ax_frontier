@@ -20,7 +20,8 @@ ALLOWED = {
     "dataset": {".csv", ".tsv", ".xlsx", ".json", ".md"},
     # 조직 · 인사 .dat (Phase R) — '|' 구분 텍스트, EUC-KR 도 받는다
     "hr_sync": {".dat", ".txt"},
-    "document": {".pdf", ".hwpx", ".hwp", ".txt", ".md", ".html"},
+    # .docx — 워드 문서(발표 흐름: 문서 PDF · 워드). 매크로 문서(.docm)는 받지 않는다
+    "document": {".pdf", ".docx", ".hwpx", ".hwp", ".txt", ".md", ".html"},
     "contract": {".xlsx"},
 }
 DEFAULTS: dict[str, Any] = {
@@ -65,6 +66,11 @@ def _check_zip(content: bytes, cfg: dict[str, Any], kind: str) -> None:
         raise UploadRejected("압축 내부 경로가 올바르지 않습니다")
     if kind == "hwpx" and "mimetype" not in names:
         raise UploadRejected("한글(HWPX) 파일 구조가 아닙니다")
+    if kind == "docx":
+        if "[Content_Types].xml" not in names or "word/document.xml" not in names:
+            raise UploadRejected("워드(docx) 파일이 아닙니다")
+        if any(n.lower().endswith("vbaproject.bin") for n in names):
+            raise UploadRejected("매크로가 포함된 워드 문서는 올릴 수 없습니다(매크로 제거 후 docx 로 저장)")
     if kind == "xlsx":
         if "[Content_Types].xml" not in names or not any(n.startswith("xl/") for n in names):
             raise UploadRejected("엑셀(xlsx) 파일이 아닙니다")
@@ -176,6 +182,12 @@ def check_upload(filename: str | None, content: bytes, purpose: str, cfg: dict[s
         if not content.startswith(b"PK\x03\x04"):
             raise UploadRejected("한글(HWPX) 파일이 아닙니다")
         _check_zip(content, c, "hwpx")
+    elif ext == ".docx":
+        if not content.startswith(b"PK\x03\x04"):
+            if content.startswith(b"\xd0\xcf\x11\xe0"):
+                raise UploadRejected("암호가 걸렸거나 예전 형식(doc)인 워드 문서입니다 — 암호 해제 후 docx 로 저장해 주세요")
+            raise UploadRejected("워드(docx) 파일이 아닙니다")
+        _check_zip(content, c, "docx")
     elif ext == ".hwp":
         if not content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
             raise UploadRejected("한글(HWP 5.0) 파일이 아닙니다")

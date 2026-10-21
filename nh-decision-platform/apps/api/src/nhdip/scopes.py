@@ -44,15 +44,23 @@ def scope_values(session: Session, spec: dict[str, Any], *, limit: bool = True) 
     return primary, (extras[: scope_cap(spec)] if limit else extras)
 
 
+def _req_pair(req: Any) -> tuple[str, str]:
+    """필요한 자료 한 줄 → (자료 이름, 열). 업무 구성은 {"dataset", "column"} 로 적고(엔진 범위 실행과 같은 형식), 예전 문자열 '자료 이름.열' 도 받는다."""
+    if isinstance(req, dict):
+        return str(req.get("dataset") or ""), str(req.get("column") or "")
+    name, _, col = str(req).rpartition(".")
+    return name, col
+
+
 def data_scopes(session: Session, spec: dict[str, Any]) -> list[str]:
-    """설정 requires(['자료 이름.열', ...])의 모든 자료에 값이 있는 범위 값 — 교집합, 자료 순서대로. 자료가 없으면 빈 목록."""
+    """설정 requires([{"dataset", "column"}, ...] 또는 ['자료 이름.열', ...])의 모든 자료에 값이 있는 범위 값 — 교집합, 자료 순서대로. 자료가 없으면 빈 목록."""
     from nhdip.data.datasets import current_rows
     from nhdip.data.sources import Resolver
 
     res = Resolver(session)
     common: list[str] | None = None
     for req in spec.get("requires") or []:
-        name, _, col = str(req).rpartition(".")
+        name, col = _req_pair(req)
         d = res.resolve(name) if name else None
         if d is None or not col:
             return []
@@ -137,12 +145,24 @@ def computed_offices(session: Session) -> list[str]:
     from nhdip.views.store import get_current
 
     primary, offices = office_scope(session)
+    with_data = office_data(session)
     out = []
     for code in offices:
+        if with_data is not None and code not in with_data:
+            continue  # 기본 지점(규칙 BRANCH_SCOPE.office_code)은 자료가 없어도 기본 실행이 0점 틀을 만든다 — 그 지점 자료가 있어야 계산된 지점
         v = get_current(session, scoped_key("branch_dashboard", code, primary))
         if isinstance(v, dict) and str((v.get("office") or {}).get("code") or "") == code and computed(v):
             out.append(code)
     return out
+
+
+def office_data(session: Session) -> set[str] | None:
+    """영업점 범위의 필요한 자료(requires — 사무소 마스터 · 득점 현황 등)에 모두 행이 있는 지점. 필요한 자료 설정이 없으면 None(판단하지 않음).
+    범위 실행(engine._missing_scope_data)이 추가 지점을 건너뛰는 기준과 같다 — 기본 지점에도 같은 기준을 읽을 때 적용한다."""
+    for spec in scope_specs(session).values():
+        if spec.get("name") == "office":
+            return set(data_scopes(session, spec)) if spec.get("requires") else None
+    return None
 
 
 def resolve_office(session: Session, user: Any, office: str | None) -> str | None:

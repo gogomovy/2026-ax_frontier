@@ -57,7 +57,8 @@ export function SeominReport({ report, rerun }: { report: ReportDoc; rerun?: str
     label: "권고 규모 유치 후 서민금융 신규 건수",
     inputs: [f.br_seomin_actual, f.br_seomin_rec_cnt],
     calc: ([a, b]) => a + b,
-    expression: "하반기 신규 실적 + 권고 신규 유치 건수",
+    // 평가 기간은 규칙(BRANCH_SCOPE.period_label)에서 — 상반기 · 하반기를 코드에 두지 않는다
+    expression: `${f.br_seomin_actual?.label ?? "평가 기간 신규 실적"} + 권고 신규 유치 건수`,
     unit: f.br_seomin_actual?.unit ?? "CNT",
     decimals: 0,
     asOf: report.asOf,

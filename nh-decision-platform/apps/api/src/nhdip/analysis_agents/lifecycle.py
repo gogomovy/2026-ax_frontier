@@ -335,6 +335,10 @@ def set_state(session: Session, a: AnalysisAgent, action: str, actor: str) -> No
         ag = session.get(Agent, a.code)
         if ag is not None:
             ag.enabled = False
+        if a.workflow_code:
+            # 폐기한 분석의 지표는 끈다(계산 이력은 보존) — 질의 패널 확정 수치 · 다른 흐름 KPI 참조 후보에 옛 값이 남지 않게
+            for m in session.execute(select(Metric).where(Metric.workflow_code == a.workflow_code)).scalars():
+                m.enabled = False
     a.status, a.updated_at = want, utcnow()
     audit(session, actor, f"analysis_agent.{action}", "analysis_agent", a.code, {"status": want})
 

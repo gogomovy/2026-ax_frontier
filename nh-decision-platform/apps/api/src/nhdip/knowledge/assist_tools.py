@@ -36,7 +36,8 @@ SCHEMAS: list[dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {
             "dataset": {"type": "string", "description": "데이터셋 코드"}, "measure": {"type": "string", "description": "집계할 숫자 열(count 는 생략 가능)"},
             "op": {"type": "string", "enum": list(OPS)}, "group_by": {"type": "string", "description": "그룹 열(선택)"},
-            "filters": {"type": "object", "description": "같음 조건 {열: 값}(선택)"}}, "required": ["dataset", "op"]}}},
+            "filters": {"type": "object", "description": "조건(선택) — 같음 {열: 값}, 비교 {열: {\"gte\"|\"gt\"|\"lte\"|\"lt\"|\"ne\"|\"eq\": 값}}, 목록 {열: {\"in\": [값, ...]}}. 여러 열은 모두 만족"}},
+            "required": ["dataset", "op"]}}},
 ]
 
 
@@ -111,6 +112,42 @@ def _num(v: Any) -> Decimal | None:
         return None
 
 
+CMP_OPS = ("eq", "ne", "gt", "gte", "lt", "lte", "in")
+
+
+def _conditions(filters: dict[str, Any]) -> tuple[list[tuple[str, Any]], str | None]:
+    """조건 {열: 값} 또는 {열: {gte|gt|lte|lt|ne|eq|in: 값}} → (열, 판정 함수) 목록. 크기 비교는 숫자로(숫자가 아니면 그 행은 빠진다).
+    후속 질문으로 기준을 바꿔 집계할 때('등급 7 이상만', '잔액 1억 넘는 것') 같은 조건을 도구로 계산한다(발표 · 수시 질의)."""
+    out: list[tuple[str, Any]] = []
+    for col, spec in filters.items():
+        if not isinstance(spec, dict):
+            want = str(spec)
+            out.append((col, lambda v, w=want: str(v) == w))
+            continue
+        for op, arg in spec.items():
+            if op not in CMP_OPS:
+                return [], f"조건 연산은 {', '.join(CMP_OPS)} 중 하나: {op}"
+            if op == "in":
+                vals = {str(x) for x in (arg if isinstance(arg, list) else [arg])}
+                out.append((col, lambda v, s=vals: str(v) in s))
+            elif op in ("eq", "ne"):
+                want = str(arg)
+                out.append((col, (lambda v, w=want: str(v) == w) if op == "eq" else (lambda v, w=want: str(v) != w)))
+            else:
+                ref = _num(arg)
+                if ref is None:
+                    return [], f"{col} 의 {op} 비교 값은 숫자여야 합니다"
+
+                def cmp(v: Any, o: str = op, r: Decimal = ref) -> bool:
+                    x = _num(v)
+                    if x is None:
+                        return False
+                    return {"gt": x > r, "gte": x >= r, "lt": x < r, "lte": x <= r}[o]
+
+                out.append((col, cmp))
+    return out, None
+
+
 def _blocked_columns(session: Session, ds: Dataset, rows: list[dict[str, Any]]) -> set[str]:
     """그룹 · 조건에 못 쓰는 열 — 화면 가림 열 + 값에 개인정보 형식이 보이는 열."""
     from nhdip.privacy import PATTERNS, policy
@@ -158,8 +195,11 @@ def data_aggregate(session: Session, ctx: AccessContext, dataset: str, op: str, 
             return {"error": f"정의에 없는 열: {name}"}
         if name and name in blocked:
             return {"error": f"{name} 열은 개인정보 · 가림 열이라 그룹 · 조건에 쓸 수 없습니다"}
-    flt = {k: str(v) for k, v in (filters or {}).items()}
-    sel = [r for r in rows if all(str(r.get(k)) == v for k, v in flt.items())]
+    conds, bad = _conditions(filters or {})
+    if bad:
+        return {"error": bad}
+    flt = {k: (v if isinstance(v, dict) else str(v)) for k, v in (filters or {}).items()}
+    sel = [r for r in rows if all(c(r.get(k)) for k, c in conds)]
 
     def agg(rs: list[dict[str, Any]]) -> dict[str, Any]:
         if op == "count":

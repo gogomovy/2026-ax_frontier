@@ -340,7 +340,7 @@ def shared_report(session: Session, plan_id: str) -> tuple[dict[str, Any], dict[
 
 
 # ── 질문하기 색인용 산출물 ───────────────────────────────────────
-PLAN_KEYS = ("id", "title", "body", "ownerOrg", "reviewCycle", "relatedGoalTitle", "status")
+PLAN_KEYS = ("id", "title", "body", "ownerOrg", "monitoringMetrics", "reviewCycle", "relatedGoalTitle", "status")
 MAX_LINKED = 12
 
 
@@ -426,6 +426,10 @@ def agent_lines(session: Session, limit: int = AGENT_ITEMS) -> list[str]:
     for p in shared_plans(session)[:limit]:
         body = " ".join(str(p.get("body") or "").split())[:240]
         line = f"- [사업부서 진행사업 · {p.get('ownerOrg') or '-'}] {p.get('title')}: {body or '(본문 없음)'}"
+        mons = [str(m) for m in (p.get("monitoringMetrics") or []) if isinstance(m, str) and m.strip()][:6]
+        if mons or p.get("reviewCycle"):
+            # 관리방안의 모니터링 지표 · 점검 주기 — 영업점 가이드가 같은 지표를 같은 주기로 보게
+            line += f" / 모니터링 {', '.join(mons) or '-'} · 점검 주기 {p.get('reviewCycle') or '-'}"
         a = linked_analysis(session, p)
         if a:
             briefs = " ".join(x.get("brief") or "" for x in (a.get("summary") or [])[:3] if isinstance(x, dict)).strip()

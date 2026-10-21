@@ -11,6 +11,8 @@ DB 에 올리는 upload · selftest 는 NHDIP_SAMPLE_UPLOAD=1 일 때만 돈다(
                                                                          현재 DB(정의 시드만)에서 업로드 → 대조 → 교란 검사(하드코딩이 남으면 종료 코드 1)
   python -m nhdip.sample check --dir sample-data/202608                  저장소 사본이 생성기와 같은지(셀 값 · 문서 글)
   python -m nhdip.sample branches --out test-data/branches               영업점 3곳 시험 자료(공통 + 지점별 폴더 · 안내.txt)
+  python -m nhdip.sample scenario --out test-data/navi-scenario          NAVI 시나리오 자료(공통 · 종합기획부 · 신용모형팀 · 영업점 3곳 · 안내.txt)
+  python -m nhdip.sample scenario-upload --base-url URL --user 사번        위 자료를 폴더 소유대로 업로드(조직 추가 포함 · NHDIP_SAMPLE_UPLOAD=1)
 비밀번호는 환경변수로만 받는다(기본 BOOTSTRAP_ADMIN_PASSWORD).
 """
 from __future__ import annotations
@@ -49,19 +51,36 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--dir", required=True)
     br = sub.add_parser("branches", help="영업점 3곳 시험 자료(공통 + 지점별 폴더 · 안내.txt) — 파일로만 쓴다")
     br.add_argument("--out", required=True)
+    sc = sub.add_parser("scenario", help="NAVI 시나리오 자료(공통 · 종합기획부 · 신용모형팀 · 영업점 3곳 폴더 · 안내.txt) — 파일로만 쓴다")
+    sc.add_argument("--out", required=True)
+    su = sub.add_parser("scenario-upload", help="NAVI 시나리오 자료를 폴더 소유대로 업로드(관리자 · 조직 추가 포함, 가입은 직접)")
+    su.add_argument("--base-url", required=True)
+    su.add_argument("--user", default=os.environ.get("BOOTSTRAP_ADMIN_EMP_NO", "00000001"))
+    su.add_argument("--password-env", default="BOOTSTRAP_ADMIN_PASSWORD")
     args = ap.parse_args(argv)
     if args.cmd == "branches":
         from .branches import write
 
         print(json.dumps(write(args.out), ensure_ascii=False))
         return 0
+    if args.cmd == "scenario":
+        from .scenario_pack import write as write_scenario
+
+        print(json.dumps(write_scenario(args.out), ensure_ascii=False))
+        return 0
 
     from .build import build
 
-    if args.cmd in ("upload", "selftest") and os.environ.get("NHDIP_SAMPLE_UPLOAD", "") != "1":
+    if args.cmd in ("upload", "selftest", "scenario-upload") and os.environ.get("NHDIP_SAMPLE_UPLOAD", "") != "1":
         # 시연 자료를 실제 플랫폼 DB 에 넣는 명령 — 시험용(CI)으로만, 운영 · 개발 플랫폼에는 쓰지 않는다 (M.20 · Q206)
         print("시연 자료 업로드는 시험 환경 전용입니다 — 시험 스택에서만 NHDIP_SAMPLE_UPLOAD=1 로 실행하세요(운영 · 개발 플랫폼에는 자료를 직접 올립니다)", file=sys.stderr)
         return 2
+    if args.cmd == "scenario-upload":
+        from .scenario_pack import upload_http as upload_scenario
+
+        rep = upload_scenario(args.base_url, args.user, _password(args))
+        print(json.dumps(rep, ensure_ascii=False, indent=1))
+        return 0 if rep["ok"] else 1
     if args.cmd == "build":
         pkg = build(perturb_seed=args.perturb)
         paths = pkg.write(args.out)

@@ -62,3 +62,7 @@ def test_three_branches_compute_and_gather_in_region(computed, tmp_path):
             assert rows[b.code]["available"] and rows[b.code]["rank"] and rows[b.code]["total"] is not None, rows.get(b.code)
         totals = [rows[b.code]["total"] for b in BRANCHES]
         assert len(set(totals)) == 3  # 지점마다 득점이 다르다
+        # 기본 지점(규칙 BRANCH_SCOPE.office_code = 001068)은 사무소 마스터에서 빠졌다 — 기본 실행이 틀을 만들어도 계산된 지점 · 순위에 나타나지 않는다
+        assert "001068" not in ready
+        assert "001068" not in rows or (not rows["001068"]["available"] and not rows["001068"].get("rank")), rows.get("001068")
+        assert rk["summary"]["computed"] == len(BRANCHES)

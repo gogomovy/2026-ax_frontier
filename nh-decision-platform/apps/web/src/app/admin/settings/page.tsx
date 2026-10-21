@@ -30,7 +30,7 @@ const GROUPS: Record<string, string> = {
   alerts: "알림",
   ui: "화면 표시",
   branch: "영업점",
-  risk: "신용리스크",
+  risk: "사업부서 분석",
   screen: "화면 권한",
   calc: "계산",
   obs: "관측성",

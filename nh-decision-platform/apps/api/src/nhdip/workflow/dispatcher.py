@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, aliased
 
 from nhdip.models import Job, Metric, OutboxEvent, Setting, ViewBinding, Workflow, WorkflowNode, WorkflowTrigger, utcnow
 from nhdip.views.plan_share import SHARE_EVENTS, is_branch_outputs
+from nhdip.views.user_state import GOAL_EVENTS
 
 
 def _datasets_in(obj: Any) -> set[str]:
@@ -173,6 +174,13 @@ def match_event(session: Session, ev: OutboxEvent) -> dict[str, list[str]]:
             elif w.code == "wf_graph_projection":
                 # 그래프 — 수행방안(Plan) ↔ 연결 보고서 · 근거 문서 · 데이터셋 연결을 다시 투영(영업점 공통 온톨로지 연결)
                 add(w.code, "lineage:plan_share(그래프 연결)")
+    if ev.type in GOAL_EVENTS:
+        # 종합기획부 경영목표 확정 · 수정 · 신설 · 삭제 — 사업부서(수행방안) · 영업점 서술 에이전트가 확정 목표를 공통 방향으로 읽으므로 그 흐름도 다시 본다
+        # (목표를 만드는 흐름은 자체 조건 event:goal.confirmed 로 돈다. 서술 여부는 플래너가 판단)
+        for w in session.execute(select(Workflow).where(Workflow.enabled)).scalars():
+            outs = w.outputs or []
+            if w.code not in BASE_WORKFLOWS and "goals" not in outs and (is_branch_outputs(outs) or "action_plans" in outs):
+                add(w.code, f"lineage:goal({p.get('goal') or '-'} · {p.get('mode') or '-'})")
     if ev.type == "metrics.changed" and p.get("metrics"):
         for wf, codes in downstream_of(session, p).items():
             add(wf, f"lineage:upstream({p.get('workflow')} · {codes[0]}{f' 외 {len(codes) - 1}' if len(codes) > 1 else ''})")
@@ -257,7 +265,7 @@ def _chain_block(session: Session, ev: OutboxEvent, wf: str) -> str | None:
 IMPACT_AGENT = "impact_assessor"
 IMPACT_EVENTS = ("dataset.", "document.", "metrics.changed", "goal.", "rule.changed", "contract.changed", "change.detected")
 REASON_KIND = (("trigger:team", "팀"), ("trigger:common", "공통"), ("lineage:common_doc", "공통 문서"), ("lineage:upstream", "상위 흐름"), ("lineage:metric", "계보"), ("lineage:binding", "계보"),
-               ("lineage:contract", "정의서"), ("agent:orchestrator", "LLM 경로"), ("trigger:", "조건"))
+               ("lineage:contract", "정의서"), ("lineage:goal", "경영목표"), ("agent:orchestrator", "LLM 경로"), ("trigger:", "조건"))
 
 
 def unchanged_reason(ev: OutboxEvent) -> str | None:

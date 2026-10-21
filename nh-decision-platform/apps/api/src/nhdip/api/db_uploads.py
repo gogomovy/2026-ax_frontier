@@ -160,7 +160,7 @@ def uploadable(user: AppUser = Depends(require_resource("db_upload")), session: 
         "docClasses": _doc_classes(session, user),
         "canPropose": bool(_targets(session).get("new_datasets", True)),
         # .md 는 두 쪽 모두 — 표가 있으면 정형 자료, 없으면 문서(화면이 내용을 보고 고른다 · Phase Q MD-04)
-        "accept": {"dataset": ".csv,.tsv,.xlsx,.json,.md", "document": ".pdf,.hwpx,.hwp,.txt,.md,.html"},
+        "accept": {"dataset": ".csv,.tsv,.xlsx,.json,.md", "document": ".pdf,.docx,.hwpx,.hwp,.txt,.md,.html"},
         # 파일 놓기 영역이 먼저 알려 주는 용량 한도(Phase E · UXF-01) — 실제 차단은 서버 보안 검사
         "maxMb": int(max_mb) if isinstance(max_mb, (int, float)) else 50,
     }

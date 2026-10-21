@@ -474,6 +474,8 @@ FIELD_GUIDE = {
 }
 SHARED_PLAN_GUIDE = ("근거의 [사업부서 진행사업] 줄은 사업부서가 영업점 참고를 켠 수행방안과 그 연결 분석이다 — 이 지점 수치와 관련 있을 때만 방향(우선 · 주의)으로 반영하고, "
                      "사업부서 분석의 수치를 이 지점 수치처럼 쓰지 않는다.")
+GOAL_LINE_GUIDE = ("근거의 [… 확정 목표] · [… 신설 목표] 줄은 종합기획부가 확정한 현재 경영목표다 — 이 분석과 관련 있을 때만 공통 방향(목표 대비 점검 · 우선순위)으로 반영하고, "
+                   "목표 수치를 만들어 쓰지 않는다.")
 
 
 @node_impl("narrate", "LLM 서술 — 의견 · 제안 판단 · 수행방안 본문 · 영업점 가이드. 확정 수치는 [[fig:ID]] 마커로만 참조 (실패 시 규칙 문장 유지)")
@@ -502,8 +504,12 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
     # 영업점 흐름 — 사업부서가 '영업점 참고'를 켠 진행사업과 그 연결 분석을 근거로 읽는다(수치 이름만, 값은 영업점 자체 확정 수치 마커로).
     # 노드 설정 shared_plans: false 로 끈다
     from nhdip.views.plan_share import agent_lines, is_branch_outputs
+    from nhdip.views.user_state import goal_lines
 
     shared_lines = agent_lines(ctx.session) if cfg.get("shared_plans", True) and is_branch_outputs(ctx.workflow.outputs) else []
+    # 사업부서 · 영업점 흐름 — 종합기획부가 확정한 현재 경영목표를 공통 방향으로 읽는다(숫자 없이, 보관 목표 제외 · 신설 목표 포함).
+    # 목표를 만드는 흐름(종합기획부)은 자기 산출물이라 넣지 않는다. 노드 설정 goals: false 로 끈다
+    goal_lines_ = goal_lines(ctx.session) if cfg.get("goals", True) and "goals" not in (ctx.workflow.outputs or []) else []
     for target in targets:
         key, field = target_key(target), target_field(target)
         if broken:
@@ -527,10 +533,10 @@ def n_narrate(ctx: RunContext, node: WorkflowNode) -> NodeResult:
         own = [e for e in (ins.get("evidence") or []) if isinstance(e, dict) and isinstance(e.get("doc"), dict)]
         ev_lines = [f"- [{e.get('category')}] {e['doc'].get('title')} p.{e['doc'].get('page') or '-'}: {(e.get('snippet') or '')[:300]}" for e in own]
         ev_lines += [f"- ({e['origin']}) {e['title']} p.{e.get('page') or '-'}: {e['text'][:300]}" for e in ctx.state.get("evidence", [])[: int(cfg.get("evidence_k", 4))]]
-        ev_lines += shared_lines
+        ev_lines += shared_lines + goal_lines_
         guide = ins.get("guide") if isinstance(ins.get("guide"), dict) else None
         instruction = " ".join(x for x in (FIELD_GUIDE.get(field, ""), f"규칙 가이드: {guide.get('title')} — {guide.get('text')}" if guide and guide.get("text") else "", target.get("instruction", ""),
-                                           PERIOD_GUIDE if any(notes.values()) else "", SHARED_PLAN_GUIDE if shared_lines else "") if x)
+                                           PERIOD_GUIDE if any(notes.values()) else "", SHARED_PLAN_GUIDE if shared_lines else "", GOAL_LINE_GUIDE if goal_lines_ else "") if x)
         tmpl = llm.user_template or (
             "다음 확정 수치와 근거로 '{title}' 문장을 작성하라.\n규칙: 숫자를 직접 쓰지 말고 반드시 [[fig:ID]] 마커로만 수치를 참조한다(마커가 단위까지 표시하므로 마커 뒤에 건 · % · 원 같은 단위를 붙이지 않는다). 인과를 단정하지 않는다. 2~4문장.\n\n"
             "수치:\n{figures}\n\n판정:\n{verdicts}\n\n근거:\n{evidence}\n\n기존 서술(참고):\n{current}\n\n{instruction}\n출력: {{\"statement\": \"...\"}}"
