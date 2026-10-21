@@ -65,3 +65,17 @@ export function asRuleList(v: unknown): unknown[] | null {
   }
   return null;
 }
+
+/** 붙여 넣은 .dat 본문 미리 점검 — 줄 수(빈 줄 제외) · 첫 줄 칸 수('|' 구분) · 칸 수가 다른 줄 수. 서버 파서와 같은 줄 나눔(CRLF · CR · LF) */
+export function pasteStats(text: string): { lines: number; fields: number; ragged: number } {
+  const rows = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .filter((l) => l.trim() !== "");
+  if (!rows.length) return { lines: 0, fields: 0, ragged: 0 };
+  const fields = rows[0].split("|").length;
+  return { lines: rows.length, fields, ragged: rows.filter((r) => r.split("|").length !== fields).length };
+}
+
+/** 조직 · 인사 .dat 의 최소 칸 수 (서버 orgsync 와 같음) — 붙여 넣은 줄이 이보다 짧으면 안내 */
+export const MIN_FIELDS: Record<SyncKind, number> = { organization: 15, employee: 21 };

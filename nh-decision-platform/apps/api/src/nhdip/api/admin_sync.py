@@ -1,6 +1,7 @@
 """관리자 [조직 · 인사 동기화] (Phase R · 가이드 §3) — 조직 · 인사 .dat 업로드, 미리보기(dry-run), 이력, 필터 규칙, SSO 상태.
 
 POST /admin/data-sync/organization · /admin/data-sync/employee  (multipart file, dry_run)
+POST /admin/data-sync/organization/text · /employee/text          (JSON {text, dry_run}) — 파일을 올릴 수 없을 때(DRM 등) 메모장에서 복사한 본문
 GET  /admin/data-sync                                            현황 · 최근 이력(감사 로그) · 설정 · SSO 검증기 상태
 PUT  /admin/data-sync/settings                                   필터 규칙 · 유형 규칙 · SSO 계정 정책
 """
@@ -9,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,10 @@ def _iso(v: Any) -> str | None:
 
 async def _run(kind: str, file: UploadFile, dry_run: bool, request: Request, session: Session, admin: AppUser) -> dict[str, Any]:
     name, content = await _read(file, "hr_sync", session, request, admin.emp_no)
+    return _sync(kind, name, content, dry_run, request, session, admin)
+
+
+def _sync(kind: str, name: str, content: bytes, dry_run: bool, request: Request, session: Session, admin: AppUser) -> dict[str, Any]:
     fn = sync_organizations if kind == "organization" else sync_employees
     try:
         res = fn(session, content, dry_run=dry_run)
@@ -57,6 +62,34 @@ async def sync_org(request: Request, file: UploadFile = File(...), dry_run: bool
 @router.post("/employee")
 async def sync_emp(request: Request, file: UploadFile = File(...), dry_run: bool = Form(False), session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
     return await _run("employee", file, dry_run, request, session, admin)
+
+
+class SyncTextIn(BaseModel):
+    """메모장에서 복사한 .dat 본문 — 파일로 올릴 수 없을 때(DRM 등). 파일 올리기와 같은 검사 · 같은 파서를 탄다."""
+
+    text: str = Field(min_length=1, max_length=60_000_000)
+    dry_run: bool = False
+
+
+@router.post("/{kind}/text")
+def sync_text(kind: str, body: SyncTextIn, request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_admin)):
+    from nhdip.data.filecheck import UploadRejected, check_upload
+
+    if kind not in ("organization", "employee"):
+        raise HTTPException(404, "알 수 없는 동기화 대상")
+    content = body.text.encode("utf-8")
+    rows = sum(1 for ln in body.text.splitlines() if ln.strip())
+    name = f"붙여넣기 · {rows:,}줄"
+    pol = session.get(Setting, "upload.policy")
+    try:
+        # 크기 · DRM 표지 · 텍스트 여부 — 파일 올리기와 같은 정책(설정 upload.policy)
+        check_upload(f"{kind}-paste.dat", content, "hr_sync", pol.value if pol else None)
+    except UploadRejected as exc:
+        session.rollback()
+        audit(session, admin.emp_no, "upload.rejected", "hr_sync", name, {"reason": str(exc), "bytes": len(content), "via": "paste"}, client_ip(request))
+        session.commit()
+        raise HTTPException(413 if "너무 큽니다" in str(exc) else 422, str(exc)) from exc
+    return _sync(kind, name, content, body.dry_run, request, session, admin)
 
 
 @router.get("")

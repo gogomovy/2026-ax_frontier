@@ -5,9 +5,9 @@ import { AdminPage, C, Card, Check, JsonEditor, Loading, Table, TextInput, fmtTi
 import { useConfirm } from "@/components/providers/UiProvider";
 import { FileDrop } from "@/components/ui/FileDrop";
 import { KeyValueList, Notice } from "@/components/ui/Layout";
-import { Badge, Button } from "@/components/ui/primitives";
-import { api, apiPut } from "@/lib/api-client";
-import { KIND_LABEL, asRuleList, countsLine, syncActionLabel, type SyncCounts, type SyncKind, type SyncResult } from "@/lib/dataSync";
+import { Badge, Button, PillTabs } from "@/components/ui/primitives";
+import { api, apiPost, apiPut } from "@/lib/api-client";
+import { KIND_LABEL, MIN_FIELDS, asRuleList, countsLine, pasteStats, syncActionLabel, type SyncCounts, type SyncKind, type SyncResult } from "@/lib/dataSync";
 
 interface Overview {
   orgs: { dat: number; datActive: number; manual: number };
@@ -36,7 +36,7 @@ export default function DataSyncAdmin() {
   return (
     <AdminPage
       title="조직 · 인사 동기화"
-      description="인사 시스템에서 받은 조직정보 · 인사정보 .dat 파일을 올려 조직과 사용자(사번)를 맞춥니다. 조직을 먼저, 인사를 나중에 올리세요. [미리보기]는 저장하지 않고 바뀔 내용만 셉니다. 동기화된 사번은 비밀번호가 없어 사내 SSO 로만 로그인합니다."
+      description="인사 시스템에서 받은 조직정보 · 인사정보 .dat 파일을 올려(또는 내용을 붙여 넣어) 조직과 사용자(사번)를 맞춥니다. 조직을 먼저, 인사를 나중에 넣으세요. [미리보기]는 저장하지 않고 바뀔 내용만 셉니다. 동기화된 사번은 비밀번호가 없어 사내 SSO 로만 로그인합니다."
       summary={
         <div className="grid grid-cols-2 gap-md md:grid-cols-4">
           <Stat label="동기화 조직(사용 중)" value={d ? `${d.orgs.datActive.toLocaleString("ko-KR")} / ${d.orgs.dat.toLocaleString("ko-KR")}` : "-"} />
@@ -116,29 +116,40 @@ type Run = ReturnType<typeof useAction>["run"];
 
 function UploadCard({ step, kind, hint, busy, run, onDone }: { step: number; kind: SyncKind; hint: string; busy: boolean; run: Run; onDone: () => unknown }) {
   const confirm = useConfirm();
+  // 파일을 올릴 수 없을 때(DRM 등) 메모장에서 복사한 본문을 붙여 넣는다 — 서버가 파일과 같은 검사 · 파서로 처리
+  const [mode, setMode] = useState<"file" | "paste">("file");
   const [file, setFile] = useState<File | null>(null);
+  const [text, setText] = useState("");
   const [result, setResult] = useState<SyncResult | null>(null);
   const label = KIND_LABEL[kind];
+  const stats = pasteStats(text);
+  const ready = mode === "file" ? Boolean(file) : stats.lines > 0;
+  const source = mode === "file" ? (file?.name ?? "") : `붙여 넣은 ${stats.lines.toLocaleString("ko-KR")}줄`;
 
   const send = async (dryRun: boolean) => {
-    if (!file) return;
+    if (!ready) return;
     if (!dryRun) {
       const ok = await confirm({
         title: `${label}정보를 반영할까요?`,
-        body: `${file.name} 의 내용으로 ${kind === "organization" ? "조직을 추가 · 변경하고, 파일에 없는 동기화 조직은 사용 안 함으로" : "사용자를 추가 · 변경하고, 파일에 없는 동기화 사용자는 사용 중지(세션 종료)로"} 바꿉니다. 먼저 [미리보기]로 건수를 확인하세요.`,
+        body: `${source} 의 내용으로 ${kind === "organization" ? "조직을 추가 · 변경하고, 목록에 없는 동기화 조직은 사용 안 함으로" : "사용자를 추가 · 변경하고, 목록에 없는 동기화 사용자는 사용 중지(세션 종료)로"} 바꿉니다. 먼저 [미리보기]로 건수를 확인하세요.`,
         confirmLabel: "반영",
       });
       if (!ok) return;
     }
-    const fd = new FormData();
-    fd.append("file", file);
-    fd.append("dry_run", dryRun ? "true" : "false");
-    const r = await run(
-      () => api<SyncResult>(`/admin/data-sync/${kind}`, { method: "POST", body: fd }),
-      (x) => `${label} ${dryRun ? "미리보기" : "반영"} — ${countsLine(x, kind)}`,
-      onDone,
-    );
-    if (r) setResult(r);
+    const call =
+      mode === "file"
+        ? () => {
+            const fd = new FormData();
+            fd.append("file", file as File);
+            fd.append("dry_run", dryRun ? "true" : "false");
+            return api<SyncResult>(`/admin/data-sync/${kind}`, { method: "POST", body: fd });
+          }
+        : () => apiPost<SyncResult>(`/admin/data-sync/${kind}/text`, { text, dry_run: dryRun });
+    const r = await run(call, (x) => `${label} ${dryRun ? "미리보기" : "반영"} — ${countsLine(x, kind)}`, onDone);
+    if (r) {
+      setResult(r);
+      if (!dryRun && mode === "paste") setText(""); // 인사 정보가 화면에 남지 않게 — 반영하면 비운다
+    }
   };
 
   return (
@@ -150,24 +161,77 @@ function UploadCard({ step, kind, hint, busy, run, onDone }: { step: number; kin
         </span>
       }
     >
-      <FileDrop
-        id={`sync-${kind}`}
-        accept={ACCEPT}
-        file={file}
-        onFile={(f) => {
-          setFile(f);
-          setResult(null);
-        }}
-        hint={hint}
-        disabled={busy}
-        compact
-        data-testid={`sync-${kind}`}
-      />
+      <div className="mb-md">
+        <PillTabs
+          size="sm"
+          label={`${label}정보 넣는 방법`}
+          value={mode}
+          onChange={(m) => {
+            setMode(m);
+            setResult(null);
+          }}
+          items={[
+            { key: "file", label: "파일 올리기" },
+            { key: "paste", label: "내용 붙여넣기" },
+          ]}
+        />
+      </div>
+      {mode === "file" ? (
+        <FileDrop
+          id={`sync-${kind}`}
+          accept={ACCEPT}
+          file={file}
+          onFile={(f) => {
+            setFile(f);
+            setResult(null);
+          }}
+          hint={hint}
+          disabled={busy}
+          compact
+          data-testid={`sync-${kind}`}
+        />
+      ) : (
+        <div className="flex flex-col gap-1">
+          <label htmlFor={`sync-${kind}-text`} className="text-[12px] font-bold text-charcoal">
+            {label}정보 본문
+          </label>
+          <p id={`sync-${kind}-text-hint`} className="text-[11.5px] leading-relaxed text-steel">
+            DRM 등으로 파일을 올릴 수 없으면 메모장에서 파일을 열어 전체 선택(Ctrl+A) · 복사(Ctrl+C)한 뒤 여기에 붙여 넣으세요. 파일과 같은 규칙(구분자 &apos;|&apos;, 한 줄에 한 건)으로 읽습니다.
+          </p>
+          <textarea
+            id={`sync-${kind}-text`}
+            aria-describedby={`sync-${kind}-text-hint sync-${kind}-text-stats`}
+            className="input min-h-[160px] font-mono text-[11.5px] leading-snug"
+            rows={8}
+            spellCheck={false}
+            autoComplete="off"
+            value={text}
+            disabled={busy}
+            onChange={(e) => {
+              setText(e.target.value);
+              setResult(null);
+            }}
+            placeholder={kind === "organization" ? "법인|사무소코드|사무소명|…" : "개인번호|성명|법인|…"}
+            data-testid={`sync-${kind}-text`}
+          />
+          <p id={`sync-${kind}-text-stats`} className="text-[11.5px] text-steel tnum" aria-live="polite">
+            {stats.lines ? (
+              <>
+                {stats.lines.toLocaleString("ko-KR")}줄 · 첫 줄 {stats.fields}칸
+                {stats.fields < MIN_FIELDS[kind] ? <span className="ml-1 font-bold text-attention">— {label} .dat 는 {MIN_FIELDS[kind]}칸 이상이어야 합니다</span> : null}
+                {stats.ragged ? <span className="ml-1 text-attention">· 칸 수가 다른 줄 {stats.ragged.toLocaleString("ko-KR")}개</span> : null}
+              </>
+            ) : (
+              "붙여 넣은 내용 없음"
+            )}
+          </p>
+        </div>
+      )}
       <div className="mt-md flex flex-wrap gap-xs">
-        <Button size="sm" variant="secondary" disabled={busy || !file} onClick={() => send(true)}>
+        <Button size="sm" variant="secondary" disabled={busy || !ready} onClick={() => send(true)}>
           미리보기
         </Button>
-        <Button size="sm" variant="confirm" disabled={busy || !file} onClick={() => send(false)}>
+        <Button size="sm" variant="confirm" disabled={busy || !ready} onClick={() => send(false)}>
           반영
         </Button>
       </div>

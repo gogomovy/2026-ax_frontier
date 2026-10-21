@@ -232,3 +232,46 @@ def test_signup_with_hr_prefill(db, nc):
             for code in ("990112", "990111", "990110", "990201", "990299", "990200", "990100"):
                 s.execute(delete(OrgUnit).where(OrgUnit.code == code))
             s.commit()
+
+
+def test_sync_from_pasted_text(db):
+    """DRM 등으로 .dat 파일을 올릴 수 없을 때 — 메모장에서 복사한 본문(JSON)도 파일과 같은 검사 · 파서 · 결과."""
+    from sqlalchemy import delete
+
+    from nhdip.models import AppUser, AuditLog, OrgUnit, UserSession
+
+    orgs = "\r\n".join([_org("980100", "붙임디지털본부", "980100", "980100", "980100"), _org("980110", "붙임전략부", "980110", "980110", "980100"),
+                        _org("980111", "붙임AI팀", "980110", "980110", "980100")]) + "\r\n"  # 메모장 복사(CRLF · 끝 줄바꿈)
+    emps = "\n".join([_emp("980000001", "김붙임", "980111", "980110", "980110", "980100"), _emp("980000002", "이붙임", "980110")])
+    admin = _client()
+    _login(admin, *ADMIN)
+    try:
+        pv = admin.post("/admin/data-sync/organization/text", json={"text": orgs, "dry_run": True})
+        assert pv.status_code == 200 and pv.json()["dryRun"] and pv.json()["inserted"] == 3 and pv.json()["file"] == "붙여넣기 · 3줄", pv.text
+        with db() as s:
+            assert s.get(OrgUnit, "980100") is None  # 미리보기는 저장하지 않는다
+        r = admin.post("/admin/data-sync/organization/text", json={"text": orgs}).json()
+        assert r["inserted"] == 3 and not r["errors"] and r["encoding"] == "utf-8", r
+        e = admin.post("/admin/data-sync/employee/text", json={"text": emps}).json()
+        assert e["inserted"] == 2 and not e["errors"], e
+        with db() as s:
+            u = s.get(AppUser, "980000001")
+            assert u.source == "dat" and u.org_code == "980111" and u.name == "김붙임"
+            # 이력(감사)에는 건수만 — 본문(인사 정보)은 남기지 않는다
+            a = s.query(AuditLog).filter(AuditLog.action == "admin.sync.employee").order_by(AuditLog.id.desc()).first()
+            assert a.target_id == "붙여넣기 · 2줄" and "김붙임" not in str(a.detail)
+        # 칸이 모자란 줄은 그 줄만 오류(파일과 같다) · 빈 본문 · 모르는 대상 · DRM 표지는 거부
+        bad = admin.post("/admin/data-sync/employee/text", json={"text": "980000009|짧은줄|1", "dry_run": True}).json()
+        assert bad["inserted"] == 0 and "필드 수 부족" in bad["errors"][0]
+        assert admin.post("/admin/data-sync/employee/text", json={"text": ""}).status_code == 422
+        assert admin.post("/admin/data-sync/branch/text", json={"text": "x"}).status_code == 404
+        assert admin.post("/admin/data-sync/employee/text", json={"text": "DRMONE 암호화"}).status_code == 422
+        # 관리자만
+        assert _client().post("/admin/data-sync/employee/text", json={"text": emps}).status_code in (401, 403)
+    finally:
+        with db() as s:
+            s.execute(delete(UserSession).where(UserSession.emp_no.like("98000000%")))
+            s.execute(delete(AppUser).where(AppUser.emp_no.in_(["980000001", "980000002"])))
+            for c in ("980111", "980110", "980100"):
+                s.execute(delete(OrgUnit).where(OrgUnit.code == c))
+            s.commit()
