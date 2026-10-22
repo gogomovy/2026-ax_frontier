@@ -229,6 +229,15 @@ def auto_target(session: Session, filename: str, content: bytes, *, include_comm
     return None, matches
 
 
+def _existing_match(session: Session, filename: str, content: bytes, *, include_common: bool = False) -> Dataset | None:
+    """지금 있는 정의 가운데 이 파일이 들어갈 것(자동 연결 기준 · 공통 자료는 관리자만). 없으면 None."""
+    try:
+        d, _ = auto_target(session, filename, content, include_common=include_common)
+    except HTTPException:
+        return None
+    return d
+
+
 def inferred_proposal(session: Session, filename: str, content: bytes, origin: str) -> dict[str, Any]:
     """맞는 정의가 없는 파일 → 파일에서 추론한 정의(제안) — 승인되면 이 정의로 데이터셋이 만들어진다 (M.24 · DOB-16)."""
     from nhdip.data.infer import infer_definition
@@ -522,6 +531,17 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
             d = session.get(Dataset, r.target)
             proposal = meta.get("proposal") if isinstance(meta.get("proposal"), dict) else None
             created = False
+            matched_existing = None
+            if proposal is not None:
+                # 새 정의 제안이라도 반영하는 지금 같은 모양의 정의가 있으면 그 자료의 새 판으로 — 여러 파일을 한꺼번에 올려 분석할 때는 아직 정의가 없어
+                # 파일마다 새 정의(…_2 · …_3)가 생기고, 업무 구성은 그 가운데 하나만 읽어 나머지 영업점 · 기간 자료가 화면에 나오지 않았다
+                hit = _existing_match(session, r.file_name, content, include_common=actor.role == "admin")
+                if hit is not None:
+                    d, proposal, matched_existing = hit, None, hit.code
+                    r.target = hit.code
+                    meta = {**meta, "targetLabel": hit.name, "matchedAtApproval": hit.code}
+                    meta.pop("proposal", None)
+                    r.meta = meta
             if proposal is not None and d is not None:
                 raise IngestError("같은 코드의 데이터셋이 이미 만들어졌습니다 — 반려하고 그 자료로 다시 올려 달라고 하세요")
             if d is None:
@@ -542,7 +562,8 @@ def do_approve(session: Session, r: UploadRequest, actor: AppUser, body: ReviewI
                             # 요청자가 영업점 소속이 아니고(관리자 · 영업본부) 파일 행이 모두 한 영업점 것이면 그 영업점 판으로 — 다른 영업점 판을 교체하지 않게
                             branch_owner_scope=_branch_scope(session, r.requested_by, r.requested_org),
                             memo=meta.get("note") or None, requested_by=r.requested_by)  # 요청자 메모 · 요청자는 판에 따로 (UPV-06)
-            result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current, **({"createdDataset": d.code} if created else {})}
+            result = {"version": v.version, "versionId": v.id, "status": v.status, "rows": v.row_count, "quality": (v.quality or {}).get("status"), "isCurrent": v.is_current, **({"createdDataset": d.code} if created else {}),
+                      **({"matchedExisting": matched_existing, "dataset": d.code} if matched_existing else {})}
             if v.status != "committed":
                 raise IngestError(f"품질 검사 실패로 확정되지 않았습니다(v{v.version}) — 필요하면 '품질 실패여도 확정' 으로 승인")
         else:

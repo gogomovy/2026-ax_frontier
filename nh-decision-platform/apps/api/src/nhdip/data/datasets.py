@@ -522,6 +522,7 @@ def ingest_rows(
         # 밀려나는 현재 판의 소유 — 이전 소유 팀 흐름도 다시 돌게(그 팀 범위에서 이 자료가 빠진다)
         prev = replaced_owners(session, t, ds.code, same, exclude_id=v.id)
         session.execute(update(t.version).where(t.version.dataset_code == ds.code, t.version.id != v.id, same).values(is_current=False))
+        prev |= _retire_misowned(session, t, ds, v, owner_org)
         v.is_current = True
         moved = sorted(o for o in prev - {owner_org} if o)
         emit(
@@ -534,6 +535,26 @@ def ingest_rows(
         )
     audit(session, actor, "dataset.upload", "dataset", ds.code, {"version": v.version, "status": v.status, "quality": quality["status"], "file": file_name, "owner": owner_org})
     return v
+
+
+def _retire_misowned(session: Session, t: Any, ds: Dataset, v: Any, owner_org: str | None) -> set[str | None]:
+    """영업점 판을 올릴 때 — 같은 기준일의 영업점이 아닌 구획(전행 · 팀)에 있는 현재 판 가운데 행이 모두 이 영업점 것인 판을 내린다.
+    예전에 관리자 · 영업본부가 올려 요청자 팀 소유로 들어간 영업점 자료 — 그대로 두면 같은 지점 행이 두 구획에 겹쳐 두 번 계산된다. 내린 판의 소유(이벤트용)."""
+    from nhdip.orgs import is_branch
+
+    from .placement import content_branches
+
+    if not owner_org or getattr(ds, "common", False) or not is_branch(session, owner_org):
+        return set()
+    same_date = t.version.as_of == v.as_of if v.as_of else t.version.as_of.is_(None)
+    out: set[str | None] = set()
+    for old in session.execute(select(t.version).where(t.version.dataset_code == ds.code, t.version.is_current, t.version.id != v.id, same_date,
+                                                       partition_clause(session, t, v.as_of, None))).scalars():
+        rows = session.execute(select(t.row.data).where(t.row.version_id == old.id)).scalars().all()
+        if rows and content_branches(session, ds, rows) == [owner_org]:
+            old.is_current = False
+            out.add(old.owner_org)
+    return out
 
 
 def _read_any(content: bytes, filename: str, ds: Dataset) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:

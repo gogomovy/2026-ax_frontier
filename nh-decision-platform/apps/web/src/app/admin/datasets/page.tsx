@@ -284,6 +284,51 @@ export default function DatasetsAdmin() {
   );
 }
 
+interface SplitPlan {
+  source: string;
+  target: { code: string; name: string };
+  duplicates: { code: string; name: string; versions: { version: number; asOf: string | null; owner: string | null; file: string | null; rows: number | null }[] }[];
+}
+
+/** 같은 자료가 여러 정의로 갈라짐 — 업무 구성은 하나만 읽어 나머지 정의의 자료(다른 영업점 · 기간)가 화면에 나오지 않는다. 한 정의로 모은다 */
+function SplitDefinitions({ reload }: { reload: () => Promise<void> }) {
+  const plan = useApiData<{ plan: SplitPlan[] }>("/admin/datasets-consolidate");
+  const { run, busy } = useAction();
+  const confirm = useConfirm();
+  const items = plan.data?.plan ?? [];
+  if (!items.length) return null;
+  return (
+    <Card title="같은 자료가 여러 정의로 갈라져 있습니다">
+      <p className="mb-sm text-[12.5px] text-attention">
+        업무 화면은 자료마다 정의 하나만 읽습니다 — 아래 정의에 올라간 자료(다른 영업점 · 다른 기간)는 지금 화면 계산에 쓰이지 않습니다. [한 정의로 모으기]를 누르면 업무 구성이 읽는 정의의 새 판으로 옮기고(영업점 행이면 그 영업점 판), 갈라진 정의는 사용 중지합니다(이력 보존).
+      </p>
+      <ul className="mb-md flex flex-col gap-1 text-[12.5px]">
+        {items.map((p) => (
+          <li key={p.target.code}>
+            <strong className="text-ink-deep">{p.target.name}</strong> <span className="text-stone">({p.target.code})</span> ←{" "}
+            {p.duplicates.map((d) => `${d.name} (${d.code} · 판 ${d.versions.length})`).join(", ")}
+          </li>
+        ))}
+      </ul>
+      <Button
+        size="sm"
+        variant="confirm"
+        disabled={busy}
+        onClick={async () => {
+          const ok = await confirm({ title: "한 정의로 모을까요?", body: "갈라진 정의의 현재 판을 업무 구성이 읽는 정의로 옮기고 관련 워크플로를 다시 계산합니다. 갈라진 정의는 사용 중지되고 판 이력은 남습니다.", confirmLabel: "모으기" });
+          if (!ok) return;
+          await run(() => apiPost("/admin/datasets-consolidate"), "한 정의로 모았습니다 — 관련 화면이 다시 계산됩니다", async () => {
+            await plan.reload();
+            await reload();
+          });
+        }}
+      >
+        한 정의로 모으기
+      </Button>
+    </Card>
+  );
+}
+
 function Datasets() {
   const data = useApiData<Ds[]>("/admin/datasets");
   const [sel, setSel] = useState<string | null>(null);
@@ -356,6 +401,7 @@ function Datasets() {
   const sim = all.filter((d) => d.versions.some((v) => v.isCurrent && v.dataOrigin !== "actual")).length;
   return (
     <>
+      <SplitDefinitions reload={data.reload} />
       <CommonDbCard onPick={(code) => open(code, null)} />
       <div className="mb-lg">
         <StatGrid columns={4} label="데이터셋 요약">

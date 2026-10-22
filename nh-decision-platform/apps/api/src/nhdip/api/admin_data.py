@@ -486,6 +486,29 @@ def dataset_delete(code: str, request: Request, session: Session = Depends(get_s
     return {"deleted": code}
 
 
+@router.get("/datasets-consolidate")
+def datasets_consolidate_plan(session: Session = Depends(get_session)):
+    """같은 자료가 여러 정의로 갈라진 것(업무 구성은 하나만 읽어 나머지 자료가 화면에 안 나옴) — 무엇을 어디로 모을지."""
+    from nhdip.data.consolidate import plan
+
+    return {"plan": plan(session)}
+
+
+@router.post("/datasets-consolidate")
+def datasets_consolidate(request: Request, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
+    """갈라진 정의의 현재 판을 업무 구성이 읽는 정의의 새 판으로 모으고(영업점 행이면 그 영업점 판), 갈라진 정의는 사용 중지. 팀 소유로 들어간 영업점 판도 바로잡는다."""
+    from nhdip.data.consolidate import execute
+
+    try:
+        rep = execute(session, admin.emp_no)
+    except (IngestError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    audit(session, admin.emp_no, "admin.datasets.consolidate", "dataset", "*", {"targets": [x["target"]["code"] for x in rep]}, client_ip(request))
+    session.commit()
+    return {"consolidated": rep}
+
+
 @router.get("/datasets/{code}/delete-preview")
 def dataset_delete_preview(code: str, session: Session = Depends(get_session), admin: AppUser = Depends(require_data_admin)):
     """연결까지 정의 삭제 — 미리보기(DOB-12 · Q208): 지울 버전 · 끌 지표 · 바인딩 · 지울 트리거 · 온톨로지 원천 · 다시 도는 워크플로."""

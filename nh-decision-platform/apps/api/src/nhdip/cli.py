@@ -91,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     ap_rd.add_argument("--keep-external", action="store_true", help="Elasticsearch · Neo4j 는 건드리지 않음(다음 동기화 · 재투영이 정리)")
     ap_rs = sub.add_parser("remove-seed-structure", help="예전 시드가 넣은 업무 구조(지표 · 업무 흐름 · 화면 연결 · 규칙 · 화면 · 조직 · 정의서 …) 정리 — 기본은 미리보기 (Phase O)")
     ap_rs.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 지운다(먼저 make backup)")
+    ap_cd = sub.add_parser("consolidate-datasets", help="같은 자료가 여러 정의(…_2 · …_3)로 갈라진 것을 업무 구성이 읽는 정의 하나로 모으고, 팀 소유로 들어간 영업점 판을 바로잡음 — 기본은 미리보기")
+    ap_cd.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 옮긴다(갈라진 정의는 사용 중지 · 이력 보존)")
     ap_pw = sub.add_parser("admin-password")
     ap_pw.add_argument("emp_no")
     ap_run = sub.add_parser("run")
@@ -191,6 +193,17 @@ def main(argv: list[str] | None = None) -> int:
             out = cleanup.execute(s, "cli")
             s.commit()
             print(_json.dumps({"removed": out}, ensure_ascii=False, indent=1))
+        return 0
+    if args.cmd == "consolidate-datasets":
+        from nhdip.data import consolidate
+
+        with SessionLocal() as s:
+            if not args.yes:
+                print(json.dumps({"preview": True, "plan": consolidate.plan(s), "next": "옮기려면 --yes"}, ensure_ascii=False, indent=1, default=str))
+                return 0
+            rep = consolidate.execute(s, "cli")
+            s.commit()
+        print(json.dumps({"consolidated": rep}, ensure_ascii=False, indent=1, default=str))
         return 0
     if args.cmd == "reset-data":
         from nhdip.data import reset as R

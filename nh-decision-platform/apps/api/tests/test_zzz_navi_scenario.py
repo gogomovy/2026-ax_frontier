@@ -206,3 +206,68 @@ def test_navi_scenario_end_to_end(computed, tmp_path):
     assert pid in [x["id"] for x in br.get("/screens/action-plans").json()]
     with db() as s:
         assert any(x.startswith("lineage:plan_share") for x in _reasons(_runs(s, before).get("wf_branch_kpi", [])))
+
+
+def test_batch_intake_of_branch_files_lands_in_one_definition(computed):
+    """[자료 등록]에 영업점 파일 여러 개를 한꺼번에 올림 — 분석 때는 정의가 없어 파일마다 새 정의로 제안되지만, 반영할 때 다시 맞춰 한 정의 · 영업점별 판으로 들어간다."""
+    db = computed
+    from nhdip.data.datasets import current_versions
+    from nhdip.models import Dataset
+
+    admin = _login(*ADMIN)
+
+    def csv(office: str, val: int) -> bytes:
+        return ("사무소코드,기준년월,실적값\n" + "\n".join(f"{office},2026-08-31,{val + i}" for i in range(3)) + "\n").encode("utf-8")
+
+    drafts = []
+    for office, val in (("BR301", 10), ("BR302", 20), ("BR303", 30)):
+        r = admin.post("/db/intake", data={"origin": "bank"}, files={"file": (f"시험_지점실적_{office}.csv", csv(office, val), "text/csv")})
+        assert r.status_code == 201, r.text[:300]
+        drafts.append(r.json())
+    for d in drafts:
+        r = admin.post(f"/db/intake/{d['id']}/submit", json={"force": True})
+        assert r.status_code == 200, r.text[:300]
+        assert r.json()["status"] == "approved", r.json()
+    with db() as s:
+        made = [x for x in s.execute(select(Dataset).where(Dataset.active)).scalars() if any(c.get("name") == "실적값" for c in x.columns or []) and "지점실적" in (x.name + (x.file_pattern or ""))]
+        assert len(made) == 1, [(x.code, x.name) for x in made]  # 정의가 …_2 · …_3 으로 갈라지지 않는다
+        owners = sorted(v.owner_org for v in current_versions(s, made[0]))
+        assert owners == ["BR301", "BR302", "BR303"], owners  # 관리자가 올렸어도 행의 영업점 판으로
+
+
+def test_consolidate_split_definitions_and_misowned_branch_versions(computed):
+    """이미 갈라진 정의 정리 — 강남 자료가 다른 정의(…_강남금융센터)에 관리자 팀 소유로 들어가 화면에 안 나오던 경우를 업무 구성이 읽는 정의로 모은다."""
+    db = computed
+    from nhdip.data import consolidate
+    from nhdip.data.datasets import current_rows, current_versions, ingest_rows, quality_check
+    from nhdip.data.sources import Resolver
+    from nhdip.models import Dataset, source
+
+    with db() as s:
+        target = Resolver(s).resolve("영업점 업적평가 득점 현황")
+        t = source(target.origin)
+        br = [v for v in current_versions(s, target) if v.owner_org == "BR301"]
+        assert br
+        rows = [{k: v for k, v in r.items() if not k.startswith("__")} for r in current_rows(s, target)[1] if "BR301" in {str(x) for x in r.values()}]
+        for v in br:  # 강남 판이 이 정의에 없는 상태(예전 업로드 결과)를 만든다
+            v.is_current = False
+        dup = Dataset(**{k: getattr(target, k) for k in ("origin", "kind", "description", "columns", "key_columns", "as_of_column", "quality_rules", "parser")},
+                      code="DUP_SCORE_GN", name="영업점 업적평가 득점 현황(202608)_강남금융센터", file_pattern=None, mapping={}, active=True)
+        s.add(dup)
+        s.flush()
+        ingest_rows(s, dup, rows, quality=quality_check(dup, rows, []), file_name="영업점 업적평가 득점 현황(202608)_강남금융센터.xlsx", as_of=None, actor="test", force=True, owner_org="T911")
+        s.commit()
+    with db() as s:
+        assert Resolver(s).resolve("영업점 업적평가 득점 현황").code == target.code
+        p = consolidate.plan(s)
+        hit = next(x for x in p if x["target"]["code"] == target.code)
+        assert [d["code"] for d in hit["duplicates"]] == ["DUP_SCORE_GN"]
+        rep = consolidate.execute(s, "test")
+        s.commit()
+        moved = next(x for x in rep if x["target"]["code"] == target.code)["moved"]
+        assert moved and moved[0]["owner"] == "BR301", moved
+    with db() as s:
+        tgt = s.get(Dataset, target.code)
+        assert sorted(v.owner_org for v in current_versions(s, tgt)) == ["BR301", "BR302", "BR303"]
+        assert not s.get(Dataset, "DUP_SCORE_GN").active
+        assert not consolidate.plan(s) or all(x["target"]["code"] != target.code for x in consolidate.plan(s))  # 다시 돌려도 할 일 없음
