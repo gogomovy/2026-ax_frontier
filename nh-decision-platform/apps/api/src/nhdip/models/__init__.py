@@ -23,6 +23,7 @@ from .cfg import (
     WorkflowTrigger,
 )
 from .iam import AppUser, OrgUnit, Screen, ScreenGrant, UserSession
+from .assist import AssistConversation, AssistMessage
 from .kb import KbChunk, KbCollection
 from .runtime import (
     AgentDecision,

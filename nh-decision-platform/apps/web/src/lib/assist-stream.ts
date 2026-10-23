@@ -41,6 +41,11 @@ export interface StreamHandlers {
 export interface AskBody {
   question: string;
   screen?: string;
+  /** 서버에 저장되는 대화 id — 서버가 그 대화의 누적 요약 + 원문으로 멀티턴 맥락을 만든다 */
+  conversationId?: string;
+  /** 다시 생성 — 마지막 턴의 답을 바꾼다 */
+  replaceLast?: boolean;
+  /** 대화 id 를 모르는 예전 서버용 최근 대화 */
   history: { q: string; a: string }[];
 }
 

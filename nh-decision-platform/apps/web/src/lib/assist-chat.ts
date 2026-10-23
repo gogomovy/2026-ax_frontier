@@ -1,6 +1,7 @@
 /**
- * 질문하기 대화 모델 — 서버는 대화를 저장하지 않는다(요구사항 ASK-03 · Q120). 대화 목록은 이 브라우저 탭의 sessionStorage 에만 두고
- * (탭을 닫으면 사라지고, 사용자별 키라 다른 사람이 같은 탭에서 로그인해도 보이지 않으며 로그인 때 다른 사용자의 기록은 지운다), 서버에는 후속 질문용 최근 3턴만 보낸다.
+ * 질문하기 대화 모델 — 대화는 서버에 사번별로 저장된다(app.assist_conversation · knowledge.memory). 화면은 대화 id 만 보내고,
+ * 서버가 누적 요약 + 요약 안 된 원문(내부 모델 기준 토큰 예산 안)으로 멀티턴 맥락을 만든다. 대화 기억이 꺼져 있으면 최근 3턴(historyFor)을 쓴다.
+ * loadConversations · saveConversations 는 예전 탭 저장 방식(테스트 · 호환용)이다.
  */
 import type { CiteKind } from "@/lib/markdown";
 import type { RetrievalEngines } from "./search-engines";
@@ -119,6 +120,53 @@ export interface Conversation {
   title: string;
   updatedAt: number;
   messages: Msg[];
+  /** 서버 목록에서 온 대화 — 메시지는 열 때 불러온다 */
+  remote?: boolean;
+  /** 메시지를 서버에서 불러왔는지 */
+  loaded?: boolean;
+  messageCount?: number;
+  /** 서버에 요약이 있는지(떠날 때 · 맥락 예산 초과 때 만든 누적 요약) */
+  hasSummary?: boolean;
+}
+
+/** 서버 대화 목록 항목 · 메시지 (GET /assist/conversations[/id]) */
+export interface ServerConversation {
+  id: string;
+  title: string;
+  updatedAt: string | null;
+  messageCount: number;
+  hasSummary: boolean;
+  closedAt?: string | null;
+}
+export interface ServerMessage {
+  seq: number;
+  role: "user" | "assistant";
+  text: string;
+  at: string | null;
+  summarized?: boolean;
+  result?: AssistAnswer;
+}
+
+/** 서버 목록 → 화면 대화(메시지는 열 때) */
+export function fromServerList(items: ServerConversation[]): Conversation[] {
+  return items.map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt ? Date.parse(c.updatedAt) : 0, messages: [], remote: true, loaded: false, messageCount: c.messageCount, hasSummary: c.hasSummary }));
+}
+
+/** 서버 메시지 → 화면 메시지 — 답은 저장된 결과(출처 · 수치 · 검증)로 다시 그린다 */
+export function fromServerMessages(msgs: ServerMessage[]): Msg[] {
+  const out: Msg[] = [];
+  let lastQ = "";
+  for (const m of msgs) {
+    const at = m.at ? Date.parse(m.at) : 0;
+    if (m.role === "user") {
+      lastQ = m.text;
+      out.push({ id: `u${m.seq}`, role: "user", text: m.text, at });
+    } else {
+      const r = m.result && typeof m.result === "object" && "metrics" in m.result ? m.result : undefined;
+      out.push({ id: `b${m.seq}`, role: "assistant", text: m.text, at, status: "done", final: r, meta: r, question: lastQ });
+    }
+  }
+  return out;
 }
 
 let seq = 0;

@@ -32,6 +32,8 @@ CLEAR_TABLES: frozenset[str] = frozenset(
         "ext.dataset_version", "ext.row_store", "ext.document", "ext.chunk",
         "calc.calc_run", "calc.metric_value",
         "app.view_artifact", "app.user_state", "app.kb_chunk",
+        # AI 어시스턴트 대화 — 지운 자료로 낸 수치 · 출처가 든 답이라 함께 비운다(다음 대화가 옛 수치를 맥락으로 쓰지 않게)
+        "app.assist_message", "app.assist_conversation",
         "cfg.ontology_proposal",
         "ops.outbox_event", "ops.job", "ops.workflow_run", "ops.node_run", "ops.llm_call", "ops.agent_decision",
         "ops.extraction_issue", "ops.data_profile", "ops.upload_request", "ops.purge_task", "ops.alert",

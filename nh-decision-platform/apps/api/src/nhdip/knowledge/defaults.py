@@ -73,3 +73,8 @@ ARTIFACT_ROUTES: dict[str, str] = {
 }
 
 REWRITE_DEFAULT: dict[str, Any] = {"enabled": True, "llm": True, "max_history": 3}
+
+# AI 어시스턴트 대화 기억 — 맥락(누적 요약 + 요약 안 된 원문)이 max_context_tokens(내부 모델 토큰 추정)를 넘으면 오래된 턴부터 요약에 합친다.
+# keep_recent_turns = 요약할 때도 원문으로 남기는 최근 턴 수, summary_max_tokens = 요약 길이 상한,
+# token_factor = 토큰 추정 보정(내부 모델 토크나이저와 다르면 조정 — 한글 1자 ≈ 1토큰, 그 밖 3.5자 ≈ 1토큰 기준의 배수)
+MEMORY_DEFAULT: dict[str, Any] = {"enabled": True, "max_context_tokens": 50000, "keep_recent_turns": 4, "summary_max_tokens": 4000, "token_factor": 1.0, "max_conversations": 200}

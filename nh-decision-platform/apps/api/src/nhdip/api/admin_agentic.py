@@ -29,7 +29,7 @@ FLOWS: dict[str, list[tuple[str, str | None, str]]] = {
     "intake": [("파일 판별", None, "정형 · 비정형"), ("정형 분석", "data_intake", "정의 초안 + 이름 · 의미"), ("문서 분석", "doc_intake", "제목 · 분류 · 기관 · 시행일"),
                ("확인 · 반영", None, "책임자 반영 · 승인 요청"), ("원장 · 3-way 저장", None, "PostgreSQL · pgvector · ES · Neo4j")],
     "knowledge": [("청크 · 카드 색인", None, "산출물 · 데이터셋 설명 카드"), ("임베딩", "embedder", "pgvector"), ("검색어 재작성", "query_rewriter", "후속 질문"), ("검색 재정렬", "search_reranker", "선택")],
-    "assistant": [("접근 범위", None, "화면 리소스 · 부서"), ("질문 이해", "query_rewriter", "후속 질문 재작성"), ("하이브리드 검색", "search_reranker", "키워드 · 의미 · 그래프"),
+    "assistant": [("대화 기억", "conversation_summarizer", "사번별 저장 · 예산 초과 · 떠날 때 누적 요약"), ("접근 범위", None, "화면 리소스 · 부서"), ("질문 이해", "query_rewriter", "후속 질문 재작성"), ("하이브리드 검색", "search_reranker", "키워드 · 의미 · 그래프"),
                   ("답변 · 도구", "query_assistant", "calc_* · onto_* · data_aggregate"), ("숫자 · 인용 점검", None, "출처 없는 숫자 · 지어낸 출처")],
 }
 

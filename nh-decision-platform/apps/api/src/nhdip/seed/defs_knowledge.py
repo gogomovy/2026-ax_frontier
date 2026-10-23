@@ -42,6 +42,7 @@ from nhdip.knowledge.defaults import (  # noqa: E402
     ARTIFACT_RESOURCES,
     ARTIFACT_ROUTES,
     INDEX_DEFAULT,
+    MEMORY_DEFAULT,
     PERSONA_RESOURCES,
     REWRITE_DEFAULT,
     SEARCH_DEFAULT,
@@ -54,4 +55,6 @@ SETTINGS: dict[str, tuple[Any, str]] = {
     "knowledge.persona_resources": (PERSONA_RESOURCES, "페르소나(P1 종합기획부 · P2 신용리스크 · P3 영업점) → 화면 리소스. 단위에 페르소나가 있으면 산출물 기본 리소스보다 우선"),
     "knowledge.artifact_routes": (ARTIFACT_ROUTES, "산출물 키 → 화면 주소 (질문하기 출처의 '화면 열기'). '{tab}' 은 접두어 뒤 탭 키"),
     "assist.rewrite": (REWRITE_DEFAULT, "질문하기 후속 질문 재작성 — 켜기 · LLM 사용 여부 · 반영할 이전 대화 수"),
+    "assist.memory": (MEMORY_DEFAULT, "AI 어시스턴트 대화 기억 — 사번별 대화 저장, 맥락(누적 요약 + 원문)이 max_context_tokens(내부 모델 토큰 추정, 기본 5만)를 넘으면 오래된 턴을 요약에 합침 · "
+                                      "keep_recent_turns(원문으로 남길 최근 턴) · summary_max_tokens(요약 상한) · token_factor(토큰 추정 보정) · max_conversations(사용자당 보관 대화 수)"),
 }

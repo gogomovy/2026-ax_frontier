@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyFor, loadConversations, numberCites, resolveCite, saveConversations, slimForStorage, storageKey, titleOf, type AssistAnswer, type AssistMeta, type BotMsg, type Conversation, type Msg } from "./assist-chat";
+import { fromServerList, fromServerMessages, historyFor, loadConversations, numberCites, resolveCite, saveConversations, slimForStorage, storageKey, titleOf, type AssistAnswer, type AssistMeta, type BotMsg, type Conversation, type Msg } from "./assist-chat";
 import { parseSse } from "./assist-stream";
 
 const meta: AssistMeta = {
@@ -35,6 +35,30 @@ describe("SSE 파서", () => {
 describe("대화", () => {
   const u = (t: string): Msg => ({ id: t, role: "user", text: t, at: 1 });
   const b = (t: string, status: BotMsg["status"] = "done"): Msg => ({ id: `b${t}`, role: "assistant", text: t, at: 1, status, question: "q" });
+
+  it("서버 대화 목록 · 메시지 → 화면 대화", () => {
+    const list = fromServerList([{ id: "c1abc", title: "충당금", updatedAt: "2026-10-14T01:00:00+00:00", messageCount: 4, hasSummary: true }]);
+    expect(list[0]).toMatchObject({ id: "c1abc", remote: true, loaded: false, messages: [], messageCount: 4, hasSummary: true });
+    expect(list[0].updatedAt).toBe(Date.parse("2026-10-14T01:00:00+00:00"));
+    const result = { ...meta, mode: "llm", answer: "답1", verification: { passed: true, unverified: [] } } as AssistAnswer;
+    const msgs = fromServerMessages([
+      { seq: 1, role: "user", text: "질문1", at: null, summarized: true },
+      { seq: 2, role: "assistant", text: "답1", at: null, summarized: true, result },
+      { seq: 3, role: "user", text: "질문2", at: null },
+      { seq: 4, role: "assistant", text: "답2", at: null, result: {} as AssistAnswer },
+    ]);
+    expect(msgs.map((m) => m.id)).toEqual(["u1", "b2", "u3", "b4"]);
+    const b2 = msgs[1] as BotMsg;
+    expect(b2).toMatchObject({ status: "done", question: "질문1", text: "답1" });
+    expect(b2.final?.metrics[0].code).toBe("share_now"); // 출처 · 수치 카드를 다시 그린다
+    const b4 = msgs[3] as BotMsg;
+    expect(b4.question).toBe("질문2");
+    expect(b4.final).toBeUndefined(); // 결과 모양이 아니면 카드 없이 글만
+    expect(historyFor(msgs)).toEqual([
+      { q: "질문1", a: "답1" },
+      { q: "질문2", a: "답2" },
+    ]);
+  });
 
   it("제목은 질문 앞 30자", () => {
     expect(titleOf("  포용금융   충당금 비중은 얼마인가요?  ")).toBe("포용금융 충당금 비중은 얼마인가요?");

@@ -188,7 +188,7 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
       <div className="relative flex min-h-0 flex-1">
         <aside aria-label="대화 목록" className={sidebarCls}>
           <div className="flex items-center justify-between px-3 pb-1 pt-3">
-            <p className="text-[12px] font-bold text-steel">이 탭의 대화</p>
+            <p className="text-[12px] font-bold text-steel">내 대화</p>
             {convs.length ? (
               <button type="button" onClick={chat.clearAll} className="text-[11.5px] text-stone hover:text-critical">
                 모두 지우기
@@ -209,14 +209,17 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
                   className={clsx("min-w-0 flex-1 rounded-lg px-2.5 py-2 text-left hover:bg-canvas disabled:opacity-50", c.id === chat.activeId && "bg-canvas shadow-panel")}
                 >
                   <span className="block truncate text-[13px] font-medium text-ink-deep">{c.title}</span>
-                  <span className="block text-[11px] text-stone">{relTime(c.updatedAt)}</span>
+                  <span className="block text-[11px] text-stone">
+                    {relTime(c.updatedAt)}
+                    {c.hasSummary ? <span title="이전 대화 요약이 저장되어 다시 열면 이어서 질문할 수 있습니다"> · 요약 저장됨</span> : null}
+                  </span>
                 </button>
                 <button type="button" onClick={() => chat.remove(c.id)} aria-label={`대화 삭제: ${c.title}`} title="삭제" className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-stone hover:bg-canvas hover:text-critical">
                   <IconTrash size={15} />
                 </button>
               </li>
             ))}
-            {!convs.length ? <li className="px-2.5 py-3 text-[12px] text-stone">아직 대화가 없습니다. 대화는 이 브라우저 탭에만 저장되고 탭을 닫으면 사라집니다.</li> : null}
+            {!convs.length ? <li className="px-2.5 py-3 text-[12px] text-stone">아직 대화가 없습니다. 대화는 내 계정에 저장되어 다시 열면 이전 내용(요약)을 이어 받아 질문할 수 있습니다.</li> : null}
           </ul>
         </aside>
         {showList ? <button type="button" aria-label="대화 목록 닫기" tabIndex={-1} onClick={() => setShowList(false)} className={clsx("absolute inset-0 z-10 bg-scrim", expanded && "lg:hidden")} /> : null}
@@ -224,7 +227,11 @@ export function ChatWorkspace({ chat, pathname, expanded, onToggleExpand, onClos
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div ref={scrollRef} onScroll={onScroll} role="log" aria-label="대화 내용" aria-live="off" className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto flex w-full max-w-[780px] flex-col gap-6 px-4 py-6">
-              {!messages.length ? (
+              {!messages.length && active && chat.loadingId === active.id ? (
+                <p role="status" className="pt-10 text-center text-[13px] text-stone">
+                  대화를 불러오는 중…
+                </p>
+              ) : !messages.length ? (
                 <div className="flex flex-col items-center pt-6 text-center">
                   <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-circle bg-primary text-white shadow-panel">
                     <IconBot size={30} />

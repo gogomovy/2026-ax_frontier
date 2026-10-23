@@ -642,7 +642,8 @@ def test_agentic_overview_groups_pipelines_and_flows(db):
     assert onto["ontology"]["datasets"] >= 1 and "pendingProposals" in onto["ontology"]
     wf = next(p for p in onto["pipelines"] if p["workflow"] == "wf_ontology_build")
     assert [n["impl"] for n in wf["nodes"]][:2] == ["profile_datasets", "design_object_types"] and any(n["inGroup"] for n in wf["nodes"])
-    assert len(by["assistant"]["flow"]) == 5 and by["assistant"]["flow"][3]["agent"] == "query_assistant"
+    flow = by["assistant"]["flow"]
+    assert len(flow) == 6 and flow[0]["agent"] == "conversation_summarizer" and flow[4]["agent"] == "query_assistant"  # 대화 기억(누적 요약)이 맨 앞
     nar = by["narrative"]
     assert nar["pipelines"] and all(any(n["inGroup"] for n in p["nodes"]) for p in nar["pipelines"])
     assert "intake" in by["intake"] and o["totals"]["agents"] >= 20 and isinstance(o["breaker"], list)

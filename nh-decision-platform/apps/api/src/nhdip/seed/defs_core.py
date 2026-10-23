@@ -458,6 +458,12 @@ QUERY_REWRITER_SYSTEM = (
     "[역할] 너는 검색어 재작성 에이전트다 — 사용자의 질문을 문서 · 분석 검색에 맞는 짧은 검색어로 바꾼다.\n[규칙]\n" + _COMMON_RULES + "\n"
     "- 질문에 없는 숫자를 만들지 않는다. 200자 이내.\n[예시] {\"query\":\"포용금융 충당금 비중 관리 기준\"}"
 )
+CONVERSATION_SUMMARIZER_SYSTEM = (
+    "[역할] 너는 대화 요약 에이전트다 — AI 어시스턴트 대화의 이전 요약과 새 대화를 합쳐, 다음 질문이 요약만 보고도 이어질 수 있는 누적 요약을 쓴다.\n[규칙]\n" + _COMMON_RULES + "\n"
+    "- 물은 대상(부서 · 지점 · 상품 · 모형 · 지표) · 적용한 조건(기간 · 기준 · 도구 조건) · 답의 확정 수치와 출처 이름 · 사용자 의도 · 아직 답하지 못한 것을 빠짐없이.\n"
+    "- 숫자는 대화에 있던 그대로만 쓴다(새로 계산하거나 만들지 않는다).\n"
+    "[예시] {\"summary\":\"- 강남금융센터 예수금 현황을 물음(기준일 2026-08-31, 상품별)\\n- 이어서 같은 기준으로 대출을 물을 예정\"}"
+)
 SEARCH_RERANKER_SYSTEM = (
     "[역할] 너는 검색 재정렬 에이전트다 — 후보 구간을 질문과의 관련성 순으로 다시 정렬한다.\n[규칙]\n" + _COMMON_RULES + "\n"
     "- 후보 번호만 쓴다. 관련 없는 것은 뒤로.\n[예시] {\"order\":[2,0,1]}"
@@ -522,6 +528,7 @@ AGENTS = [
     ("critic_grounded", "근거 일치 점검", "서술 문장이 근거 · 판정과 맞는지 LLM 점검 — 기본 권고(설정 agents.grounding)", "llm", "default", CRITIC_GROUNDED_SYSTEM),
     ("query_rewriter", "검색어 재작성", "AI 어시스턴트 질문 → 검색어 (질문에 없는 숫자 금지)", "llm", "default", QUERY_REWRITER_SYSTEM),
     ("search_reranker", "검색 재정렬", "검색 후보를 질문 관련성 순으로 (설정 rerank_llm 이 켜졌을 때)", "llm", "default", SEARCH_RERANKER_SYSTEM),
+    ("conversation_summarizer", "대화 기억 요약", "AI 어시스턴트 대화가 맥락 예산(설정 assist.memory · 기본 5만 토큰)을 넘거나 대화를 떠날 때 누적 요약 — 대화에 없던 숫자가 생기면 규칙 요약", "llm", "default", CONVERSATION_SUMMARIZER_SYSTEM),
     ("attention_curator", "AI 주목 사항 해설", "규칙 점수로 정한 주목 사항마다 숫자 없는 해설(rankReason) — 순위는 규칙 그대로", "llm", "default", ATTENTION_CURATOR_SYSTEM),
     ("metric_proposer", "새 지표 제안", "지표가 없는 자료의 측정 열로 만든 후보(합계 · 증가율) 중 추적할 것을 고르고 이름 · 이유를 붙임 — 데이터 책임자 · 관리자 승인 뒤 계산 커널이 계산", "llm", "default", METRIC_PROPOSER_SYSTEM),
     # §40 STW — 새 자료 → 분석 화면 · 개념 연결 제안(데이터 책임자 승인 대기). LLM 미연결 · 실패 시 규칙
@@ -551,7 +558,7 @@ AGENT_GROUP_OF = {
     "embedder": "knowledge", "query_rewriter": "knowledge", "search_reranker": "knowledge",
     "change_detector": "judgment", "attention_curator": "judgment", "metric_proposer": "judgment",
     "critic": "narrative", "critic_grounded": "narrative",
-    "query_assistant": "assistant",
+    "query_assistant": "assistant", "conversation_summarizer": "assistant",
     "analysis_refiner": "analysis", "report_renderer": "analysis", "analysis_proposer": "analysis",
     "concept_linker": "ontology",
 }
