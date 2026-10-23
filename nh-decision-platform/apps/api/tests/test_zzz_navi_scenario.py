@@ -271,3 +271,44 @@ def test_consolidate_split_definitions_and_misowned_branch_versions(computed):
         assert sorted(v.owner_org for v in current_versions(s, tgt)) == ["BR301", "BR302", "BR303"]
         assert not s.get(Dataset, "DUP_SCORE_GN").active
         assert not consolidate.plan(s) or all(x["target"]["code"] != target.code for x in consolidate.plan(s))  # 다시 돌려도 할 일 없음
+    # 모은 뒤 흐름이 다시 돌아 강남 화면이 계산된다(점검도 정상)
+    from conftest import drain_workflows
+
+    from nhdip.views.branch_diag import diagnose
+
+    drain_workflows(db, rounds=8, per_round=80)
+    with db() as s:
+        dg = diagnose(s, "BR301")
+        assert dg["ok"], dg
+    gn = _login("20269301")
+    assert gn.get("/screens/branch/dashboard").json()["available"]
+
+
+def test_branch_diagnose_explains_missing_master_row(computed):
+    """지점 화면이 비었을 때 — 사무소 마스터에 그 지점 행이 없으면 그 단계를 짚어 화면(관리자는 단계별)에 보인다."""
+    db = computed
+    from nhdip.data.datasets import current_rows, current_versions, ingest_rows, quality_check
+    from nhdip.data.sources import Resolver
+    from nhdip.views.branch_diag import diagnose
+
+    with db() as s:
+        m = Resolver(s).resolve("영업점 사무소 마스터")
+        rows = [{k: v for k, v in r.items() if not k.startswith("__")} for r in current_rows(s, m)[1]]
+        keep = [r for r in rows if "BR303" not in {str(x) for x in r.values()}]
+        ingest_rows(s, m, keep, quality=quality_check(m, keep, []), file_name="영업점 사무소 마스터(역삼 빠짐).xlsx", actor="test", force=True)
+        s.commit()
+        dg = diagnose(s, "BR303")
+        assert not dg["ok"] and "사무소 마스터" in dg["verdict"] and "BR303" in dg["verdict"], dg
+        assert current_versions(s, m)
+    admin = _login(*ADMIN)
+    # 화면은 아직 예전 산출물(흐름이 다시 돌기 전) — 흐름을 돌리면 역삼은 범위에서 빠지고 이유가 보인다
+    from conftest import drain_workflows
+
+    drain_workflows(db, rounds=8, per_round=80)
+    d = admin.get("/screens/branch/dashboard", params={"office": "BR303"}).json()
+    assert not d["available"] and "사무소 마스터" in d["reason"]["verdict"] and d["reason"]["steps"], d  # 지운 자료로 낸 예전 역삼 화면을 보이지 않는다
+    yo = _login("20269303")
+    dy = yo.get("/screens/branch/dashboard").json()
+    assert not dy["available"] and dy["reason"]["verdict"] and dy["reason"]["steps"] is None and "BR301" not in dy["reason"]["verdict"], dy  # 다른 지점 코드는 드러나지 않는다
+    assert admin.get("/screens/branch/dashboard", params={"office": "BR301"}).json()["available"]  # 다른 지점은 그대로
+    assert admin.get("/admin/branch-diagnose", params={"office": "BR303"}).json()["ok"] is False

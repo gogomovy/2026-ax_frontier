@@ -615,6 +615,8 @@ export interface BranchKpiAlert {
 
 export interface BranchDashboard {
   available: boolean;
+  /** 비어 있을 때 — 서버가 짚은 이유(관리자는 단계별 점검까지) */
+  reason?: { office: string; verdict: string; steps?: { key: string; ok: boolean; detail: string }[] | null } | null;
   /** 이 화면을 만드는 워크플로우 (서버 제공) */
   workflow?: string | null;
   /** 로그인 사용자의 영업점 (영업점 소속이 아니면 null) */

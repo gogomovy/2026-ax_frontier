@@ -24,7 +24,7 @@ export default async function BranchHomePage(props: { searchParams: Promise<Reco
     return (
       <>
         <PageHeader eyebrow="1단계 · 현황" title={`${name ?? "영업점"} 현황`} actions={picker} />
-        <BranchUnavailable officeName={name} />
+        <BranchUnavailable officeName={name} reason={dashboard.reason} />
       </>
     );
   }

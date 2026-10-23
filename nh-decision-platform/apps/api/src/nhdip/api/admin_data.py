@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -484,6 +484,14 @@ def dataset_delete(code: str, request: Request, session: Session = Depends(get_s
     audit(session, admin.emp_no, "admin.dataset.delete", "dataset", code, {"name": name}, client_ip(request))
     session.commit()
     return {"deleted": code}
+
+
+@router.get("/branch-diagnose")
+def branch_diagnose(office: str = Query(..., pattern=r"^[A-Za-z0-9_-]{1,20}$"), session: Session = Depends(get_session)):
+    """영업점 화면이 비었을 때 — 조직 · 필요한 자료(그 지점 행) · 계산 대상 · 최근 실행의 그 지점 범위 · 산출물을 단계별로."""
+    from nhdip.views.branch_diag import diagnose
+
+    return diagnose(session, office)
 
 
 @router.get("/datasets-consolidate")

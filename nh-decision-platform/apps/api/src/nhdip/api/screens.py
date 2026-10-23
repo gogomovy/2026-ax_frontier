@@ -234,6 +234,11 @@ def branch_artifact(session: Session, user: AppUser, key: str, office: str | Non
         audit(session, user.emp_no, "branch.office_denied", "office", str(office)[:20], {"artifact": key})
         session.commit()
         return None
+    from nhdip.scopes import office_data
+
+    with_data = office_data(session)
+    if with_data is not None and target not in with_data:
+        return None  # 그 지점의 필요한 자료(사무소 마스터 · 득점 현황 행)가 없다 — 지운 자료로 낸 예전 지점 산출물 · 기본 지점 0점 틀을 보이지 않는다
     v = get_current(session, scoped_key(key, target, primary))
     if not isinstance(v, dict):
         return None
@@ -257,7 +262,27 @@ def branch_dashboard(office: str | None = OFFICE_Q, session: Session = Depends(g
     """영업점 1화면 — 열람 범위 밖이거나 분석이 없는 영업점이면 available=false 와 사용자 영업점만 돌려준다."""
     v = branch_artifact(session, user, "branch_dashboard", office)
     if v is None:
-        return {"available": False, "viewer": _viewer_office(session, user)}
+        out: dict[str, Any] = {"available": False, "viewer": _viewer_office(session, user)}
+        # 왜 비었는지(볼 수 있는 지점일 때만) — 자료 대기 · 흐름 대기 · 범위 건너뜀 등 첫 번째로 막힌 단계
+        from nhdip.orgs import can_view_office
+        from nhdip.scopes import resolve_office
+
+        target = resolve_office(session, user, office)
+        if target and can_view_office(session, user, target):
+            from nhdip.views.branch_diag import diagnose
+
+            try:
+                dg = diagnose(session, target)
+                admin = getattr(user, "role", None) == "admin"
+                first = next((s for s in dg["steps"] if not s["ok"]), None)
+                # 관리자에게는 단계별 원인, 그 밖에는 다른 지점 이름이 드러나지 않는 안내만
+                plain = {"org": "조직표에 이 영업점이 없습니다 — 관리자에게 문의하세요", "run": "분석이 아직 돌지 않았거나 진행 중입니다 — 잠시 뒤 다시 보세요",
+                         "scope": "이 지점의 필요한 자료(사무소 마스터 · 업적평가 득점 현황)가 아직 다 올라오지 않았습니다"}
+                verdict = dg["verdict"] if admin or first is None else (plain.get(first["key"]) or ("이 지점 자료가 아직 다 올라오지 않았습니다 — " + first["key"].split(":", 1)[-1] if first["key"].startswith("requires:") else "이 지점 분석이 아직 준비되지 않았습니다"))
+                out["reason"] = {"office": target, "verdict": verdict, "steps": [{k: s[k] for k in ("key", "ok", "detail")} for s in dg["steps"]] if admin else None}
+            except Exception:  # noqa: BLE001 — 안내 실패가 화면을 막지 않게
+                pass
+        return out
     return {**strip_tpl(gate("branch_dashboard", v)), "available": True, "viewer": _viewer_office(session, user), "workflow": _producer(session, "branch_dashboard")}
 
 

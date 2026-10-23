@@ -93,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     ap_rs.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 지운다(먼저 make backup)")
     ap_cd = sub.add_parser("consolidate-datasets", help="같은 자료가 여러 정의(…_2 · …_3)로 갈라진 것을 업무 구성이 읽는 정의 하나로 모으고, 팀 소유로 들어간 영업점 판을 바로잡음 — 기본은 미리보기")
     ap_cd.add_argument("--yes", action="store_true", help="미리보기가 아니라 실제로 옮긴다(갈라진 정의는 사용 중지 · 이력 보존)")
+    ap_bd = sub.add_parser("branch-diagnose", help="영업점 화면이 빈 이유를 단계별로(조직 · 필요한 자료의 그 지점 행 · 계산 대상 · 최근 실행 · 산출물)")
+    ap_bd.add_argument("office", help="사무소 코드(예: BR301)")
     ap_pw = sub.add_parser("admin-password")
     ap_pw.add_argument("emp_no")
     ap_run = sub.add_parser("run")
@@ -194,6 +196,13 @@ def main(argv: list[str] | None = None) -> int:
             s.commit()
             print(_json.dumps({"removed": out}, ensure_ascii=False, indent=1))
         return 0
+    if args.cmd == "branch-diagnose":
+        from nhdip.views.branch_diag import diagnose
+
+        with SessionLocal() as s:
+            rep = diagnose(s, args.office)
+        print(json.dumps(rep, ensure_ascii=False, indent=1, default=str))
+        return 0 if rep.get("ok") else 1
     if args.cmd == "consolidate-datasets":
         from nhdip.data import consolidate
 
